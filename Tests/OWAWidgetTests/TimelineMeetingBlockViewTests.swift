@@ -3,15 +3,21 @@ import XCTest
 
 @MainActor
 final class TimelineMeetingBlockViewTests: XCTestCase {
-    func testMeetingTitleTopPaddingIsPositiveInRegularMode() {
-        let view = TimelineMeetingBlockView(event: sampleEvent(), compact: false)
+    func testMeetingTitleTopPaddingIsReducedForShortMeetings() {
+        let view = TimelineMeetingBlockView(event: sampleEvent(durationMinutes: 30), compact: false)
+
+        XCTAssertEqual(view.contentTopPadding, 1)
+    }
+
+    func testMeetingTitleTopPaddingRemainsDefaultForLongMeetings() {
+        let view = TimelineMeetingBlockView(event: sampleEvent(durationMinutes: 60), compact: false)
 
         XCTAssertEqual(view.contentTopPadding, 3)
     }
 
-    private func sampleEvent() -> CalendarEvent {
+    private func sampleEvent(durationMinutes: Int) -> CalendarEvent {
         let startDate = Date(timeIntervalSince1970: 1_700_000_000)
-        let endDate = startDate.addingTimeInterval(30 * 60)
+        let endDate = startDate.addingTimeInterval(Double(durationMinutes * 60))
 
         return CalendarEvent(
             id: "sample",

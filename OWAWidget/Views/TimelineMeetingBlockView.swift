@@ -9,13 +9,13 @@ struct TimelineMeetingBlockView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 5) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: titleToMetaSpacing) {
                 Text(event.title)
                     .font(.system(size: compact ? 11 : 12, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(compact ? 1 : 1)
 
-                HStack(spacing: 4) {
+                HStack(spacing: metaItemsSpacing) {
                     Text("\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))")
                         .font(.system(size: compact ? 9 : 10, weight: .medium))
                         .foregroundStyle(.secondary)
@@ -70,7 +70,22 @@ struct TimelineMeetingBlockView: View {
     }
 
     var contentTopPadding: CGFloat {
-        compact ? 2 : 3
+        if isShortMeeting {
+            return compact ? 0 : 1
+        }
+        return compact ? 2 : 3
+    }
+
+    private var isShortMeeting: Bool {
+        event.duration <= 30 * 60
+    }
+
+    private var titleToMetaSpacing: CGFloat {
+        isShortMeeting ? 1 : 2
+    }
+
+    private var metaItemsSpacing: CGFloat {
+        isShortMeeting ? 2 : 4
     }
 
     private var accentColor: Color {
