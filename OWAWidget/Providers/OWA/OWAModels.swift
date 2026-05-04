@@ -27,6 +27,11 @@ struct OWAItemId: Decodable {
     let ChangeKey: String?
 }
 
+struct OWAFolderIdentifier: Sendable, Equatable {
+    let id: String
+    let changeKey: String?
+}
+
 struct OWALocation: Decodable {
     let DisplayName: String?
 }
@@ -60,8 +65,42 @@ enum OWAError: LocalizedError {
         case .authenticationFailed(let m): "Authentication failed: \(m)"
         case .notAuthenticated:            "Not authenticated"
         case .invalidResponse:             "Invalid server response"
-        case .httpError(let c, let m):     "HTTP \(c): \(m)"
+        case .httpError(let c, let m):     Self.describeHTTPError(statusCode: c, responseBody: m)
         case .encodingFailed:              "Failed to encode request"
         }
+    }
+
+    private static func describeHTTPError(statusCode: Int, responseBody: String) -> String {
+        let trimmed = responseBody.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "HTTP \(statusCode)" }
+
+        if let message = extractOWAErrorMessage(from: trimmed) {
+            return "HTTP \(statusCode): \(message)"
+        }
+
+        if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
+            return "HTTP \(statusCode): OWA service returned an error"
+        }
+
+        return "HTTP \(statusCode): \(trimmed)"
+    }
+
+    private static func extractOWAErrorMessage(from responseBody: String) -> String? {
+        guard let data = responseBody.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let body = object["Body"] as? [String: Any]
+        else { return nil }
+
+        let fault = (body["FaultMessage"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let fault, !fault.isEmpty {
+            return fault
+        }
+
+        let exception = (body["ExceptionName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let exception, !exception.isEmpty {
+            return exception
+        }
+
+        return nil
     }
 }

@@ -53,6 +53,7 @@ actor OWAClient {
     private let password: String
 
     private var canaryToken: String?
+    private var defaultCalendarFolderIdentifier: OWAFolderIdentifier?
     private let sessionDelegate: OWASessionDelegate
     private let session: URLSession
     private let log = Logger(subsystem: "com.owawidget", category: "OWAClient")
@@ -265,50 +266,19 @@ actor OWAClient {
     private func performCalendarViewRequest(from start: Date, to end: Date) async throws -> [OWACalendarItem] {
         guard let canary = canaryToken else { throw OWAError.notAuthenticated }
 
-        var components = URLComponents(url: url("/owa/service.svc"), resolvingAgainstBaseURL: false)!
-        components.queryItems = [URLQueryItem(name: "action", value: "GetCalendarView")]
-        guard let serviceURL = components.url else { throw OWAError.invalidURL("/owa/service.svc") }
-
-        let localFmt = localDateFormatter()
-        let requestDict: [String: Any] = [
-            "__type": "GetCalendarViewJsonRequest:#Exchange",
-            "Header": [
-                "__type": "JsonRequestHeaders:#Exchange",
-                "RequestServerVersion": "V2017_08_18",
-                "TimeZoneContext": [
-                    "__type": "TimeZoneContext:#Exchange",
-                    "TimeZoneDefinition": [
-                        "__type": "TimeZoneDefinitionType:#Exchange",
-                        "Id": windowsTimezoneID(),
-                    ] as [String: Any],
-                ] as [String: Any],
-            ] as [String: Any],
-            "Body": [
-                "__type": "GetCalendarViewRequest:#Exchange",
-                "CalendarId": [
-                    "__type": "TargetFolderId:#Exchange",
-                    "BaseFolderId": [
-                        "__type": "DistinguishedFolderId:#Exchange",
-                        "Id": "calendar",
-                    ] as [String: Any],
-                ] as [String: Any],
-                "RangeStart": localFmt.string(from: start),
-                "RangeEnd":   localFmt.string(from: end),
-            ] as [String: Any],
-        ]
+        let folderIdentifier = try await resolveDefaultCalendarFolderIdentifier(canary: canary)
+        let requestDict = OWACalendarViewRequestPayload.make(
+            start: start,
+            end: end,
+            timezoneID: windowsTimezoneID(),
+            folderIdentifier: folderIdentifier
+        )
 
         let jsonData = try JSONSerialization.data(withJSONObject: requestDict)
         guard let jsonString = String(data: jsonData, encoding: .utf8) else { throw OWAError.encodingFailed }
 
-        var request = URLRequest(url: serviceURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(canary, forHTTPHeaderField: "X-OWA-CANARY")
-        request.setValue("GetCalendarView", forHTTPHeaderField: "Action")
-        request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+        var request = try serviceRequest(action: "GetCalendarView", canary: canary)
         request.setValue(jsonString.formEncoded, forHTTPHeaderField: "X-OWA-UrlPostData")
-        request.httpBody = Data()
-        addCommonHeaders(&request)
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
@@ -321,10 +291,58 @@ actor OWAClient {
         return (try JSONDecoder().decode(OWAServiceResponse.self, from: data)).Body?.Items ?? []
     }
 
+    private func resolveDefaultCalendarFolderIdentifier(canary: String) async throws -> OWAFolderIdentifier? {
+        if let defaultCalendarFolderIdentifier {
+            return defaultCalendarFolderIdentifier
+        }
+
+        var request = try serviceRequest(action: "GetCalendarFolders", canary: canary)
+        request.setValue("{}".formEncoded, forHTTPHeaderField: "X-OWA-UrlPostData")
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            let msg = String(data: data.prefix(300), encoding: .utf8) ?? ""
+            log.warning("GetCalendarFolders failed with HTTP \(http.statusCode): \(msg)")
+            return nil
+        }
+
+        let folderIdentifier = OWACalendarFoldersParser.defaultCalendarFolderIdentifier(from: data)
+        defaultCalendarFolderIdentifier = folderIdentifier
+        if folderIdentifier == nil {
+            log.warning("GetCalendarFolders returned no calendar FolderId; falling back to distinguished calendar folder")
+        }
+        return folderIdentifier
+    }
+
     // MARK: - Helpers
 
     private func url(_ path: String) -> URL {
         URL(string: baseURL.absoluteString + path)!
+    }
+
+    private func serviceURL(action: String) throws -> URL {
+        var components = URLComponents(url: url("/owa/service.svc"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "action", value: action),
+            URLQueryItem(name: "EP", value: "1"),
+        ]
+        guard let serviceURL = components.url else {
+            throw OWAError.invalidURL("/owa/service.svc")
+        }
+        return serviceURL
+    }
+
+    private func serviceRequest(action: String, canary: String) throws -> URLRequest {
+        var request = URLRequest(url: try serviceURL(action: action))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(canary, forHTTPHeaderField: "X-OWA-CANARY")
+        request.setValue(action, forHTTPHeaderField: "Action")
+        request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+        request.httpBody = Data()
+        addCommonHeaders(&request)
+        return request
     }
 
     private func addCommonHeaders(_ request: inout URLRequest) {
@@ -358,14 +376,6 @@ actor OWAClient {
             return value
         }
         return nil
-    }
-
-    private func localDateFormatter() -> DateFormatter {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone.current
-        return f
     }
 
     private func windowsTimezoneID() -> String {
