@@ -12,6 +12,9 @@ final class CalendarService: ObservableObject {
     private let notificationService = NotificationService()
     private let log = Logger(subsystem: "com.owawidget", category: "CalendarService")
     private var notificationLocalization: NotificationLocalization = .english
+    private var nextSyncID = 0
+    private var activeSyncIDs = Set<Int>()
+    private var syncRequestGate = SyncRequestGate()
 
     private let accountsKey = "calendarAccounts"
     private let syncIntervalKey = "syncInterval"
@@ -69,7 +72,17 @@ final class CalendarService: ObservableObject {
     // MARK: - Sync
 
     func syncNow() {
-        Task { await performSync() }
+        let now = Date()
+        switch syncRequestGate.manualSyncDecision(now: now, hasActiveSync: !activeSyncIDs.isEmpty) {
+        case .allow:
+            syncRequestGate.recordSyncStarted(at: now)
+            log.info("Manual sync requested")
+        case .reject(let reason):
+            log.info("Manual sync ignored reason=\(String(describing: reason), privacy: .public)")
+            return
+        }
+
+        Task { await performSync(trigger: "manual") }
     }
 
     func setNotificationLocalization(_ localization: NotificationLocalization) {
@@ -107,19 +120,35 @@ final class CalendarService: ObservableObject {
             }
         }
         providers = built
-        await performSync()
+        await performSync(trigger: "rebuildProviders")
     }
 
     private func startScheduler() async {
         let interval = syncInterval
         await scheduler.start(interval: interval) { [weak self] in
-            await self?.performSync()
+            await self?.performSync(trigger: "scheduler")
         }
     }
 
-    private func performSync() async {
+    private func performSync(trigger: String) async {
+        nextSyncID += 1
+        let syncID = nextSyncID
+        let activeBefore = activeSyncIDs.count
+        activeSyncIDs.insert(syncID)
+        syncRequestGate.recordSyncStarted(at: Date())
+        log.info(
+            "Sync \(syncID, privacy: .public) started trigger=\(trigger, privacy: .public) providers=\(self.providers.count, privacy: .public) activeBefore=\(activeBefore, privacy: .public)"
+        )
+        defer {
+            activeSyncIDs.remove(syncID)
+            log.info(
+                "Sync \(syncID, privacy: .public) finished activeRemaining=\(self.activeSyncIDs.count, privacy: .public)"
+            )
+        }
+
         guard !providers.isEmpty else {
             syncStatus = .idle
+            log.info("Sync \(syncID, privacy: .public) skipped: no providers")
             return
         }
 
@@ -132,12 +161,14 @@ final class CalendarService: ObservableObject {
 
         do {
             var fetched: [CalendarEvent] = []
-            try await withThrowingTaskGroup(of: [CalendarEvent].self) { group in
-                for provider in providers {
-                    group.addTask { try await provider.fetchEvents(from: start, to: end) }
-                }
-                for try await batch in group {
-                    fetched.append(contentsOf: batch)
+            try await SyncDiagnostics.$syncID.withValue(syncID) {
+                try await withThrowingTaskGroup(of: [CalendarEvent].self) { group in
+                    for provider in providers {
+                        group.addTask { try await provider.fetchEvents(from: start, to: end) }
+                    }
+                    for try await batch in group {
+                        fetched.append(contentsOf: batch)
+                    }
                 }
             }
 
@@ -148,7 +179,8 @@ final class CalendarService: ObservableObject {
                 .sorted { $0.startDate < $1.startDate }
 
             syncStatus = .lastSynced(Date())
-            log.info("Sync complete: \(self.events.count) events")
+            syncRequestGate.recordSyncSucceeded()
+            log.info("Sync \(syncID, privacy: .public) complete events=\(self.events.count, privacy: .public)")
 
             let currentEvents = events
             let lead = notificationLeadMinutes
@@ -159,8 +191,12 @@ final class CalendarService: ObservableObject {
             )
 
         } catch {
+            if OWAError.isAbstractClassHTTPError(error) {
+                syncRequestGate.recordTransientFailure(at: Date())
+                log.warning("Sync \(syncID, privacy: .public) entered transient OWA cooldown")
+            }
             syncStatus = .error(error.localizedDescription)
-            log.error("Sync failed: \(error)")
+            log.error("Sync \(syncID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 

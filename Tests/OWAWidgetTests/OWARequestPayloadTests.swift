@@ -75,4 +75,98 @@ final class OWARequestPayloadTests: XCTestCase {
 
         XCTAssertEqual(folder, OWAFolderIdentifier(id: "default-folder", changeKey: "default-change"))
     }
+
+    func testOWAErrorRecognizesAbstractClassHTTPError() {
+        let body = """
+        {"Body":{"FaultMessage":"Cannot create an abstract class."}}
+        """
+
+        XCTAssertTrue(
+            OWAError.isAbstractClassHTTPError(
+                OWAError.httpError(500, body)
+            )
+        )
+        XCTAssertFalse(
+            OWAError.isAbstractClassHTTPError(
+                OWAError.httpError(500, #"{"Body":{"FaultMessage":"Different server fault."}}"#)
+            )
+        )
+        XCTAssertFalse(
+            OWAError.isAbstractClassHTTPError(
+                OWAError.httpError(503, body)
+            )
+        )
+    }
+
+    func testStartupRetryPolicyRetriesAbstractClassOnlyAfterFreshAuth() {
+        let error = OWAError.httpError(
+            500,
+            #"{"Body":{"FaultMessage":"Cannot create an abstract class."}}"#
+        )
+
+        XCTAssertEqual(
+            OWAStartupRetryPolicy.delayBeforeRetry(
+                attempt: 0,
+                error: error,
+                afterFreshAuth: true
+            ),
+            .milliseconds(700)
+        )
+        XCTAssertEqual(
+            OWAStartupRetryPolicy.delayBeforeRetry(
+                attempt: 1,
+                error: error,
+                afterFreshAuth: true
+            ),
+            .milliseconds(1_500)
+        )
+        XCTAssertEqual(
+            OWAStartupRetryPolicy.delayBeforeRetry(
+                attempt: 4,
+                error: error,
+                afterFreshAuth: true
+            ),
+            .seconds(10)
+        )
+        XCTAssertEqual(
+            OWAStartupRetryPolicy.delayBeforeRetry(
+                attempt: 5,
+                error: error,
+                afterFreshAuth: true
+            ),
+            .seconds(20)
+        )
+        XCTAssertNil(
+            OWAStartupRetryPolicy.delayBeforeRetry(
+                attempt: 0,
+                error: error,
+                afterFreshAuth: false
+            )
+        )
+    }
+
+    func testStartupRetryPolicyStopsAfterConfiguredAttempts() {
+        let error = OWAError.httpError(
+            500,
+            #"{"Body":{"FaultMessage":"Cannot create an abstract class."}}"#
+        )
+
+        XCTAssertNil(
+            OWAStartupRetryPolicy.delayBeforeRetry(
+                attempt: 6,
+                error: error,
+                afterFreshAuth: true
+            )
+        )
+    }
+
+    func testStartupRetryPolicyDoesNotRetryOtherErrors() {
+        XCTAssertNil(
+            OWAStartupRetryPolicy.delayBeforeRetry(
+                attempt: 0,
+                error: OWAError.httpError(500, #"{"Body":{"FaultMessage":"Different server fault."}}"#),
+                afterFreshAuth: true
+            )
+        )
+    }
 }

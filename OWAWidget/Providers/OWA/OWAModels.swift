@@ -103,4 +103,34 @@ enum OWAError: LocalizedError {
 
         return nil
     }
+
+    static func diagnosticResponseKind(from responseBody: String) -> String {
+        let trimmed = responseBody.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "empty" }
+
+        if let message = extractOWAErrorMessage(from: trimmed) {
+            if message.localizedCaseInsensitiveContains("cannot create an abstract class") {
+                return "fault.abstractClass"
+            }
+            return "fault.other"
+        }
+
+        if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
+            return "json"
+        }
+
+        if trimmed.localizedCaseInsensitiveContains("<html") {
+            return "html"
+        }
+
+        return "plain"
+    }
+
+    static func isAbstractClassHTTPError(_ error: Error) -> Bool {
+        guard case .httpError(let statusCode, let responseBody) = error as? OWAError else {
+            return false
+        }
+
+        return statusCode == 500 && diagnosticResponseKind(from: responseBody) == "fault.abstractClass"
+    }
 }

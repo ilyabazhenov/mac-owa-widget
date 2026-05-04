@@ -13,8 +13,23 @@ actor OWACalendarProvider: CalendarProvider {
     }
 
     func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] {
-        let items = try await client.fetchCalendarView(from: start, to: end)
-        log.debug("Fetched \(items.count) raw items from OWA for \(self.account.displayName)")
+        let syncID = SyncDiagnostics.syncIDText
+        let accountID = String(account.id.uuidString.prefix(8))
+        log.info(
+            "OWA provider fetch started sync=\(syncID, privacy: .public) account=\(accountID, privacy: .public)"
+        )
+        let items: [OWACalendarItem]
+        do {
+            items = try await client.fetchCalendarView(from: start, to: end)
+        } catch {
+            log.error(
+                "OWA provider fetch failed sync=\(syncID, privacy: .public) account=\(accountID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+            )
+            throw error
+        }
+        log.info(
+            "OWA provider fetch complete sync=\(syncID, privacy: .public) account=\(accountID, privacy: .public) rawItems=\(items.count, privacy: .public)"
+        )
         return items.compactMap { mapItem($0) }
     }
 

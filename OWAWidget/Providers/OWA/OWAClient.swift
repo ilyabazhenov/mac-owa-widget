@@ -55,6 +55,7 @@ actor OWAClient {
     private var canaryToken: String?
     private var defaultCalendarFolderIdentifier: OWAFolderIdentifier?
     private var forceDistinguishedCalendarFolder = false
+    private var requestSequence = 0
     private let sessionDelegate: OWASessionDelegate
     private let session: URLSession
     private let log = Logger(subsystem: "com.owawidget", category: "OWAClient")
@@ -77,6 +78,8 @@ actor OWAClient {
     // MARK: - Auth
 
     func authenticate() async throws {
+        let syncID = SyncDiagnostics.syncIDText
+        log.info("OWA auth started sync=\(syncID, privacy: .public)")
         sessionDelegate.reset()
 
         // 1. Скачиваем страницу логина, получаем action и скрытые поля формы
@@ -125,7 +128,7 @@ actor OWAClient {
                 "AuthBody[\(authData.count)]: \(bodyPreview ?? "?")"
             )
         }
-        log.info("OWA auth OK for \(self.baseURL.host ?? "")")
+        log.info("OWA auth OK sync=\(syncID, privacy: .public)")
     }
 
     // MARK: - Login form
@@ -254,13 +257,67 @@ actor OWAClient {
     // MARK: - Calendar view
 
     func fetchCalendarView(from start: Date, to end: Date) async throws -> [OWACalendarItem] {
-        if canaryToken == nil { try await authenticate() }
+        let syncID = SyncDiagnostics.syncIDText
+        let hasCanary = canaryToken != nil
+        let isForceDistinguished = forceDistinguishedCalendarFolder
+        log.info(
+            "Calendar view fetch started sync=\(syncID, privacy: .public) hasCanary=\(hasCanary, privacy: .public) forceDistinguished=\(isForceDistinguished, privacy: .public)"
+        )
+        var afterFreshAuth = false
+        if canaryToken == nil {
+            try await authenticate()
+            afterFreshAuth = true
+        }
         do {
-            return try await performCalendarViewRequest(from: start, to: end)
+            let items = try await performCalendarViewRequestWithStartupRetry(
+                from: start,
+                to: end,
+                afterFreshAuth: afterFreshAuth
+            )
+            log.info("Calendar view fetch complete sync=\(syncID, privacy: .public) items=\(items.count, privacy: .public)")
+            return items
         } catch OWAError.httpError(440, _), OWAError.httpError(401, _) {
+            log.warning("Calendar view auth expired sync=\(syncID, privacy: .public); reauthenticating")
             canaryToken = nil
             try await authenticate()
-            return try await performCalendarViewRequest(from: start, to: end)
+            let items = try await performCalendarViewRequestWithStartupRetry(
+                from: start,
+                to: end,
+                afterFreshAuth: true
+            )
+            log.info("Calendar view fetch complete after reauth sync=\(syncID, privacy: .public) items=\(items.count, privacy: .public)")
+            return items
+        } catch {
+            log.error("Calendar view fetch failed sync=\(syncID, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
+    private func performCalendarViewRequestWithStartupRetry(
+        from start: Date,
+        to end: Date,
+        afterFreshAuth: Bool
+    ) async throws -> [OWACalendarItem] {
+        var attempt = 0
+
+        while true {
+            do {
+                return try await performCalendarViewRequest(from: start, to: end)
+            } catch {
+                guard let delay = OWAStartupRetryPolicy.delayBeforeRetry(
+                    attempt: attempt,
+                    error: error,
+                    afterFreshAuth: afterFreshAuth
+                ) else {
+                    throw error
+                }
+
+                attempt += 1
+                log.warning(
+                    "Retrying startup OWA abstract-class fault sync=\(SyncDiagnostics.syncIDText, privacy: .public) nextAttempt=\(attempt + 1, privacy: .public)"
+                )
+                try await Task.sleep(for: delay)
+            }
         }
     }
 
@@ -270,6 +327,11 @@ actor OWAClient {
         let folderIdentifier = forceDistinguishedCalendarFolder
             ? nil
             : try await resolveDefaultCalendarFolderIdentifier(canary: canary)
+        let folderMode = folderIdentifier == nil ? "distinguished" : "folderId"
+        let isForceDistinguished = forceDistinguishedCalendarFolder
+        log.info(
+            "Calendar view request mode sync=\(SyncDiagnostics.syncIDText, privacy: .public) folderMode=\(folderMode, privacy: .public) forceDistinguished=\(isForceDistinguished, privacy: .public)"
+        )
 
         do {
             return try await executeCalendarViewRequest(
@@ -283,7 +345,7 @@ actor OWAClient {
                message.localizedCaseInsensitiveContains("cannot create an abstract class"),
                folderIdentifier != nil,
                !forceDistinguishedCalendarFolder {
-                log.warning("OWA rejected FolderId with abstract class error; switching to DistinguishedFolderId fallback")
+                log.warning("OWA rejected FolderId with abstract class error sync=\(SyncDiagnostics.syncIDText, privacy: .public); switching to DistinguishedFolderId fallback")
                 forceDistinguishedCalendarFolder = true
                 defaultCalendarFolderIdentifier = nil
                 return try await executeCalendarViewRequest(
@@ -313,14 +375,27 @@ actor OWAClient {
         let jsonData = try JSONSerialization.data(withJSONObject: requestDict)
         guard let jsonString = String(data: jsonData, encoding: .utf8) else { throw OWAError.encodingFailed }
 
+        requestSequence += 1
+        let requestID = requestSequence
+        let started = Date()
+        let syncID = SyncDiagnostics.syncIDText
+        let folderMode = folderIdentifier == nil ? "distinguished" : "folderId"
+
         var request = try serviceRequest(action: "GetCalendarView", canary: canary)
         request.setValue(jsonString.formEncoded, forHTTPHeaderField: "X-OWA-UrlPostData")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
+        let durationMS = Int(Date().timeIntervalSince(started) * 1000)
+        log.info(
+            "OWA request completed sync=\(syncID, privacy: .public) request=\(requestID, privacy: .public) action=GetCalendarView folderMode=\(folderMode, privacy: .public) status=\(http.statusCode, privacy: .public) bytes=\(data.count, privacy: .public) durationMs=\(durationMS, privacy: .public)"
+        )
 
         guard (200..<300).contains(http.statusCode) else {
             let msg = String(data: data.prefix(300), encoding: .utf8) ?? ""
+            log.warning(
+                "OWA request failed sync=\(syncID, privacy: .public) request=\(requestID, privacy: .public) action=GetCalendarView folderMode=\(folderMode, privacy: .public) status=\(http.statusCode, privacy: .public) responseKind=\(OWAError.diagnosticResponseKind(from: msg), privacy: .public)"
+            )
             throw OWAError.httpError(http.statusCode, msg)
         }
 
@@ -337,16 +412,23 @@ actor OWAClient {
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
+        log.info(
+            "OWA GetCalendarFolders completed sync=\(SyncDiagnostics.syncIDText, privacy: .public) status=\(http.statusCode, privacy: .public) bytes=\(data.count, privacy: .public)"
+        )
         guard (200..<300).contains(http.statusCode) else {
             let msg = String(data: data.prefix(300), encoding: .utf8) ?? ""
-            log.warning("GetCalendarFolders failed with HTTP \(http.statusCode): \(msg)")
+            log.warning(
+                "GetCalendarFolders failed sync=\(SyncDiagnostics.syncIDText, privacy: .public) status=\(http.statusCode, privacy: .public) responseKind=\(OWAError.diagnosticResponseKind(from: msg), privacy: .public)"
+            )
             return nil
         }
 
         let folderIdentifier = OWACalendarFoldersParser.defaultCalendarFolderIdentifier(from: data)
         defaultCalendarFolderIdentifier = folderIdentifier
         if folderIdentifier == nil {
-            log.warning("GetCalendarFolders returned no calendar FolderId; falling back to distinguished calendar folder")
+            log.warning("GetCalendarFolders returned no calendar FolderId sync=\(SyncDiagnostics.syncIDText, privacy: .public); falling back to distinguished calendar folder")
+        } else {
+            log.info("GetCalendarFolders selected FolderId sync=\(SyncDiagnostics.syncIDText, privacy: .public)")
         }
         return folderIdentifier
     }

@@ -7,7 +7,7 @@ ENTITLEMENTS := $(SRC_DIR)/OWAWidget-dev.entitlements
 INFO_PLIST  := $(SRC_DIR)/Info.plist
 CODE_SIGN_IDENTITY ?= -
 
-.PHONY: build bundle run kill clean watch help
+.PHONY: build bundle run kill clean watch logs help
 
 ## Compile Swift sources
 build:
@@ -53,10 +53,15 @@ watch: run
 	         $(SRC_DIR)/ | xargs -n1 -I{} sh -c \
 	    'echo "\n──── change detected → rebuilding ────" && make run'
 
+## Show recent diagnostic logs
+logs:
+	/usr/bin/log show --info --style compact --last 20m --predicate 'subsystem == "com.owawidget" && (category == "CalendarService" || category == "OWACalendarProvider" || category == "OWAClient")'
+
 help:
 	@echo "make build   — compile Swift sources"
 	@echo "make run     — build, bundle and launch"
 	@echo "make watch   — auto-rebuild on file changes"
+	@echo "make logs    — show recent diagnostic logs"
 	@echo "make clean   — remove build artifacts"
 	@echo "make kill    — stop running instance"
 	@echo "make run CODE_SIGN_IDENTITY='Apple Development: Name (TEAMID)' — launch with stable signing identity"

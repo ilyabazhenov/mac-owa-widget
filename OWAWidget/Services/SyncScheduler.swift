@@ -6,8 +6,10 @@ actor SyncScheduler {
     func start(interval: TimeInterval, work: @Sendable @escaping () async -> Void) {
         stop()
         task = Task {
-            // Run immediately on start, then on interval
-            await work()
+            // CalendarService.rebuildProviders() already performs the initial
+            // sync. Running scheduler work immediately after that caused a
+            // second OWA request almost back-to-back, which increased the
+            // chance of hitting Exchange/OWA transient 500 faults.
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(interval))
                 guard !Task.isCancelled else { break }

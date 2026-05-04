@@ -12,20 +12,22 @@ final class TimelineMeetingLayoutTests: XCTestCase {
         dayStart = Date(timeIntervalSince1970: 1_700_000_000)
     }
 
-    func testCreatesFixedHourlySlotsFromEightToTwentyTwo() {
+    func testCreatesFixedHalfHourlySlotsFromEightToTwentyTwo() {
         let slots = TimelineMeetingLayout.makeHourSlots(
             events: [],
             sectionDate: dayStart,
             calendar: calendar
         )
 
-        XCTAssertEqual(slots.count, 14)
+        XCTAssertEqual(slots.count, 28)
         XCTAssertEqual(calendar.component(.hour, from: slots.first!.startDate), 8)
+        XCTAssertEqual(calendar.component(.minute, from: slots.first!.startDate), 0)
         XCTAssertEqual(calendar.component(.hour, from: slots.last!.startDate), 21)
+        XCTAssertEqual(calendar.component(.minute, from: slots.last!.startDate), 30)
         XCTAssertTrue(slots.allSatisfy { $0.items.isEmpty })
     }
 
-    func testPlacesEventIntoEveryIntersectingHourSlot() {
+    func testPlacesEventIntoFirstIntersectingHalfHourSlot() {
         let events = [
             event(id: "a", startHour: 9, startMinute: 30, endHour: 11, endMinute: 15)
         ]
@@ -36,10 +38,10 @@ final class TimelineMeetingLayoutTests: XCTestCase {
             calendar: calendar
         )
 
-        XCTAssertEqual(slot(withHour: 9, in: slots)?.items.map(\.event.id), ["a"])
-        XCTAssertEqual(slot(withHour: 10, in: slots)?.items.map(\.event.id), ["a"])
-        XCTAssertEqual(slot(withHour: 11, in: slots)?.items.map(\.event.id), ["a"])
-        XCTAssertEqual(slot(withHour: 12, in: slots)?.items.count, 0)
+        XCTAssertEqual(slot(withHour: 9, minute: 0, in: slots)?.items.map(\.event.id), [])
+        XCTAssertEqual(slot(withHour: 9, minute: 30, in: slots)?.items.map(\.event.id), ["a"])
+        XCTAssertEqual(slot(withHour: 10, minute: 0, in: slots)?.items.map(\.event.id), [])
+        XCTAssertEqual(slot(withHour: 11, minute: 0, in: slots)?.items.map(\.event.id), [])
     }
 
     func testDoesNotIncludeEventWhenItStartsAtSlotEndBoundary() {
@@ -53,11 +55,12 @@ final class TimelineMeetingLayoutTests: XCTestCase {
             calendar: calendar
         )
 
-        XCTAssertEqual(slot(withHour: 9, in: slots)?.items.map(\.event.id), ["a"])
-        XCTAssertTrue(slot(withHour: 10, in: slots)?.items.isEmpty ?? false)
+        XCTAssertEqual(slot(withHour: 9, minute: 0, in: slots)?.items.map(\.event.id), ["a"])
+        XCTAssertTrue(slot(withHour: 9, minute: 30, in: slots)?.items.isEmpty ?? false)
+        XCTAssertTrue(slot(withHour: 10, minute: 0, in: slots)?.items.isEmpty ?? false)
     }
 
-    func testShowsOutOfRangeMeetingInBoundarySlotsOnly() {
+    func testShowsOutOfRangeMeetingInFirstVisibleBoundarySlotOnly() {
         let events = [
             event(id: "a", startHour: 7, startMinute: 30, endHour: 22, endMinute: 30)
         ]
@@ -68,13 +71,16 @@ final class TimelineMeetingLayoutTests: XCTestCase {
             calendar: calendar
         )
 
-        XCTAssertEqual(slot(withHour: 8, in: slots)?.items.map(\.event.id), ["a"])
-        XCTAssertEqual(slot(withHour: 21, in: slots)?.items.map(\.event.id), ["a"])
-        XCTAssertNil(slot(withHour: 22, in: slots))
+        XCTAssertEqual(slot(withHour: 8, minute: 0, in: slots)?.items.map(\.event.id), ["a"])
+        XCTAssertEqual(slot(withHour: 21, minute: 30, in: slots)?.items.map(\.event.id), [])
+        XCTAssertNil(slot(withHour: 22, minute: 0, in: slots))
     }
 
-    private func slot(withHour hour: Int, in slots: [DayHourSlot]) -> DayHourSlot? {
-        slots.first { calendar.component(.hour, from: $0.startDate) == hour }
+    private func slot(withHour hour: Int, minute: Int, in slots: [DayHourSlot]) -> DayHourSlot? {
+        slots.first {
+            calendar.component(.hour, from: $0.startDate) == hour &&
+            calendar.component(.minute, from: $0.startDate) == minute
+        }
     }
 
     private func event(
