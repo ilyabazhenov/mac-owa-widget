@@ -6,6 +6,9 @@ struct PopoverView: View {
     @EnvironmentObject private var localization: LocalizationService
     @Environment(\.openWindow) private var openWindow
     private let popoverSize = PopoverSize.defaultValue
+    private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    private let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+    private var fullVersion: String { "\(appVersion).\(appBuild)" }
     let contentHorizontalPadding: CGFloat = 12
 
     var body: some View {
@@ -90,10 +93,17 @@ struct PopoverView: View {
 
     private var footer: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            Text(localization.syncStatusText(service.syncStatus, relativeTo: context.date))
+            HStack(spacing: 8) {
+                Text(localization.syncStatusText(service.syncStatus, relativeTo: context.date))
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Text("v\(fullVersion)")
+                    .lineLimit(1)
+            }
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, contentHorizontalPadding)
                 .padding(.vertical, 7)
         }

@@ -37,6 +37,10 @@
 "preferences.sync.section" = "Sync";
 "preferences.sync.interval" = "Sync interval";
 "preferences.notifications.section" = "Notifications";
+"preferences.notifications.style" = "Reminder style";
+"preferences.notifications.style.system" = "System notifications";
+"preferences.notifications.style.inApp" = "In-app banner";
+"preferences.notifications.style.both" = "System + in-app";
 "preferences.notifications.remind" = "Remind me";
 "preferences.notifications.before" = "%@ before";
 "preferences.save" = "Save Preferences";

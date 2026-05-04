@@ -48,26 +48,35 @@ actor NotificationService {
         }
     }
 
+    func removeAllPendingMeetingNotifications() async {
+        let pending = await center.pendingNotificationRequests()
+        let toRemove = pending.map(\.identifier).filter { $0.hasPrefix(idPrefix) }
+        center.removePendingNotificationRequests(withIdentifiers: toRemove)
+    }
+
     func scheduleNotifications(
         for events: [CalendarEvent],
         leadMinutes: Int,
         localization: NotificationLocalization = .english
     ) async {
-        // Remove previously scheduled OWA Widget notifications
-        let pending = await center.pendingNotificationRequests()
-        let toRemove = pending.map(\.identifier).filter { $0.hasPrefix(idPrefix) }
-        center.removePendingNotificationRequests(withIdentifiers: toRemove)
+        await removeAllPendingMeetingNotifications()
 
         let now = Date()
-        let lead = TimeInterval(leadMinutes * 60)
 
         for event in events where !event.isAllDay {
-            let fireDate = event.startDate.addingTimeInterval(-lead)
-            guard fireDate > now else { continue }
+            guard let timeInterval = MeetingReminderSchedule.deliveryDelay(
+                event: event,
+                leadMinutes: leadMinutes,
+                from: now
+            ) else { continue }
 
             let content = UNMutableNotificationContent()
             content.title = event.title
-            content.body = buildBody(event: event, leadMinutes: leadMinutes, localization: localization)
+            content.body = MeetingReminderText.reminderBody(
+                event: event,
+                leadMinutes: leadMinutes,
+                localization: localization
+            )
             content.sound = .default
             content.categoryIdentifier = NotificationService.categoryID
 
@@ -79,7 +88,7 @@ actor NotificationService {
             }
 
             let trigger = UNTimeIntervalNotificationTrigger(
-                timeInterval: fireDate.timeIntervalSinceNow,
+                timeInterval: timeInterval,
                 repeats: false
             )
             let request = UNNotificationRequest(
@@ -94,40 +103,5 @@ actor NotificationService {
                 log.error("Failed to schedule notification for '\(event.title)': \(error)")
             }
         }
-    }
-
-    private func buildBody(
-        event: CalendarEvent,
-        leadMinutes: Int,
-        localization: NotificationLocalization
-    ) -> String {
-        let locale = Locale(identifier: localization.localeIdentifier)
-        let timeStr = shortTime(event.startDate, locale: locale)
-        let minutes = localizedMinutes(leadMinutes, localeIdentifier: localization.localeIdentifier)
-        if event.hasJoinURL {
-            return String(format: localization.bodyWithJoinFormat, locale: locale, minutes, timeStr)
-        } else {
-            return String(format: localization.bodyWithoutJoinFormat, locale: locale, minutes, timeStr)
-        }
-    }
-
-    private func shortTime(_ date: Date, locale: Locale) -> String {
-        let f = DateFormatter()
-        f.timeStyle = .short
-        f.dateStyle = .none
-        f.locale = locale
-        return f.string(from: date)
-    }
-
-    private func localizedMinutes(_ count: Int, localeIdentifier: String) -> String {
-        if localeIdentifier == "ru" {
-            let mod10 = count % 10
-            let mod100 = count % 100
-            if mod10 == 1 && mod100 != 11 { return "\(count) минута" }
-            if (2...4).contains(mod10) && !(12...14).contains(mod100) { return "\(count) минуты" }
-            return "\(count) минут"
-        }
-
-        return count == 1 ? "\(count) minute" : "\(count) minutes"
     }
 }

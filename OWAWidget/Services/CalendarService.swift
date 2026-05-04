@@ -10,6 +10,7 @@ final class CalendarService: ObservableObject {
     private var providers: [any CalendarProvider] = []
     private let scheduler = SyncScheduler()
     private let notificationService = NotificationService()
+    private let customMeetingReminders = CustomMeetingReminderController()
     private let log = Logger(subsystem: "com.owawidget", category: "CalendarService")
     private var notificationLocalization: NotificationLocalization = .english
     private var nextSyncID = 0
@@ -19,6 +20,7 @@ final class CalendarService: ObservableObject {
     private let accountsKey = "calendarAccounts"
     private let syncIntervalKey = "syncInterval"
     private let notificationLeadKey = "notificationLeadMinutes"
+    private let meetingReminderStyleKey = "meetingReminderStyle"
 
     var syncInterval: TimeInterval {
         get { UserDefaults.standard.double(forKey: syncIntervalKey).nonZero ?? 300 }
@@ -28,16 +30,28 @@ final class CalendarService: ObservableObject {
     var notificationLeadMinutes: Int {
         get {
             let v = UserDefaults.standard.integer(forKey: notificationLeadKey)
-            return v > 0 ? v : 10
+            return v > 0 ? v : 1
         }
         set { UserDefaults.standard.set(newValue, forKey: notificationLeadKey) }
+    }
+
+    var meetingReminderStyle: MeetingReminderStyle {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: meetingReminderStyleKey),
+                  let style = MeetingReminderStyle(rawValue: raw)
+            else { return .inApp }
+            return style
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: meetingReminderStyleKey) }
     }
 
     init() {
         loadAccounts()
         Task {
             await notificationService.setup(localization: notificationLocalization)
-            await notificationService.requestAuthorization()
+            if meetingReminderStyle.usesSystemNotifications {
+                await notificationService.requestAuthorization()
+            }
             await rebuildProviders()
             await startScheduler()
         }
@@ -87,16 +101,12 @@ final class CalendarService: ObservableObject {
 
     func setNotificationLocalization(_ localization: NotificationLocalization) {
         notificationLocalization = localization
-        let currentEvents = events
-        let lead = notificationLeadMinutes
-        Task {
-            await notificationService.setup(localization: localization)
-            await notificationService.scheduleNotifications(
-                for: currentEvents,
-                leadMinutes: lead,
-                localization: localization
-            )
-        }
+        Task { await rescheduleMeetingRemindersForCurrentEvents() }
+    }
+
+    /// Call after saving preferences from Settings (style, lead time, etc.).
+    func applySavedPreferences() {
+        Task { await rescheduleMeetingRemindersForCurrentEvents() }
     }
 
     // MARK: - Internal
@@ -149,6 +159,8 @@ final class CalendarService: ObservableObject {
         guard !providers.isEmpty else {
             syncStatus = .idle
             log.info("Sync \(syncID, privacy: .public) skipped: no providers")
+            customMeetingReminders.cancelAll()
+            await notificationService.removeAllPendingMeetingNotifications()
             return
         }
 
@@ -182,13 +194,7 @@ final class CalendarService: ObservableObject {
             syncRequestGate.recordSyncSucceeded()
             log.info("Sync \(syncID, privacy: .public) complete events=\(self.events.count, privacy: .public)")
 
-            let currentEvents = events
-            let lead = notificationLeadMinutes
-            await notificationService.scheduleNotifications(
-                for: currentEvents,
-                leadMinutes: lead,
-                localization: notificationLocalization
-            )
+            await rescheduleMeetingRemindersForCurrentEvents()
 
         } catch {
             if OWAError.isAbstractClassHTTPError(error) {
@@ -197,6 +203,43 @@ final class CalendarService: ObservableObject {
             }
             syncStatus = .error(error.localizedDescription)
             log.error("Sync \(syncID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func rescheduleMeetingRemindersForCurrentEvents() async {
+        let currentEvents = events
+        let lead = notificationLeadMinutes
+        let loc = notificationLocalization
+        let style = meetingReminderStyle
+
+        switch style {
+        case .system:
+            customMeetingReminders.cancelAll()
+            await notificationService.removeAllPendingMeetingNotifications()
+            await notificationService.setup(localization: loc)
+            await notificationService.requestAuthorization()
+            await notificationService.scheduleNotifications(
+                for: currentEvents,
+                leadMinutes: lead,
+                localization: loc
+            )
+
+        case .inApp:
+            await notificationService.removeAllPendingMeetingNotifications()
+            customMeetingReminders.cancelAll()
+            customMeetingReminders.reschedule(events: currentEvents, leadMinutes: lead, localization: loc)
+
+        case .both:
+            await notificationService.removeAllPendingMeetingNotifications()
+            customMeetingReminders.cancelAll()
+            await notificationService.setup(localization: loc)
+            await notificationService.requestAuthorization()
+            await notificationService.scheduleNotifications(
+                for: currentEvents,
+                leadMinutes: lead,
+                localization: loc
+            )
+            customMeetingReminders.reschedule(events: currentEvents, leadMinutes: lead, localization: loc)
         }
     }
 

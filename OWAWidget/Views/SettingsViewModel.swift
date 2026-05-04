@@ -5,6 +5,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var accounts: [CalendarAccount] = []
     @Published var syncInterval: TimeInterval
     @Published var notificationLeadMinutes: Int
+    @Published var meetingReminderStyle: MeetingReminderStyle
 
     // Per-account edit state
     @Published var editingAccount: CalendarAccount?
@@ -20,6 +21,7 @@ final class SettingsViewModel: ObservableObject {
         self.accounts = calendarService.accounts
         self.syncInterval = calendarService.syncInterval
         self.notificationLeadMinutes = calendarService.notificationLeadMinutes
+        self.meetingReminderStyle = calendarService.meetingReminderStyle
     }
 
     // MARK: - Connection test
@@ -88,5 +90,7 @@ final class SettingsViewModel: ObservableObject {
     func savePreferences() {
         service.syncInterval = syncInterval
         service.notificationLeadMinutes = notificationLeadMinutes
+        service.meetingReminderStyle = meetingReminderStyle
+        service.applySavedPreferences()
     }
 }

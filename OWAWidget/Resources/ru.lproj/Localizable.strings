@@ -37,6 +37,10 @@
 "preferences.sync.section" = "Синхронизация";
 "preferences.sync.interval" = "Интервал синхронизации";
 "preferences.notifications.section" = "Уведомления";
+"preferences.notifications.style" = "Тип напоминания";
+"preferences.notifications.style.system" = "Системные уведомления";
+"preferences.notifications.style.inApp" = "Баннер в приложении";
+"preferences.notifications.style.both" = "Системные и баннер";
 "preferences.notifications.remind" = "Напоминать";
 "preferences.notifications.before" = "за %@";
 "preferences.save" = "Сохранить настройки";

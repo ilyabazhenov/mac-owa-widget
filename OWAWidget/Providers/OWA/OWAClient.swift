@@ -288,6 +288,25 @@ actor OWAClient {
             log.info("Calendar view fetch complete after reauth sync=\(syncID, privacy: .public) items=\(items.count, privacy: .public)")
             return items
         } catch {
+            // Startup retries only run when this invocation authenticated first. If we reused an
+            // existing CANARY from a prior sync, a transient Exchange 500 "abstract class" fault
+            // used to surface immediately — one forced reauth restores the retry path.
+            if OWAError.isAbstractClassHTTPError(error), hasCanary {
+                log.warning(
+                    "Calendar view abstract-class fault with existing session sync=\(syncID, privacy: .public); reauthenticating once"
+                )
+                canaryToken = nil
+                try await authenticate()
+                let items = try await performCalendarViewRequestWithStartupRetry(
+                    from: start,
+                    to: end,
+                    afterFreshAuth: true
+                )
+                log.info(
+                    "Calendar view fetch complete after abstract-class reauth sync=\(syncID, privacy: .public) items=\(items.count, privacy: .public)"
+                )
+                return items
+            }
             log.error("Calendar view fetch failed sync=\(syncID, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
             throw error
         }
