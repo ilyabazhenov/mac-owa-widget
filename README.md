@@ -140,7 +140,7 @@ The repository-level release version is stored in:
 VERSION
 ```
 
-Update this file before triggering a new GitHub release.
+This is a mandatory release-prep step: bump `VERSION` to a new value before triggering a new GitHub release.
 
 ### Release description (required)
 
@@ -170,6 +170,8 @@ A manual GitHub Actions workflow is available at `.github/workflows/release.yml`
 2. Update `RELEASE_NOTES.md`
 3. Push changes to GitHub
 4. Open **Actions → Release → Run workflow**
+
+> `VERSION` bump is required for each release. Reusing an existing version will overwrite/update the same `v<version>` release tag instead of creating a new release.
 
 The workflow builds the app, creates the zip archive, then creates (or updates) a GitHub Release with tag `v<version>` and publishes the text from `RELEASE_NOTES.md` as release description.
 
