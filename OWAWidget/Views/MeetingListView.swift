@@ -6,6 +6,8 @@ struct MeetingListView: View {
     @State private var hasAutoScrolledToCurrentSlot = false
 
     private let timeColumnWidth: CGFloat = 56
+    private let timelinePointsPerMinute: CGFloat = 44.0 / 60.0
+    private let slotDurationMinutes = 30
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -48,7 +50,7 @@ struct MeetingListView: View {
             referenceDate: Date()
         )
 
-        return VStack(spacing: 10) {
+        return VStack(spacing: 0) {
             ForEach(slots) { slot in
                 slotRow(slot)
                     .id(slotID(for: section.date, slotStart: slot.startDate))
@@ -60,38 +62,116 @@ struct MeetingListView: View {
 
     private func slotRow(_ slot: DayHourSlot) -> some View {
         let isCurrentSlot = isCurrentTimeSlot(slot)
+        let clusterLayouts = makeClusterLayouts(for: slot)
+        let isHalfHourSlot = Calendar.current.component(.minute, from: slot.startDate) == 30
+        let showTimeLabel = !isHalfHourSlot
+        let isHourSlot = !isHalfHourSlot
+        let slotHeight = slotVisualHeight(for: slot)
 
         return HStack(alignment: .top, spacing: 10) {
-            Text(localization.shortTime(slot.startDate))
+            Text(showTimeLabel ? localization.shortTime(slot.startDate) : "")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: timeColumnWidth, alignment: .trailing)
                 .padding(.top, 9)
 
-            VStack(spacing: 6) {
+            ZStack(alignment: .topLeading) {
                 if slot.items.isEmpty {
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.28))
+                        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.24))
                         .overlay {
                             RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color(nsColor: .separatorColor).opacity(0.25), lineWidth: 1)
+                                .stroke(Color(nsColor: .separatorColor).opacity(0.22), lineWidth: 1)
                         }
-                        .frame(height: 28)
+                        .frame(height: slotHeight)
                 } else {
-                    ForEach(slot.items) { item in
-                        TimelineMeetingBlockView(event: item.event)
-                            .frame(height: 44)
+                    ForEach(Array(clusterLayouts.enumerated()), id: \.offset) { _, layout in
+                        overlapClusterRow(layout.cluster, rowHeight: layout.height)
+                            .frame(height: layout.height)
+                            .offset(y: layout.topOffset)
                     }
                 }
             }
+            .frame(maxWidth: .infinity, minHeight: slotHeight, maxHeight: slotHeight, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
         .padding(.horizontal, 6)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isCurrentSlot ? Color.accentColor.opacity(0.08) : .clear)
         )
+        .overlay(alignment: .top) {
+            if isHourSlot {
+                Rectangle()
+                    .fill(Color(nsColor: .separatorColor).opacity(0.4))
+                    .frame(height: 1)
+                    .padding(.leading, timeColumnWidth + 10)
+            }
+        }
+    }
+
+    private func makeClusterLayouts(for slot: DayHourSlot) -> [ClusterLayout] {
+        let clusters = TimelineMeetingLayout.makeOverlapClusters(items: slot.items)
+        var layouts: [ClusterLayout] = []
+
+        for cluster in clusters {
+            guard !cluster.isEmpty else { continue }
+
+            let earliestStart = cluster.map(\.event.startDate).min() ?? slot.startDate
+            let minutesFromSlotStart = max(0, earliestStart.timeIntervalSince(slot.startDate) / 60)
+            let topOffset = CGFloat(minutesFromSlotStart) * timelinePointsPerMinute
+            let rowHeight = cluster
+                .map { blockHeight(for: $0.event) }
+                .max() ?? 30
+
+            layouts.append(
+                ClusterLayout(
+                    cluster: cluster,
+                    topOffset: topOffset,
+                    height: rowHeight
+                )
+            )
+        }
+
+        return layouts
+    }
+
+    private func overlapClusterRow(_ cluster: [HourSlotMeetingItem], rowHeight: CGFloat) -> some View {
+        GeometryReader { geometry in
+            let laneSpacing: CGFloat = 6
+            ZStack(alignment: .topLeading) {
+                ForEach(cluster) { item in
+                    let laneCount = max(1, item.laneCount)
+                    let laneWidth = max(
+                        0,
+                        (geometry.size.width - CGFloat(laneCount - 1) * laneSpacing) / CGFloat(laneCount)
+                    )
+                    let xOffset = CGFloat(item.laneIndex) * (laneWidth + laneSpacing)
+
+                    TimelineMeetingBlockView(event: item.event)
+                        .frame(width: laneWidth, height: rowHeight, alignment: .leading)
+                        .offset(x: xOffset, y: 0)
+                }
+            }
+        }
+    }
+
+    private func blockHeight(for event: CalendarEvent) -> CGFloat {
+        let minutes = max(10, event.duration / 60)
+        let dynamicHeight = CGFloat(minutes) * timelinePointsPerMinute
+        return min(96, max(30, dynamicHeight))
+    }
+
+    private func slotVisualHeight(for slot: DayHourSlot) -> CGFloat {
+        let minutes = max(1, slot.endDate.timeIntervalSince(slot.startDate) / 60)
+        return CGFloat(minutes) * timelinePointsPerMinute
+    }
+
+    private struct ClusterLayout {
+        let cluster: [HourSlotMeetingItem]
+        let topOffset: CGFloat
+        let height: CGFloat
     }
 
     private func isCurrentTimeSlot(_ slot: DayHourSlot) -> Bool {
@@ -112,10 +192,32 @@ struct MeetingListView: View {
         guard let section = sections.first(where: { calendar.isDate($0.date, inSameDayAs: now) }) else {
             return nil
         }
-        guard let slotStart = calendar.dateInterval(of: .hour, for: now)?.start else {
+        guard let slotStart = startOfSlot(containing: now, calendar: calendar) else {
             return nil
         }
         return slotID(for: section.date, slotStart: slotStart)
+    }
+
+    private func startOfSlot(containing date: Date, calendar: Calendar) -> Date? {
+        let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        guard
+            let hour = components.hour,
+            let minute = components.minute
+        else {
+            return nil
+        }
+
+        let snappedMinute = (minute / slotDurationMinutes) * slotDurationMinutes
+        return calendar.date(
+            from: DateComponents(
+                year: components.year,
+                month: components.month,
+                day: components.day,
+                hour: hour,
+                minute: snappedMinute,
+                second: 0
+            )
+        )
     }
 
     private func scrollToCurrentSlotIfNeeded(proxy: ScrollViewProxy) {
@@ -137,7 +239,7 @@ struct MeetingListView: View {
         let calendar = Calendar.current
         let timeZone = TimeZone.current.identifier
         let nowHour = calendar.component(.hour, from: now)
-        let slotStart = calendar.dateInterval(of: .hour, for: now)?.start
+        let slotStart = startOfSlot(containing: now, calendar: calendar)
         let slotStartText = slotStart.map { localization.shortTime($0) } ?? "n/a"
         print(
             "[MeetingListView] timezone=\(timeZone) now=\(localization.shortTime(now)) " +
