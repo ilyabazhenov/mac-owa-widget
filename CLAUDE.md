@@ -63,6 +63,9 @@ CalendarService (@MainActor, ObservableObject)
 | `OWAWidget/Services/KeychainService.swift` | Хранение паролей аккаунтов в macOS Keychain. |
 | `OWAWidget/Views/PopoverView.swift` | Главное окно popover: ближайшие встречи, секции событий и состояния ошибки/пустого списка. |
 | `OWAWidget/Views/NextMeetingBannerView.swift` | Баннер ближайшей встречи или стопка встреч, начинающихся почти одновременно. |
+| `OWAWidget/Views/MeetingListView.swift` | Основной список встреч в popover: тайм-сетка и overlay карточек встреч. |
+| `OWAWidget/Views/TimelineMeetingLayout.swift` | Чистая логика таймлайн-раскладки: слоты, кластеры пересечений, lane assignment и frame-калькуляции. |
+| `OWAWidget/Views/TimelineMeetingBlockView.swift` | Карточка встречи в таймлайне; в compact-режиме сохраняет заголовок, интервал времени и join action. |
 | `project.yml` | Конфигурация XcodeGen. Правки Xcode-проекта вноси здесь, затем генерируй `.xcodeproj`. |
 
 ## Добавление нового календарного провайдера
@@ -117,6 +120,10 @@ CalendarService (@MainActor, ObservableObject)
 ## Одновременные встречи
 
 Если несколько встреч начинаются в пределах 5 минут от ближайшей предстоящей встречи, `PopoverView.nextEvents` группирует их. `NextMeetingBannerView` показывает такую группу как стопку. События со ссылкой на звонок сортируются выше событий без ссылки.
+
+Основной список встреч в `MeetingListView` построен как тайм-сетка с overlay карточек. Пересечения определяются через полуинтервальный критерий (`lhs.startDate < rhs.endDate && rhs.startDate < lhs.endDate`) и раскладываются по lane-колонкам внутри overlap-кластеров.
+
+Для компактных карточек (`TimelineMeetingBlockView`, режим `compact`) обязательно сохраняй отображение собственного интервала времени события; это ключевой UX-инвариант для параллельных встреч.
 
 ## Хранение настроек
 

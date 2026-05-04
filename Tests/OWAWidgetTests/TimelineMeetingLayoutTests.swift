@@ -88,7 +88,7 @@ final class TimelineMeetingLayoutTests: XCTestCase {
         )
 
         XCTAssertEqual(metrics.topOffset, 180)
-        XCTAssertEqual(metrics.height, 30)
+        XCTAssertEqual(metrics.height, 38)
     }
 
     func testBlockMetricsDoNotDependOnLaneForSimultaneousMeetings() {
@@ -143,7 +143,7 @@ final class TimelineMeetingLayoutTests: XCTestCase {
         XCTAssertEqual(firstFrame.yOffset, secondFrame.yOffset)
         XCTAssertEqual(firstFrame.xOffset + firstFrame.width, secondFrame.xOffset)
         XCTAssertEqual(firstFrame.centerX, 141)
-        XCTAssertEqual(firstFrame.centerY, 45)
+        XCTAssertEqual(firstFrame.centerY, 49)
         XCTAssertEqual(secondFrame.centerX, 291)
         XCTAssertEqual(secondFrame.centerY, 60)
     }
@@ -182,7 +182,7 @@ final class TimelineMeetingLayoutTests: XCTestCase {
         XCTAssertEqual(frame.xOffset, 66)
         XCTAssertEqual(frame.yOffset, 30)
         XCTAssertEqual(frame.width, 0)
-        XCTAssertEqual(frame.height, 30)
+        XCTAssertEqual(frame.height, 38)
     }
 
     private func slot(withHour hour: Int, minute: Int, in slots: [DayHourSlot]) -> DayHourSlot? {

@@ -21,6 +21,9 @@ OWAWidget - macOS menu bar приложение на Swift 6 и SwiftUI для �
 - `OWAWidget/Services/NotificationService.swift` - локальные уведомления о встречах.
 - `OWAWidget/Services/KeychainService.swift` - хранение паролей в Keychain.
 - `OWAWidget/Views/` - SwiftUI интерфейс меню и настроек.
+- `OWAWidget/Views/MeetingListView.swift` - таймлайн-список встреч в popover (тайм-сетка + overlay карточек).
+- `OWAWidget/Views/TimelineMeetingLayout.swift` - алгоритмы раскладки пересекающихся встреч (slotting, clusters, lanes, frame math).
+- `OWAWidget/Views/TimelineMeetingBlockView.swift` - визуальная карточка встречи в таймлайне, включая compact-режим.
 
 ## Сборка и запуск
 
@@ -55,6 +58,8 @@ swift build
 - Учитывай строгую конкурентность Swift 6. Сохраняй границы акторов у сервисов и провайдеров.
 - Не включай `OWAWidget.xcodeproj/`, `.build/`, `DerivedData/` и другие артефакты сборки в изменения.
 - При добавлении нового календарного провайдера реализуй `CalendarProvider`, добавь тип аккаунта в `CalendarAccount`, затем подключи провайдер в `CalendarService.rebuildProviders()`.
+- Для UI параллельных встреч придерживайся инварианта: даже в compact-карточке нужно показывать собственный интервал времени события.
+- Для проверки логики пересечений используй критерий полуинтервалов: `lhs.startDate < rhs.endDate && rhs.startDate < lhs.endDate`.
 
 ## Проверка
 

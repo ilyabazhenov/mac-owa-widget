@@ -110,7 +110,7 @@ enum TimelineMeetingLayout {
         gridStart: Date,
         pointsPerMinute: Double,
         verticalGap: Double,
-        minimumHeight: Double = 30,
+        minimumHeight: Double = 38,
         maximumHeight: Double = 96
     ) -> TimelineBlockMetrics {
         let gap = max(0, verticalGap)

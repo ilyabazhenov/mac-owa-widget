@@ -13,21 +13,19 @@ struct TimelineMeetingBlockView: View {
                 Text(event.title)
                     .font(.system(size: compact ? 11 : 12, weight: .semibold))
                     .foregroundStyle(.primary)
-                    .lineLimit(compact ? 2 : 1)
+                    .lineLimit(compact ? 1 : 1)
 
-                if !compact {
-                    HStack(spacing: 4) {
-                        Text("\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))")
-                            .font(.system(size: 10, weight: .medium))
+                HStack(spacing: 4) {
+                    Text("\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))")
+                        .font(.system(size: compact ? 9 : 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    if !compact, let organizer = event.organizer {
+                        Text("· \(organizer)")
+                            .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-
-                        if let organizer = event.organizer {
-                            Text("· \(organizer)")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
                     }
                 }
             }
