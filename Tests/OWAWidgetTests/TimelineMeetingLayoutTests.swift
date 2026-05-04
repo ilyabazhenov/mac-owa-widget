@@ -2,58 +2,106 @@ import XCTest
 @testable import OWAWidget
 
 final class TimelineMeetingLayoutTests: XCTestCase {
-    func testClustersChainedOverlappingEventsTogether() {
-        let events = [
-            event(id: "a", startMinute: 10 * 60, endMinute: 10 * 60 + 30),
-            event(id: "b", startMinute: 10 * 60 + 20, endMinute: 10 * 60 + 50),
-            event(id: "c", startMinute: 10 * 60 + 45, endMinute: 11 * 60 + 15),
-            event(id: "d", startMinute: 11 * 60 + 30, endMinute: 12 * 60),
-        ]
+    private var calendar: Calendar!
+    private var dayStart: Date!
 
-        let clusters = TimelineMeetingLayout.makeClusters(events: events)
-
-        XCTAssertEqual(clusters.count, 2)
-        XCTAssertEqual(clusters[0].items.map(\.event.id), ["a", "b", "c"])
-        XCTAssertEqual(clusters[0].startDate, events[0].startDate)
-        XCTAssertEqual(clusters[0].endDate, events[2].endDate)
-        XCTAssertEqual(clusters[1].items.map(\.event.id), ["d"])
+    override func setUp() {
+        super.setUp()
+        calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        dayStart = Date(timeIntervalSince1970: 1_700_000_000)
     }
 
-    func testAssignsOverlappingEventsToOneRowColumns() {
-        let events = [
-            event(id: "a", startMinute: 10 * 60, endMinute: 10 * 60 + 30),
-            event(id: "b", startMinute: 10 * 60 + 20, endMinute: 10 * 60 + 50),
-            event(id: "c", startMinute: 10 * 60 + 45, endMinute: 11 * 60 + 15),
-        ]
+    func testCreatesFixedHourlySlotsFromEightToTwentyTwo() {
+        let slots = TimelineMeetingLayout.makeHourSlots(
+            events: [],
+            sectionDate: dayStart,
+            calendar: calendar
+        )
 
-        let cluster = TimelineMeetingLayout.makeClusters(events: events)[0]
-
-        XCTAssertEqual(cluster.rowCount, 1)
-        XCTAssertEqual(cluster.items.map(\.column), [0, 1, 2])
-        XCTAssertEqual(cluster.items.map(\.columnCount), [3, 3, 3])
+        XCTAssertEqual(slots.count, 14)
+        XCTAssertEqual(calendar.component(.hour, from: slots.first!.startDate), 8)
+        XCTAssertEqual(calendar.component(.hour, from: slots.last!.startDate), 21)
+        XCTAssertTrue(slots.allSatisfy { $0.items.isEmpty })
     }
 
-    func testCalculatesOffsetAndWidthFractionsWithinCluster() {
+    func testPlacesEventIntoEveryIntersectingHourSlot() {
         let events = [
-            event(id: "a", startMinute: 10 * 60, endMinute: 10 * 60 + 30),
-            event(id: "b", startMinute: 10 * 60 + 30, endMinute: 11 * 60 + 30),
+            event(id: "a", startHour: 9, startMinute: 30, endHour: 11, endMinute: 15)
         ]
 
-        let clusters = TimelineMeetingLayout.makeClusters(events: events)
+        let slots = TimelineMeetingLayout.makeHourSlots(
+            events: events,
+            sectionDate: dayStart,
+            calendar: calendar
+        )
 
-        XCTAssertEqual(clusters.count, 2)
-        XCTAssertEqual(clusters[0].items[0].offsetFraction, 0, accuracy: 0.001)
-        XCTAssertEqual(clusters[0].items[0].widthFraction, 1, accuracy: 0.001)
-        XCTAssertEqual(clusters[1].items[0].offsetFraction, 0, accuracy: 0.001)
-        XCTAssertEqual(clusters[1].items[0].widthFraction, 1, accuracy: 0.001)
+        XCTAssertEqual(slot(withHour: 9, in: slots)?.items.map(\.event.id), ["a"])
+        XCTAssertEqual(slot(withHour: 10, in: slots)?.items.map(\.event.id), ["a"])
+        XCTAssertEqual(slot(withHour: 11, in: slots)?.items.map(\.event.id), ["a"])
+        XCTAssertEqual(slot(withHour: 12, in: slots)?.items.count, 0)
     }
 
-    private func event(id: String, startMinute: Int, endMinute: Int) -> CalendarEvent {
-        CalendarEvent(
+    func testDoesNotIncludeEventWhenItStartsAtSlotEndBoundary() {
+        let events = [
+            event(id: "a", startHour: 9, startMinute: 0, endHour: 10, endMinute: 0),
+        ]
+
+        let slots = TimelineMeetingLayout.makeHourSlots(
+            events: events,
+            sectionDate: dayStart,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(slot(withHour: 9, in: slots)?.items.map(\.event.id), ["a"])
+        XCTAssertTrue(slot(withHour: 10, in: slots)?.items.isEmpty ?? false)
+    }
+
+    func testShowsOutOfRangeMeetingInBoundarySlotsOnly() {
+        let events = [
+            event(id: "a", startHour: 7, startMinute: 30, endHour: 22, endMinute: 30)
+        ]
+
+        let slots = TimelineMeetingLayout.makeHourSlots(
+            events: events,
+            sectionDate: dayStart,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(slot(withHour: 8, in: slots)?.items.map(\.event.id), ["a"])
+        XCTAssertEqual(slot(withHour: 21, in: slots)?.items.map(\.event.id), ["a"])
+        XCTAssertNil(slot(withHour: 22, in: slots))
+    }
+
+    private func slot(withHour hour: Int, in slots: [DayHourSlot]) -> DayHourSlot? {
+        slots.first { calendar.component(.hour, from: $0.startDate) == hour }
+    }
+
+    private func event(
+        id: String,
+        startHour: Int,
+        startMinute: Int,
+        endHour: Int,
+        endMinute: Int
+    ) -> CalendarEvent {
+        let startDate = calendar.date(
+            bySettingHour: startHour,
+            minute: startMinute,
+            second: 0,
+            of: dayStart
+        )!
+        let endDate = calendar.date(
+            bySettingHour: endHour,
+            minute: endMinute,
+            second: 0,
+            of: dayStart
+        )!
+
+        return CalendarEvent(
             id: id,
             title: "Event \(id)",
-            startDate: Date(timeIntervalSince1970: TimeInterval(startMinute * 60)),
-            endDate: Date(timeIntervalSince1970: TimeInterval(endMinute * 60)),
+            startDate: startDate,
+            endDate: endDate,
             location: nil,
             bodyPreview: nil,
             joinURL: nil,

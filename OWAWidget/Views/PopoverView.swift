@@ -195,29 +195,12 @@ struct PopoverView: View {
         return group.sorted { ($0.joinURL != nil ? 0 : 1) < ($1.joinURL != nil ? 0 : 1) }
     }
 
-    private var eventSections: [(label: String, events: [CalendarEvent])] {
+    private var eventSections: [(label: String, date: Date, events: [CalendarEvent])] {
         let calendar = Calendar.current
+        let todayStart = calendar.startOfDay(for: now)
         let todayEnd = calendar.startOfDay(for: calendar.date(byAdding: .day, value: 1, to: now)!)
-        let tomorrowEnd = calendar.date(byAdding: .day, value: 1, to: todayEnd)!
 
-        let today = service.events.filter { $0.startDate < todayEnd && $0.endDate > calendar.startOfDay(for: now) }
-        let tomorrow = service.events.filter { $0.startDate >= todayEnd && $0.startDate < tomorrowEnd }
-        let later = service.events.filter { $0.startDate >= tomorrowEnd }
-
-        // Group "later" by day
-        var sections: [(label: String, events: [CalendarEvent])] = [
-            (localization.tr("date.today"), today),
-            (localization.tr("date.tomorrow"), tomorrow)
-        ]
-
-        let laterByDay = Dictionary(grouping: later) {
-            localization.daySectionLabel(for: $0.startDate, calendar: calendar)
-        }
-        let sortedKeys = laterByDay.keys.sorted()
-        for key in sortedKeys {
-            sections.append((key, laterByDay[key]!))
-        }
-
-        return sections
+        let today = service.events.filter { $0.startDate < todayEnd && $0.endDate > todayStart }
+        return [(localization.tr("date.today"), todayStart, today)]
     }
 }

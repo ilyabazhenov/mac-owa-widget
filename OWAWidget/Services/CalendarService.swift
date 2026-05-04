@@ -126,8 +126,8 @@ final class CalendarService: ObservableObject {
         syncStatus = .syncing
 
         let now = Date()
-        // Fetch from 30 min ago (catch in-progress meetings) to 7 days ahead
-        let start = now.addingTimeInterval(-1800)
+        // Fetch from today's start to include already finished meetings from today.
+        let start = Calendar.current.startOfDay(for: now)
         let end = Calendar.current.date(byAdding: .day, value: 7, to: now) ?? now
 
         do {
