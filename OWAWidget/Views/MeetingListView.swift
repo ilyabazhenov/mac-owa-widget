@@ -6,7 +6,8 @@ struct MeetingListView: View {
     @State private var hasAutoScrolledToCurrentSlot = false
 
     private let timeColumnWidth: CGFloat = 56
-    private let timelinePointsPerMinute: CGFloat = 44.0 / 60.0
+    private let timelinePointsPerMinute: CGFloat = 1.0
+    private let cardGap: CGFloat = 6
     private let slotDurationMinutes = 30
 
     var body: some View {
@@ -41,6 +42,8 @@ struct MeetingListView: View {
             .background(Color(nsColor: .windowBackgroundColor).opacity(0.95))
     }
 
+    // MARK: - Section layout
+
     private func hourlySection(
         section: (label: String, date: Date, events: [CalendarEvent])
     ) -> some View {
@@ -50,59 +53,80 @@ struct MeetingListView: View {
             referenceDate: Date()
         )
 
-        return VStack(spacing: 0) {
-            ForEach(slots) { slot in
-                slotRow(slot)
-                    .id(slotID(for: section.date, slotStart: slot.startDate))
+        guard let firstSlot = slots.first else { return AnyView(EmptyView()) }
+
+        // Each event appears in only its first overlapping slot; deduplicate for the overlay.
+        var seenIDs = Set<String>()
+        let allItems = slots.flatMap { $0.items }.filter { seenIDs.insert($0.id).inserted }
+        let gridStart = firstSlot.startDate
+        let fixedSlotHeight = CGFloat(slotDurationMinutes) * timelinePointsPerMinute
+
+        return AnyView(
+            VStack(spacing: 0) {
+                ForEach(slots) { slot in
+                    timeGridRow(slot, fixedHeight: fixedSlotHeight)
+                        .id(slotID(for: section.date, slotStart: slot.startDate))
+                }
             }
-        }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 12)
-    }
+            .overlay(alignment: .topLeading) {
+                if !allItems.isEmpty {
+                    GeometryReader { geo in
+                        // Cards are placed starting after the time column.
+                        let leftInset = timeColumnWidth + 10
+                        let cardAreaWidth = max(0, geo.size.width - leftInset)
+                        let laneSpacing: CGFloat = 6
 
-    private func slotRow(_ slot: DayHourSlot) -> some View {
-        let isCurrentSlot = isCurrentTimeSlot(slot)
-        let clusterLayouts = makeClusterLayouts(for: slot)
-        let isHalfHourSlot = Calendar.current.component(.minute, from: slot.startDate) == 30
-        let showTimeLabel = !isHalfHourSlot
-        let isHourSlot = !isHalfHourSlot
-        let slotHeight = slotVisualHeight(for: slot)
+                        ForEach(allItems) { item in
+                            let laneCount = max(1, item.laneCount)
+                            let cardWidth = max(
+                                0,
+                                (cardAreaWidth - CGFloat(laneCount - 1) * laneSpacing) / CGFloat(laneCount)
+                            )
+                            let xOffset = leftInset + CGFloat(item.laneIndex) * (cardWidth + laneSpacing)
 
-        return HStack(alignment: .top, spacing: 10) {
-            Text(showTimeLabel ? localization.shortTime(slot.startDate) : "")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: timeColumnWidth, alignment: .trailing)
-                .padding(.top, 9)
+                            let minutesFromStart = max(
+                                0.0,
+                                item.event.startDate.timeIntervalSince(gridStart) / 60
+                            )
+                            let yOffset = CGFloat(minutesFromStart) * timelinePointsPerMinute
+                            let cardHeight = max(
+                                30 - cardGap,
+                                min(96, CGFloat(item.event.duration / 60) * timelinePointsPerMinute - cardGap)
+                            )
 
-            ZStack(alignment: .topLeading) {
-                if slot.items.isEmpty {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.24))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color(nsColor: .separatorColor).opacity(0.22), lineWidth: 1)
+                            TimelineMeetingBlockView(event: item.event, compact: laneCount > 1)
+                                .frame(width: cardWidth, height: cardHeight)
+                                .offset(x: xOffset, y: yOffset)
                         }
-                        .frame(height: slotHeight)
-                } else {
-                    ForEach(Array(clusterLayouts.enumerated()), id: \.offset) { _, layout in
-                        overlapClusterRow(layout.cluster, rowHeight: layout.height)
-                            .frame(height: layout.height)
-                            .offset(y: layout.topOffset)
                     }
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: slotHeight, maxHeight: slotHeight, alignment: .topLeading)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+        )
+    }
+
+    // MARK: - Time grid row (no cards)
+
+    private func timeGridRow(_ slot: DayHourSlot, fixedHeight: CGFloat) -> some View {
+        let isCurrentSlot = isCurrentTimeSlot(slot)
+        let isHalfHourSlot = Calendar.current.component(.minute, from: slot.startDate) == 30
+
+        return HStack(alignment: .top, spacing: 10) {
+            Text(!isHalfHourSlot ? localization.shortTime(slot.startDate) : "")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: timeColumnWidth, alignment: .trailing)
+
+            Color.clear
         }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 6)
+        .frame(height: fixedHeight, alignment: .top)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isCurrentSlot ? Color.accentColor.opacity(0.08) : .clear)
         )
         .overlay(alignment: .top) {
-            if isHourSlot {
+            if !isHalfHourSlot {
                 Rectangle()
                     .fill(Color(nsColor: .separatorColor).opacity(0.4))
                     .frame(height: 1)
@@ -111,68 +135,7 @@ struct MeetingListView: View {
         }
     }
 
-    private func makeClusterLayouts(for slot: DayHourSlot) -> [ClusterLayout] {
-        let clusters = TimelineMeetingLayout.makeOverlapClusters(items: slot.items)
-        var layouts: [ClusterLayout] = []
-
-        for cluster in clusters {
-            guard !cluster.isEmpty else { continue }
-
-            let earliestStart = cluster.map(\.event.startDate).min() ?? slot.startDate
-            let minutesFromSlotStart = max(0, earliestStart.timeIntervalSince(slot.startDate) / 60)
-            let topOffset = CGFloat(minutesFromSlotStart) * timelinePointsPerMinute
-            let rowHeight = cluster
-                .map { blockHeight(for: $0.event) }
-                .max() ?? 30
-
-            layouts.append(
-                ClusterLayout(
-                    cluster: cluster,
-                    topOffset: topOffset,
-                    height: rowHeight
-                )
-            )
-        }
-
-        return layouts
-    }
-
-    private func overlapClusterRow(_ cluster: [HourSlotMeetingItem], rowHeight: CGFloat) -> some View {
-        GeometryReader { geometry in
-            let laneSpacing: CGFloat = 6
-            ZStack(alignment: .topLeading) {
-                ForEach(cluster) { item in
-                    let laneCount = max(1, item.laneCount)
-                    let laneWidth = max(
-                        0,
-                        (geometry.size.width - CGFloat(laneCount - 1) * laneSpacing) / CGFloat(laneCount)
-                    )
-                    let xOffset = CGFloat(item.laneIndex) * (laneWidth + laneSpacing)
-
-                    TimelineMeetingBlockView(event: item.event)
-                        .frame(width: laneWidth, height: rowHeight, alignment: .leading)
-                        .offset(x: xOffset, y: 0)
-                }
-            }
-        }
-    }
-
-    private func blockHeight(for event: CalendarEvent) -> CGFloat {
-        let minutes = max(10, event.duration / 60)
-        let dynamicHeight = CGFloat(minutes) * timelinePointsPerMinute
-        return min(96, max(30, dynamicHeight))
-    }
-
-    private func slotVisualHeight(for slot: DayHourSlot) -> CGFloat {
-        let minutes = max(1, slot.endDate.timeIntervalSince(slot.startDate) / 60)
-        return CGFloat(minutes) * timelinePointsPerMinute
-    }
-
-    private struct ClusterLayout {
-        let cluster: [HourSlotMeetingItem]
-        let topOffset: CGFloat
-        let height: CGFloat
-    }
+    // MARK: - Scroll helpers
 
     private func isCurrentTimeSlot(_ slot: DayHourSlot) -> Bool {
         let now = Date()

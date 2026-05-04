@@ -3,56 +3,62 @@ import AppKit
 
 struct TimelineMeetingBlockView: View {
     let event: CalendarEvent
+    var compact: Bool = false
 
     @EnvironmentObject private var localization: LocalizationService
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 5) {
             Rectangle()
                 .fill(accentColor)
-                .frame(width: 4)
+                .frame(width: 3)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(event.title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: compact ? 11 : 12, weight: .semibold))
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    .lineLimit(compact ? 2 : 1)
 
-                HStack(spacing: 4) {
-                    Text("\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-
-                    if let organizer = event.organizer {
-                        Text("· \(organizer)")
-                            .font(.system(size: 10))
+                if !compact {
+                    HStack(spacing: 4) {
+                        Text("\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))")
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+
+                        if let organizer = event.organizer {
+                            Text("· \(organizer)")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if event.platform != .generic {
-                Image(systemName: event.platform.systemIcon)
-                    .font(.system(size: 12))
-                    .foregroundStyle(event.platform.color)
-                    .help(event.platform.displayName(localization: localization))
-            }
-
-            if let url = event.joinURL {
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Image(systemName: "arrow.right.circle.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(accentColor)
+            VStack(spacing: 4) {
+                if event.platform != .generic {
+                    Image(systemName: event.platform.systemIcon)
+                        .font(.system(size: compact ? 11 : 12))
+                        .foregroundStyle(event.platform.color)
+                        .help(event.platform.displayName(localization: localization))
                 }
-                .buttonStyle(.plain)
-                .help(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
+
+                if let url = event.joinURL {
+                    Button {
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.system(size: compact ? 13 : 14))
+                            .foregroundStyle(accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .help(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
+                }
             }
         }
+        .padding(.horizontal, compact ? 4 : 6)
         .frame(maxHeight: .infinity)
         .background(backgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 6))
