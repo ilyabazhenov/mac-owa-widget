@@ -1,0 +1,71 @@
+# AGENTS.md
+
+## Язык
+
+Отвечай пользователю всегда на русском языке.
+
+## Контекст проекта
+
+OWAWidget - macOS menu bar приложение на Swift 6 и SwiftUI для просмотра ближайших встреч и быстрого перехода в онлайн-звонки из календаря Microsoft Exchange / OWA.
+
+Основной код находится в `OWAWidget/`.
+
+Ключевые части:
+
+- `OWAWidget/OWAWidgetApp.swift` - точка входа приложения, `MenuBarExtra`, окно настроек, обработка уведомлений.
+- `OWAWidget/Services/CalendarService.swift` - главный `@MainActor` источник состояния, аккаунтов, событий и синхронизации.
+- `OWAWidget/Providers/CalendarProvider.swift` - общий протокол календарных провайдеров.
+- `OWAWidget/Providers/OWA/` - интеграция с OWA: авторизация, CANARY token, запрос календаря и маппинг событий.
+- `OWAWidget/Providers/GoogleCalendar/` - заглушка будущего Google Calendar провайдера.
+- `OWAWidget/Services/MeetingURLDetector.swift` - поиск ссылок на Teams, Zoom, Webex, Google Meet и другие платформы.
+- `OWAWidget/Services/NotificationService.swift` - локальные уведомления о встречах.
+- `OWAWidget/Services/KeychainService.swift` - хранение паролей в Keychain.
+- `OWAWidget/Views/` - SwiftUI интерфейс меню и настроек.
+
+## Сборка и запуск
+
+Используй актуальные команды из `Makefile`:
+
+```bash
+make build
+make run
+make watch
+make clean
+```
+
+Для быстрой проверки компиляции достаточно:
+
+```bash
+swift build
+```
+
+`make watch` требует установленный `fswatch`.
+
+## Xcode-проект
+
+`OWAWidget.xcodeproj` считается генерируемым артефактом и не должен храниться в репозитории. Если нужен Xcode-проект, генерируй его из `project.yml` через XcodeGen.
+
+Не редактируй сгенерированный `.xcodeproj` вручную как источник истины. Изменения настроек проекта вноси в `project.yml`, а настройки SwiftPM - в `Package.swift`.
+
+## Правила изменений
+
+- Не добавляй секреты, пароли, токены, cookies или реальные серверные адреса в репозиторий.
+- Пароли аккаунтов должны оставаться только в Keychain.
+- Не ослабляй TLS-проверки без явной настройки пользователя. Текущий OWA-клиент поддерживает локальные корпоративные Exchange-сценарии, но безопасность TLS нужно улучшать осторожно.
+- Учитывай строгую конкурентность Swift 6. Сохраняй границы акторов у сервисов и провайдеров.
+- Не включай `OWAWidget.xcodeproj/`, `.build/`, `DerivedData/` и другие артефакты сборки в изменения.
+- При добавлении нового календарного провайдера реализуй `CalendarProvider`, добавь тип аккаунта в `CalendarAccount`, затем подключи провайдер в `CalendarService.rebuildProviders()`.
+
+## Проверка
+
+Минимальная проверка перед завершением изменения:
+
+```bash
+swift build
+```
+
+Если менялась упаковка приложения или entitlement-файлы, дополнительно проверь:
+
+```bash
+make run
+```

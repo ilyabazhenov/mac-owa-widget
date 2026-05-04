@@ -1,0 +1,41 @@
+# Build artifacts
+.build/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+DerivedData/
+
+# Xcode
+*.xccheckout
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xcscmblueprint
+
+# Generated (recreate with: make generate)
+OWAWidget.xcodeproj/
+
+# Temporary files and local notes (may contain sensitive data)
+tmp/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Environment files
+.env
+*.env
+.env.local
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes

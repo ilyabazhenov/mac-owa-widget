@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Hides the app from the Dock — menu bar only -->
+    <key>LSUIElement</key>
+    <true/>
+    <key>CFBundleName</key>
+    <string>OWA Widget</string>
+    <key>CFBundleDisplayName</key>
+    <string>OWA Widget</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.owawidget.OWAWidget</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>OWAWidget</string>
+    <!-- Required for UNUserNotificationCenter -->
+    <key>NSUserNotificationUsageDescription</key>
+    <string>OWA Widget notifies you before meetings start so you can join with one click.</string>
+    <!--
+        NSAllowsArbitraryLoads is intentionally enabled to support on-premise Exchange /
+        OWA servers that use self-signed or internal CA certificates.
+        If you distribute via the Mac App Store, replace this with NSExceptionDomains
+        scoped to your specific Exchange server hostname.
+    -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+</dict>
+</plist>
