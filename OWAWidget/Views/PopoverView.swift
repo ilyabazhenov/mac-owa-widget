@@ -6,6 +6,7 @@ struct PopoverView: View {
     @EnvironmentObject private var localization: LocalizationService
     @Environment(\.openWindow) private var openWindow
     private let popoverSize = PopoverSize.defaultValue
+    let contentHorizontalPadding: CGFloat = 12
 
     var body: some View {
         VStack(spacing: 0) {
@@ -62,7 +63,7 @@ struct PopoverView: View {
             .buttonStyle(.plain)
             .help(localization.tr("popover.quit"))
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, contentHorizontalPadding)
         .padding(.vertical, 11)
     }
 
@@ -77,10 +78,10 @@ struct PopoverView: View {
         } else {
             VStack(spacing: 0) {
                 if !nextEvents.isEmpty {
-                    NextMeetingBannerView(events: nextEvents)
+                    NextMeetingBannerView(events: nextEvents, horizontalPadding: contentHorizontalPadding)
                     Divider().padding(.top, 8)
                 }
-                MeetingListView(sections: eventSections)
+                MeetingListView(sections: eventSections, contentHorizontalPadding: contentHorizontalPadding)
             }
         }
     }
@@ -88,13 +89,14 @@ struct PopoverView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        Text(localization.syncStatusText(service.syncStatus))
-            .font(.system(size: 10))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 14)
-            .padding(.trailing, 14)
-            .padding(.vertical, 7)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            Text(localization.syncStatusText(service.syncStatus, relativeTo: context.date))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, contentHorizontalPadding)
+                .padding(.vertical, 7)
+        }
     }
 
     private func openSettings() {
@@ -177,6 +179,6 @@ struct PopoverView: View {
         let todayEnd = calendar.startOfDay(for: calendar.date(byAdding: .day, value: 1, to: now)!)
 
         let today = service.events.filter { $0.startDate < todayEnd && $0.endDate > todayStart }
-        return [(localization.tr("date.today"), todayStart, today)]
+        return [(localization.daySectionLabel(for: todayStart, calendar: calendar), todayStart, today)]
     }
 }

@@ -45,4 +45,58 @@ final class LocalizationServiceTests: XCTestCase {
         XCTAssertEqual(service.minutes(2), "2 минуты")
         XCTAssertEqual(service.minutes(5), "5 минут")
     }
+
+    func testSyncStatusShowsElapsedSecondsInRussian() {
+        let service = LocalizationService(
+            selectedLanguage: .russian,
+            preferredLanguages: ["en-US"]
+        )
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let syncedAt = now.addingTimeInterval(-5)
+
+        let text = service.syncStatusText(.lastSynced(syncedAt), relativeTo: now)
+
+        XCTAssertEqual(text, "Синхронизировано 5 с назад")
+    }
+
+    func testSyncStatusClampsFutureSyncDateToZeroSeconds() {
+        let service = LocalizationService(
+            selectedLanguage: .english,
+            preferredLanguages: ["en-US"]
+        )
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let syncedAt = now.addingTimeInterval(4)
+
+        let text = service.syncStatusText(.lastSynced(syncedAt), relativeTo: now)
+
+        XCTAssertEqual(text, "Synced 0 s ago")
+    }
+
+    func testDaySectionLabelForTodayIncludesConcreteDateInRussian() {
+        let service = LocalizationService(
+            selectedLanguage: .russian,
+            preferredLanguages: ["en-US"]
+        )
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let date = calendar.date(from: DateComponents(year: 2026, month: 5, day: 4, hour: 10))!
+
+        let label = service.daySectionLabel(for: date, calendar: calendar)
+
+        XCTAssertEqual(label, "Сегодня, 4 мая")
+    }
+
+    func testDaySectionLabelForTodayIncludesConcreteDateInEnglish() {
+        let service = LocalizationService(
+            selectedLanguage: .english,
+            preferredLanguages: ["en-US"]
+        )
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let date = calendar.date(from: DateComponents(year: 2026, month: 5, day: 4, hour: 10))!
+
+        let label = service.daySectionLabel(for: date, calendar: calendar)
+
+        XCTAssertEqual(label, "Today, May 4")
+    }
 }

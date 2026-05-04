@@ -5,6 +5,7 @@ import AppKit
 /// they are shown as a stack inside a single banner.
 struct NextMeetingBannerView: View {
     let events: [CalendarEvent]  // pre-sorted: joinURL first
+    var horizontalPadding: CGFloat = 6
     @EnvironmentObject private var localization: LocalizationService
 
     var body: some View {
@@ -69,7 +70,7 @@ struct NextMeetingBannerView: View {
         .padding(14)
         .background(bannerBackground(event))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 12)
+        .padding(.horizontal, horizontalPadding)
         .padding(.top, 12)
     }
 
@@ -104,7 +105,7 @@ struct NextMeetingBannerView: View {
                 .fill(Color(nsColor: .controlBackgroundColor))
                 .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
         )
-        .padding(.horizontal, 12)
+        .padding(.horizontal, horizontalPadding)
         .padding(.top, 12)
     }
 

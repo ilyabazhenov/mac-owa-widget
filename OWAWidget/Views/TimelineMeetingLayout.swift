@@ -16,6 +16,21 @@ struct DayHourSlot: Identifiable, Sendable, Hashable {
     var id: String { "\(startDate.timeIntervalSince1970)" }
 }
 
+struct TimelineBlockMetrics: Sendable, Hashable {
+    let topOffset: Double
+    let height: Double
+}
+
+struct TimelineCardFrame: Sendable, Hashable {
+    let xOffset: Double
+    let yOffset: Double
+    let width: Double
+    let height: Double
+
+    var centerX: Double { xOffset + width / 2 }
+    var centerY: Double { yOffset + height / 2 }
+}
+
 enum TimelineMeetingLayout {
     private static let slotDurationMinutes = 30
 
@@ -88,6 +103,64 @@ enum TimelineMeetingLayout {
                 items: itemsBySlot[slot.index] ?? []
             )
         }
+    }
+
+    static func blockMetrics(
+        for event: CalendarEvent,
+        gridStart: Date,
+        pointsPerMinute: Double,
+        verticalGap: Double,
+        minimumHeight: Double = 30,
+        maximumHeight: Double = 96
+    ) -> TimelineBlockMetrics {
+        let gap = max(0, verticalGap)
+        let minutesFromStart = max(0, event.startDate.timeIntervalSince(gridStart) / 60)
+        let rawTopOffset = minutesFromStart * pointsPerMinute
+        let durationHeight = max(0, event.duration / 60 * pointsPerMinute)
+        let blockHeight = max(
+            0,
+            max(minimumHeight - gap, min(maximumHeight, durationHeight - gap))
+        )
+
+        return TimelineBlockMetrics(
+            topOffset: rawTopOffset + gap / 2,
+            height: blockHeight
+        )
+    }
+
+    static func cardFrame(
+        for event: CalendarEvent,
+        laneIndex: Int,
+        laneCount: Int,
+        gridStart: Date,
+        leftInset: Double,
+        cardAreaWidth: Double,
+        laneSpacing: Double,
+        pointsPerMinute: Double,
+        verticalGap: Double
+    ) -> TimelineCardFrame {
+        let safeLaneCount = max(1, laneCount)
+        let safeLaneIndex = min(max(0, laneIndex), safeLaneCount - 1)
+        let safeLaneSpacing = max(0, laneSpacing)
+        let availableWidth = max(0, cardAreaWidth)
+        let cardWidth = max(
+            0,
+            (availableWidth - Double(safeLaneCount - 1) * safeLaneSpacing) / Double(safeLaneCount)
+        )
+        let xOffset = leftInset + Double(safeLaneIndex) * (cardWidth + safeLaneSpacing)
+        let metrics = blockMetrics(
+            for: event,
+            gridStart: gridStart,
+            pointsPerMinute: pointsPerMinute,
+            verticalGap: verticalGap
+        )
+
+        return TimelineCardFrame(
+            xOffset: xOffset,
+            yOffset: metrics.topOffset,
+            width: cardWidth,
+            height: metrics.height
+        )
     }
 
     private static func adjustedHourBounds(

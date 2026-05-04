@@ -8,11 +8,7 @@ struct TimelineMeetingBlockView: View {
     @EnvironmentObject private var localization: LocalizationService
 
     var body: some View {
-        HStack(spacing: 5) {
-            Rectangle()
-                .fill(accentColor)
-                .frame(width: 3)
-
+        HStack(alignment: .top, spacing: 5) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.title)
                     .font(.system(size: compact ? 11 : 12, weight: .semibold))
@@ -58,14 +54,31 @@ struct TimelineMeetingBlockView: View {
                 }
             }
         }
-        .padding(.horizontal, compact ? 4 : 6)
-        .frame(maxHeight: .infinity)
+        .padding(.leading, contentLeadingPadding)
+        .padding(.top, contentTopPadding)
+        .padding(.trailing, compact ? 4 : 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(backgroundColor)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(accentColor)
+                .frame(width: accentWidth)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .overlay {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(borderColor, lineWidth: event.isHappeningNow ? 1.5 : 1)
         }
+    }
+
+    private var accentWidth: CGFloat { 3 }
+
+    private var contentLeadingPadding: CGFloat {
+        accentWidth + 5 + (compact ? 4 : 6)
+    }
+
+    var contentTopPadding: CGFloat {
+        compact ? 2 : 3
     }
 
     private var accentColor: Color {

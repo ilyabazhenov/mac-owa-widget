@@ -71,6 +71,7 @@
 "sync.status.idle" = "Not synced yet";
 "sync.status.syncing" = "Syncing...";
 "sync.status.synced" = "Synced %@";
+"sync.elapsed.seconds" = "%d s ago";
 "sync.status.error" = "Error: %@";
 
 "date.today" = "Today";

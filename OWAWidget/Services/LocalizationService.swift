@@ -101,23 +101,24 @@ final class LocalizationService: ObservableObject {
         case .syncing:
             return tr("sync.status.syncing")
         case .lastSynced(let date):
-            let formatter = RelativeDateTimeFormatter()
-            formatter.unitsStyle = .abbreviated
-            formatter.locale = locale
-            return tr("sync.status.synced", formatter.localizedString(for: date, relativeTo: now))
+            let elapsedSeconds = max(0, Int(now.timeIntervalSince(date).rounded(.down)))
+            return tr("sync.status.synced", tr("sync.elapsed.seconds", elapsedSeconds))
         case .error(let message):
             return tr("sync.status.error", message)
         }
     }
 
     func daySectionLabel(for date: Date, calendar: Calendar = .current) -> String {
-        if calendar.isDateInToday(date) { return tr("date.today") }
+        if calendar.isDateInToday(date) {
+            return "\(tr("date.today")), \(dayAndMonthLabel(for: date, calendar: calendar))"
+        }
         if calendar.isDateInTomorrow(date) { return tr("date.tomorrow") }
 
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
         formatter.locale = locale
+        formatter.calendar = calendar
         return formatter.string(from: date)
     }
 
@@ -132,6 +133,14 @@ final class LocalizationService: ObservableObject {
     private func plural(key: String, count: Int) -> String {
         let format = localizedString(forKey: key)
         return String.localizedStringWithFormat(format, count)
+    }
+
+    private func dayAndMonthLabel(for date: Date, calendar: Calendar) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.calendar = calendar
+        formatter.setLocalizedDateFormatFromTemplate("d MMMM")
+        return formatter.string(from: date)
     }
 
     private func localizedString(forKey key: String) -> String {

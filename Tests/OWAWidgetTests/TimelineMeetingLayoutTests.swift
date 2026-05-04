@@ -76,6 +76,115 @@ final class TimelineMeetingLayoutTests: XCTestCase {
         XCTAssertNil(slot(withHour: 22, minute: 0, in: slots))
     }
 
+    func testBlockMetricsUseExactBoundsWhenGapIsZero() {
+        let meeting = event(id: "a", startHour: 20, startMinute: 0, endHour: 20, endMinute: 30)
+        let gridStart = calendar.date(bySettingHour: 17, minute: 0, second: 0, of: dayStart)!
+
+        let metrics = TimelineMeetingLayout.blockMetrics(
+            for: meeting,
+            gridStart: gridStart,
+            pointsPerMinute: 1,
+            verticalGap: 0
+        )
+
+        XCTAssertEqual(metrics.topOffset, 180)
+        XCTAssertEqual(metrics.height, 30)
+    }
+
+    func testBlockMetricsDoNotDependOnLaneForSimultaneousMeetings() {
+        let first = event(id: "a", startHour: 17, startMinute: 30, endHour: 18, endMinute: 0)
+        let second = event(id: "b", startHour: 17, startMinute: 30, endHour: 18, endMinute: 30)
+        let gridStart = calendar.date(bySettingHour: 17, minute: 0, second: 0, of: dayStart)!
+
+        let firstMetrics = TimelineMeetingLayout.blockMetrics(
+            for: first,
+            gridStart: gridStart,
+            pointsPerMinute: 1,
+            verticalGap: 0
+        )
+        let secondMetrics = TimelineMeetingLayout.blockMetrics(
+            for: second,
+            gridStart: gridStart,
+            pointsPerMinute: 1,
+            verticalGap: 0
+        )
+
+        XCTAssertEqual(firstMetrics.topOffset, secondMetrics.topOffset)
+    }
+
+    func testCardFramesAlignSimultaneousMeetingsAndRemoveLaneGap() {
+        let first = event(id: "a", startHour: 17, startMinute: 30, endHour: 18, endMinute: 0)
+        let second = event(id: "b", startHour: 17, startMinute: 30, endHour: 18, endMinute: 30)
+        let gridStart = calendar.date(bySettingHour: 17, minute: 0, second: 0, of: dayStart)!
+
+        let firstFrame = TimelineMeetingLayout.cardFrame(
+            for: first,
+            laneIndex: 0,
+            laneCount: 2,
+            gridStart: gridStart,
+            leftInset: 66,
+            cardAreaWidth: 300,
+            laneSpacing: 0,
+            pointsPerMinute: 1,
+            verticalGap: 0
+        )
+        let secondFrame = TimelineMeetingLayout.cardFrame(
+            for: second,
+            laneIndex: 1,
+            laneCount: 2,
+            gridStart: gridStart,
+            leftInset: 66,
+            cardAreaWidth: 300,
+            laneSpacing: 0,
+            pointsPerMinute: 1,
+            verticalGap: 0
+        )
+
+        XCTAssertEqual(firstFrame.yOffset, secondFrame.yOffset)
+        XCTAssertEqual(firstFrame.xOffset + firstFrame.width, secondFrame.xOffset)
+        XCTAssertEqual(firstFrame.centerX, 141)
+        XCTAssertEqual(firstFrame.centerY, 45)
+        XCTAssertEqual(secondFrame.centerX, 291)
+        XCTAssertEqual(secondFrame.centerY, 60)
+    }
+
+    func testBlockMetricsClampNegativeGapAndRespectMaxHeight() {
+        let meeting = event(id: "a", startHour: 17, startMinute: 0, endHour: 20, endMinute: 30)
+        let gridStart = calendar.date(bySettingHour: 17, minute: 0, second: 0, of: dayStart)!
+
+        let metrics = TimelineMeetingLayout.blockMetrics(
+            for: meeting,
+            gridStart: gridStart,
+            pointsPerMinute: 1,
+            verticalGap: -12
+        )
+
+        XCTAssertEqual(metrics.topOffset, 0)
+        XCTAssertEqual(metrics.height, 96)
+    }
+
+    func testCardFrameClampsLaneAndWidthInputs() {
+        let meeting = event(id: "a", startHour: 17, startMinute: 30, endHour: 18, endMinute: 0)
+        let gridStart = calendar.date(bySettingHour: 17, minute: 0, second: 0, of: dayStart)!
+
+        let frame = TimelineMeetingLayout.cardFrame(
+            for: meeting,
+            laneIndex: 99,
+            laneCount: 0,
+            gridStart: gridStart,
+            leftInset: 66,
+            cardAreaWidth: -300,
+            laneSpacing: -8,
+            pointsPerMinute: 1,
+            verticalGap: 0
+        )
+
+        XCTAssertEqual(frame.xOffset, 66)
+        XCTAssertEqual(frame.yOffset, 30)
+        XCTAssertEqual(frame.width, 0)
+        XCTAssertEqual(frame.height, 30)
+    }
+
     private func slot(withHour hour: Int, minute: Int, in slots: [DayHourSlot]) -> DayHourSlot? {
         slots.first {
             calendar.component(.hour, from: $0.startDate) == hour &&

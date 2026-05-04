@@ -71,6 +71,7 @@
 "sync.status.idle" = "Синхронизации ещё не было";
 "sync.status.syncing" = "Синхронизация...";
 "sync.status.synced" = "Синхронизировано %@";
+"sync.elapsed.seconds" = "%d с назад";
 "sync.status.error" = "Ошибка: %@";
 
 "date.today" = "Сегодня";

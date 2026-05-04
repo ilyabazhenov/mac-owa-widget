@@ -2,12 +2,13 @@ import SwiftUI
 
 struct MeetingListView: View {
     let sections: [(label: String, date: Date, events: [CalendarEvent])]
+    var contentHorizontalPadding: CGFloat = 12
     @EnvironmentObject private var localization: LocalizationService
     @State private var hasAutoScrolledToCurrentSlot = false
 
     private let timeColumnWidth: CGFloat = 56
     private let timelinePointsPerMinute: CGFloat = 1.0
-    private let cardGap: CGFloat = 6
+    private let cardGap: CGFloat = 0
     private let slotDurationMinutes = 30
 
     var body: some View {
@@ -36,7 +37,7 @@ struct MeetingListView: View {
         Text(label)
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, contentHorizontalPadding)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(nsColor: .windowBackgroundColor).opacity(0.95))
@@ -74,34 +75,40 @@ struct MeetingListView: View {
                         // Cards are placed starting after the time column.
                         let leftInset = timeColumnWidth + 10
                         let cardAreaWidth = max(0, geo.size.width - leftInset)
-                        let laneSpacing: CGFloat = 6
+                        let laneSpacing: CGFloat = 0
 
-                        ForEach(allItems) { item in
-                            let laneCount = max(1, item.laneCount)
-                            let cardWidth = max(
-                                0,
-                                (cardAreaWidth - CGFloat(laneCount - 1) * laneSpacing) / CGFloat(laneCount)
-                            )
-                            let xOffset = leftInset + CGFloat(item.laneIndex) * (cardWidth + laneSpacing)
+                        ZStack(alignment: .topLeading) {
+                            ForEach(allItems) { item in
+                                let laneCount = max(1, item.laneCount)
+                                let cardFrame = TimelineMeetingLayout.cardFrame(
+                                    for: item.event,
+                                    laneIndex: item.laneIndex,
+                                    laneCount: laneCount,
+                                    gridStart: gridStart,
+                                    leftInset: Double(leftInset),
+                                    cardAreaWidth: Double(cardAreaWidth),
+                                    laneSpacing: Double(laneSpacing),
+                                    pointsPerMinute: Double(timelinePointsPerMinute),
+                                    verticalGap: Double(cardGap)
+                                )
 
-                            let minutesFromStart = max(
-                                0.0,
-                                item.event.startDate.timeIntervalSince(gridStart) / 60
-                            )
-                            let yOffset = CGFloat(minutesFromStart) * timelinePointsPerMinute
-                            let cardHeight = max(
-                                30 - cardGap,
-                                min(96, CGFloat(item.event.duration / 60) * timelinePointsPerMinute - cardGap)
-                            )
-
-                            TimelineMeetingBlockView(event: item.event, compact: laneCount > 1)
-                                .frame(width: cardWidth, height: cardHeight)
-                                .offset(x: xOffset, y: yOffset)
+                                TimelineMeetingBlockView(event: item.event, compact: laneCount > 1)
+                                    .frame(
+                                        width: CGFloat(cardFrame.width),
+                                        height: CGFloat(cardFrame.height),
+                                        alignment: .topLeading
+                                    )
+                                    .position(
+                                        x: CGFloat(cardFrame.centerX),
+                                        y: CGFloat(cardFrame.centerY)
+                                    )
+                            }
                         }
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
                     }
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, contentHorizontalPadding)
             .padding(.bottom, 12)
         )
     }
