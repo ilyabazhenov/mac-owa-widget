@@ -38,8 +38,8 @@ enum TimelineMeetingLayout {
         events: [CalendarEvent],
         sectionDate: Date,
         calendar: Calendar = .current,
-        startHour: Int = 8,
-        endHour: Int = 22,
+        startHour: Int = 0,
+        endHour: Int = 24,
         referenceDate: Date? = nil
     ) -> [DayHourSlot] {
         let dayStart = calendar.startOfDay(for: sectionDate)
@@ -58,8 +58,9 @@ enum TimelineMeetingLayout {
         let laneMetadataByID = makeLaneMetadata(events: sortedEvents)
 
         guard
-            let sectionStart = calendar.date(bySettingHour: slotBounds.start, minute: 0, second: 0, of: dayStart),
-            let sectionEnd = calendar.date(bySettingHour: slotBounds.end, minute: 0, second: 0, of: dayStart)
+            let sectionStart = calendar.date(byAdding: .hour, value: slotBounds.start, to: dayStart),
+            let sectionEnd = calendar.date(byAdding: .hour, value: slotBounds.end, to: dayStart),
+            sectionStart < sectionEnd
         else {
             return []
         }
@@ -178,8 +179,10 @@ enum TimelineMeetingLayout {
         }
 
         let currentHour = calendar.component(.hour, from: referenceDate)
-        let adjustedStart = min(startHour, currentHour)
-        let adjustedEnd = max(endHour, currentHour + 1)
+        let safeStart = max(0, min(23, startHour))
+        let safeEnd = max(safeStart + 1, min(24, endHour))
+        let adjustedStart = min(safeStart, currentHour)
+        let adjustedEnd = max(safeEnd, currentHour + 1)
         return (adjustedStart, adjustedEnd)
     }
 

@@ -12,17 +12,17 @@ final class TimelineMeetingLayoutTests: XCTestCase {
         dayStart = Date(timeIntervalSince1970: 1_700_000_000)
     }
 
-    func testCreatesFixedHalfHourlySlotsFromEightToTwentyTwo() {
+    func testCreatesFixedHalfHourlySlotsForFullDay() {
         let slots = TimelineMeetingLayout.makeHourSlots(
             events: [],
             sectionDate: dayStart,
             calendar: calendar
         )
 
-        XCTAssertEqual(slots.count, 28)
-        XCTAssertEqual(calendar.component(.hour, from: slots.first!.startDate), 8)
+        XCTAssertEqual(slots.count, 48)
+        XCTAssertEqual(calendar.component(.hour, from: slots.first!.startDate), 0)
         XCTAssertEqual(calendar.component(.minute, from: slots.first!.startDate), 0)
-        XCTAssertEqual(calendar.component(.hour, from: slots.last!.startDate), 21)
+        XCTAssertEqual(calendar.component(.hour, from: slots.last!.startDate), 23)
         XCTAssertEqual(calendar.component(.minute, from: slots.last!.startDate), 30)
         XCTAssertTrue(slots.allSatisfy { $0.items.isEmpty })
     }
@@ -71,9 +71,9 @@ final class TimelineMeetingLayoutTests: XCTestCase {
             calendar: calendar
         )
 
-        XCTAssertEqual(slot(withHour: 8, minute: 0, in: slots)?.items.map(\.event.id), ["a"])
+        XCTAssertEqual(slot(withHour: 7, minute: 30, in: slots)?.items.map(\.event.id), ["a"])
         XCTAssertEqual(slot(withHour: 21, minute: 30, in: slots)?.items.map(\.event.id), [])
-        XCTAssertNil(slot(withHour: 22, minute: 0, in: slots))
+        XCTAssertTrue(slot(withHour: 22, minute: 0, in: slots)?.items.isEmpty ?? false)
     }
 
     func testBlockMetricsUseExactBoundsWhenGapIsZero() {
