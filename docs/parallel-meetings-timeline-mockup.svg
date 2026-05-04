@@ -1,0 +1,85 @@
+<svg width="840" height="1180" viewBox="0 0 840 1180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="840" height="1180" rx="22" fill="#F5F6F8"/>
+
+  <rect x="70" y="48" width="700" height="1084" rx="18" fill="#FCFCFD" stroke="#D9DDE3"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <text x="104" y="98" font-size="26" font-weight="700" fill="#1F242A">OWAWidget</text>
+    <circle cx="682" cy="88" r="13" fill="#E8EDF3"/>
+    <path d="M676 88h12M682 82v12" stroke="#5A6570" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="724" cy="88" r="13" fill="#E8EDF3"/>
+    <path d="M719 84c5-5 12-1 10 6-2 5-8 7-13 3" stroke="#5A6570" stroke-width="2" stroke-linecap="round"/>
+  </g>
+
+  <line x1="70" y1="126" x2="770" y2="126" stroke="#E0E4EA"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <rect x="94" y="150" width="652" height="134" rx="16" fill="#FFF6D8" stroke="#E4B821"/>
+    <text x="124" y="184" font-size="20" font-weight="650" fill="#8B6100">Идёт сейчас</text>
+    <text x="124" y="216" font-size="28" font-weight="750" fill="#1F242A">3 встречи пересекаются</text>
+    <text x="124" y="250" font-size="19" fill="#6C747E">10:00-11:20 · каждая встреча остается отдельным блоком</text>
+    <rect x="622" y="202" width="88" height="42" rx="10" fill="#DFA800"/>
+    <text x="646" y="229" font-size="17" font-weight="700" fill="white">Join</text>
+  </g>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <text x="94" y="340" font-size="18" font-weight="700" fill="#6F7780">Сегодня</text>
+
+    <rect x="94" y="370" width="652" height="438" rx="14" fill="#F7FAFD" stroke="#DCE5EF"/>
+    <rect x="94" y="370" width="652" height="52" rx="14" fill="#EAF5FC"/>
+    <rect x="94" y="402" width="652" height="20" fill="#EAF5FC"/>
+    <text x="118" y="404" font-size="16" font-weight="700" fill="#4A5966">10:00-11:30 · параллельное окно</text>
+    <text x="560" y="404" font-size="15" fill="#66717B">4 дорожки</text>
+
+    <line x1="178" y1="450" x2="178" y2="790" stroke="#D5DBE3"/>
+    <line x1="318" y1="450" x2="318" y2="790" stroke="#E4E8ED"/>
+    <line x1="458" y1="450" x2="458" y2="790" stroke="#E4E8ED"/>
+    <line x1="598" y1="450" x2="598" y2="790" stroke="#E4E8ED"/>
+    <line x1="738" y1="450" x2="738" y2="790" stroke="#D5DBE3"/>
+
+    <text x="156" y="442" font-size="13" fill="#7B848E">10:00</text>
+    <text x="296" y="442" font-size="13" fill="#7B848E">10:30</text>
+    <text x="438" y="442" font-size="13" fill="#7B848E">11:00</text>
+    <text x="578" y="442" font-size="13" fill="#7B848E">11:30</text>
+
+    <line x1="118" y1="516" x2="738" y2="516" stroke="#E8EDF2" stroke-dasharray="6 6"/>
+    <line x1="118" y1="584" x2="738" y2="584" stroke="#E8EDF2" stroke-dasharray="6 6"/>
+    <line x1="118" y1="652" x2="738" y2="652" stroke="#E8EDF2" stroke-dasharray="6 6"/>
+    <line x1="118" y1="720" x2="738" y2="720" stroke="#E8EDF2" stroke-dasharray="6 6"/>
+
+    <rect x="178" y="466" width="420" height="54" rx="0" fill="#BDE5FA"/>
+    <rect x="178" y="466" width="8" height="54" fill="#7CC5ED"/>
+    <text x="196" y="499" font-size="20" font-weight="750" fill="#20262C">Меншаков</text>
+
+    <rect x="178" y="536" width="560" height="62" rx="0" fill="#FFF000"/>
+    <rect x="178" y="536" width="8" height="62" fill="#F4C900"/>
+    <text x="196" y="570" font-size="20" font-weight="750" fill="#20262C">РГ Collection</text>
+    <text x="346" y="570" font-size="18" fill="#20262C">https://alfabank.ktalk...</text>
+    <path d="M706 558a14 14 0 0 1 20 0m-3-10 3 10-10-3" stroke="#6B7280" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect x="248" y="612" width="350" height="62" rx="0" fill="#DDF0FA" stroke="#3498DB" stroke-width="2"/>
+    <path d="M248 612l14-14M248 630l32-32M248 648l50-50M248 666l68-68" stroke="#8ACAF0" stroke-width="4"/>
+    <text x="268" y="641" font-size="19" font-weight="700" fill="#69737D">Обсуждение инфраструктуры</text>
+    <text x="268" y="668" font-size="17" fill="#69737D">10:15-11:00 · Сергей</text>
+
+    <rect x="178" y="690" width="420" height="54" rx="0" fill="#FF7584"/>
+    <rect x="178" y="690" width="8" height="54" fill="#E9445C"/>
+    <text x="196" y="724" font-size="20" font-weight="750" fill="#20262C">Как получить VIP-токены</text>
+
+    <rect x="318" y="760" width="280" height="54" rx="0" fill="#FFF000" stroke="#2C92D1" stroke-width="2"/>
+    <rect x="318" y="760" width="8" height="54" fill="#F4C900"/>
+    <text x="338" y="794" font-size="21" font-weight="800" fill="#20262C">Английский</text>
+
+    <rect x="94" y="844" width="652" height="144" rx="14" fill="#FAFBFC" stroke="#E3E7EC"/>
+    <text x="118" y="880" font-size="16" font-weight="700" fill="#4A5966">12:00-13:00 · одиночные встречи выглядят спокойнее</text>
+    <rect x="178" y="910" width="235" height="54" fill="#BDE5FA"/>
+    <rect x="178" y="910" width="8" height="54" fill="#7CC5ED"/>
+    <text x="196" y="944" font-size="19" font-weight="700" fill="#20262C">Планирование</text>
+    <rect x="458" y="910" width="210" height="54" fill="#DDF0FA"/>
+    <path d="M458 910l14-14M458 928l32-32M458 946l50-50M458 964l68-68" stroke="#8ACAF0" stroke-width="4"/>
+    <text x="478" y="944" font-size="19" font-weight="700" fill="#69737D">Статус задач</text>
+
+    <rect x="94" y="1026" width="652" height="58" rx="14" fill="#F7F8FA" stroke="#E1E5EA"/>
+    <text x="118" y="1062" font-size="18" fill="#6C747E">Завтра · обычные секции остаются ниже</text>
+  </g>
+</svg>

@@ -47,6 +47,7 @@
 "popover.no.accounts.subtitle" = "Откройте настройки, чтобы добавить Exchange-аккаунт.";
 "popover.open.settings" = "Открыть настройки";
 "popover.retry" = "Повторить";
+"popover.resize.help" = "Потяните, чтобы изменить размер";
 
 "meeting.no.upcoming" = "Нет предстоящих встреч";
 "meeting.join" = "Перейти";
@@ -56,6 +57,7 @@
 "meeting.starting.now" = "Начинается сейчас";
 "meeting.in.minutes" = "через %@";
 "meeting.multiple.at.time" = "%d встречи в %@";
+"meeting.parallel.window" = "%d параллельно · %@–%@";
 "meeting.platform.generic" = "Встреча";
 
 "menubar.now" = "сейчас";

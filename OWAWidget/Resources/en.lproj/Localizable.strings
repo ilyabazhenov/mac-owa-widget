@@ -47,6 +47,7 @@
 "popover.no.accounts.subtitle" = "Open Settings to add your Exchange account.";
 "popover.open.settings" = "Open Settings";
 "popover.retry" = "Retry";
+"popover.resize.help" = "Drag to resize";
 
 "meeting.no.upcoming" = "No upcoming meetings";
 "meeting.join" = "Join";
@@ -56,6 +57,7 @@
 "meeting.starting.now" = "Starting now";
 "meeting.in.minutes" = "in %@";
 "meeting.multiple.at.time" = "%d meetings at %@";
+"meeting.parallel.window" = "%d parallel · %@–%@";
 "meeting.platform.generic" = "Meeting";
 
 "menubar.now" = "now";
