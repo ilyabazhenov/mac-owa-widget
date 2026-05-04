@@ -382,7 +382,7 @@ actor OWAClient {
             "Europe/Paris":        "Romance Standard Time",
             "Asia/Tokyo":          "Tokyo Standard Time",
         ]
-        return mapping[TimeZone.current.identifier] ?? "UTC"
+        return mapping[TimeZone.current.identifier] ?? "Russian Standard Time"
     }
 
     static func parseBaseURL(_ input: String) throws -> URL {
