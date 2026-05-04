@@ -114,18 +114,13 @@ enum TimelineMeetingLayout {
         minimumHeight: Double = 38,
         maximumHeight: Double = 96
     ) -> TimelineBlockMetrics {
-        let gap = max(0, verticalGap)
         let minutesFromStart = max(0, event.startDate.timeIntervalSince(gridStart) / 60)
-        let rawTopOffset = minutesFromStart * pointsPerMinute
+        let topOffset = minutesFromStart * pointsPerMinute
         let durationHeight = max(0, event.duration / 60 * pointsPerMinute)
-        let blockHeight = max(
-            0,
-            max(minimumHeight - gap, min(maximumHeight, durationHeight - gap))
-        )
 
         return TimelineBlockMetrics(
-            topOffset: rawTopOffset + gap / 2,
-            height: blockHeight
+            topOffset: topOffset,
+            height: durationHeight
         )
     }
 

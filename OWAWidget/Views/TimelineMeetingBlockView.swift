@@ -32,13 +32,6 @@ struct TimelineMeetingBlockView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(spacing: 4) {
-                if event.platform != .generic {
-                    Image(systemName: event.platform.systemIcon)
-                        .font(.system(size: compact ? 11 : 12))
-                        .foregroundStyle(event.platform.color)
-                        .help(event.platform.displayName(localization: localization))
-                }
-
                 if let url = event.joinURL {
                     Button {
                         NSWorkspace.shared.open(url)
@@ -48,6 +41,7 @@ struct TimelineMeetingBlockView: View {
                             .foregroundStyle(accentColor)
                     }
                     .buttonStyle(.plain)
+                    .padding(.top, compact ? 1 : 2)
                     .help(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
                 }
             }
@@ -62,11 +56,11 @@ struct TimelineMeetingBlockView: View {
                 .fill(accentColor)
                 .frame(width: accentWidth)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 6))
         .overlay {
             RoundedRectangle(cornerRadius: 6)
-                .stroke(borderColor, lineWidth: event.isHappeningNow ? 1.5 : 1)
+                .strokeBorder(borderColor, lineWidth: event.isHappeningNow ? 1.5 : 1)
         }
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     private var accentWidth: CGFloat { 3 }
