@@ -1,4 +1,4 @@
-"app.name" = "OWA Widget";
+"app.name" = "Mac OWA Widget";
 "window.settings.title" = "Настройки";
 
 "language.section.title" = "Язык";
@@ -43,6 +43,7 @@
 
 "popover.sync.now" = "Синхронизировать";
 "popover.settings" = "Настройки";
+"popover.quit" = "Выйти";
 "popover.no.accounts.title" = "Аккаунты не настроены";
 "popover.no.accounts.subtitle" = "Откройте настройки, чтобы добавить Exchange-аккаунт.";
 "popover.open.settings" = "Открыть настройки";

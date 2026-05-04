@@ -20,16 +20,24 @@ enum TimelineMeetingLayout {
         sectionDate: Date,
         calendar: Calendar = .current,
         startHour: Int = 8,
-        endHour: Int = 22
+        endHour: Int = 22,
+        referenceDate: Date? = nil
     ) -> [DayHourSlot] {
         let dayStart = calendar.startOfDay(for: sectionDate)
+        let slotBounds = adjustedHourBounds(
+            sectionDate: sectionDate,
+            calendar: calendar,
+            startHour: startHour,
+            endHour: endHour,
+            referenceDate: referenceDate
+        )
         let sortedEvents = events.sorted {
             if $0.startDate != $1.startDate { return $0.startDate < $1.startDate }
             if $0.endDate != $1.endDate { return $0.endDate < $1.endDate }
             return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
         }
 
-        return (startHour..<endHour).compactMap { hour in
+        return (slotBounds.start..<slotBounds.end).compactMap { hour in
             guard
                 let slotStart = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: dayStart),
                 let slotEnd = calendar.date(byAdding: .hour, value: 1, to: slotStart)
@@ -45,5 +53,25 @@ enum TimelineMeetingLayout {
 
             return DayHourSlot(startDate: slotStart, endDate: slotEnd, items: items)
         }
+    }
+
+    private static func adjustedHourBounds(
+        sectionDate: Date,
+        calendar: Calendar,
+        startHour: Int,
+        endHour: Int,
+        referenceDate: Date?
+    ) -> (start: Int, end: Int) {
+        guard
+            let referenceDate,
+            calendar.isDate(referenceDate, inSameDayAs: sectionDate)
+        else {
+            return (startHour, endHour)
+        }
+
+        let currentHour = calendar.component(.hour, from: referenceDate)
+        let adjustedStart = min(startHour, currentHour)
+        let adjustedEnd = max(endHour, currentHour + 1)
+        return (adjustedStart, adjustedEnd)
     }
 }

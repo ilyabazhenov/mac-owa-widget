@@ -54,6 +54,7 @@ actor OWAClient {
 
     private var canaryToken: String?
     private var defaultCalendarFolderIdentifier: OWAFolderIdentifier?
+    private var forceDistinguishedCalendarFolder = false
     private let sessionDelegate: OWASessionDelegate
     private let session: URLSession
     private let log = Logger(subsystem: "com.owawidget", category: "OWAClient")
@@ -266,7 +267,42 @@ actor OWAClient {
     private func performCalendarViewRequest(from start: Date, to end: Date) async throws -> [OWACalendarItem] {
         guard let canary = canaryToken else { throw OWAError.notAuthenticated }
 
-        let folderIdentifier = try await resolveDefaultCalendarFolderIdentifier(canary: canary)
+        let folderIdentifier = forceDistinguishedCalendarFolder
+            ? nil
+            : try await resolveDefaultCalendarFolderIdentifier(canary: canary)
+
+        do {
+            return try await executeCalendarViewRequest(
+                from: start,
+                to: end,
+                canary: canary,
+                folderIdentifier: folderIdentifier
+            )
+        } catch OWAError.httpError(let statusCode, let message) {
+            if statusCode == 500,
+               message.localizedCaseInsensitiveContains("cannot create an abstract class"),
+               folderIdentifier != nil,
+               !forceDistinguishedCalendarFolder {
+                log.warning("OWA rejected FolderId with abstract class error; switching to DistinguishedFolderId fallback")
+                forceDistinguishedCalendarFolder = true
+                defaultCalendarFolderIdentifier = nil
+                return try await executeCalendarViewRequest(
+                    from: start,
+                    to: end,
+                    canary: canary,
+                    folderIdentifier: nil
+                )
+            }
+            throw OWAError.httpError(statusCode, message)
+        }
+    }
+
+    private func executeCalendarViewRequest(
+        from start: Date,
+        to end: Date,
+        canary: String,
+        folderIdentifier: OWAFolderIdentifier?
+    ) async throws -> [OWACalendarItem] {
         let requestDict = OWACalendarViewRequestPayload.make(
             start: start,
             end: end,

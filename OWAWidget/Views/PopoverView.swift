@@ -5,8 +5,7 @@ struct PopoverView: View {
     @EnvironmentObject var service: CalendarService
     @EnvironmentObject private var localization: LocalizationService
     @Environment(\.openWindow) private var openWindow
-    @State private var popoverSize = PopoverSizeStore.load()
-    @State private var resizeStartSize: PopoverSize?
+    private let popoverSize = PopoverSize.defaultValue
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,11 +21,6 @@ struct PopoverView: View {
         .background {
             PopoverWindowAligner(popoverSize: popoverSize)
                 .frame(width: 0, height: 0)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            resizeHandle
-                .padding(.trailing, 4)
-                .padding(.bottom, 4)
         }
     }
 
@@ -60,6 +54,13 @@ struct PopoverView: View {
             }
             .buttonStyle(.plain)
             .help(localization.tr("popover.settings"))
+
+            Button { quitApp() } label: {
+                Image(systemName: "power")
+                    .font(.system(size: 13))
+            }
+            .buttonStyle(.plain)
+            .help(localization.tr("popover.quit"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
@@ -92,42 +93,17 @@ struct PopoverView: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, 14)
-            .padding(.trailing, 28)
+            .padding(.trailing, 14)
             .padding(.vertical, 7)
-    }
-
-    private var resizeHandle: some View {
-        Image(systemName: "arrow.up.left.and.arrow.down.right")
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.secondary)
-            .frame(width: 20, height: 20)
-            .contentShape(Rectangle())
-            .gesture(resizeGesture)
-            .help(localization.tr("popover.resize.help"))
-            .accessibilityLabel(localization.tr("popover.resize.help"))
-    }
-
-    private var resizeGesture: some Gesture {
-        DragGesture(minimumDistance: 1)
-            .onChanged { value in
-                if resizeStartSize == nil {
-                    resizeStartSize = popoverSize
-                }
-                let startSize = resizeStartSize ?? popoverSize
-                popoverSize = startSize.resizedBy(
-                    widthDelta: Double(value.translation.width),
-                    heightDelta: Double(value.translation.height)
-                )
-            }
-            .onEnded { _ in
-                PopoverSizeStore.save(popoverSize)
-                resizeStartSize = nil
-            }
     }
 
     private func openSettings() {
         NSApp.activate(ignoringOtherApps: true)
         openWindow(id: "settings")
+    }
+
+    private func quitApp() {
+        NSApp.terminate(nil)
     }
 
     // MARK: - Error / empty states
