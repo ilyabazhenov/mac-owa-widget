@@ -24,7 +24,7 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - Connection test
 
-    func testConnection() {
+    func testConnection(localization: LocalizationService) {
         guard let account = editingAccount else { return }
         isTesting = true
         testResult = nil
@@ -34,9 +34,9 @@ final class SettingsViewModel: ObservableObject {
             do {
                 let provider = try OWACalendarProvider(account: account, password: pwd)
                 try await provider.validateCredentials()
-                testResult = "✓ Connected successfully"
+                testResult = "✓ \(localization.tr("settings.account.connected"))"
             } catch {
-                testResult = "✗ \(error.localizedDescription)"
+                testResult = "✗ \(ConnectionTestMessage.failure(for: error, localization: localization))"
             }
             isTesting = false
         }
@@ -58,7 +58,7 @@ final class SettingsViewModel: ObservableObject {
         isAddingNew = false
     }
 
-    func saveAccount() {
+    func saveAccount(localization: LocalizationService) {
         guard let account = editingAccount else { return }
         do {
             if isAddingNew {
@@ -70,7 +70,7 @@ final class SettingsViewModel: ObservableObject {
             accounts = service.accounts
             editingAccount = nil
         } catch {
-            testResult = "Save failed: \(error.localizedDescription)"
+            testResult = localization.tr("settings.account.save.failed", error.localizedDescription)
         }
     }
 

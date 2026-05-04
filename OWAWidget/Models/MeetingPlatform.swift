@@ -19,6 +19,16 @@ enum MeetingPlatform: String, Codable, Sendable, Hashable, CaseIterable {
         }
     }
 
+    @MainActor
+    func displayName(localization: LocalizationService) -> String {
+        switch self {
+        case .generic:
+            localization.tr("meeting.platform.generic")
+        default:
+            displayName
+        }
+    }
+
     var systemIcon: String {
         switch self {
         case .teams:      "video.fill"

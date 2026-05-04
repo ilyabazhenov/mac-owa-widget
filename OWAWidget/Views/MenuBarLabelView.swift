@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarLabelView: View {
     @EnvironmentObject var service: CalendarService
+    @EnvironmentObject private var localization: LocalizationService
     @State private var pulseOpacity: Double = 1.0
 
     var body: some View {
@@ -40,7 +41,7 @@ struct MenuBarLabelView: View {
         let events = service.events
         let now = Date()
 
-        if isHappeningNow { return "● now" }
+        if isHappeningNow { return "● \(localization.tr("menubar.now"))" }
 
         let upcoming = events
             .filter { $0.startDate > now }
@@ -48,7 +49,7 @@ struct MenuBarLabelView: View {
 
         guard let next = upcoming.first else {
             let todayCount = events.filter { $0.startDate.isToday }.count
-            return todayCount > 0 ? "\(todayCount) today" : ""
+            return todayCount > 0 ? localization.tr("menubar.today.count", todayCount) : ""
         }
 
         let minutes = next.minutesUntilStart
@@ -57,15 +58,20 @@ struct MenuBarLabelView: View {
             let concurrent = upcoming.filter {
                 abs($0.startDate.timeIntervalSince(next.startDate)) <= 300
             }
-            return concurrent.count > 1 ? "\(concurrent.count) in \(minutes)m" : "in \(minutes)m"
+            let minutesText = localization.minutesShort(minutes)
+            return concurrent.count > 1
+                ? localization.tr("menubar.concurrent.in.minutes", concurrent.count, minutesText)
+                : localization.tr("menubar.in.minutes", minutesText)
         }
 
         let todayCount = events.filter { $0.startDate.isToday }.count
-        return todayCount > 0 ? "\(todayCount) today" : ""
+        return todayCount > 0 ? localization.tr("menubar.today.count", todayCount) : ""
     }
 
     private var helpText: String {
         let count = service.events.filter { $0.startDate.isToday }.count
-        return count == 0 ? "No meetings today" : "\(count) meeting\(count == 1 ? "" : "s") today"
+        return count == 0
+            ? localization.tr("menubar.no.meetings.today")
+            : localization.tr("menubar.meetings.today", localization.meetings(count))
     }
 }

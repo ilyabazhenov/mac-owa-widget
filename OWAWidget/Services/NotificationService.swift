@@ -2,6 +2,20 @@ import Foundation
 import UserNotifications
 import os.log
 
+struct NotificationLocalization: Sendable {
+    let localeIdentifier: String
+    let joinActionTitle: String
+    let bodyWithJoinFormat: String
+    let bodyWithoutJoinFormat: String
+
+    static let english = NotificationLocalization(
+        localeIdentifier: "en",
+        joinActionTitle: "Join",
+        bodyWithJoinFormat: "Starts in %@ at %@. Tap Join to connect",
+        bodyWithoutJoinFormat: "Starts in %@ at %@"
+    )
+}
+
 actor NotificationService {
     static let categoryID = "MEETING_JOIN"
     static let actionID = "JOIN_MEETING"
@@ -10,10 +24,10 @@ actor NotificationService {
     private let center = UNUserNotificationCenter.current()
     private let log = Logger(subsystem: "com.owawidget", category: "NotificationService")
 
-    func setup() {
+    func setup(localization: NotificationLocalization = .english) {
         let joinAction = UNNotificationAction(
             identifier: NotificationService.actionID,
-            title: "Join",
+            title: localization.joinActionTitle,
             options: [.foreground]
         )
         let category = UNNotificationCategory(
@@ -34,7 +48,11 @@ actor NotificationService {
         }
     }
 
-    func scheduleNotifications(for events: [CalendarEvent], leadMinutes: Int) async {
+    func scheduleNotifications(
+        for events: [CalendarEvent],
+        leadMinutes: Int,
+        localization: NotificationLocalization = .english
+    ) async {
         // Remove previously scheduled OWA Widget notifications
         let pending = await center.pendingNotificationRequests()
         let toRemove = pending.map(\.identifier).filter { $0.hasPrefix(idPrefix) }
@@ -49,7 +67,7 @@ actor NotificationService {
 
             let content = UNMutableNotificationContent()
             content.title = event.title
-            content.body = buildBody(event: event, leadMinutes: leadMinutes)
+            content.body = buildBody(event: event, leadMinutes: leadMinutes, localization: localization)
             content.sound = .default
             content.categoryIdentifier = NotificationService.categoryID
 
@@ -78,19 +96,38 @@ actor NotificationService {
         }
     }
 
-    private func buildBody(event: CalendarEvent, leadMinutes: Int) -> String {
-        let timeStr = shortTime(event.startDate)
+    private func buildBody(
+        event: CalendarEvent,
+        leadMinutes: Int,
+        localization: NotificationLocalization
+    ) -> String {
+        let locale = Locale(identifier: localization.localeIdentifier)
+        let timeStr = shortTime(event.startDate, locale: locale)
+        let minutes = localizedMinutes(leadMinutes, localeIdentifier: localization.localeIdentifier)
         if event.hasJoinURL {
-            return "Starts in \(leadMinutes) min at \(timeStr) · Tap Join to connect"
+            return String(format: localization.bodyWithJoinFormat, locale: locale, minutes, timeStr)
         } else {
-            return "Starts in \(leadMinutes) min at \(timeStr)"
+            return String(format: localization.bodyWithoutJoinFormat, locale: locale, minutes, timeStr)
         }
     }
 
-    private func shortTime(_ date: Date) -> String {
+    private func shortTime(_ date: Date, locale: Locale) -> String {
         let f = DateFormatter()
         f.timeStyle = .short
         f.dateStyle = .none
+        f.locale = locale
         return f.string(from: date)
+    }
+
+    private func localizedMinutes(_ count: Int, localeIdentifier: String) -> String {
+        if localeIdentifier == "ru" {
+            let mod10 = count % 10
+            let mod100 = count % 100
+            if mod10 == 1 && mod100 != 11 { return "\(count) минута" }
+            if (2...4).contains(mod10) && !(12...14).contains(mod100) { return "\(count) минуты" }
+            return "\(count) минут"
+        }
+
+        return count == 1 ? "\(count) minute" : "\(count) minutes"
     }
 }

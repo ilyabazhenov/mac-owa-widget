@@ -3,6 +3,7 @@ import AppKit
 
 struct PopoverView: View {
     @EnvironmentObject var service: CalendarService
+    @EnvironmentObject private var localization: LocalizationService
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -22,7 +23,7 @@ struct PopoverView: View {
 
     private var header: some View {
         HStack {
-            Text("OWA Widget")
+            Text(localization.tr("app.name"))
                 .font(.system(size: 13, weight: .semibold))
 
             Spacer()
@@ -39,7 +40,7 @@ struct PopoverView: View {
                         .font(.system(size: 13))
                 }
                 .buttonStyle(.plain)
-                .help("Sync now")
+                .help(localization.tr("popover.sync.now"))
             }
 
             Button { openSettings() } label: {
@@ -47,7 +48,7 @@ struct PopoverView: View {
                     .font(.system(size: 13))
             }
             .buttonStyle(.plain)
-            .help("Settings")
+            .help(localization.tr("popover.settings"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
@@ -75,7 +76,7 @@ struct PopoverView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        Text(service.syncStatus.displayText)
+        Text(localization.syncStatusText(service.syncStatus))
             .font(.system(size: 10))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -95,14 +96,14 @@ struct PopoverView: View {
             Image(systemName: "person.badge.plus")
                 .font(.system(size: 28))
                 .foregroundStyle(.secondary)
-            Text("No accounts configured")
+            Text(localization.tr("popover.no.accounts.title"))
                 .font(.system(size: 13, weight: .medium))
-            Text("Open Settings to add your Exchange account.")
+            Text(localization.tr("popover.no.accounts.subtitle"))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button { openSettings() } label: {
-                Text("Open Settings")
+                Text(localization.tr("popover.open.settings"))
                     .font(.system(size: 12, weight: .medium))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
@@ -121,11 +122,11 @@ struct PopoverView: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 24))
                 .foregroundStyle(.orange)
-            Text(service.syncStatus.displayText)
+            Text(localization.syncStatusText(service.syncStatus))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Button("Retry") { service.syncNow() }
+            Button(localization.tr("popover.retry")) { service.syncNow() }
                 .font(.system(size: 12))
         }
         .padding(24)
@@ -164,11 +165,13 @@ struct PopoverView: View {
 
         // Group "later" by day
         var sections: [(label: String, events: [CalendarEvent])] = [
-            ("Today", today),
-            ("Tomorrow", tomorrow)
+            (localization.tr("date.today"), today),
+            (localization.tr("date.tomorrow"), tomorrow)
         ]
 
-        let laterByDay = Dictionary(grouping: later) { $0.startDate.sectionLabel }
+        let laterByDay = Dictionary(grouping: later) {
+            localization.daySectionLabel(for: $0.startDate, calendar: calendar)
+        }
         let sortedKeys = laterByDay.keys.sorted()
         for key in sortedKeys {
             sections.append((key, laterByDay[key]!))

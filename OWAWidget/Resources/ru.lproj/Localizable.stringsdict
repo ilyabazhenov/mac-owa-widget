@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>unit.minutes</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@minutes@</string>
+        <key>minutes</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d минута</string>
+            <key>few</key>
+            <string>%d минуты</string>
+            <key>many</key>
+            <string>%d минут</string>
+            <key>other</key>
+            <string>%d минуты</string>
+        </dict>
+    </dict>
+    <key>unit.minutes.short</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@minutes@</string>
+        <key>minutes</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d мин</string>
+            <key>few</key>
+            <string>%d мин</string>
+            <key>many</key>
+            <string>%d мин</string>
+            <key>other</key>
+            <string>%d мин</string>
+        </dict>
+    </dict>
+    <key>unit.meetings</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@meetings@</string>
+        <key>meetings</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d встреча</string>
+            <key>few</key>
+            <string>%d встречи</string>
+            <key>many</key>
+            <string>%d встреч</string>
+            <key>other</key>
+            <string>%d встречи</string>
+        </dict>
+    </dict>
+</dict>
+</plist>

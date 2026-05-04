@@ -2,6 +2,7 @@ APP_NAME    := OWAWidget
 APP_PATH    := .build/$(APP_NAME).app
 SRC_DIR     := OWAWidget
 BINARY      := .build/debug/$(APP_NAME)
+RESOURCE_BUNDLE := .build/debug/$(APP_NAME)_$(APP_NAME).bundle
 ENTITLEMENTS := $(SRC_DIR)/OWAWidget-dev.entitlements
 INFO_PLIST  := $(SRC_DIR)/Info.plist
 CODE_SIGN_IDENTITY ?= -
@@ -18,6 +19,8 @@ bundle: build
 	@mkdir -p $(APP_PATH)/Contents/Resources
 	cp $(BINARY) $(APP_PATH)/Contents/MacOS/$(APP_NAME)
 	cp $(INFO_PLIST) $(APP_PATH)/Contents/
+	@if [ -d "$(RESOURCE_BUNDLE)" ]; then cp -R "$(RESOURCE_BUNDLE)" $(APP_PATH)/Contents/Resources/; fi
+	@if [ -d "$(SRC_DIR)/Resources" ]; then cp -R $(SRC_DIR)/Resources/*.lproj $(APP_PATH)/Contents/Resources/; fi
 	@printf 'APPL????' > $(APP_PATH)/Contents/PkgInfo
 	codesign --sign "$(CODE_SIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) --force $(APP_PATH)
 	@echo "✓ Bundle ready: $(APP_PATH)"

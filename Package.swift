@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "OWAWidget",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v13)
     ],
@@ -15,6 +16,9 @@ let package = Package(
                 "Info.plist",
                 "OWAWidget.entitlements",
                 "OWAWidget-dev.entitlements",
+            ],
+            resources: [
+                .process("Resources")
             ]
         ),
         .testTarget(

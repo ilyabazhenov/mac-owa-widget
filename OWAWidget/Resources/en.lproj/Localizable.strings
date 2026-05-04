@@ -1,0 +1,81 @@
+"app.name" = "OWA Widget";
+"window.settings.title" = "Settings";
+
+"language.section.title" = "Language";
+"language.picker.title" = "App language";
+"language.option.system" = "System";
+"language.option.english" = "English";
+"language.option.russian" = "Russian";
+
+"settings.tab.accounts" = "Accounts";
+"settings.tab.preferences" = "Preferences";
+"settings.tab.about" = "About";
+"settings.accounts.empty.title" = "No accounts yet";
+"settings.accounts.empty.subtitle" = "Click + to add your Exchange account";
+"settings.accounts.remove" = "Remove";
+"settings.accounts.add" = "Add Account";
+"settings.account.sheet.add" = "Add Account";
+"settings.account.sheet.edit" = "Edit Account";
+"settings.account.cancel" = "Cancel";
+"settings.account.add" = "Add";
+"settings.account.save" = "Save";
+"settings.account.exchange.section" = "Exchange Server";
+"settings.account.server.url" = "Server URL";
+"settings.account.server.prompt" = "mail.company.com or https://mail.company.com/owa";
+"settings.account.server.help" = "Any format is accepted: mail.company.com, https://mail.company.com, or https://mail.company.com/owa";
+"settings.account.email" = "Email";
+"settings.account.password" = "Password";
+"settings.account.display.section" = "Display";
+"settings.account.name" = "Account name";
+"settings.account.name.help" = "Friendly name shown in the accounts list";
+"settings.account.test" = "Test Connection";
+"settings.account.testing" = "Testing...";
+"settings.account.connected" = "Connected successfully";
+"settings.account.save.failed" = "Save failed: %@";
+"settings.account.connection.auth.failed" = "Could not connect to OWA. Check the server address, login, and password.";
+
+"preferences.sync.section" = "Sync";
+"preferences.sync.interval" = "Sync interval";
+"preferences.notifications.section" = "Notifications";
+"preferences.notifications.remind" = "Remind me";
+"preferences.notifications.before" = "%@ before";
+"preferences.save" = "Save Preferences";
+
+"popover.sync.now" = "Sync now";
+"popover.settings" = "Settings";
+"popover.no.accounts.title" = "No accounts configured";
+"popover.no.accounts.subtitle" = "Open Settings to add your Exchange account.";
+"popover.open.settings" = "Open Settings";
+"popover.retry" = "Retry";
+
+"meeting.no.upcoming" = "No upcoming meetings";
+"meeting.join" = "Join";
+"meeting.join.help" = "Join %@ meeting";
+"meeting.now" = "now";
+"meeting.happening.now" = "Happening now";
+"meeting.starting.now" = "Starting now";
+"meeting.in.minutes" = "in %@";
+"meeting.multiple.at.time" = "%d meetings at %@";
+"meeting.platform.generic" = "Meeting";
+
+"menubar.now" = "now";
+"menubar.in.minutes" = "in %@";
+"menubar.concurrent.in.minutes" = "%d in %@";
+"menubar.today.count" = "%d today";
+"menubar.no.meetings.today" = "No meetings today";
+"menubar.meetings.today" = "%@ today";
+
+"sync.status.idle" = "Not synced yet";
+"sync.status.syncing" = "Syncing...";
+"sync.status.synced" = "Synced %@";
+"sync.status.error" = "Error: %@";
+
+"date.today" = "Today";
+"date.tomorrow" = "Tomorrow";
+
+"notification.action.join" = "Join";
+"notification.body.with.join" = "Starts in %@ at %@. Tap Join to connect";
+"notification.body.without.join" = "Starts in %@ at %@";
+
+"about.version" = "Version %@";
+"about.description" = "Quick access to your Exchange calendar from the menu bar.";

@@ -1,0 +1,81 @@
+"app.name" = "OWA Widget";
+"window.settings.title" = "Настройки";
+
+"language.section.title" = "Язык";
+"language.picker.title" = "Язык приложения";
+"language.option.system" = "Системный";
+"language.option.english" = "English";
+"language.option.russian" = "Русский";
+
+"settings.tab.accounts" = "Аккаунты";
+"settings.tab.preferences" = "Настройки";
+"settings.tab.about" = "О приложении";
+"settings.accounts.empty.title" = "Аккаунтов пока нет";
+"settings.accounts.empty.subtitle" = "Нажмите +, чтобы добавить Exchange-аккаунт";
+"settings.accounts.remove" = "Удалить";
+"settings.accounts.add" = "Добавить аккаунт";
+"settings.account.sheet.add" = "Добавить аккаунт";
+"settings.account.sheet.edit" = "Изменить аккаунт";
+"settings.account.cancel" = "Отмена";
+"settings.account.add" = "Добавить";
+"settings.account.save" = "Сохранить";
+"settings.account.exchange.section" = "Сервер Exchange";
+"settings.account.server.url" = "URL сервера";
+"settings.account.server.prompt" = "mail.company.com или https://mail.company.com/owa";
+"settings.account.server.help" = "Принимается любой формат: mail.company.com, https://mail.company.com или https://mail.company.com/owa";
+"settings.account.email" = "Email";
+"settings.account.password" = "Пароль";
+"settings.account.display.section" = "Отображение";
+"settings.account.name" = "Название аккаунта";
+"settings.account.name.help" = "Понятное имя для списка аккаунтов";
+"settings.account.test" = "Проверить подключение";
+"settings.account.testing" = "Проверка...";
+"settings.account.connected" = "Подключение успешно";
+"settings.account.save.failed" = "Не удалось сохранить: %@";
+"settings.account.connection.auth.failed" = "Не удалось подключиться к OWA. Проверьте адрес сервера, логин и пароль.";
+
+"preferences.sync.section" = "Синхронизация";
+"preferences.sync.interval" = "Интервал синхронизации";
+"preferences.notifications.section" = "Уведомления";
+"preferences.notifications.remind" = "Напоминать";
+"preferences.notifications.before" = "за %@";
+"preferences.save" = "Сохранить настройки";
+
+"popover.sync.now" = "Синхронизировать";
+"popover.settings" = "Настройки";
+"popover.no.accounts.title" = "Аккаунты не настроены";
+"popover.no.accounts.subtitle" = "Откройте настройки, чтобы добавить Exchange-аккаунт.";
+"popover.open.settings" = "Открыть настройки";
+"popover.retry" = "Повторить";
+
+"meeting.no.upcoming" = "Нет предстоящих встреч";
+"meeting.join" = "Перейти";
+"meeting.join.help" = "Перейти во встречу %@";
+"meeting.now" = "сейчас";
+"meeting.happening.now" = "Идёт сейчас";
+"meeting.starting.now" = "Начинается сейчас";
+"meeting.in.minutes" = "через %@";
+"meeting.multiple.at.time" = "%d встречи в %@";
+"meeting.platform.generic" = "Встреча";
+
+"menubar.now" = "сейчас";
+"menubar.in.minutes" = "через %@";
+"menubar.concurrent.in.minutes" = "%d через %@";
+"menubar.today.count" = "%d сегодня";
+"menubar.no.meetings.today" = "Сегодня встреч нет";
+"menubar.meetings.today" = "%@ сегодня";
+
+"sync.status.idle" = "Синхронизации ещё не было";
+"sync.status.syncing" = "Синхронизация...";
+"sync.status.synced" = "Синхронизировано %@";
+"sync.status.error" = "Ошибка: %@";
+
+"date.today" = "Сегодня";
+"date.tomorrow" = "Завтра";
+
+"notification.action.join" = "Перейти";
+"notification.body.with.join" = "Начнётся через %@ в %@. Нажмите «Перейти», чтобы подключиться";
+"notification.body.without.join" = "Начнётся через %@ в %@";
+
+"about.version" = "Версия %@";
+"about.description" = "Быстрый доступ к календарю Exchange из строки меню.";

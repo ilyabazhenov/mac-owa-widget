@@ -11,6 +11,7 @@ final class CalendarService: ObservableObject {
     private let scheduler = SyncScheduler()
     private let notificationService = NotificationService()
     private let log = Logger(subsystem: "com.owawidget", category: "CalendarService")
+    private var notificationLocalization: NotificationLocalization = .english
 
     private let accountsKey = "calendarAccounts"
     private let syncIntervalKey = "syncInterval"
@@ -32,7 +33,7 @@ final class CalendarService: ObservableObject {
     init() {
         loadAccounts()
         Task {
-            await notificationService.setup()
+            await notificationService.setup(localization: notificationLocalization)
             await notificationService.requestAuthorization()
             await rebuildProviders()
             await startScheduler()
@@ -69,6 +70,20 @@ final class CalendarService: ObservableObject {
 
     func syncNow() {
         Task { await performSync() }
+    }
+
+    func setNotificationLocalization(_ localization: NotificationLocalization) {
+        notificationLocalization = localization
+        let currentEvents = events
+        let lead = notificationLeadMinutes
+        Task {
+            await notificationService.setup(localization: localization)
+            await notificationService.scheduleNotifications(
+                for: currentEvents,
+                leadMinutes: lead,
+                localization: localization
+            )
+        }
     }
 
     // MARK: - Internal
@@ -137,7 +152,11 @@ final class CalendarService: ObservableObject {
 
             let currentEvents = events
             let lead = notificationLeadMinutes
-            await notificationService.scheduleNotifications(for: currentEvents, leadMinutes: lead)
+            await notificationService.scheduleNotifications(
+                for: currentEvents,
+                leadMinutes: lead,
+                localization: notificationLocalization
+            )
 
         } catch {
             syncStatus = .error(error.localizedDescription)

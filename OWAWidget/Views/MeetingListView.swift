@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MeetingListView: View {
     let sections: [(label: String, events: [CalendarEvent])]
+    @EnvironmentObject private var localization: LocalizationService
 
     var body: some View {
         if sections.allSatisfy({ $0.events.isEmpty }) {
@@ -42,7 +43,7 @@ struct MeetingListView: View {
             Image(systemName: "calendar.badge.checkmark")
                 .font(.system(size: 32))
                 .foregroundStyle(.secondary)
-            Text("No upcoming meetings")
+            Text(localization.tr("meeting.no.upcoming"))
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
         }

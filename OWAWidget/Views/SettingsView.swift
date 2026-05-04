@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @StateObject private var vm: SettingsViewModel
+    @EnvironmentObject private var localization: LocalizationService
 
     init(calendarService: CalendarService) {
         _vm = StateObject(wrappedValue: SettingsViewModel(calendarService: calendarService))
@@ -10,13 +11,13 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             accountsTab
-                .tabItem { Label("Accounts", systemImage: "person.2") }
+                .tabItem { Label(localization.tr("settings.tab.accounts"), systemImage: "person.2") }
 
             PreferencesView(vm: vm)
-                .tabItem { Label("Preferences", systemImage: "slider.horizontal.3") }
+                .tabItem { Label(localization.tr("settings.tab.preferences"), systemImage: "slider.horizontal.3") }
 
             AboutView()
-                .tabItem { Label("About", systemImage: "info.circle") }
+                .tabItem { Label(localization.tr("settings.tab.about"), systemImage: "info.circle") }
         }
         .frame(width: 480)
         .sheet(item: $vm.editingAccount) { _ in
@@ -34,9 +35,9 @@ struct SettingsView: View {
                         Image(systemName: "person.badge.plus")
                             .font(.system(size: 28))
                             .foregroundStyle(.secondary)
-                        Text("No accounts yet")
+                        Text(localization.tr("settings.accounts.empty.title"))
                             .foregroundStyle(.secondary)
-                        Text("Click + to add your Exchange account")
+                        Text(localization.tr("settings.accounts.empty.subtitle"))
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -73,7 +74,7 @@ struct SettingsView: View {
                             Button(role: .destructive) {
                                 vm.deleteAccount(account)
                             } label: {
-                                Label("Remove", systemImage: "trash")
+                                Label(localization.tr("settings.accounts.remove"), systemImage: "trash")
                             }
                         }
                     }
@@ -86,7 +87,7 @@ struct SettingsView: View {
                 Button {
                     vm.beginAddAccount()
                 } label: {
-                    Label("Add Account", systemImage: "plus")
+                    Label(localization.tr("settings.accounts.add"), systemImage: "plus")
                 }
                 .buttonStyle(.plain)
                 Spacer()
@@ -100,7 +101,7 @@ struct SettingsView: View {
 
     private var accountSheet: some View {
         VStack(spacing: 0) {
-            Text(vm.isAddingNew ? "Add Account" : "Edit Account")
+            Text(vm.isAddingNew ? localization.tr("settings.account.sheet.add") : localization.tr("settings.account.sheet.edit"))
                 .font(.headline)
                 .padding()
 
@@ -114,7 +115,7 @@ struct SettingsView: View {
                     ),
                     password: $vm.editingPassword,
                     isNew: vm.isAddingNew,
-                    onTestConnection: { vm.testConnection() },
+                    onTestConnection: { vm.testConnection(localization: localization) },
                     testResult: vm.testResult,
                     isTesting: vm.isTesting
                 )
@@ -123,10 +124,12 @@ struct SettingsView: View {
             Divider()
 
             HStack {
-                Button("Cancel") { vm.editingAccount = nil }
+                Button(localization.tr("settings.account.cancel")) { vm.editingAccount = nil }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button(vm.isAddingNew ? "Add" : "Save") { vm.saveAccount() }
+                Button(vm.isAddingNew ? localization.tr("settings.account.add") : localization.tr("settings.account.save")) {
+                    vm.saveAccount(localization: localization)
+                }
                     .keyboardShortcut(.defaultAction)
                     .disabled(vm.editingAccount?.serverURL.isEmpty == true ||
                               vm.editingAccount?.email.isEmpty == true ||

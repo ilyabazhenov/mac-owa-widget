@@ -4,16 +4,17 @@ import AppKit
 struct MeetingRowView: View {
     let event: CalendarEvent
     var compact: Bool = false
+    @EnvironmentObject private var localization: LocalizationService
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             // Time column
             VStack(alignment: .trailing, spacing: 1) {
-                Text(event.startDate.shortTime)
+                Text(localization.shortTime(event.startDate))
                     .font(.system(size: compact ? 10 : 11, weight: .medium))
                     .foregroundStyle(timeColor)
                 if !compact {
-                    Text(event.endDate.shortTime)
+                    Text(localization.shortTime(event.endDate))
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                 }
@@ -48,14 +49,14 @@ struct MeetingRowView: View {
                     Image(systemName: event.platform.systemIcon)
                         .foregroundStyle(event.platform.color)
                         .font(.system(size: compact ? 12 : 14))
-                        .help(event.platform.displayName)
+                        .help(event.platform.displayName(localization: localization))
                 }
 
                 if let url = event.joinURL {
                     Button {
                         NSWorkspace.shared.open(url)
                     } label: {
-                        Text("Join")
+                        Text(localization.tr("meeting.join"))
                             .font(.system(size: 11, weight: .semibold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
@@ -64,7 +65,7 @@ struct MeetingRowView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 5))
                     }
                     .buttonStyle(.plain)
-                    .help("Join \(event.platform.displayName) meeting")
+                    .help(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
                 }
             }
         }
@@ -74,7 +75,7 @@ struct MeetingRowView: View {
         .contentShape(Rectangle())
         .overlay(alignment: .trailing) {
             if event.isHappeningNow && !compact {
-                Text("now")
+                Text(localization.tr("meeting.now"))
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 5)

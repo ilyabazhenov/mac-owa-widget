@@ -5,6 +5,7 @@ import AppKit
 /// they are shown as a stack inside a single banner.
 struct NextMeetingBannerView: View {
     let events: [CalendarEvent]  // pre-sorted: joinURL first
+    @EnvironmentObject private var localization: LocalizationService
 
     var body: some View {
         if events.isEmpty { EmptyView() }
@@ -39,7 +40,7 @@ struct NextMeetingBannerView: View {
                 .lineLimit(2)
 
             HStack(spacing: 8) {
-                Text(event.startDate.timeRange(to: event.endDate))
+                Text("\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
 
@@ -51,7 +52,7 @@ struct NextMeetingBannerView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.right.circle.fill")
-                            Text("Join")
+                            Text(localization.tr("meeting.join"))
                                 .fontWeight(.semibold)
                         }
                         .font(.system(size: 12))
@@ -80,7 +81,7 @@ struct NextMeetingBannerView: View {
             HStack {
                 Image(systemName: "play.fill")
                     .font(.system(size: 10))
-                Text("\(events.count) meetings at \(events[0].startDate.shortTime)")
+                Text(localization.tr("meeting.multiple.at.time", events.count, localization.shortTime(events[0].startDate)))
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
@@ -110,9 +111,9 @@ struct NextMeetingBannerView: View {
     // MARK: - Helpers
 
     private func countdownLabel(_ event: CalendarEvent) -> String {
-        if event.isHappeningNow { return "Happening now" }
+        if event.isHappeningNow { return localization.tr("meeting.happening.now") }
         let m = event.minutesUntilStart
-        return m == 0 ? "Starting now" : "in \(m) min"
+        return m == 0 ? localization.tr("meeting.starting.now") : localization.tr("meeting.in.minutes", localization.minutesShort(m))
     }
 
     private func bannerBackground(_ event: CalendarEvent) -> some View {

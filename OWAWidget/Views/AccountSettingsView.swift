@@ -4,6 +4,7 @@ import SwiftUI
 struct AccountSettingsView: View {
     @Binding var account: CalendarAccount
     @Binding var password: String
+    @EnvironmentObject private var localization: LocalizationService
     var isNew: Bool
     var onTestConnection: () -> Void
     var testResult: String?
@@ -11,24 +12,24 @@ struct AccountSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Exchange Server") {
-                TextField("Server URL", text: $account.serverURL,
-                          prompt: Text("mail.company.com или https://mail.company.com/owa"))
-                    .help("Принимается любой формат: mail.company.com, https://mail.company.com или https://mail.company.com/owa")
+            Section(localization.tr("settings.account.exchange.section")) {
+                TextField(localization.tr("settings.account.server.url"), text: $account.serverURL,
+                          prompt: Text(localization.tr("settings.account.server.prompt")))
+                    .help(localization.tr("settings.account.server.help"))
 
-                TextField("Email", text: $account.email)
+                TextField(localization.tr("settings.account.email"), text: $account.email)
 
-                SecureField("Password", text: $password)
+                SecureField(localization.tr("settings.account.password"), text: $password)
             }
 
-            Section("Display") {
-                TextField("Account name", text: $account.displayName)
-                    .help("Friendly name shown in the accounts list")
+            Section(localization.tr("settings.account.display.section")) {
+                TextField(localization.tr("settings.account.name"), text: $account.displayName)
+                    .help(localization.tr("settings.account.name.help"))
             }
 
             Section {
                 HStack {
-                    Button(isTesting ? "Testing…" : "Test Connection") {
+                    Button(isTesting ? localization.tr("settings.account.testing") : localization.tr("settings.account.test")) {
                         onTestConnection()
                     }
                     .disabled(isTesting || account.serverURL.isEmpty || account.email.isEmpty || password.isEmpty)

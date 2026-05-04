@@ -2,47 +2,57 @@ import SwiftUI
 
 struct PreferencesView: View {
     @ObservedObject var vm: SettingsViewModel
+    @EnvironmentObject private var localization: LocalizationService
 
-    private let syncOptions: [(label: String, value: TimeInterval)] = [
-        ("1 minute", 60),
-        ("2 minutes", 120),
-        ("5 minutes", 300),
-        ("10 minutes", 600),
-        ("15 minutes", 900),
-        ("30 minutes", 1800),
+    private let syncOptions: [(minutes: Int, value: TimeInterval)] = [
+        (1, 60),
+        (2, 120),
+        (5, 300),
+        (10, 600),
+        (15, 900),
+        (30, 1800),
     ]
 
-    private let leadOptions: [(label: String, value: Int)] = [
-        ("1 minute", 1),
-        ("2 minutes", 2),
-        ("5 minutes", 5),
-        ("10 minutes", 10),
-        ("15 minutes", 15),
-        ("30 minutes", 30),
+    private let leadOptions: [(minutes: Int, value: Int)] = [
+        (1, 1),
+        (2, 2),
+        (5, 5),
+        (10, 10),
+        (15, 15),
+        (30, 30),
     ]
 
     var body: some View {
         Form {
-            Section("Sync") {
-                Picker("Sync interval", selection: $vm.syncInterval) {
-                    ForEach(syncOptions, id: \.value) { opt in
-                        Text(opt.label).tag(opt.value)
+            Section(localization.tr("language.section.title")) {
+                Picker(localization.tr("language.picker.title"), selection: $localization.selectedLanguage) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(localization.tr(language.localizationKey)).tag(language)
                     }
                 }
                 .pickerStyle(.menu)
             }
 
-            Section("Notifications") {
-                Picker("Remind me", selection: $vm.notificationLeadMinutes) {
+            Section(localization.tr("preferences.sync.section")) {
+                Picker(localization.tr("preferences.sync.interval"), selection: $vm.syncInterval) {
+                    ForEach(syncOptions, id: \.value) { opt in
+                        Text(localization.minutes(opt.minutes)).tag(opt.value)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
+            Section(localization.tr("preferences.notifications.section")) {
+                Picker(localization.tr("preferences.notifications.remind"), selection: $vm.notificationLeadMinutes) {
                     ForEach(leadOptions, id: \.value) { opt in
-                        Text(opt.label + " before").tag(opt.value)
+                        Text(localization.tr("preferences.notifications.before", localization.minutes(opt.minutes))).tag(opt.value)
                     }
                 }
                 .pickerStyle(.menu)
             }
 
             Section {
-                Button("Save Preferences") {
+                Button(localization.tr("preferences.save")) {
                     vm.savePreferences()
                 }
             }
