@@ -1,5 +1,6 @@
 ## What's Changed
 
-- Expand the timeline grid to a full 24-hour day (`00:00` to `23:30`).
-- Fix slot range calculation so end-of-day bounds (`24:00`) are handled correctly.
-- Update timeline layout tests to validate full-day slot rendering behavior.
+- Align timeline card geometry strictly to event start/duration so 30/60-minute meetings map exactly to slots.
+- Prevent visual overlap for adjacent meetings by drawing borders inside card bounds.
+- Simplify meeting action UI to a single join arrow button.
+- Reduce spacing and top padding for short meetings (30 minutes or less) to improve readability.
