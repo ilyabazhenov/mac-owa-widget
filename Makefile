@@ -6,8 +6,11 @@ RESOURCE_BUNDLE := .build/debug/$(APP_NAME)_$(APP_NAME).bundle
 ENTITLEMENTS := $(SRC_DIR)/OWAWidget-dev.entitlements
 INFO_PLIST  := $(SRC_DIR)/Info.plist
 CODE_SIGN_IDENTITY ?= -
+VERSION_FILE := VERSION
+RELEASE_NOTES_FILE := RELEASE_NOTES.md
+DIST_DIR := dist
 
-.PHONY: build bundle run kill clean watch logs help
+.PHONY: build bundle release-package run kill clean watch logs help
 
 ## Compile Swift sources
 build:
@@ -24,6 +27,20 @@ bundle: build
 	@printf 'APPL????' > $(APP_PATH)/Contents/PkgInfo
 	codesign --sign "$(CODE_SIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) --force $(APP_PATH)
 	@echo "✓ Bundle ready: $(APP_PATH)"
+
+## Build .app and package release zip
+release-package: bundle
+	@test -f $(VERSION_FILE) || (echo "Missing $(VERSION_FILE)" && exit 1)
+	@test -f $(RELEASE_NOTES_FILE) || (echo "Missing $(RELEASE_NOTES_FILE)" && exit 1)
+	@VERSION=$$(tr -d '[:space:]' < $(VERSION_FILE)); \
+	NOTES=$$(tr -d '[:space:]' < $(RELEASE_NOTES_FILE)); \
+	[ -n "$$VERSION" ] || (echo "$(VERSION_FILE) is empty" && exit 1); \
+	[ -n "$$NOTES" ] || (echo "$(RELEASE_NOTES_FILE) is empty" && exit 1); \
+	mkdir -p $(DIST_DIR); \
+	ARCHIVE="$(DIST_DIR)/$(APP_NAME)-v$$VERSION-macos.zip"; \
+	rm -f "$$ARCHIVE"; \
+	ditto -c -k --sequesterRsrc --keepParent $(APP_PATH) "$$ARCHIVE"; \
+	echo "✓ Release package ready: $$ARCHIVE"
 
 ## Kill running instance
 kill:
@@ -59,6 +76,7 @@ logs:
 
 help:
 	@echo "make build   — compile Swift sources"
+	@echo "make release-package — build and create release zip from VERSION"
 	@echo "make run     — build, bundle and launch"
 	@echo "make watch   — auto-rebuild on file changes"
 	@echo "make logs    — show recent diagnostic logs"

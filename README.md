@@ -132,6 +132,47 @@ Quick compile check without bundling:
 swift build
 ```
 
+### Current app version
+
+The repository-level release version is stored in:
+
+```bash
+VERSION
+```
+
+Update this file before triggering a new GitHub release.
+
+### Release description (required)
+
+Release notes are required and stored in:
+
+```bash
+RELEASE_NOTES.md
+```
+
+The release workflow fails if this file is missing or empty.
+
+### Release packaging
+
+To build a release archive locally:
+
+```bash
+make release-package
+```
+
+This command builds `.build/OWAWidget.app` and creates `dist/OWAWidget-v<version>-macos.zip`.
+
+### GitHub release flow
+
+A manual GitHub Actions workflow is available at `.github/workflows/release.yml`.
+
+1. Update `VERSION`
+2. Update `RELEASE_NOTES.md`
+3. Push changes to GitHub
+4. Open **Actions → Release → Run workflow**
+
+The workflow builds the app, creates the zip archive, then creates (or updates) a GitHub Release with tag `v<version>` and publishes the text from `RELEASE_NOTES.md` as release description.
+
 ---
 
 ## Architecture

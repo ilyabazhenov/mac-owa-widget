@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and package release artifact
+        id: package
+        shell: bash
+        run: |
+          if [[ ! -f "RELEASE_NOTES.md" ]]; then
+            echo "Missing RELEASE_NOTES.md" >&2
+            exit 1
+          fi
+
+          if [[ -z "$(tr -d '[:space:]' < RELEASE_NOTES.md)" ]]; then
+            echo "RELEASE_NOTES.md is empty" >&2
+            exit 1
+          fi
+
+          OUTPUT="$(bash scripts/package_release.sh)"
+          echo "${OUTPUT}"
+
+          VERSION=""
+          ARCHIVE_PATH=""
+          while IFS= read -r line; do
+            case "${line}" in
+              VERSION=*)
+                VERSION="${line#VERSION=}"
+                ;;
+              ARCHIVE_PATH=*)
+                ARCHIVE_PATH="${line#ARCHIVE_PATH=}"
+                ;;
+            esac
+          done <<< "${OUTPUT}"
+
+          if [[ -z "${VERSION}" || -z "${ARCHIVE_PATH}" ]]; then
+            echo "Failed to parse release metadata from package script output" >&2
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "archive_path=${ARCHIVE_PATH}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create GitHub release and upload artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          VERSION="${{ steps.package.outputs.version }}"
+          ARCHIVE_PATH="${{ steps.package.outputs.archive_path }}"
+          TAG="v${VERSION}"
+
+          gh release view "${TAG}" >/dev/null 2>&1 && EXISTS=1 || EXISTS=0
+
+          if [[ "${EXISTS}" -eq 1 ]]; then
+            echo "Release ${TAG} already exists, uploading/updating artifact"
+            gh release edit "${TAG}" --notes-file RELEASE_NOTES.md
+            gh release upload "${TAG}" "${ARCHIVE_PATH}" --clobber
+          else
+            gh release create "${TAG}" "${ARCHIVE_PATH}" \
+              --title "${TAG}" \
+              --notes-file RELEASE_NOTES.md
+          fi
