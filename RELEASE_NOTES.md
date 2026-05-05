@@ -1,6 +1,5 @@
 ## What's Changed
 
-- Fixed crash when launching the app binary directly from `/Applications/OWAWidget.app/Contents/MacOS/OWAWidget`.
-- Removed runtime dependency on SwiftPM-generated resource bundle accessor for app localization loading.
-- Improved app bundling paths to resolve binary/resource locations via `swift build --show-bin-path`.
-- Ensured bundle assembly cleans stale root-level resource bundle artifacts before codesigning.
+- Added separate bundle identifiers for local development and release packaging to avoid LaunchServices conflicts (`.dev` for `make run/watch`, production id for release).
+- Rebranded user-facing app naming to **Mac Owa Widget** across bundle metadata and localizations.
+- Updated agent instructions so "release new version" runs the full release flow (version bump, notes update, archive build, GitHub publication).
