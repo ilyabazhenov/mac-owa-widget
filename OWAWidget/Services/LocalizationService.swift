@@ -89,6 +89,7 @@ final class LocalizationService: ObservableObject {
         NotificationLocalization(
             localeIdentifier: effectiveLanguageCode,
             joinActionTitle: tr("notification.action.join"),
+            dismissActionTitle: tr("notification.action.dismiss"),
             bodyWithJoinFormat: tr("notification.body.with.join"),
             bodyWithoutJoinFormat: tr("notification.body.without.join")
         )

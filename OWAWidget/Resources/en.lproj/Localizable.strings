@@ -44,6 +44,8 @@
 "preferences.notifications.remind" = "Remind me";
 "preferences.notifications.before" = "%@ before";
 "preferences.save" = "Save Preferences";
+"preferences.debug.reminder.delay" = "Test reminder delay";
+"preferences.debug.reminder.trigger" = "Trigger test reminder";
 
 "popover.sync.now" = "Sync now";
 "popover.settings" = "Settings";
@@ -86,6 +88,7 @@
 "date.tomorrow" = "Tomorrow";
 
 "notification.action.join" = "Join";
+"notification.action.dismiss" = "Dismiss";
 "notification.body.with.join" = "Starts in %@ at %@. Tap Join to connect";
 "notification.body.without.join" = "Starts in %@ at %@";
 

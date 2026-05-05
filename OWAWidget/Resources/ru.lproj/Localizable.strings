@@ -44,6 +44,8 @@
 "preferences.notifications.remind" = "Напоминать";
 "preferences.notifications.before" = "за %@";
 "preferences.save" = "Сохранить настройки";
+"preferences.debug.reminder.delay" = "Задержка тестового напоминания";
+"preferences.debug.reminder.trigger" = "Показать тестовое напоминание";
 
 "popover.sync.now" = "Синхронизировать";
 "popover.settings" = "Настройки";
@@ -55,8 +57,8 @@
 "popover.resize.help" = "Потяните, чтобы изменить размер";
 
 "meeting.no.upcoming" = "Нет предстоящих встреч";
-"meeting.join" = "Перейти";
-"meeting.join.help" = "Перейти во встречу %@";
+"meeting.join" = "Подключиться";
+"meeting.join.help" = "Подключиться к встрече %@";
 "meeting.copy.link" = "Скопировать ссылку";
 "meeting.now" = "сейчас";
 "meeting.happening.now" = "Идёт сейчас";
@@ -85,8 +87,9 @@
 "date.today" = "Сегодня";
 "date.tomorrow" = "Завтра";
 
-"notification.action.join" = "Перейти";
-"notification.body.with.join" = "Начнётся через %@ в %@. Нажмите «Перейти», чтобы подключиться";
+"notification.action.join" = "Подключиться";
+"notification.action.dismiss" = "Закрыть";
+"notification.body.with.join" = "Начнётся через %@ в %@. Нажмите «Подключиться», чтобы подключиться";
 "notification.body.without.join" = "Начнётся через %@ в %@";
 
 "about.version" = "Версия %@";

@@ -93,4 +93,21 @@ final class SettingsViewModel: ObservableObject {
         service.meetingReminderStyle = meetingReminderStyle
         service.applySavedPreferences()
     }
+
+    #if DEBUG
+    func triggerTestReminderNow() {
+        service.triggerTestReminderNow()
+    }
+
+    var testReminderDelaySeconds: Double {
+        get {
+            let value = UserDefaults.standard.double(forKey: "OWA_TEST_DELAY_SECONDS")
+            return value > 0 ? value : 2
+        }
+        set {
+            let sanitized = max(0.5, min(newValue, 30))
+            UserDefaults.standard.set(sanitized, forKey: "OWA_TEST_DELAY_SECONDS")
+        }
+    }
+    #endif
 }

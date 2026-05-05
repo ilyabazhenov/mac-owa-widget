@@ -3,12 +3,21 @@ import Foundation
 // MARK: - Schedule (shared by system UN + in-app reminders)
 
 enum MeetingReminderSchedule {
+    private static let debugDelaySecondsKey = "OWA_TEST_DELAY_SECONDS"
+    private static let debugEventIDPrefix = "debug-reminder-"
+
     /// Delay until the reminder should fire, or `nil` if the event should be skipped.
     static func deliveryDelay(
         event: CalendarEvent,
         leadMinutes: Int,
         from now: Date
     ) -> TimeInterval? {
+        #if DEBUG
+        if event.id.hasPrefix(debugEventIDPrefix), let debugDelay = forcedDebugDelay() {
+            return debugDelay
+        }
+        #endif
+
         guard !event.isAllDay, event.endDate > now else { return nil }
 
         let lead = TimeInterval(leadMinutes * 60)
@@ -21,6 +30,24 @@ enum MeetingReminderSchedule {
         }
         return nil
     }
+
+    #if DEBUG
+    private static func forcedDebugDelay() -> TimeInterval? {
+        let defaultsValue = UserDefaults.standard.double(forKey: debugDelaySecondsKey)
+        if defaultsValue > 0 {
+            return defaultsValue
+        }
+
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "-\(debugDelaySecondsKey)"),
+           index + 1 < args.count,
+           let delay = TimeInterval(args[index + 1]),
+           delay > 0 {
+            return delay
+        }
+        return nil
+    }
+    #endif
 }
 
 // MARK: - Copy (shared)

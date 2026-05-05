@@ -22,7 +22,7 @@ final class LocalizationServiceTests: XCTestCase {
 
         XCTAssertEqual(service.effectiveLanguageCode, "ru")
         XCTAssertEqual(service.tr("settings.tab.preferences"), "Настройки")
-        XCTAssertEqual(service.tr("notification.action.join"), "Перейти")
+        XCTAssertEqual(service.tr("notification.action.join"), "Подключиться")
     }
 
     func testSystemFallsBackToEnglishForUnsupportedLanguages() {

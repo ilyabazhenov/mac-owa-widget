@@ -5,12 +5,14 @@ import os.log
 struct NotificationLocalization: Sendable {
     let localeIdentifier: String
     let joinActionTitle: String
+    let dismissActionTitle: String
     let bodyWithJoinFormat: String
     let bodyWithoutJoinFormat: String
 
     static let english = NotificationLocalization(
         localeIdentifier: "en",
         joinActionTitle: "Join",
+        dismissActionTitle: "Dismiss",
         bodyWithJoinFormat: "Starts in %@ at %@. Tap Join to connect",
         bodyWithoutJoinFormat: "Starts in %@ at %@"
     )

@@ -152,6 +152,46 @@ final class CalendarService: ObservableObject {
         self.events = events
     }
 
+    #if DEBUG
+    func triggerTestReminderNow() {
+        let now = Date()
+        let start = now.addingTimeInterval(5 * 60)
+        let end = start.addingTimeInterval(30 * 60)
+        let accountID = accounts.first?.id ?? UUID()
+        let event = CalendarEvent(
+            id: "debug-reminder-\(UUID().uuidString)",
+            title: "Debug reminder",
+            startDate: start,
+            endDate: end,
+            location: "Online",
+            bodyPreview: "Debug flow",
+            joinURL: URL(string: "https://example.com/join"),
+            platform: .teams,
+            isAllDay: false,
+            organizer: "OWA Widget",
+            accountID: accountID
+        )
+
+        Task {
+            let loc = notificationLocalization
+            let lead = notificationLeadMinutes
+            switch meetingReminderStyle {
+            case .system:
+                await notificationService.setup(localization: loc)
+                await notificationService.requestAuthorization()
+                await notificationService.scheduleNotifications(for: [event], leadMinutes: lead, localization: loc)
+            case .inApp:
+                customMeetingReminders.reschedule(events: [event], leadMinutes: lead, localization: loc)
+            case .both:
+                await notificationService.setup(localization: loc)
+                await notificationService.requestAuthorization()
+                await notificationService.scheduleNotifications(for: [event], leadMinutes: lead, localization: loc)
+                customMeetingReminders.reschedule(events: [event], leadMinutes: lead, localization: loc)
+            }
+        }
+    }
+    #endif
+
     // MARK: - Internal
 
     func rebuildProviders() async {

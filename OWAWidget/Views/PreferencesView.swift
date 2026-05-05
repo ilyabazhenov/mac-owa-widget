@@ -63,6 +63,25 @@ struct PreferencesView: View {
                     vm.savePreferences()
                 }
             }
+
+            #if DEBUG
+            Section("Debug") {
+                HStack {
+                    Text(localization.tr("preferences.debug.reminder.delay"))
+                    Spacer()
+                    Text("\(Int(vm.testReminderDelaySeconds))s")
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: Binding(
+                    get: { vm.testReminderDelaySeconds },
+                    set: { vm.testReminderDelaySeconds = $0 }
+                ), in: 1...15, step: 1)
+
+                Button(localization.tr("preferences.debug.reminder.trigger")) {
+                    vm.triggerTestReminderNow()
+                }
+            }
+            #endif
         }
         .formStyle(.grouped)
         .frame(minWidth: 320)

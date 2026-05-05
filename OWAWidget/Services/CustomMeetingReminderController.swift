@@ -9,8 +9,11 @@ final class CustomMeetingReminderController {
         let eventID: String
         let title: String
         let subtitle: String
+        let timeRange: String
+        let platform: MeetingPlatform
         let joinURL: URL?
         let joinTitle: String
+        let dismissTitle: String
     }
 
     private var scheduledWork: [String: DispatchWorkItem] = [:]
@@ -33,6 +36,8 @@ final class CustomMeetingReminderController {
         cancelAll()
 
         let joinTitle = localization.joinActionTitle
+        let dismissTitle = localization.dismissActionTitle
+        let locale = Locale(identifier: localization.localeIdentifier)
         let now = Date()
         for event in events {
             guard let delay = MeetingReminderSchedule.deliveryDelay(
@@ -50,8 +55,11 @@ final class CustomMeetingReminderController {
                 eventID: event.id,
                 title: event.title,
                 subtitle: subtitle,
+                timeRange: Self.timeRangeString(event: event, locale: locale),
+                platform: event.platform,
                 joinURL: event.joinURL,
-                joinTitle: joinTitle
+                joinTitle: joinTitle,
+                dismissTitle: dismissTitle
             )
 
             let work = DispatchWorkItem { [weak self] in
@@ -99,7 +107,11 @@ final class CustomMeetingReminderController {
         let view = MeetingReminderBannerView(
             title: payload.title,
             subtitle: payload.subtitle,
+            timeRange: payload.timeRange,
+            platformIcon: payload.platform.systemIcon,
+            accentColor: .orange,
             joinTitle: payload.joinTitle,
+            dismissTitle: payload.dismissTitle,
             joinURL: payload.joinURL,
             onJoin: { [weak self, weak panel] in
                 self?.dismissWorkItem?.cancel()
@@ -164,6 +176,14 @@ final class CustomMeetingReminderController {
         dismissWorkItem = nil
         currentPanel = nil
         presentNextIfIdle()
+    }
+
+    private static func timeRangeString(event: CalendarEvent, locale: Locale) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return "\(formatter.string(from: event.startDate))–\(formatter.string(from: event.endDate))"
     }
 }
 
