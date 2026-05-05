@@ -208,15 +208,15 @@ struct MeetingListView: View {
         }
     }
 
-    // Returns the slot 30 minutes before current time so that after scrolling
-    // the current moment appears near the top rather than in the center.
+    // Returns the slot 2 hours before current time so that after scrolling
+    // the current moment appears lower on the timeline with more context above.
     private func scrollAnchorSlotID() -> String? {
         let now = Date()
         let calendar = Calendar.current
         guard let section = sections.first(where: { calendar.isDate($0.date, inSameDayAs: now) }) else {
             return nil
         }
-        let anchorTime = now.addingTimeInterval(-Double(slotDurationMinutes) * 60)
+        let anchorTime = now.addingTimeInterval(-2 * 60 * 60)
         guard let slotStart = startOfSlot(containing: anchorTime, calendar: calendar) else {
             return nil
         }
