@@ -5,10 +5,6 @@
     <!-- Outbound HTTPS to Exchange servers -->
     <key>com.apple.security.network.client</key>
     <true/>
-    <!-- Keychain access without sharing groups (works with ad-hoc signing) -->
-    <key>com.apple.security.keychain-access-groups</key>
-    <array>
-        <string>com.owawidget.OWAWidget</string>
-    </array>
+    <!-- Keep dev entitlements compatible with ad-hoc codesign in Makefile -->
 </dict>
 </plist>

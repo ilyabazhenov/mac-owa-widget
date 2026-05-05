@@ -1,5 +1,5 @@
 ## What's Changed
 
-- Switched the production bundle identifier to `com.owawidget.MacOwaWidget` for proper reverse-DNS semantics and improved LaunchServices compatibility.
-- Synced bundle identifier configuration across `Info.plist`, `Makefile`, and `project.yml` so local packaging and generated Xcode projects use the same app identity.
-- Kept local development launch flow isolated via `.dev` suffix while preserving stable release packaging behavior.
+- Fixed keychain entitlement binding for release signing by deriving access groups from `$(PRODUCT_BUNDLE_IDENTIFIER)`.
+- Restored stable local app launch for `make run`/`make watch` by keeping dev entitlements compatible with ad-hoc `codesign`.
+- Prevented calendar sync regressions after bundle identifier updates by aligning runtime identity and keychain access behavior.
