@@ -1,5 +1,6 @@
 ## What's Changed
 
+- Rebuilt and published the release from `main` after merging feature branch changes.
 - Added offline mode with persisted event cache, so meetings remain visible during connection loss and after app restart.
 - Improved popover resilience for offline/error states and added targeted coverage for cache restore and sync fallback flows.
 - Stabilized next-meeting banner rendering by removing perpetual pulse animation that could trigger visual jitter in the dropdown.
