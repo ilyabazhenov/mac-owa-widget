@@ -11,6 +11,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable {
     let platform: MeetingPlatform
     let isAllDay: Bool
     let organizer: String?
+    let attendees: [String]
     let accountID: UUID
 
     var isHappeningNow: Bool {

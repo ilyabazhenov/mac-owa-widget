@@ -57,8 +57,10 @@
 "meeting.no.upcoming" = "No upcoming meetings";
 "meeting.join" = "Join";
 "meeting.join.help" = "Join %@ meeting";
+"meeting.copy.link" = "Copy join link";
 "meeting.now" = "now";
 "meeting.happening.now" = "Happening now";
+"meeting.remaining.minutes" = "%@ remaining";
 "meeting.starting.now" = "Starting now";
 "meeting.in.minutes" = "in %@";
 "meeting.multiple.at.time" = "%d meetings at %@";

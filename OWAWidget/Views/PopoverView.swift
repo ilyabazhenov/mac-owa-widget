@@ -10,6 +10,8 @@ struct PopoverView: View {
     private let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
     private var fullVersion: String { "\(appVersion).\(appBuild)" }
     let contentHorizontalPadding: CGFloat = 12
+    @State private var selectedDayOffset: Int = 0
+    @State private var selectedEvent: CalendarEvent? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -74,19 +76,78 @@ struct PopoverView: View {
 
     @ViewBuilder
     private var content: some View {
-        if service.accounts.isEmpty {
-            noAccountState
-        } else if service.syncStatus.isError {
-            errorState
-        } else {
-            VStack(spacing: 0) {
-                if !nextEvents.isEmpty {
-                    NextMeetingBannerView(events: nextEvents, horizontalPadding: contentHorizontalPadding)
-                    Divider().padding(.top, 8)
+        NavigationStack {
+            Group {
+                if service.accounts.isEmpty {
+                    noAccountState
+                } else if service.syncStatus.isError {
+                    errorState
+                } else {
+                    VStack(spacing: 0) {
+                        dateNavBar
+                        Divider()
+                        if selectedDayOffset == 0 && !nextEvents.isEmpty {
+                            NextMeetingBannerView(
+                                events: nextEvents,
+                                horizontalPadding: contentHorizontalPadding,
+                                onSelect: { selectedEvent = $0 }
+                            )
+                            Divider().padding(.top, 8)
+                        }
+                        MeetingListView(
+                            sections: eventSections,
+                            contentHorizontalPadding: contentHorizontalPadding,
+                            onSelect: { selectedEvent = $0 }
+                        )
+                    }
                 }
-                MeetingListView(sections: eventSections, contentHorizontalPadding: contentHorizontalPadding)
+            }
+            .navigationDestination(isPresented: Binding(
+                get: { selectedEvent != nil },
+                set: { if !$0 { selectedEvent = nil } }
+            )) {
+                if let event = selectedEvent {
+                    MeetingDetailView(event: event)
+                }
             }
         }
+    }
+
+    private var dateNavBar: some View {
+        HStack {
+            Button {
+                if selectedDayOffset > 0 {
+                    selectedDayOffset -= 1
+                    selectedEvent = nil
+                }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedDayOffset == 0)
+
+            Spacer()
+
+            Text(localization.daySectionLabel(for: selectedDate, calendar: .current))
+                .font(.system(size: 12, weight: .semibold))
+
+            Spacer()
+
+            Button {
+                if selectedDayOffset < 6 {
+                    selectedDayOffset += 1
+                    selectedEvent = nil
+                }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedDayOffset == 6)
+        }
+        .padding(.horizontal, contentHorizontalPadding)
+        .padding(.vertical, 6)
     }
 
     // MARK: - Footer
@@ -166,6 +227,11 @@ struct PopoverView: View {
 
     private var now: Date { Date() }
 
+    private var selectedDate: Date {
+        Calendar.current.date(byAdding: .day, value: selectedDayOffset,
+            to: Calendar.current.startOfDay(for: Date()))!
+    }
+
     /// Meetings starting within 5 minutes of the earliest upcoming, sorted: with URL first
     private var nextEvents: [CalendarEvent] {
         let upcoming = service.events
@@ -185,10 +251,10 @@ struct PopoverView: View {
 
     private var eventSections: [(label: String, date: Date, events: [CalendarEvent])] {
         let calendar = Calendar.current
-        let todayStart = calendar.startOfDay(for: now)
-        let todayEnd = calendar.startOfDay(for: calendar.date(byAdding: .day, value: 1, to: now)!)
+        let dayStart = calendar.startOfDay(for: selectedDate)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
 
-        let today = service.events.filter { $0.startDate < todayEnd && $0.endDate > todayStart }
-        return [(localization.daySectionLabel(for: todayStart, calendar: calendar), todayStart, today)]
+        let events = service.events.filter { $0.startDate < dayEnd && $0.endDate > dayStart }
+        return [(localization.daySectionLabel(for: dayStart, calendar: calendar), dayStart, events)]
     }
 }

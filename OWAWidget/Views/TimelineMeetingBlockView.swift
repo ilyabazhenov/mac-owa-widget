@@ -8,6 +8,7 @@ struct TimelineMeetingBlockView: View {
     var showsOrganizer: Bool?
 
     @EnvironmentObject private var localization: LocalizationService
+    @State private var didCopy = false
 
     init(event: CalendarEvent, compact: Bool = false, showsOrganizer: Bool? = nil) {
         self.event = event
@@ -39,8 +40,24 @@ struct TimelineMeetingBlockView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            VStack(spacing: 4) {
-                if let url = event.joinURL {
+            if let url = event.joinURL {
+                HStack(alignment: .top, spacing: 4) {
+                    if !compact {
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                            didCopy = true
+                            Task { try? await Task.sleep(for: .seconds(1.5)); didCopy = false }
+                        } label: {
+                            Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 3)
+                        .help(localization.tr("meeting.copy.link"))
+                    }
+
                     Button {
                         NSWorkspace.shared.open(url)
                     } label: {

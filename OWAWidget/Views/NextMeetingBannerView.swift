@@ -6,79 +6,119 @@ import AppKit
 struct NextMeetingBannerView: View {
     let events: [CalendarEvent]  // pre-sorted: joinURL first
     var horizontalPadding: CGFloat = 6
+    var onSelect: (CalendarEvent) -> Void = { _ in }
     @EnvironmentObject private var localization: LocalizationService
+    @State private var didCopy = false
 
     var body: some View {
         if events.isEmpty { EmptyView() }
         else if events.count == 1 {
-            singleBanner(events[0])
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                singleBanner(events[0], now: context.date)
+            }
         } else {
-            stackBanner(events)
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                stackBanner(events, now: context.date)
+            }
         }
     }
 
     // MARK: - Single event banner
 
-    private func singleBanner(_ event: CalendarEvent) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                Text(countdownLabel(event))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if event.platform != .generic {
-                    Image(systemName: event.platform.systemIcon)
-                        .foregroundStyle(event.platform.color)
-                        .font(.system(size: 13))
+    private func singleBanner(_ event: CalendarEvent, now: Date) -> some View {
+        let happening = isNow(event, now: now)
+
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    if happening {
+                        PulsingDot()
+                        Text(remainingLabel(event, now: now))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.orange)
+                    } else {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                        Text(countdownLabel(event, now: now))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if event.platform != .generic {
+                        Image(systemName: event.platform.systemIcon)
+                            .foregroundStyle(happening ? .orange : event.platform.color)
+                            .font(.system(size: 12))
+                    }
+                }
+
+                Text(event.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(2)
+
+                HStack(spacing: 8) {
+                    Text(metaString(event))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    if let url = event.joinURL {
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                            didCopy = true
+                            Task { try? await Task.sleep(for: .seconds(1.5)); didCopy = false }
+                        } label: {
+                            Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help(localization.tr("meeting.copy.link"))
+
+                        Button {
+                            NSWorkspace.shared.open(url)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.right.circle.fill")
+                                Text(localization.tr("meeting.join"))
+                                    .fontWeight(.semibold)
+                            }
+                            .font(.system(size: 12))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(happening ? Color.orange : event.platform.color)
+                            .foregroundStyle(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 7))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
+            .padding(.top, 10)
+            .padding(.horizontal, 12)
+            .padding(.bottom, happening ? 6 : 10)
 
-            Text(event.title)
-                .font(.system(size: 15, weight: .semibold))
-                .lineLimit(2)
-
-            HStack(spacing: 8) {
-                Text("\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                if let url = event.joinURL {
-                    Button {
-                        NSWorkspace.shared.open(url)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.right.circle.fill")
-                            Text(localization.tr("meeting.join"))
-                                .fontWeight(.semibold)
-                        }
-                        .font(.system(size: 12))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .background(event.platform.color)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    .buttonStyle(.plain)
-                }
+            if happening {
+                MeetingProgressBar(progress: progress(event, now: now))
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
             }
         }
-        .padding(14)
-        .background(bannerBackground(event))
+        .background(bannerBackground(event, happening: happening))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .onTapGesture { onSelect(event) }
         .padding(.horizontal, horizontalPadding)
-        .padding(.top, 12)
+        .padding(.top, 10)
     }
 
     // MARK: - Multiple concurrent events
 
-    private func stackBanner(_ events: [CalendarEvent]) -> some View {
+    private func stackBanner(_ events: [CalendarEvent], now: Date) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
             HStack {
                 Image(systemName: "play.fill")
                     .font(.system(size: 10))
@@ -92,9 +132,11 @@ struct NextMeetingBannerView: View {
 
             Divider()
 
-            // Each meeting as a compact row
             ForEach(events) { event in
-                MeetingRowView(event: event, compact: true)
+                Button { onSelect(event) } label: {
+                    MeetingRowView(event: event, compact: true)
+                }
+                .buttonStyle(.plain)
                 if event.id != events.last?.id {
                     Divider().padding(.leading, 12)
                 }
@@ -111,18 +153,82 @@ struct NextMeetingBannerView: View {
 
     // MARK: - Helpers
 
-    private func countdownLabel(_ event: CalendarEvent) -> String {
-        if event.isHappeningNow { return localization.tr("meeting.happening.now") }
-        let m = event.minutesUntilStart
+    private func isNow(_ event: CalendarEvent, now: Date) -> Bool {
+        event.startDate <= now && event.endDate > now
+    }
+
+    private func minsUntilStart(_ event: CalendarEvent, now: Date) -> Int {
+        max(0, Int(event.startDate.timeIntervalSince(now) / 60))
+    }
+
+    private func minsRemaining(_ event: CalendarEvent, now: Date) -> Int {
+        max(0, Int(event.endDate.timeIntervalSince(now) / 60))
+    }
+
+    private func progress(_ event: CalendarEvent, now: Date) -> Double {
+        guard event.duration > 0 else { return 0 }
+        return min(1, max(0, now.timeIntervalSince(event.startDate) / event.duration))
+    }
+
+    private func metaString(_ event: CalendarEvent) -> String {
+        let time = "\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))"
+        guard let organizer = event.organizer else { return time }
+        return "\(time) · \(organizer)"
+    }
+
+    private func countdownLabel(_ event: CalendarEvent, now: Date) -> String {
+        let m = minsUntilStart(event, now: now)
         return m == 0 ? localization.tr("meeting.starting.now") : localization.tr("meeting.in.minutes", localization.minutesShort(m))
     }
 
-    private func bannerBackground(_ event: CalendarEvent) -> some View {
-        ZStack {
+    private func remainingLabel(_ event: CalendarEvent, now: Date) -> String {
+        let m = minsRemaining(event, now: now)
+        return m == 0 ? localization.tr("meeting.happening.now") : localization.tr("meeting.remaining.minutes", localization.minutesShort(m))
+    }
+
+    private func bannerBackground(_ event: CalendarEvent, happening: Bool) -> some View {
+        let color: Color = happening ? .orange : event.platform.color
+        return ZStack {
             RoundedRectangle(cornerRadius: 10)
-                .fill(event.platform.color.opacity(0.08))
+                .fill(color.opacity(happening ? 0.10 : 0.08))
             RoundedRectangle(cornerRadius: 10)
-                .stroke(event.platform.color.opacity(0.25), lineWidth: 1)
+                .stroke(color.opacity(happening ? 0.35 : 0.25), lineWidth: 1)
         }
+    }
+}
+
+// MARK: - Sub-views
+
+private struct PulsingDot: View {
+    @State private var pulse = false
+
+    var body: some View {
+        Circle()
+            .fill(Color.orange)
+            .frame(width: 6, height: 6)
+            .scaleEffect(pulse ? 1.15 : 0.8)
+            .opacity(pulse ? 1.0 : 0.5)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    pulse = true
+                }
+            }
+    }
+}
+
+private struct MeetingProgressBar: View {
+    let progress: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(Color.orange.opacity(0.2))
+                .overlay(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(Color.orange)
+                        .frame(width: geo.size.width * progress)
+                }
+        }
+        .frame(height: 3)
     }
 }

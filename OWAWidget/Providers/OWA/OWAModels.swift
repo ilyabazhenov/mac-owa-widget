@@ -20,6 +20,8 @@ struct OWACalendarItem: Decodable {
     let Organizer: OWAOrganizer?
     let TextBody: OWATextBody?
     let JoinOnlineMeetingUrl: String?
+    let RequiredAttendees: OWAAttendeeList?
+    let OptionalAttendees: OWAAttendeeList?
 }
 
 struct OWAItemId: Decodable {
@@ -47,6 +49,28 @@ struct OWAMailbox: Decodable {
 
 struct OWATextBody: Decodable {
     let Value: String?
+}
+
+// OWA sometimes serializes a single attendee as an object, multiple as an array.
+struct OWAAttendeeList: Decodable {
+    let attendees: [OWAAttendee]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let arr = try? container.decode([OWAAttendee].self, forKey: .Attendee) {
+            attendees = arr
+        } else if let single = try? container.decode(OWAAttendee.self, forKey: .Attendee) {
+            attendees = [single]
+        } else {
+            attendees = []
+        }
+    }
+
+    enum CodingKeys: String, CodingKey { case Attendee }
+}
+
+struct OWAAttendee: Decodable {
+    let Mailbox: OWAMailbox?
 }
 
 // MARK: - Errors

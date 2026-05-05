@@ -57,8 +57,10 @@
 "meeting.no.upcoming" = "Нет предстоящих встреч";
 "meeting.join" = "Перейти";
 "meeting.join.help" = "Перейти во встречу %@";
+"meeting.copy.link" = "Скопировать ссылку";
 "meeting.now" = "сейчас";
 "meeting.happening.now" = "Идёт сейчас";
+"meeting.remaining.minutes" = "осталось %@";
 "meeting.starting.now" = "Начинается сейчас";
 "meeting.in.minutes" = "через %@";
 "meeting.multiple.at.time" = "%d встречи в %@";

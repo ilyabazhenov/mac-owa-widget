@@ -51,6 +51,10 @@ actor OWACalendarProvider: CalendarProvider {
         let id = item.ItemId?.Id ?? UUID().uuidString
         let (joinURL, platform) = resolveJoinURL(from: item)
 
+        let requiredNames = item.RequiredAttendees?.attendees.compactMap { $0.Mailbox?.Name } ?? []
+        let optionalNames = item.OptionalAttendees?.attendees.compactMap { $0.Mailbox?.Name } ?? []
+        let attendees = (requiredNames + optionalNames).filter { !$0.isEmpty }
+
         return CalendarEvent(
             id: id,
             title: subject,
@@ -62,6 +66,7 @@ actor OWACalendarProvider: CalendarProvider {
             platform: platform,
             isAllDay: item.IsAllDayEvent ?? false,
             organizer: item.Organizer?.Mailbox?.Name,
+            attendees: attendees,
             accountID: account.id
         )
     }

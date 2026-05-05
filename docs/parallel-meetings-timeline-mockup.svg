@@ -54,7 +54,7 @@
     <rect x="178" y="536" width="560" height="62" rx="0" fill="#FFF000"/>
     <rect x="178" y="536" width="8" height="62" fill="#F4C900"/>
     <text x="196" y="570" font-size="20" font-weight="750" fill="#20262C">РГ Collection</text>
-    <text x="346" y="570" font-size="18" fill="#20262C">https://alfabank.ktalk...</text>
+    <text x="346" y="570" font-size="18" fill="#20262C">*.ktalk.ru</text>
     <path d="M706 558a14 14 0 0 1 20 0m-3-10 3 10-10-3" stroke="#6B7280" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
 
     <rect x="248" y="612" width="350" height="62" rx="0" fill="#DDF0FA" stroke="#3498DB" stroke-width="2"/>

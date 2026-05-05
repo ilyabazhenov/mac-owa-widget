@@ -5,6 +5,7 @@ struct MeetingRowView: View {
     let event: CalendarEvent
     var compact: Bool = false
     @EnvironmentObject private var localization: LocalizationService
+    @State private var didCopy = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
@@ -54,6 +55,19 @@ struct MeetingRowView: View {
 
                 if let url = event.joinURL {
                     Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        didCopy = true
+                        Task { try? await Task.sleep(for: .seconds(1.5)); didCopy = false }
+                    } label: {
+                        Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: compact ? 11 : 12))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(localization.tr("meeting.copy.link"))
+
+                    Button {
                         NSWorkspace.shared.open(url)
                     } label: {
                         Text(localization.tr("meeting.join"))
@@ -82,7 +96,7 @@ struct MeetingRowView: View {
                     .padding(.vertical, 2)
                     .background(Color.orange)
                     .clipShape(Capsule())
-                    .padding(.trailing, event.joinURL != nil ? 64 : 14)
+                    .padding(.trailing, event.joinURL != nil ? 90 : 14)
             }
         }
     }

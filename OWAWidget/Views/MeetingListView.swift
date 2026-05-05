@@ -3,6 +3,7 @@ import SwiftUI
 struct MeetingListView: View {
     let sections: [(label: String, date: Date, events: [CalendarEvent])]
     var contentHorizontalPadding: CGFloat = 12
+    var onSelect: (CalendarEvent) -> Void = { _ in }
     @EnvironmentObject private var localization: LocalizationService
     @State private var hasAutoScrolledToCurrentSlot = false
 
@@ -25,9 +26,14 @@ struct MeetingListView: View {
                 }
             }
             .onAppear {
+                hasAutoScrolledToCurrentSlot = false
                 scrollToCurrentSlotIfNeeded(proxy: proxy)
             }
             .onChange(of: sections.map(\.events.count)) { _ in
+                scrollToCurrentSlotIfNeeded(proxy: proxy)
+            }
+            .onChange(of: sections.first?.date) { _ in
+                hasAutoScrolledToCurrentSlot = false
                 scrollToCurrentSlotIfNeeded(proxy: proxy)
             }
         }
@@ -92,24 +98,27 @@ struct MeetingListView: View {
                                     verticalGap: Double(cardGap)
                                 )
 
-                                TimelineMeetingBlockView(
-                                    event: item.event,
-                                    compact: laneCount > 1,
-                                    showsOrganizer: TimelineMeetingLayout.showsTimelineOrganizer(
-                                        laneIndex: item.laneIndex,
-                                        laneCount: laneCount,
-                                        eventDuration: item.event.duration
+                                Button { onSelect(item.event) } label: {
+                                    TimelineMeetingBlockView(
+                                        event: item.event,
+                                        compact: laneCount > 1,
+                                        showsOrganizer: TimelineMeetingLayout.showsTimelineOrganizer(
+                                            laneIndex: item.laneIndex,
+                                            laneCount: laneCount,
+                                            eventDuration: item.event.duration
+                                        )
                                     )
+                                }
+                                .buttonStyle(.plain)
+                                .frame(
+                                    width: CGFloat(cardFrame.width),
+                                    height: CGFloat(cardFrame.height),
+                                    alignment: .topLeading
                                 )
-                                    .frame(
-                                        width: CGFloat(cardFrame.width),
-                                        height: CGFloat(cardFrame.height),
-                                        alignment: .topLeading
-                                    )
-                                    .position(
-                                        x: CGFloat(cardFrame.centerX),
-                                        y: CGFloat(cardFrame.centerY)
-                                    )
+                                .position(
+                                    x: CGFloat(cardFrame.centerX),
+                                    y: CGFloat(cardFrame.centerY)
+                                )
                             }
                         }
                         .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
@@ -163,19 +172,6 @@ struct MeetingListView: View {
         return "slot-\(sectionKey)-\(slotKey)"
     }
 
-    private func currentSlotID() -> String? {
-        let now = Date()
-        let calendar = Calendar.current
-
-        guard let section = sections.first(where: { calendar.isDate($0.date, inSameDayAs: now) }) else {
-            return nil
-        }
-        guard let slotStart = startOfSlot(containing: now, calendar: calendar) else {
-            return nil
-        }
-        return slotID(for: section.date, slotStart: slotStart)
-    }
-
     private func startOfSlot(containing date: Date, calendar: Calendar) -> Date? {
         let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
         guard
@@ -200,29 +196,30 @@ struct MeetingListView: View {
 
     private func scrollToCurrentSlotIfNeeded(proxy: ScrollViewProxy) {
         guard !hasAutoScrolledToCurrentSlot else { return }
-        guard let id = currentSlotID() else { return }
+        guard let id = scrollAnchorSlotID() else { return }
 
-        debugLogCurrentSlot(targetID: id)
         hasAutoScrolledToCurrentSlot = true
         DispatchQueue.main.async {
             withAnimation(.easeInOut(duration: 0.2)) {
-                proxy.scrollTo(id, anchor: .center)
+                proxy.scrollTo(id, anchor: .top)
             }
         }
     }
 
-    private func debugLogCurrentSlot(targetID: String) {
-        #if DEBUG
+    // Returns the slot 30 minutes before current time so that after scrolling
+    // the current moment appears near the top rather than in the center.
+    private func scrollAnchorSlotID() -> String? {
         let now = Date()
         let calendar = Calendar.current
-        let timeZone = TimeZone.current.identifier
-        let nowHour = calendar.component(.hour, from: now)
-        let slotStart = startOfSlot(containing: now, calendar: calendar)
-        let slotStartText = slotStart.map { localization.shortTime($0) } ?? "n/a"
-        print(
-            "[MeetingListView] timezone=\(timeZone) now=\(localization.shortTime(now)) " +
-            "hour=\(nowHour) slotStart=\(slotStartText) targetSlotID=\(targetID)"
-        )
-        #endif
+        guard let section = sections.first(where: { calendar.isDate($0.date, inSameDayAs: now) }) else {
+            return nil
+        }
+        let anchorTime = now.addingTimeInterval(-Double(slotDurationMinutes) * 60)
+        guard let slotStart = startOfSlot(containing: anchorTime, calendar: calendar) else {
+            return nil
+        }
+        return slotID(for: section.date, slotStart: slotStart)
     }
+
+
 }
