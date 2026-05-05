@@ -23,7 +23,7 @@
 "settings.account.server.url" = "URL сервера";
 "settings.account.server.prompt" = "mail.company.com или https://mail.company.com/owa";
 "settings.account.server.help" = "Принимается любой формат: mail.company.com, https://mail.company.com или https://mail.company.com/owa";
-"settings.account.email" = "Email";
+"settings.account.email" = "Учетная запись";
 "settings.account.password" = "Пароль";
 "settings.account.display.section" = "Отображение";
 "settings.account.name" = "Название аккаунта";
@@ -33,6 +33,11 @@
 "settings.account.connected" = "Подключение успешно";
 "settings.account.save.failed" = "Не удалось сохранить: %@";
 "settings.account.connection.auth.failed" = "Не удалось подключиться к OWA. Проверьте адрес сервера, логин и пароль.";
+
+"preferences.startup.section" = "Запуск";
+"preferences.startup.launchAtLogin" = "Запускать при входе в систему";
+"preferences.startup.requiresApproval" = "Требуется разрешение в Системных настройках → Объекты входа.";
+"preferences.startup.openSettings" = "Открыть Системные настройки";
 
 "preferences.sync.section" = "Синхронизация";
 "preferences.sync.interval" = "Интервал синхронизации";

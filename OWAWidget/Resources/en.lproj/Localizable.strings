@@ -23,7 +23,7 @@
 "settings.account.server.url" = "Server URL";
 "settings.account.server.prompt" = "mail.company.com or https://mail.company.com/owa";
 "settings.account.server.help" = "Any format is accepted: mail.company.com, https://mail.company.com, or https://mail.company.com/owa";
-"settings.account.email" = "Email";
+"settings.account.email" = "Account";
 "settings.account.password" = "Password";
 "settings.account.display.section" = "Display";
 "settings.account.name" = "Account name";
@@ -33,6 +33,11 @@
 "settings.account.connected" = "Connected successfully";
 "settings.account.save.failed" = "Save failed: %@";
 "settings.account.connection.auth.failed" = "Could not connect to OWA. Check the server address, login, and password.";
+
+"preferences.startup.section" = "Startup";
+"preferences.startup.launchAtLogin" = "Launch at login";
+"preferences.startup.requiresApproval" = "Approval needed in System Settings → Login Items.";
+"preferences.startup.openSettings" = "Open System Settings";
 
 "preferences.sync.section" = "Sync";
 "preferences.sync.interval" = "Sync interval";

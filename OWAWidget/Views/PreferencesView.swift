@@ -24,6 +24,26 @@ struct PreferencesView: View {
 
     var body: some View {
         Form {
+            Section(localization.tr("preferences.startup.section")) {
+                Toggle(
+                    localization.tr("preferences.startup.launchAtLogin"),
+                    isOn: Binding(
+                        get: { vm.launchAtLogin },
+                        set: { vm.setLaunchAtLogin($0) }
+                    )
+                )
+                if vm.launchAtLoginRequiresApproval {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(localization.tr("preferences.startup.requiresApproval"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        Button(localization.tr("preferences.startup.openSettings")) {
+                            vm.openLoginItemsSettings()
+                        }
+                    }
+                }
+            }
+
             Section(localization.tr("language.section.title")) {
                 Picker(localization.tr("language.picker.title"), selection: $localization.selectedLanguage) {
                     ForEach(AppLanguage.allCases) { language in

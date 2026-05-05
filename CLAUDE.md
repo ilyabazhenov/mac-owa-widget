@@ -61,6 +61,7 @@ CalendarService (@MainActor, ObservableObject)
 | `OWAWidget/Services/MeetingURLDetector.swift` | Поиск ссылок на Teams, Zoom, Webex, Google Meet и другие платформы в данных события. |
 | `OWAWidget/Services/NotificationService.swift` | Локальные уведомления перед встречами. |
 | `OWAWidget/Services/KeychainService.swift` | Хранение паролей аккаунтов в macOS Keychain. |
+| `OWAWidget/Services/LaunchAtLoginService.swift` | Автозапуск при входе в систему через `SMAppService.mainApp` (`ServiceManagement`). |
 | `OWAWidget/Views/PopoverView.swift` | Главное окно popover: ближайшие встречи, секции событий и состояния ошибки/пустого списка. |
 | `OWAWidget/Views/NextMeetingBannerView.swift` | Баннер ближайшей встречи или стопка встреч, начинающихся почти одновременно. |
 | `OWAWidget/Views/MeetingListView.swift` | Основной список встреч в popover: тайм-сетка и overlay карточек встреч. |
@@ -131,6 +132,7 @@ CalendarService (@MainActor, ObservableObject)
 - Пароли: macOS Keychain, service `com.owawidget.OWAWidget`, account `accountID.uuidString`.
 - Настройки синхронизации: `UserDefaults`, ключ `syncInterval`.
 - Настройки уведомлений: `UserDefaults`, ключ `notificationLeadMinutes`.
+- Автозапуск при входе: состояние хранит macOS (Login Items), не `UserDefaults`; переключатель в настройках вызывает `SMAppService.mainApp` через `LaunchAtLoginService`.
 
 ## Правила для агентов
 

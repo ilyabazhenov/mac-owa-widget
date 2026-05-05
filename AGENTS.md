@@ -20,6 +20,7 @@ OWAWidget - macOS menu bar приложение на Swift 6 и SwiftUI для �
 - `OWAWidget/Services/MeetingURLDetector.swift` - поиск ссылок на Teams, Zoom, Webex, Google Meet и другие платформы.
 - `OWAWidget/Services/NotificationService.swift` - локальные уведомления о встречах.
 - `OWAWidget/Services/KeychainService.swift` - хранение паролей в Keychain.
+- `OWAWidget/Services/LaunchAtLoginService.swift` - автозапуск при входе (`SMAppService.mainApp`).
 - `OWAWidget/Views/` - SwiftUI интерфейс меню и настроек.
 - `OWAWidget/Views/MeetingListView.swift` - таймлайн-список встреч в popover (тайм-сетка + overlay карточек).
 - `OWAWidget/Views/TimelineMeetingLayout.swift` - алгоритмы раскладки пересекающихся встреч (slotting, clusters, lanes, frame math).

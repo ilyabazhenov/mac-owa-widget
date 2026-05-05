@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 @MainActor
@@ -6,6 +7,8 @@ final class SettingsViewModel: ObservableObject {
     @Published var syncInterval: TimeInterval
     @Published var notificationLeadMinutes: Int
     @Published var meetingReminderStyle: MeetingReminderStyle
+    @Published var launchAtLogin: Bool
+    @Published var launchAtLoginRequiresApproval: Bool
 
     // Per-account edit state
     @Published var editingAccount: CalendarAccount?
@@ -15,13 +18,20 @@ final class SettingsViewModel: ObservableObject {
     @Published var testResult: String?
 
     private let service: CalendarService
+    private let launchAtLoginManager: any LaunchAtLoginManaging
 
-    init(calendarService: CalendarService) {
+    init(
+        calendarService: CalendarService,
+        launchAtLoginManager: any LaunchAtLoginManaging = LaunchAtLoginService()
+    ) {
         self.service = calendarService
+        self.launchAtLoginManager = launchAtLoginManager
         self.accounts = calendarService.accounts
         self.syncInterval = calendarService.syncInterval
         self.notificationLeadMinutes = calendarService.notificationLeadMinutes
         self.meetingReminderStyle = calendarService.meetingReminderStyle
+        self.launchAtLogin = launchAtLoginManager.isEnabled
+        self.launchAtLoginRequiresApproval = launchAtLoginManager.requiresApproval
     }
 
     // MARK: - Connection test
@@ -92,6 +102,31 @@ final class SettingsViewModel: ObservableObject {
         service.notificationLeadMinutes = notificationLeadMinutes
         service.meetingReminderStyle = meetingReminderStyle
         service.applySavedPreferences()
+    }
+
+    // MARK: - Launch at login
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try launchAtLoginManager.register()
+            } else {
+                try launchAtLoginManager.unregister()
+            }
+        } catch {
+            // Reflect actual system state even when register/unregister fails.
+        }
+        refreshLaunchAtLoginState()
+    }
+
+    func openLoginItemsSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func refreshLaunchAtLoginState() {
+        launchAtLogin = launchAtLoginManager.isEnabled
+        launchAtLoginRequiresApproval = launchAtLoginManager.requiresApproval
     }
 
     #if DEBUG
