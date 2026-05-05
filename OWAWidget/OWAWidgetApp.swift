@@ -10,6 +10,7 @@ struct OWAWidgetApp: App {
 
     init() {
         UNUserNotificationCenter.current().delegate = notificationDelegate
+        configureAppIcon()
     }
 
     var body: some Scene {
@@ -47,6 +48,12 @@ struct OWAWidgetApp: App {
 
     private func syncLocalization() {
         calendarService.setNotificationLocalization(localizationService.notificationLocalization)
+    }
+
+    private func configureAppIcon() {
+        if let icon = NSImage(named: "AppIcon") ?? NSImage(named: "AppIcon.icns") {
+            NSApplication.shared.applicationIconImage = icon
+        }
     }
 }
 
