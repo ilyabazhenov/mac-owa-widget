@@ -49,11 +49,11 @@ final class LocalizationService: ObservableObject {
         userDefaults: UserDefaults = .standard,
         selectedLanguage: AppLanguage? = nil,
         preferredLanguages: [String]? = nil,
-        resourceBundle: Bundle = .main
+        resourceBundle: Bundle? = nil
     ) {
         self.userDefaults = userDefaults
         self.preferredLanguagesProvider = { preferredLanguages ?? Locale.preferredLanguages }
-        self.resourceBundle = resourceBundle
+        self.resourceBundle = resourceBundle ?? Self.defaultResourceBundle()
 
         if let selectedLanguage {
             self.selectedLanguage = selectedLanguage
@@ -172,5 +172,29 @@ final class LocalizationService: ObservableObject {
             if code == AppLanguage.english.rawValue { return AppLanguage.english.rawValue }
         }
         return AppLanguage.english.rawValue
+    }
+
+    private static func defaultResourceBundle() -> Bundle {
+        if hasLocalizationResources(in: .main) {
+            return .main
+        }
+
+        let sourceResourcesURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("OWAWidget/Resources")
+        if
+            FileManager.default.fileExists(atPath: sourceResourcesURL.path),
+            let sourceResourcesBundle = Bundle(path: sourceResourcesURL.path)
+        {
+            return sourceResourcesBundle
+        }
+
+        return .main
+    }
+
+    private static func hasLocalizationResources(in bundle: Bundle) -> Bool {
+        AppLanguage.allCases.contains { language in
+            guard language != .system else { return false }
+            return bundle.path(forResource: language.rawValue, ofType: "lproj") != nil
+        }
     }
 }

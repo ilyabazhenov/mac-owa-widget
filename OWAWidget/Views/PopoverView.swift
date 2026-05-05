@@ -76,44 +76,62 @@ struct PopoverView: View {
 
     @ViewBuilder
     private var content: some View {
-        NavigationStack {
-            Group {
-                if service.accounts.isEmpty {
-                    noAccountState
-                } else if SyncPresentationPolicy.shouldShowErrorState(
-                    syncStatus: service.syncStatus,
-                    eventsCount: service.events.count
-                ) {
-                    errorState
-                } else {
-                    VStack(spacing: 0) {
-                        dateNavBar
-                        Divider()
-                        if selectedDayOffset == 0 && !nextEvents.isEmpty {
-                            NextMeetingBannerView(
-                                events: nextEvents,
-                                horizontalPadding: contentHorizontalPadding,
-                                onSelect: { selectedEvent = $0 }
-                            )
-                            Divider().padding(.top, 8)
-                        }
-                        MeetingListView(
-                            sections: eventSections,
-                            contentHorizontalPadding: contentHorizontalPadding,
-                            onSelect: { selectedEvent = $0 }
-                        )
-                    }
-                }
-            }
-            .navigationDestination(isPresented: Binding(
-                get: { selectedEvent != nil },
-                set: { if !$0 { selectedEvent = nil } }
-            )) {
-                if let event = selectedEvent {
-                    MeetingDetailView(event: event)
-                }
+        Group {
+            if service.accounts.isEmpty {
+                noAccountState
+            } else if SyncPresentationPolicy.shouldShowErrorState(
+                syncStatus: service.syncStatus,
+                eventsCount: service.events.count
+            ) {
+                errorState
+            } else {
+                dayTimelineContent
             }
         }
+    }
+
+    private var dayTimelineContent: some View {
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                dateNavBar
+                Divider()
+                if selectedDayOffset == 0 && !nextEvents.isEmpty {
+                    NextMeetingBannerView(
+                        events: nextEvents,
+                        horizontalPadding: contentHorizontalPadding,
+                        onSelect: selectEvent
+                    )
+                    Divider().padding(.top, 8)
+                }
+                MeetingListView(
+                    sections: eventSections,
+                    contentHorizontalPadding: contentHorizontalPadding,
+                    selectedEventID: selectedEvent?.id,
+                    onSelect: selectEvent
+                )
+            }
+            .overlay {
+                if selectedEvent != nil {
+                    Color(nsColor: .windowBackgroundColor)
+                        .opacity(0.26)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+            }
+
+            if let selectedEvent {
+                MeetingDetailPanelView(event: selectedEvent) {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        self.selectedEvent = nil
+                    }
+                }
+                .padding(.horizontal, contentHorizontalPadding)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(1)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: selectedEvent?.id)
     }
 
     private var dateNavBar: some View {
@@ -186,6 +204,12 @@ struct PopoverView: View {
 
     private func quitApp() {
         NSApp.terminate(nil)
+    }
+
+    private func selectEvent(_ event: CalendarEvent) {
+        withAnimation(.easeInOut(duration: 0.18)) {
+            selectedEvent = event
+        }
     }
 
     // MARK: - Error / empty states

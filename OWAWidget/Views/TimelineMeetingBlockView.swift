@@ -6,14 +6,16 @@ struct TimelineMeetingBlockView: View {
     var compact: Bool = false
     /// When `nil`, organizer is shown iff `!compact` (legacy). When set, overrides that rule.
     var showsOrganizer: Bool?
+    var isSelected: Bool = false
 
     @EnvironmentObject private var localization: LocalizationService
     @State private var didCopy = false
 
-    init(event: CalendarEvent, compact: Bool = false, showsOrganizer: Bool? = nil) {
+    init(event: CalendarEvent, compact: Bool = false, showsOrganizer: Bool? = nil, isSelected: Bool = false) {
         self.event = event
         self.compact = compact
         self.showsOrganizer = showsOrganizer
+        self.isSelected = isSelected
     }
 
     var body: some View {
@@ -83,7 +85,7 @@ struct TimelineMeetingBlockView: View {
         }
         .overlay {
             RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(borderColor, lineWidth: event.isHappeningNow ? 1.5 : 1)
+                .strokeBorder(borderColor, lineWidth: borderWidth)
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
@@ -125,10 +127,20 @@ struct TimelineMeetingBlockView: View {
     }
 
     private var backgroundColor: Color {
-        event.isHappeningNow ? Color.orange.opacity(0.16) : event.platform.color.opacity(0.13)
+        if isSelected {
+            return event.isHappeningNow ? Color.orange.opacity(0.22) : event.platform.color.opacity(0.20)
+        }
+        return event.isHappeningNow ? Color.orange.opacity(0.16) : event.platform.color.opacity(0.13)
     }
 
     private var borderColor: Color {
-        event.isHappeningNow ? .orange : event.platform.color.opacity(0.28)
+        if isSelected {
+            return accentColor
+        }
+        return event.isHappeningNow ? .orange : event.platform.color.opacity(0.28)
+    }
+
+    var borderWidth: CGFloat {
+        isSelected || event.isHappeningNow ? 1.5 : 1
     }
 }

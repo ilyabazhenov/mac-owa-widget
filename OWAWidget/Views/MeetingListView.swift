@@ -3,6 +3,7 @@ import SwiftUI
 struct MeetingListView: View {
     let sections: [(label: String, date: Date, events: [CalendarEvent])]
     var contentHorizontalPadding: CGFloat = 12
+    var selectedEventID: String? = nil
     var onSelect: (CalendarEvent) -> Void = { _ in }
     @EnvironmentObject private var localization: LocalizationService
     @State private var hasAutoScrolledToCurrentSlot = false
@@ -106,7 +107,8 @@ struct MeetingListView: View {
                                             laneIndex: item.laneIndex,
                                             laneCount: laneCount,
                                             eventDuration: item.event.duration
-                                        )
+                                        ),
+                                        isSelected: selectedEventID == item.event.id
                                     )
                                 }
                                 .buttonStyle(.plain)

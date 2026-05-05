@@ -15,6 +15,15 @@ final class TimelineMeetingBlockViewTests: XCTestCase {
         XCTAssertEqual(view.contentTopPadding, 3)
     }
 
+    func testSelectedStateEmphasizesBorderWithoutChangingLayoutPadding() {
+        let event = sampleEvent(durationMinutes: 60)
+        let normal = TimelineMeetingBlockView(event: event, compact: false, isSelected: false)
+        let selected = TimelineMeetingBlockView(event: event, compact: false, isSelected: true)
+
+        XCTAssertEqual(selected.contentTopPadding, normal.contentTopPadding)
+        XCTAssertGreaterThan(selected.borderWidth, normal.borderWidth)
+    }
+
     private func sampleEvent(durationMinutes: Int) -> CalendarEvent {
         let startDate = Date(timeIntervalSince1970: 1_700_000_000)
         let endDate = startDate.addingTimeInterval(Double(durationMinutes * 60))
