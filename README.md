@@ -63,6 +63,15 @@ make run
 
 The app will appear in the menu bar. No Dock icon — it's menu bar only.
 
+### Run unsigned app build
+
+If macOS blocks an unsigned build (downloaded from Releases or built locally), remove the quarantine attribute and launch:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+open /Applications/OWAWidget.app
+```
+
 ### Generate Xcode project (optional)
 
 `OWAWidget.xcodeproj` is not stored in the repository (it's a generated artifact). To open the project in Xcode:
