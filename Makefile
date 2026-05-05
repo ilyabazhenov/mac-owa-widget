@@ -67,7 +67,7 @@ clean:
 watch: run
 	@which fswatch > /dev/null 2>&1 || (echo "Install: brew install fswatch" && exit 1)
 	@echo "Watching $(SRC_DIR)/ for changes... (Ctrl+C to stop)"
-	@set -e; \
+	@set -u; \
 	cleanup() { $(MAKE) --no-print-directory kill >/dev/null 2>&1 || true; }; \
 	trap 'cleanup; exit 0' INT TERM; \
 	trap cleanup EXIT; \
@@ -81,7 +81,11 @@ watch: run
 	        -e ".*\.swp$$" \
 	        $(SRC_DIR)/ | while read -r _; do \
 	    echo "\n──── change detected → rebuilding ────"; \
-	    $(MAKE) --no-print-directory run APP_BUNDLE_ID="$(APP_BUNDLE_ID_DEV)"; \
+	    if $(MAKE) --no-print-directory run APP_BUNDLE_ID="$(APP_BUNDLE_ID_DEV)"; then \
+	        echo "✓ Rebuild succeeded. Watching for next change..."; \
+	    else \
+	        echo "✗ Rebuild failed. Fix the error and save again to retry."; \
+	    fi; \
 	done
 
 ## Show recent diagnostic logs
