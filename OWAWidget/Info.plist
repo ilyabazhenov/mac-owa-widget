@@ -6,9 +6,9 @@
     <key>LSUIElement</key>
     <true/>
     <key>CFBundleName</key>
-    <string>OWA Widget</string>
+    <string>Mac Owa Widget</string>
     <key>CFBundleDisplayName</key>
-    <string>OWA Widget</string>
+    <string>Mac Owa Widget</string>
     <key>CFBundleIdentifier</key>
     <string>com.owawidget.OWAWidget</string>
     <key>CFBundleShortVersionString</key>
@@ -21,7 +21,7 @@
     <string>OWAWidget</string>
     <!-- Required for UNUserNotificationCenter -->
     <key>NSUserNotificationUsageDescription</key>
-    <string>OWA Widget notifies you before meetings start so you can join with one click.</string>
+    <string>Mac Owa Widget notifies you before meetings start so you can join with one click.</string>
     <!--
         NSAllowsArbitraryLoads is intentionally enabled to support on-premise Exchange /
         OWA servers that use self-signed or internal CA certificates.

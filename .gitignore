@@ -28,6 +28,9 @@ tmp/
 # Claude Code local settings
 .claude/settings.local.json
 
+# IDE
+.idea/
+
 # Environment files
 .env
 *.env

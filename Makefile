@@ -7,6 +7,9 @@ RESOURCE_BUNDLE := $(BIN_DIR)/$(APP_NAME)_$(APP_NAME).bundle
 ENTITLEMENTS := $(SRC_DIR)/OWAWidget-dev.entitlements
 INFO_PLIST  := $(SRC_DIR)/Info.plist
 CODE_SIGN_IDENTITY ?= -
+APP_BUNDLE_ID_BASE := com.owawidget.OWAWidget
+APP_BUNDLE_ID_DEV := $(APP_BUNDLE_ID_BASE).dev
+APP_BUNDLE_ID ?= $(APP_BUNDLE_ID_BASE)
 VERSION_FILE := VERSION
 RELEASE_NOTES_FILE := RELEASE_NOTES.md
 DIST_DIR := dist
@@ -24,6 +27,7 @@ bundle: build
 	@rm -rf "$(APP_PATH)/$(APP_NAME)_$(APP_NAME).bundle"
 	cp $(BINARY) $(APP_PATH)/Contents/MacOS/$(APP_NAME)
 	cp $(INFO_PLIST) $(APP_PATH)/Contents/
+	/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $(APP_BUNDLE_ID)" "$(APP_PATH)/Contents/Info.plist"
 	@if [ -d "$(RESOURCE_BUNDLE)" ]; then cp -R "$(RESOURCE_BUNDLE)" $(APP_PATH)/Contents/Resources/; fi
 	@if [ -d "$(SRC_DIR)/Resources" ]; then cp -R $(SRC_DIR)/Resources/*.lproj $(APP_PATH)/Contents/Resources/; fi
 	@printf 'APPL????' > $(APP_PATH)/Contents/PkgInfo
@@ -49,7 +53,8 @@ kill:
 	@-pkill -x $(APP_NAME) 2>/dev/null; true
 
 ## Build, bundle and launch
-run: kill bundle
+run: kill
+	@$(MAKE) bundle APP_BUNDLE_ID="$(APP_BUNDLE_ID_DEV)"
 	open $(APP_PATH)
 
 ## Clean build artifacts
@@ -70,7 +75,7 @@ watch: run
 	         -e ".*\.d$$" \
 	         -e ".*\.swp$$" \
 	         $(SRC_DIR)/ | xargs -n1 -I{} sh -c \
-	    'echo "\n──── change detected → rebuilding ────" && make run'
+	    'echo "\n──── change detected → rebuilding ────" && make run APP_BUNDLE_ID="$(APP_BUNDLE_ID_DEV)"'
 
 ## Show recent diagnostic logs
 logs:
@@ -84,4 +89,6 @@ help:
 	@echo "make logs    — show recent diagnostic logs"
 	@echo "make clean   — remove build artifacts"
 	@echo "make kill    — stop running instance"
+	@echo "Local dev bundle id: $(APP_BUNDLE_ID_DEV)"
+	@echo "Release bundle id: $(APP_BUNDLE_ID_BASE)"
 	@echo "make run CODE_SIGN_IDENTITY='Apple Development: Name (TEAMID)' — launch with stable signing identity"
