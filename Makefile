@@ -66,16 +66,22 @@ clean:
 watch: run
 	@which fswatch > /dev/null 2>&1 || (echo "Install: brew install fswatch" && exit 1)
 	@echo "Watching $(SRC_DIR)/ for changes... (Ctrl+C to stop)"
-	@fswatch -o \
-	         --event Updated \
-	         --event Created \
-	         --event Removed \
-	         --event Renamed \
-	         -e ".*\.o$$" \
-	         -e ".*\.d$$" \
-	         -e ".*\.swp$$" \
-	         $(SRC_DIR)/ | xargs -n1 -I{} sh -c \
-	    'echo "\n──── change detected → rebuilding ────" && make run APP_BUNDLE_ID="$(APP_BUNDLE_ID_DEV)"'
+	@set -e; \
+	cleanup() { $(MAKE) --no-print-directory kill >/dev/null 2>&1 || true; }; \
+	trap 'cleanup; exit 0' INT TERM; \
+	trap cleanup EXIT; \
+	fswatch -o \
+	        --event Updated \
+	        --event Created \
+	        --event Removed \
+	        --event Renamed \
+	        -e ".*\.o$$" \
+	        -e ".*\.d$$" \
+	        -e ".*\.swp$$" \
+	        $(SRC_DIR)/ | while read -r _; do \
+	    echo "\n──── change detected → rebuilding ────"; \
+	    $(MAKE) --no-print-directory run APP_BUNDLE_ID="$(APP_BUNDLE_ID_DEV)"; \
+	done
 
 ## Show recent diagnostic logs
 logs:
