@@ -1,3 +1,3 @@
 ## What's Changed
 
-- Fixed missing app icon in the settings window by explicitly setting `NSApplication.applicationIconImage` at launch for the menu bar app.
+- Added a new "Launch at login" setting in Preferences and integrated `SMAppService.mainApp` so the app can be configured to start automatically when the user signs in.
