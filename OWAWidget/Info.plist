@@ -10,7 +10,7 @@
     <key>CFBundleDisplayName</key>
     <string>Mac Owa Widget</string>
     <key>CFBundleIdentifier</key>
-    <string>com.owawidget.OWAWidget</string>
+    <string>com.owawidget.MacOwaWidget</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0.5</string>
     <key>CFBundleVersion</key>

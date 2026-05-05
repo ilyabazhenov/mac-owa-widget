@@ -1,5 +1,5 @@
 ## What's Changed
 
-- Added separate bundle identifiers for local development and release packaging to avoid LaunchServices conflicts (`.dev` for `make run/watch`, production id for release).
-- Rebranded user-facing app naming to **Mac Owa Widget** across bundle metadata and localizations.
-- Updated agent instructions so "release new version" runs the full release flow (version bump, notes update, archive build, GitHub publication).
+- Switched the production bundle identifier to `com.owawidget.MacOwaWidget` for proper reverse-DNS semantics and improved LaunchServices compatibility.
+- Synced bundle identifier configuration across `Info.plist`, `Makefile`, and `project.yml` so local packaging and generated Xcode projects use the same app identity.
+- Kept local development launch flow isolated via `.dev` suffix while preserving stable release packaging behavior.

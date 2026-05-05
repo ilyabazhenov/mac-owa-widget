@@ -38,7 +38,7 @@ targets:
           - "**/*.md"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.owawidget.OWAWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.owawidget.MacOwaWidget
         INFOPLIST_FILE: OWAWidget/Info.plist
         CODE_SIGN_ENTITLEMENTS: OWAWidget/OWAWidget.entitlements
         SWIFT_VERSION: "6.0"
