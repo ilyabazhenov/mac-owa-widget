@@ -2,6 +2,16 @@ import Foundation
 import UserNotifications
 import os.log
 
+protocol UserNotificationCentering: Sendable {
+    func setNotificationCategories(_ categories: Set<UNNotificationCategory>)
+    func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool
+    func pendingNotificationRequests() async -> [UNNotificationRequest]
+    func removePendingNotificationRequests(withIdentifiers identifiers: [String])
+    func add(_ request: UNNotificationRequest) async throws
+}
+
+extension UNUserNotificationCenter: UserNotificationCentering {}
+
 struct NotificationLocalization: Sendable {
     let localeIdentifier: String
     let joinActionTitle: String
@@ -22,9 +32,14 @@ actor NotificationService {
     static let categoryID = "MEETING_JOIN"
     static let actionID = "JOIN_MEETING"
     private let idPrefix = "owawidget."
+    static let itemsUserInfoKey = "meetingItems"
 
-    private let center = UNUserNotificationCenter.current()
+    private let center: any UserNotificationCentering
     private let log = Logger(subsystem: "com.owawidget", category: "NotificationService")
+
+    init(center: any UserNotificationCentering = UNUserNotificationCenter.current()) {
+        self.center = center
+    }
 
     func setup(localization: NotificationLocalization = .english) {
         let joinAction = UNNotificationAction(
@@ -64,28 +79,25 @@ actor NotificationService {
         await removeAllPendingMeetingNotifications()
 
         let now = Date()
+        let clusters = MeetingReminderClusterBuilder.clusters(from: events, now: now)
 
-        for event in events where !event.isAllDay {
+        for cluster in clusters {
             guard let timeInterval = MeetingReminderSchedule.deliveryDelay(
-                event: event,
+                event: cluster.anchorEvent,
                 leadMinutes: leadMinutes,
                 from: now
             ) else { continue }
 
             let content = UNMutableNotificationContent()
-            content.title = event.title
-            content.body = MeetingReminderText.reminderBody(
-                event: event,
-                leadMinutes: leadMinutes,
-                localization: localization
-            )
+            content.title = MeetingReminderText.title(cluster: cluster, localeIdentifier: localization.localeIdentifier)
+            content.body = MeetingReminderText.reminderBody(cluster: cluster, leadMinutes: leadMinutes, localization: localization)
             content.sound = .default
             content.categoryIdentifier = NotificationService.categoryID
 
-            if let joinURL = event.joinURL {
+            if let itemsData = try? JSONEncoder().encode(cluster.items),
+               let itemsString = String(data: itemsData, encoding: .utf8) {
                 content.userInfo = [
-                    "joinURL": joinURL.absoluteString,
-                    "eventID": event.id
+                    NotificationService.itemsUserInfoKey: itemsString
                 ]
             }
 
@@ -94,7 +106,7 @@ actor NotificationService {
                 repeats: false
             )
             let request = UNNotificationRequest(
-                identifier: idPrefix + event.id,
+                identifier: idPrefix + cluster.id,
                 content: content,
                 trigger: trigger
             )
@@ -102,7 +114,7 @@ actor NotificationService {
             do {
                 try await center.add(request)
             } catch {
-                log.error("Failed to schedule notification for '\(event.title)': \(error)")
+                log.error("Failed to schedule notification for '\(cluster.anchorEvent.title)': \(error)")
             }
         }
     }

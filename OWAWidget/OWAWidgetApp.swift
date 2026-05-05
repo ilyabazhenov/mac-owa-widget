@@ -73,7 +73,19 @@ final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,
               response.actionIdentifier == UNNotificationDefaultActionIdentifier
         else { return }
 
-        if let urlString = response.notification.request.content.userInfo["joinURL"] as? String,
+        let userInfo = response.notification.request.content.userInfo
+        if let items = Self.decodeItems(from: userInfo), !items.isEmpty {
+            DispatchQueue.main.async {
+                if items.count == 1, let url = items.first?.joinURL {
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+                MeetingJoinSelectionController.shared.present(items: items)
+            }
+            return
+        }
+
+        if let urlString = userInfo["joinURL"] as? String,
            let url = URL(string: urlString) {
             DispatchQueue.main.async {
                 NSWorkspace.shared.open(url)
@@ -88,5 +100,11 @@ final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound])
+    }
+
+    static func decodeItems(from userInfo: [AnyHashable: Any]) -> [MeetingReminderItem]? {
+        guard let raw = userInfo[NotificationService.itemsUserInfoKey] as? String,
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([MeetingReminderItem].self, from: data)
     }
 }

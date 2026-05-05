@@ -6,12 +6,10 @@ import SwiftUI
 @MainActor
 final class CustomMeetingReminderController {
     private struct Payload: Sendable {
-        let eventID: String
+        let clusterID: String
         let title: String
         let subtitle: String
-        let timeRange: String
-        let platform: MeetingPlatform
-        let joinURL: URL?
+        let items: [MeetingReminderItem]
         let joinTitle: String
         let dismissTitle: String
     }
@@ -37,27 +35,21 @@ final class CustomMeetingReminderController {
 
         let joinTitle = localization.joinActionTitle
         let dismissTitle = localization.dismissActionTitle
-        let locale = Locale(identifier: localization.localeIdentifier)
         let now = Date()
-        for event in events {
+        let clusters = MeetingReminderClusterBuilder.clusters(from: events, now: now)
+        for cluster in clusters {
             guard let delay = MeetingReminderSchedule.deliveryDelay(
-                event: event,
+                event: cluster.anchorEvent,
                 leadMinutes: leadMinutes,
                 from: now
             ) else { continue }
 
-            let subtitle = MeetingReminderText.reminderBody(
-                event: event,
-                leadMinutes: leadMinutes,
-                localization: localization
-            )
+            let subtitle = MeetingReminderText.reminderBody(cluster: cluster, leadMinutes: leadMinutes, localization: localization)
             let payload = Payload(
-                eventID: event.id,
-                title: event.title,
+                clusterID: cluster.id,
+                title: MeetingReminderText.title(cluster: cluster, localeIdentifier: localization.localeIdentifier),
                 subtitle: subtitle,
-                timeRange: Self.timeRangeString(event: event, locale: locale),
-                platform: event.platform,
-                joinURL: event.joinURL,
+                items: cluster.items,
                 joinTitle: joinTitle,
                 dismissTitle: dismissTitle
             )
@@ -65,11 +57,11 @@ final class CustomMeetingReminderController {
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 Task { @MainActor in
-                    self.scheduledWork.removeValue(forKey: event.id)
+                    self.scheduledWork.removeValue(forKey: cluster.id)
                     self.enqueue(payload)
                 }
             }
-            scheduledWork[event.id] = work
+            scheduledWork[cluster.id] = work
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         }
     }
@@ -107,16 +99,14 @@ final class CustomMeetingReminderController {
         let view = MeetingReminderBannerView(
             title: payload.title,
             subtitle: payload.subtitle,
-            timeRange: payload.timeRange,
-            platformIcon: payload.platform.systemIcon,
+            items: payload.items,
             accentColor: .orange,
             joinTitle: payload.joinTitle,
             dismissTitle: payload.dismissTitle,
-            joinURL: payload.joinURL,
-            onJoin: { [weak self, weak panel] in
+            onJoin: { [weak self, weak panel] item in
                 self?.dismissWorkItem?.cancel()
                 self?.dismissWorkItem = nil
-                if let url = payload.joinURL {
+                if let url = item.joinURL {
                     NSWorkspace.shared.open(url)
                 }
                 panel?.close()
@@ -176,14 +166,6 @@ final class CustomMeetingReminderController {
         dismissWorkItem = nil
         currentPanel = nil
         presentNextIfIdle()
-    }
-
-    private static func timeRangeString(event: CalendarEvent, locale: Locale) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.timeStyle = .short
-        formatter.dateStyle = .none
-        return "\(formatter.string(from: event.startDate))–\(formatter.string(from: event.endDate))"
     }
 }
 
