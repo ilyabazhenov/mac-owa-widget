@@ -81,7 +81,7 @@ final class LocalizationServiceTests: XCTestCase {
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let date = calendar.date(from: DateComponents(year: 2026, month: 5, day: 4, hour: 10))!
 
-        let label = service.daySectionLabel(for: date, calendar: calendar)
+        let label = service.daySectionLabel(for: date, calendar: calendar, relativeTo: date)
 
         XCTAssertEqual(label, "Сегодня, 4 мая")
     }
@@ -95,7 +95,7 @@ final class LocalizationServiceTests: XCTestCase {
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let date = calendar.date(from: DateComponents(year: 2026, month: 5, day: 4, hour: 10))!
 
-        let label = service.daySectionLabel(for: date, calendar: calendar)
+        let label = service.daySectionLabel(for: date, calendar: calendar, relativeTo: date)
 
         XCTAssertEqual(label, "Today, May 4")
     }

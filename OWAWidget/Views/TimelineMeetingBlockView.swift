@@ -4,8 +4,16 @@ import AppKit
 struct TimelineMeetingBlockView: View {
     let event: CalendarEvent
     var compact: Bool = false
+    /// When `nil`, organizer is shown iff `!compact` (legacy). When set, overrides that rule.
+    var showsOrganizer: Bool?
 
     @EnvironmentObject private var localization: LocalizationService
+
+    init(event: CalendarEvent, compact: Bool = false, showsOrganizer: Bool? = nil) {
+        self.event = event
+        self.compact = compact
+        self.showsOrganizer = showsOrganizer
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 5) {
@@ -21,7 +29,7 @@ struct TimelineMeetingBlockView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
-                    if !compact, let organizer = event.organizer {
+                    if shouldShowOrganizer, let organizer = event.organizer {
                         Text("· \(organizer)")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
@@ -61,6 +69,13 @@ struct TimelineMeetingBlockView: View {
                 .strokeBorder(borderColor, lineWidth: event.isHappeningNow ? 1.5 : 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private var shouldShowOrganizer: Bool {
+        if let showsOrganizer {
+            return showsOrganizer
+        }
+        return !compact
     }
 
     private var accentWidth: CGFloat { 3 }

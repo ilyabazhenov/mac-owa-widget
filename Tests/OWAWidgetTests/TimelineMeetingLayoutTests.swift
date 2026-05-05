@@ -206,6 +206,37 @@ final class TimelineMeetingLayoutTests: XCTestCase {
         XCTAssertEqual(frame.height, 30)
     }
 
+    // MARK: - Organizer visibility (timeline cards)
+
+    func testShowsTimelineOrganizerWhenSingleLane() {
+        XCTAssertTrue(TimelineMeetingLayout.showsTimelineOrganizer(laneIndex: 0, laneCount: 1, eventDuration: 30 * 60))
+        XCTAssertTrue(TimelineMeetingLayout.showsTimelineOrganizer(laneIndex: 0, laneCount: 1, eventDuration: 3600))
+    }
+
+    func testShowsTimelineOrganizerTreatsZeroLaneCountAsSingleLane() {
+        XCTAssertTrue(TimelineMeetingLayout.showsTimelineOrganizer(laneIndex: 0, laneCount: 0, eventDuration: 30 * 60))
+    }
+
+    func testHidesTimelineOrganizerForFirstLaneWhenOverlappingAndShort() {
+        XCTAssertFalse(TimelineMeetingLayout.showsTimelineOrganizer(laneIndex: 0, laneCount: 2, eventDuration: 30 * 60))
+        XCTAssertFalse(TimelineMeetingLayout.showsTimelineOrganizer(laneIndex: 0, laneCount: 3, eventDuration: 3599))
+    }
+
+    func testHidesTimelineOrganizerForFirstLaneWhenOverlappingEvenIfLong() {
+        XCTAssertFalse(TimelineMeetingLayout.showsTimelineOrganizer(laneIndex: 0, laneCount: 2, eventDuration: 3600))
+    }
+
+    func testShowsTimelineOrganizerForNonFirstLaneWhenOverlappingAndAtLeastOneHour() {
+        XCTAssertFalse(TimelineMeetingLayout.showsTimelineOrganizer(laneIndex: 1, laneCount: 2, eventDuration: 3599))
+        XCTAssertTrue(TimelineMeetingLayout.showsTimelineOrganizer(laneIndex: 1, laneCount: 2, eventDuration: 3600))
+        XCTAssertTrue(TimelineMeetingLayout.showsTimelineOrganizer(laneIndex: 2, laneCount: 3, eventDuration: 3600))
+    }
+
+    func testHidesTimelineOrganizerForNonFirstLaneWhenOverlappingButShorterThanOneHour() {
+        XCTAssertFalse(TimelineMeetingLayout.showsTimelineOrganizer(laneIndex: 1, laneCount: 2, eventDuration: 3599))
+        XCTAssertFalse(TimelineMeetingLayout.showsTimelineOrganizer(laneIndex: 2, laneCount: 3, eventDuration: 45 * 60))
+    }
+
     private func slot(withHour hour: Int, minute: Int, in slots: [DayHourSlot]) -> DayHourSlot? {
         slots.first {
             calendar.component(.hour, from: $0.startDate) == hour &&

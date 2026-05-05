@@ -106,6 +106,13 @@ enum TimelineMeetingLayout {
         }
     }
 
+    /// Organizer line on timeline cards: hidden in multi-lane compact layout except for non-first lanes when the meeting is at least one hour.
+    static func showsTimelineOrganizer(laneIndex: Int, laneCount: Int, eventDuration: TimeInterval) -> Bool {
+        let safeLaneCount = max(1, laneCount)
+        if safeLaneCount <= 1 { return true }
+        return laneIndex > 0 && eventDuration >= 3600
+    }
+
     static func blockMetrics(
         for event: CalendarEvent,
         gridStart: Date,

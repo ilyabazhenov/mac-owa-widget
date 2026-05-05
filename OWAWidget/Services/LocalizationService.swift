@@ -108,11 +108,15 @@ final class LocalizationService: ObservableObject {
         }
     }
 
-    func daySectionLabel(for date: Date, calendar: Calendar = .current) -> String {
-        if calendar.isDateInToday(date) {
+    func daySectionLabel(for date: Date, calendar: Calendar = .current, relativeTo referenceNow: Date = Date()) -> String {
+        if calendar.isDate(date, inSameDayAs: referenceNow) {
             return "\(tr("date.today")), \(dayAndMonthLabel(for: date, calendar: calendar))"
         }
-        if calendar.isDateInTomorrow(date) { return tr("date.tomorrow") }
+        let startOfReference = calendar.startOfDay(for: referenceNow)
+        if let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: startOfReference),
+           calendar.isDate(date, inSameDayAs: tomorrowStart) {
+            return tr("date.tomorrow")
+        }
 
         let formatter = DateFormatter()
         formatter.dateStyle = .medium

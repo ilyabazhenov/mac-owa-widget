@@ -92,7 +92,15 @@ struct MeetingListView: View {
                                     verticalGap: Double(cardGap)
                                 )
 
-                                TimelineMeetingBlockView(event: item.event, compact: laneCount > 1)
+                                TimelineMeetingBlockView(
+                                    event: item.event,
+                                    compact: laneCount > 1,
+                                    showsOrganizer: TimelineMeetingLayout.showsTimelineOrganizer(
+                                        laneIndex: item.laneIndex,
+                                        laneCount: laneCount,
+                                        eventDuration: item.event.duration
+                                    )
+                                )
                                     .frame(
                                         width: CGFloat(cardFrame.width),
                                         height: CGFloat(cardFrame.height),
