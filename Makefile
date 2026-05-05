@@ -30,6 +30,7 @@ bundle: build
 	/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $(APP_BUNDLE_ID)" "$(APP_PATH)/Contents/Info.plist"
 	@if [ -d "$(RESOURCE_BUNDLE)" ]; then cp -R "$(RESOURCE_BUNDLE)" $(APP_PATH)/Contents/Resources/; fi
 	@if [ -d "$(SRC_DIR)/Resources" ]; then cp -R $(SRC_DIR)/Resources/*.lproj $(APP_PATH)/Contents/Resources/; fi
+	@if [ -f "$(SRC_DIR)/Resources/AppIcon.icns" ]; then cp "$(SRC_DIR)/Resources/AppIcon.icns" "$(APP_PATH)/Contents/Resources/AppIcon.icns"; fi
 	@printf 'APPL????' > $(APP_PATH)/Contents/PkgInfo
 	codesign --sign "$(CODE_SIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) --force $(APP_PATH)
 	@echo "✓ Bundle ready: $(APP_PATH)"

@@ -200,19 +200,11 @@ struct NextMeetingBannerView: View {
 // MARK: - Sub-views
 
 private struct PulsingDot: View {
-    @State private var pulse = false
-
     var body: some View {
         Circle()
             .fill(Color.orange)
             .frame(width: 6, height: 6)
-            .scaleEffect(pulse ? 1.15 : 0.8)
-            .opacity(pulse ? 1.0 : 0.5)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
-                    pulse = true
-                }
-            }
+            .opacity(0.9)
     }
 }
 

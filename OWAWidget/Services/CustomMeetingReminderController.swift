@@ -166,3 +166,5 @@ final class CustomMeetingReminderController {
         presentNextIfIdle()
     }
 }
+
+extension CustomMeetingReminderController: CustomMeetingReminderControlling {}

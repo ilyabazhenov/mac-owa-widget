@@ -19,6 +19,8 @@
     <string>APPL</string>
     <key>CFBundleExecutable</key>
     <string>OWAWidget</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <!-- Required for UNUserNotificationCenter -->
     <key>NSUserNotificationUsageDescription</key>
     <string>Mac Owa Widget notifies you before meetings start so you can join with one click.</string>

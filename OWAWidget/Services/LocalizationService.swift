@@ -103,6 +103,8 @@ final class LocalizationService: ObservableObject {
         case .lastSynced(let date):
             let elapsedSeconds = max(0, Int(now.timeIntervalSince(date).rounded(.down)))
             return tr("sync.status.synced", tr("sync.elapsed.seconds", elapsedSeconds))
+        case .offlineCached(let message):
+            return tr("sync.status.offline.cached", message)
         case .error(let message):
             return tr("sync.status.error", message)
         }

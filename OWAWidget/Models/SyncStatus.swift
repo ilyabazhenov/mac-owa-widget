@@ -4,6 +4,7 @@ enum SyncStatus: Sendable {
     case idle
     case syncing
     case lastSynced(Date)
+    case offlineCached(String)
     case error(String)
 
     var displayText: String {
@@ -16,6 +17,8 @@ enum SyncStatus: Sendable {
             let formatter = RelativeDateTimeFormatter()
             formatter.unitsStyle = .abbreviated
             return "Synced \(formatter.localizedString(for: date, relativeTo: Date()))"
+        case .offlineCached(let msg):
+            return "Offline: \(msg)"
         case .error(let msg):
             return "Error: \(msg)"
         }
@@ -28,6 +31,11 @@ enum SyncStatus: Sendable {
 
     var isError: Bool {
         if case .error = self { return true }
+        return false
+    }
+
+    var isOfflineCached: Bool {
+        if case .offlineCached = self { return true }
         return false
     }
 }
