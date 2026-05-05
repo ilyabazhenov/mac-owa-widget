@@ -1,6 +1,23 @@
 import Foundation
 import os.log
 
+protocol NotificationServicing: Actor {
+    func setup(localization: NotificationLocalization)
+    func requestAuthorization() async
+    func removeAllPendingMeetingNotifications() async
+    func scheduleNotifications(
+        for events: [CalendarEvent],
+        leadMinutes: Int,
+        localization: NotificationLocalization
+    ) async
+}
+
+@MainActor
+protocol CustomMeetingReminderControlling: AnyObject {
+    func cancelAll()
+    func reschedule(events: [CalendarEvent], leadMinutes: Int, localization: NotificationLocalization)
+}
+
 @MainActor
 final class CalendarService: ObservableObject {
     @Published private(set) var events: [CalendarEvent] = []
@@ -9,8 +26,9 @@ final class CalendarService: ObservableObject {
 
     private var providers: [any CalendarProvider] = []
     private let scheduler = SyncScheduler()
-    private let notificationService = NotificationService()
-    private let customMeetingReminders = CustomMeetingReminderController()
+    private let notificationService: any NotificationServicing
+    private let customMeetingReminders: any CustomMeetingReminderControlling
+    private let eventCacheStore: any EventCacheStoring
     private let log = Logger(subsystem: "com.owawidget", category: "CalendarService")
     private var notificationLocalization: NotificationLocalization = .english
     private var nextSyncID = 0
@@ -45,8 +63,25 @@ final class CalendarService: ObservableObject {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: meetingReminderStyleKey) }
     }
 
-    init() {
-        loadAccounts()
+    init(
+        providers: [any CalendarProvider] = [],
+        eventCacheStore: any EventCacheStoring = EventCacheStore(),
+        notificationService: any NotificationServicing = NotificationService(),
+        customMeetingReminders: any CustomMeetingReminderControlling = CustomMeetingReminderController(),
+        loadPersistedAccounts: Bool = true,
+        startBackgroundTasks: Bool = true
+    ) {
+        self.providers = providers
+        self.eventCacheStore = eventCacheStore
+        self.notificationService = notificationService
+        self.customMeetingReminders = customMeetingReminders
+        if loadPersistedAccounts {
+            loadAccounts()
+        }
+        loadCachedEvents()
+
+        guard startBackgroundTasks else { return }
+
         Task {
             await notificationService.setup(localization: notificationLocalization)
             if meetingReminderStyle.usesSystemNotifications {
@@ -107,6 +142,14 @@ final class CalendarService: ObservableObject {
     /// Call after saving preferences from Settings (style, lead time, etc.).
     func applySavedPreferences() {
         Task { await rescheduleMeetingRemindersForCurrentEvents() }
+    }
+
+    func performSyncForTests() async {
+        await performSync(trigger: "tests")
+    }
+
+    func replaceEventsForTests(_ events: [CalendarEvent]) {
+        self.events = events
     }
 
     // MARK: - Internal
@@ -190,6 +233,7 @@ final class CalendarService: ObservableObject {
                 .filter { seen.insert($0.id).inserted }
                 .sorted { $0.startDate < $1.startDate }
 
+            eventCacheStore.save(events: events, rangeStart: start, rangeEnd: end)
             syncStatus = .lastSynced(Date())
             syncRequestGate.recordSyncSucceeded()
             log.info("Sync \(syncID, privacy: .public) complete events=\(self.events.count, privacy: .public)")
@@ -201,7 +245,15 @@ final class CalendarService: ObservableObject {
                 syncRequestGate.recordTransientFailure(at: Date())
                 log.warning("Sync \(syncID, privacy: .public) entered transient OWA cooldown")
             }
-            syncStatus = .error(error.localizedDescription)
+            if events.isEmpty, let snapshot = eventCacheStore.load(), !snapshot.events.isEmpty {
+                events = snapshot.events.sorted { $0.startDate < $1.startDate }
+            }
+
+            if events.isEmpty {
+                syncStatus = .error(error.localizedDescription)
+            } else {
+                syncStatus = .offlineCached(error.localizedDescription)
+            }
             log.error("Sync \(syncID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
         }
     }
@@ -250,6 +302,11 @@ final class CalendarService: ObservableObject {
               let decoded = try? JSONDecoder().decode([CalendarAccount].self, from: data)
         else { return }
         accounts = decoded
+    }
+
+    private func loadCachedEvents() {
+        guard let snapshot = eventCacheStore.load() else { return }
+        events = snapshot.events.sorted { $0.startDate < $1.startDate }
     }
 
     private func persistAccounts() {

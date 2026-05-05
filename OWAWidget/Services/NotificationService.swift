@@ -105,3 +105,5 @@ actor NotificationService {
         }
     }
 }
+
+extension NotificationService: NotificationServicing {}

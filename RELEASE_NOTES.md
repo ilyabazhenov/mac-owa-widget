@@ -1,5 +1,6 @@
 ## What's Changed
 
-- Fixed keychain entitlement binding for release signing by deriving access groups from `$(PRODUCT_BUNDLE_IDENTIFIER)`.
-- Restored stable local app launch for `make run`/`make watch` by keeping dev entitlements compatible with ad-hoc `codesign`.
-- Prevented calendar sync regressions after bundle identifier updates by aligning runtime identity and keychain access behavior.
+- Added offline mode with persisted event cache, so meetings remain visible during connection loss and after app restart.
+- Improved popover resilience for offline/error states and added targeted coverage for cache restore and sync fallback flows.
+- Stabilized next-meeting banner rendering by removing perpetual pulse animation that could trigger visual jitter in the dropdown.
+- Included app icon packaging updates for local bundle assembly (`AppIcon.icns` copy in `Makefile` and `Info.plist` icon binding).

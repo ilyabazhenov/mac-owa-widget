@@ -78,6 +78,7 @@
 "sync.status.syncing" = "Синхронизация...";
 "sync.status.synced" = "Синхронизировано %@";
 "sync.elapsed.seconds" = "%d с назад";
+"sync.status.offline.cached" = "Офлайн: показываю кэшированные встречи (%@)";
 "sync.status.error" = "Ошибка: %@";
 
 "date.today" = "Сегодня";

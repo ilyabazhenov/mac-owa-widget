@@ -80,7 +80,10 @@ struct PopoverView: View {
             Group {
                 if service.accounts.isEmpty {
                     noAccountState
-                } else if service.syncStatus.isError {
+                } else if SyncPresentationPolicy.shouldShowErrorState(
+                    syncStatus: service.syncStatus,
+                    eventsCount: service.events.count
+                ) {
                     errorState
                 } else {
                     VStack(spacing: 0) {
@@ -157,6 +160,12 @@ struct PopoverView: View {
             HStack(spacing: 8) {
                 Text(localization.syncStatusText(service.syncStatus, relativeTo: context.date))
                     .lineLimit(1)
+
+                if service.syncStatus.isOfflineCached {
+                    Image(systemName: "wifi.slash")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.orange)
+                }
 
                 Spacer(minLength: 8)
 
