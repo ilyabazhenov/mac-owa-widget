@@ -5,7 +5,7 @@ import AppKit
 @main
 struct OWAWidgetApp: App {
     @StateObject private var calendarService = CalendarService()
-    @StateObject private var localizationService = LocalizationService()
+    @StateObject private var localizationService = LocalizationService(resourceBundle: .main)
     private let notificationDelegate = AppNotificationDelegate()
 
     init() {

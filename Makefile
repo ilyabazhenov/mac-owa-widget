@@ -1,8 +1,9 @@
 APP_NAME    := OWAWidget
 APP_PATH    := .build/$(APP_NAME).app
 SRC_DIR     := OWAWidget
-BINARY      := .build/debug/$(APP_NAME)
-RESOURCE_BUNDLE := .build/debug/$(APP_NAME)_$(APP_NAME).bundle
+BIN_DIR     := $(shell swift build --show-bin-path)
+BINARY      := $(BIN_DIR)/$(APP_NAME)
+RESOURCE_BUNDLE := $(BIN_DIR)/$(APP_NAME)_$(APP_NAME).bundle
 ENTITLEMENTS := $(SRC_DIR)/OWAWidget-dev.entitlements
 INFO_PLIST  := $(SRC_DIR)/Info.plist
 CODE_SIGN_IDENTITY ?= -
@@ -20,6 +21,7 @@ build:
 bundle: build
 	@mkdir -p $(APP_PATH)/Contents/MacOS
 	@mkdir -p $(APP_PATH)/Contents/Resources
+	@rm -rf "$(APP_PATH)/$(APP_NAME)_$(APP_NAME).bundle"
 	cp $(BINARY) $(APP_PATH)/Contents/MacOS/$(APP_NAME)
 	cp $(INFO_PLIST) $(APP_PATH)/Contents/
 	@if [ -d "$(RESOURCE_BUNDLE)" ]; then cp -R "$(RESOURCE_BUNDLE)" $(APP_PATH)/Contents/Resources/; fi

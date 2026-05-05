@@ -16,10 +16,12 @@ let package = Package(
                 "Info.plist",
                 "OWAWidget.entitlements",
                 "OWAWidget-dev.entitlements",
+                // Localizations are copied to app bundle by Makefile.
+                // Keeping them out of SPM resources avoids runtime dependency
+                // on OWAWidget_OWAWidget.bundle in release app execution.
+                "Resources",
             ],
-            resources: [
-                .process("Resources")
-            ]
+            resources: []
         ),
         .testTarget(
             name: "OWAWidgetTests",

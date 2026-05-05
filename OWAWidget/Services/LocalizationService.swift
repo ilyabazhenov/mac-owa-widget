@@ -49,7 +49,7 @@ final class LocalizationService: ObservableObject {
         userDefaults: UserDefaults = .standard,
         selectedLanguage: AppLanguage? = nil,
         preferredLanguages: [String]? = nil,
-        resourceBundle: Bundle = .module
+        resourceBundle: Bundle = .main
     ) {
         self.userDefaults = userDefaults
         self.preferredLanguagesProvider = { preferredLanguages ?? Locale.preferredLanguages }
