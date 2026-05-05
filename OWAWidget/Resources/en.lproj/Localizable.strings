@@ -66,6 +66,7 @@
 "meeting.multiple.at.time" = "%d meetings at %@";
 "meeting.parallel.window" = "%d parallel · %@–%@";
 "meeting.platform.generic" = "Meeting";
+"meeting.location.unspecified" = "Not specified";
 
 "menubar.now" = "now";
 "menubar.in.minutes" = "in %@";

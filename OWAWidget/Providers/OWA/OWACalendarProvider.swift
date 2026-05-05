@@ -61,7 +61,7 @@ actor OWACalendarProvider: CalendarProvider {
             startDate: startDate,
             endDate: endDate,
             location: item.Location?.DisplayName,
-            bodyPreview: item.TextBody?.Value.map { stripHTML($0) },
+            bodyPreview: Self.bodyText(from: item).map { stripHTML($0) },
             joinURL: joinURL,
             platform: platform,
             isAllDay: item.IsAllDayEvent ?? false,
@@ -72,23 +72,50 @@ actor OWACalendarProvider: CalendarProvider {
     }
 
     private func resolveJoinURL(from item: OWACalendarItem) -> (URL?, MeetingPlatform) {
+        Self.resolveJoinURL(from: item, using: urlDetector)
+    }
+
+    static func resolveJoinURL(from item: OWACalendarItem, using detector: MeetingURLDetector = MeetingURLDetector())
+        -> (URL?, MeetingPlatform)
+    {
         // 1. Dedicated join URL field
         if let urlStr = item.JoinOnlineMeetingUrl, !urlStr.isEmpty, let url = URL(string: urlStr) {
-            return (url, urlDetector.detectPlatform(from: urlStr))
+            return (url, detector.detectPlatform(from: urlStr))
         }
+
         // 2. Location display name
-        if let loc = item.Location?.DisplayName, !loc.isEmpty {
-            if let detected = urlDetector.detect(in: loc) {
+        let locationText = item.Location?.DisplayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !locationText.isEmpty {
+            if let detected = detector.detect(in: locationText) {
                 return (detected.url, detected.platform)
             }
+            // If room is present but doesn't contain a link, do not fallback to agenda text.
+            return (nil, .generic)
         }
-        // 3. Body text
-        if let body = item.TextBody?.Value, !body.isEmpty {
-            if let detected = urlDetector.detect(in: body) {
+
+        // 3. Body text fallback (only when location is absent/empty)
+        if let body = bodyText(from: item), !body.isEmpty {
+            if let detected = detector.detect(in: body) {
                 return (detected.url, detected.platform)
             }
         }
         return (nil, .generic)
+    }
+
+    private static func bodyText(from item: OWACalendarItem) -> String? {
+        let candidates: [String?] = [
+            item.TextBody?.Value,
+            item.UniqueBody?.Value,
+            item.Body?.Value,
+            item.NormalizedBody?.Value,
+            item.Preview,
+        ]
+
+        for candidate in candidates {
+            guard let text = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { continue }
+            return text
+        }
+        return nil
     }
 
     // MARK: - Date parsing

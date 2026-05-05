@@ -21,11 +21,9 @@ struct MeetingDetailView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
 
-                    if let location = event.location {
-                        Label(location, systemImage: "mappin.and.ellipse")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
+                    Label(locationLabel, systemImage: "mappin.and.ellipse")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
 
                     if let organizer = event.organizer {
                         Label(organizer, systemImage: "person")
@@ -99,5 +97,10 @@ struct MeetingDetailView: View {
         let df = DateFormatter()
         df.dateFormat = "EEEE, d MMMM"
         return df.string(from: event.startDate)
+    }
+
+    private var locationLabel: String {
+        let trimmed = event.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? localization.tr("meeting.location.unspecified") : trimmed
     }
 }

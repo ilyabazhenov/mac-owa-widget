@@ -66,6 +66,7 @@
 "meeting.multiple.at.time" = "%d встречи в %@";
 "meeting.parallel.window" = "%d параллельно · %@–%@";
 "meeting.platform.generic" = "Встреча";
+"meeting.location.unspecified" = "Не указано";
 
 "menubar.now" = "сейчас";
 "menubar.in.minutes" = "через %@";

@@ -19,15 +19,19 @@ struct MeetingURLDetector: Sendable {
 
     func detect(in text: String) -> (url: URL, platform: MeetingPlatform)? {
         let plain = stripHTML(text)
-        let nsString = plain as NSString
-        let range = NSRange(location: 0, length: nsString.length)
+        let sources = plain == text ? [text] : [text, plain]
 
-        for (regex, platform) in patterns {
-            guard let match = regex.firstMatch(in: plain, range: range) else { continue }
-            var urlString = nsString.substring(with: match.range)
-            urlString = urlString.trimmingCharacters(in: CharacterSet(charactersIn: ".,;\"'<>)\\]"))
-            if let url = URL(string: urlString) {
-                return (url, platform)
+        for source in sources {
+            let nsString = source as NSString
+            let range = NSRange(location: 0, length: nsString.length)
+
+            for (regex, platform) in patterns {
+                guard let match = regex.firstMatch(in: source, range: range) else { continue }
+                var urlString = nsString.substring(with: match.range)
+                urlString = urlString.trimmingCharacters(in: CharacterSet(charactersIn: ".,;\"'<>)\\]"))
+                if let url = URL(string: urlString) {
+                    return (url, platform)
+                }
             }
         }
         return nil

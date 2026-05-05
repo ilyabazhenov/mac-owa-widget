@@ -19,6 +19,10 @@ struct OWACalendarItem: Decodable {
     let Location: OWALocation?
     let Organizer: OWAOrganizer?
     let TextBody: OWATextBody?
+    let Body: OWABodyContent?
+    let UniqueBody: OWABodyContent?
+    let NormalizedBody: OWABodyContent?
+    let Preview: String?
     let JoinOnlineMeetingUrl: String?
     let RequiredAttendees: OWAAttendeeList?
     let OptionalAttendees: OWAAttendeeList?
@@ -49,6 +53,62 @@ struct OWAMailbox: Decodable {
 
 struct OWATextBody: Decodable {
     let Value: String?
+
+    init(Value: String?) {
+        self.Value = Value
+    }
+
+    init(from decoder: Decoder) throws {
+        if let container = try? decoder.container(keyedBy: CodingKeys.self) {
+            Value = try container.decodeIfPresent(String.self, forKey: .Value)
+            return
+        }
+
+        if let single = try? decoder.singleValueContainer(),
+           let raw = try? single.decode(String.self) {
+            Value = raw
+            return
+        }
+
+        Value = nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case Value
+    }
+}
+
+struct OWABodyContent: Decodable {
+    let Value: String?
+    let BodyType: String?
+
+    init(Value: String?, BodyType: String? = nil) {
+        self.Value = Value
+        self.BodyType = BodyType
+    }
+
+    init(from decoder: Decoder) throws {
+        if let container = try? decoder.container(keyedBy: CodingKeys.self) {
+            Value = try container.decodeIfPresent(String.self, forKey: .Value)
+            BodyType = try container.decodeIfPresent(String.self, forKey: .BodyType)
+            return
+        }
+
+        if let single = try? decoder.singleValueContainer(),
+           let raw = try? single.decode(String.self) {
+            Value = raw
+            BodyType = nil
+            return
+        }
+
+        Value = nil
+        BodyType = nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case Value
+        case BodyType
+    }
 }
 
 // OWA sometimes serializes a single attendee as an object, multiple as an array.
