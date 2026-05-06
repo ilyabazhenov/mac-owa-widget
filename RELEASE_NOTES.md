@@ -1,3 +1,41 @@
+## v1.0.24 - 2026-05-06
+
+### RU
+
+#### Что изменилось
+
+- Добавлен пассивный индикатор обновлений: приложение проверяет GitHub Releases раз в 6 часов и показывает плашку о доступной новой версии в popover.
+- В плашке доступны действия: открыть страницу релиза и пропустить конкретную версию до выхода следующей.
+- В Preferences добавлен раздел обновлений: переключатель автопроверки и кнопка «Проверить сейчас».
+- Добавлены локализации RU/EN для нового UI обновлений и тесты сравнения версий для проверки логики определения «новее/старее».
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+### EN
+
+#### What's Changed
+
+- Added a passive update indicator: the app checks GitHub Releases every 6 hours and shows a banner in the popover when a newer version is available.
+- The banner now supports opening the release page and skipping a specific version until a newer one is published.
+- Added an Updates section in Preferences with an automatic-check toggle and a “Check now” action.
+- Added RU/EN localization strings for the new update UI and version-comparison tests to validate newer/older detection logic.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
 ## v1.0.23 - 2026-05-06
 
 ### RU
