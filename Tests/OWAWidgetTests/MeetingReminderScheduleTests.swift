@@ -22,7 +22,9 @@ final class MeetingReminderScheduleTests: XCTestCase {
         XCTAssertNil(MeetingReminderSchedule.deliveryDelay(event: event, leadMinutes: 5, from: now))
     }
 
-    func testDeliveryDelayInsideLeadWindowUsesCatchUp() {
+    // Catch-up was removed: events within the lead window must return nil to avoid
+    // duplicate notifications when the sync cycle fires after delivery.
+    func testDeliveryDelayInsideLeadWindowSkips() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let start = now.addingTimeInterval(45)
         let event = CalendarEvent(
@@ -38,10 +40,29 @@ final class MeetingReminderScheduleTests: XCTestCase {
             organizer: nil,
             accountID: accountID
         )
-        let delay = MeetingReminderSchedule.deliveryDelay(event: event, leadMinutes: 1, from: now)
-        XCTAssertNotNil(delay)
-        XCTAssertGreaterThanOrEqual(delay!, 1)
-        XCTAssertLessThanOrEqual(delay!, start.timeIntervalSince(now))
+        XCTAssertNil(MeetingReminderSchedule.deliveryDelay(event: event, leadMinutes: 1, from: now))
+    }
+
+    // Exact boundary: secondsUntilIdealFire == 1 must skip (guard is > 1, not >= 1).
+    func testDeliveryDelaySkipsAtExactBoundary() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let leadMinutes = 5
+        // start - now - lead == 1 exactly → boundary
+        let start = now.addingTimeInterval(TimeInterval(leadMinutes * 60) + 1)
+        let event = CalendarEvent(
+            id: "boundary",
+            title: "Boundary",
+            startDate: start,
+            endDate: start.addingTimeInterval(3_600),
+            location: nil,
+            bodyPreview: nil,
+            joinURL: nil,
+            platform: .generic,
+            isAllDay: false,
+            organizer: nil,
+            accountID: accountID
+        )
+        XCTAssertNil(MeetingReminderSchedule.deliveryDelay(event: event, leadMinutes: leadMinutes, from: now))
     }
 
     func testDeliveryDelayUsesIdealFireWhenFarAhead() throws {
@@ -62,5 +83,45 @@ final class MeetingReminderScheduleTests: XCTestCase {
         )
         let delay = try XCTUnwrap(MeetingReminderSchedule.deliveryDelay(event: event, leadMinutes: 5, from: now))
         XCTAssertEqual(delay, 300, accuracy: 0.001)
+    }
+
+    // Event already started (but not ended) must skip — no catch-up notifications.
+    func testDeliveryDelaySkipsAlreadyStartedEvent() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let start = now.addingTimeInterval(-120)
+        let event = CalendarEvent(
+            id: "started",
+            title: "In progress",
+            startDate: start,
+            endDate: start.addingTimeInterval(3_600),
+            location: nil,
+            bodyPreview: nil,
+            joinURL: nil,
+            platform: .generic,
+            isAllDay: false,
+            organizer: nil,
+            accountID: accountID
+        )
+        XCTAssertNil(MeetingReminderSchedule.deliveryDelay(event: event, leadMinutes: 1, from: now))
+    }
+
+    // Event ended must skip.
+    func testDeliveryDelaySkipsCompletedEvent() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let start = now.addingTimeInterval(-3_600)
+        let event = CalendarEvent(
+            id: "done",
+            title: "Finished",
+            startDate: start,
+            endDate: start.addingTimeInterval(1_800),
+            location: nil,
+            bodyPreview: nil,
+            joinURL: nil,
+            platform: .generic,
+            isAllDay: false,
+            organizer: nil,
+            accountID: accountID
+        )
+        XCTAssertNil(MeetingReminderSchedule.deliveryDelay(event: event, leadMinutes: 1, from: now))
     }
 }

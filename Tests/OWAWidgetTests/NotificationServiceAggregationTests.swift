@@ -19,6 +19,26 @@ final class NotificationServiceAggregationTests: XCTestCase {
         XCTAssertEqual(added.count, 1)
     }
 
+    // Calling scheduleNotifications twice for the same events must not produce duplicates.
+    // Regression test for catch-up logic creating a second notification after delivery.
+    func testScheduleNotificationsCalledTwiceProducesNoDuplicates() async {
+        let center = MockNotificationCenter()
+        let service = NotificationService(center: center)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+        let event = makeEvent(id: "a", start: now.addingTimeInterval(600), joinURL: URL(string: "https://a"))
+
+        await service.scheduleNotifications(for: [event], leadMinutes: 5)
+        // Simulate the first notification having fired: remove it from pending.
+        await service.removeAllPendingMeetingNotifications()
+        // Second sync fires — same event, still within endDate.
+        await service.scheduleNotifications(for: [event], leadMinutes: 5)
+
+        // Must have only 1 pending notification (the second schedule), not 2.
+        let pending = await center.pendingRequestsSnapshot()
+        XCTAssertEqual(pending.count, 1)
+    }
+
     func testScheduleNotificationsEncodesMeetingItemsIntoUserInfo() async throws {
         let center = MockNotificationCenter()
         let service = NotificationService(center: center)
@@ -59,17 +79,13 @@ private final class MockNotificationCenter: UserNotificationCentering, @unchecke
     private let queue = DispatchQueue(label: "MockNotificationCenter.queue")
     private var categories: Set<UNNotificationCategory> = []
     private var pending: [UNNotificationRequest] = []
-    private var addedRequests: [UNNotificationRequest] = []
+    private var allAdded: [UNNotificationRequest] = []
 
     func setNotificationCategories(_ categories: Set<UNNotificationCategory>) {
-        queue.sync {
-            self.categories = categories
-        }
+        queue.sync { self.categories = categories }
     }
 
-    func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool {
-        true
-    }
+    func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool { true }
 
     func pendingNotificationRequests() async -> [UNNotificationRequest] {
         queue.sync { pending }
@@ -83,11 +99,20 @@ private final class MockNotificationCenter: UserNotificationCentering, @unchecke
 
     func add(_ request: UNNotificationRequest) async throws {
         queue.sync {
-            addedRequests.append(request)
+            // Replace existing pending request with same ID (mirrors UNUserNotificationCenter behaviour).
+            pending.removeAll { $0.identifier == request.identifier }
+            pending.append(request)
+            allAdded.append(request)
         }
     }
 
+    /// All requests ever added (including replaced ones), for asserting schedule calls.
     func addedRequestsSnapshot() -> [UNNotificationRequest] {
-        queue.sync { addedRequests }
+        queue.sync { allAdded }
+    }
+
+    /// Currently pending requests, mirrors what UNUserNotificationCenter.pendingNotificationRequests() returns.
+    func pendingRequestsSnapshot() -> [UNNotificationRequest] {
+        queue.sync { pending }
     }
 }

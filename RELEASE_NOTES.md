@@ -1,3 +1,39 @@
+## v1.0.27 - 2026-05-06
+
+### RU
+
+#### Что изменилось
+
+- Обновлена иконка приложения во всех размерах macOS-бандла; мастер-исходник переведен на PNG.
+- Улучшена логика напоминаний и агрегации уведомлений для встреч, включая обновления в `MeetingReminderShared` и `NotificationService`.
+- Обновлены тесты расписания напоминаний и агрегации уведомлений для проверки нового поведения.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+### EN
+
+#### What's Changed
+
+- Updated the app icon across all macOS bundle sizes; the master source was switched to PNG.
+- Improved meeting reminder and notification aggregation logic, including updates in `MeetingReminderShared` and `NotificationService`.
+- Updated reminder scheduling and notification aggregation tests to validate the new behavior.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
 ## v1.0.26 - 2026-05-06
 
 ### RU

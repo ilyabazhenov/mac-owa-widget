@@ -121,13 +121,8 @@ enum MeetingReminderSchedule {
 
         let lead = TimeInterval(leadMinutes * 60)
         let secondsUntilIdealFire = event.startDate.timeIntervalSince(now) - lead
-        if secondsUntilIdealFire > 1 {
-            return secondsUntilIdealFire
-        }
-        if event.startDate > now {
-            return max(1, event.startDate.timeIntervalSince(now) - 1)
-        }
-        return nil
+        guard secondsUntilIdealFire > 1 else { return nil }
+        return secondsUntilIdealFire
     }
 
     #if DEBUG

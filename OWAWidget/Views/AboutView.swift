@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AboutView: View {
     private let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    private static let appIcon = NSImage(named: "AppIcon") ?? NSImage(named: "AppIcon.icns")
     private static let authorEmailAddress = "amio.env@gmail.com"
     private static let authorEmailURL = URL(string: "mailto:amio.env@gmail.com")!
     private static let githubRepositoryURL = URL(string: "https://github.com/ilyabazhenov/mac-owa-widget")!
@@ -12,9 +13,19 @@ struct AboutView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "calendar.badge.clock")
-                .font(.system(size: 48))
-                .foregroundColor(.accentColor)
+            if let appIcon = Self.appIcon {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 72, height: 72)
+                    .accessibilityLabel(localization.tr("app.name"))
+            } else {
+                Image(systemName: "calendar.badge.clock")
+                    .font(.system(size: 48))
+                    .foregroundColor(.accentColor)
+                    .frame(width: 72, height: 72)
+                    .accessibilityLabel(localization.tr("app.name"))
+            }
 
             Text(localization.tr("app.name"))
                 .font(.title2.bold())

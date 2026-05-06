@@ -2,20 +2,20 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SRC_SVG="$ROOT_DIR/OWAWidget/Resources/AppIcon/app-icon-master.svg"
+SRC_PNG="$ROOT_DIR/OWAWidget/Resources/AppIcon/app-icon-master.png"
 ICONSET_DIR="$ROOT_DIR/OWAWidget/Resources/AppIcon.iconset"
 OUT_ICNS="$ROOT_DIR/OWAWidget/Resources/AppIcon.icns"
 TMP_PNG="$ICONSET_DIR/icon_1024x1024.png"
 
-if [[ ! -f "$SRC_SVG" ]]; then
-  echo "Missing source icon: $SRC_SVG" >&2
+if [[ ! -f "$SRC_PNG" ]]; then
+  echo "Missing source icon: $SRC_PNG" >&2
   exit 1
 fi
 
 mkdir -p "$ICONSET_DIR"
 
-# Render SVG master into 1024px PNG.
-sips -s format png "$SRC_SVG" --out "$TMP_PNG" >/dev/null
+# Normalize the raster master into a 1024px PNG.
+sips -s format png "$SRC_PNG" --out "$TMP_PNG" >/dev/null
 sips -z 1024 1024 "$TMP_PNG" --out "$TMP_PNG" >/dev/null
 
 declare -a SIZES=(

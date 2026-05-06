@@ -77,7 +77,6 @@ actor NotificationService {
         localization: NotificationLocalization = .english
     ) async {
         await removeAllPendingMeetingNotifications()
-
         let now = Date()
         let clusters = MeetingReminderClusterBuilder.clusters(from: events, now: now)
 
