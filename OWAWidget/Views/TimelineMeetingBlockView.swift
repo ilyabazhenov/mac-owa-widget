@@ -162,7 +162,7 @@ struct TimelineMeetingBlockView: View {
         if event.isEffectivelyCancelled {
             return Color.secondary.opacity(0.45)
         }
-        return event.isHappeningNow ? .orange : event.platform.color
+        return event.isHappeningNow ? .orange : meetingAccentColor(for: event)
     }
 
     private var backgroundColor: Color {
@@ -170,9 +170,9 @@ struct TimelineMeetingBlockView: View {
             return Color(nsColor: .controlBackgroundColor).opacity(0.55)
         }
         if isSelected {
-            return event.isHappeningNow ? Color.orange.opacity(0.22) : event.platform.color.opacity(0.20)
+            return event.isHappeningNow ? Color.orange.opacity(0.22) : meetingAccentColor(for: event).opacity(0.20)
         }
-        return event.isHappeningNow ? Color.orange.opacity(0.16) : event.platform.color.opacity(0.13)
+        return event.isHappeningNow ? Color.orange.opacity(0.16) : meetingAccentColor(for: event).opacity(0.13)
     }
 
     private var borderColor: Color {
@@ -182,7 +182,7 @@ struct TimelineMeetingBlockView: View {
         if isSelected {
             return accentColor
         }
-        return event.isHappeningNow ? .orange : event.platform.color.opacity(0.28)
+        return event.isHappeningNow ? .orange : meetingAccentColor(for: event).opacity(0.28)
     }
 
     var borderWidth: CGFloat {

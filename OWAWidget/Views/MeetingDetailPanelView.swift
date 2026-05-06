@@ -71,7 +71,7 @@ struct MeetingDetailPanelView: View {
             if event.platform != .generic {
                 Image(systemName: event.platform.systemIcon)
                     .font(.system(size: 13))
-                    .foregroundStyle(event.isHappeningNow ? .orange : event.platform.color)
+                    .foregroundStyle(event.isHappeningNow ? .orange : meetingAccentColor(for: event))
                     .accessibilityLabel(event.platform.displayName(localization: localization))
             }
         }
@@ -186,7 +186,7 @@ private struct MeetingDetailActionsView: View {
                     .font(.system(size: 12))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
-                    .background(event.isHappeningNow ? Color.orange : event.platform.color)
+                    .background(event.isHappeningNow ? Color.orange : meetingAccentColor(for: event))
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }

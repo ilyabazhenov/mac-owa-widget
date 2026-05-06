@@ -1,9 +1,8 @@
 ## What's Changed
 
-- Fixed KTalk join-link extraction from OWA events by scanning all available body fields and handling escaped URL payloads.
-- Added GetCalendarView debug dump support to inspect full raw OWA responses when troubleshooting parsing issues.
-- Added meeting metadata support for `IsCancelled`, `IsOrganizer`, and `Categories`, including UI updates and cancellation-aware behavior for banners and reminders.
-- Improved cancelled-meeting detection fallback for legacy/cached items with `Отменено:` / `Cancelled:` subject prefixes.
+- Added category-aware accent colors for meeting cards and banners, with fallback to platform colors when no category color is recognized.
+- Improved cancelled meeting styling and behavior consistency via effective cancellation detection in UI actions and summaries.
+- Added tests for category color mapping and retained full test-suite coverage for release safety.
 
 ## Installation
 

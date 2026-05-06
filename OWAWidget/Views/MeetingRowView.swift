@@ -49,7 +49,7 @@ struct MeetingRowView: View {
             HStack(spacing: 6) {
                 if event.platform != .generic {
                     Image(systemName: event.platform.systemIcon)
-                        .foregroundStyle(event.platform.color)
+                        .foregroundStyle(meetingAccentColor(for: event))
                         .font(.system(size: compact ? 12 : 14))
                         .help(event.platform.displayName(localization: localization))
                         .accessibilityLabel(event.platform.displayName(localization: localization))
@@ -78,8 +78,8 @@ struct MeetingRowView: View {
                             .font(.system(size: 11, weight: .semibold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
-                            .background(event.platform.color.opacity(0.15))
-                            .foregroundStyle(event.platform.color)
+                            .background(meetingAccentColor(for: event).opacity(0.15))
+                            .foregroundStyle(meetingAccentColor(for: event))
                             .clipShape(RoundedRectangle(cornerRadius: 5))
                     }
                     .buttonStyle(.plain)
@@ -148,6 +148,6 @@ struct MeetingRowView: View {
         if event.isEffectivelyCancelled {
             return Color.secondary.opacity(0.45)
         }
-        return event.isHappeningNow ? .orange : event.platform.color.opacity(0.7)
+        return event.isHappeningNow ? .orange : meetingAccentColor(for: event).opacity(0.7)
     }
 }

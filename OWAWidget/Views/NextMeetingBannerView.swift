@@ -47,7 +47,7 @@ struct NextMeetingBannerView: View {
                     Spacer()
                     if event.platform != .generic {
                         Image(systemName: event.platform.systemIcon)
-                            .foregroundStyle(happening ? .orange : event.platform.color)
+                            .foregroundStyle(happening ? .orange : meetingAccentColor(for: event))
                             .font(.system(size: 12))
                             .accessibilityLabel(event.platform.displayName(localization: localization))
                     }
@@ -92,7 +92,7 @@ struct NextMeetingBannerView: View {
                             .font(.system(size: 12))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
-                            .background(happening ? Color.orange : event.platform.color)
+                            .background(happening ? Color.orange : meetingAccentColor(for: event))
                             .foregroundStyle(.white)
                             .clipShape(RoundedRectangle(cornerRadius: 7))
                         }
@@ -215,7 +215,7 @@ struct NextMeetingBannerView: View {
     }
 
     private func bannerBackground(_ event: CalendarEvent, happening: Bool) -> some View {
-        let color: Color = happening ? .orange : event.platform.color
+        let color: Color = happening ? .orange : meetingAccentColor(for: event)
         return ZStack {
             RoundedRectangle(cornerRadius: 10)
                 .fill(color.opacity(happening ? 0.10 : 0.08))
