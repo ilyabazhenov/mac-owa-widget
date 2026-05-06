@@ -8,6 +8,7 @@ struct NextMeetingBannerView: View {
     var horizontalPadding: CGFloat = 6
     var onSelect: (CalendarEvent) -> Void = { _ in }
     @EnvironmentObject private var localization: LocalizationService
+    @EnvironmentObject private var calendarService: CalendarService
     @State private var didCopy = false
 
     var body: some View {
@@ -82,7 +83,7 @@ struct NextMeetingBannerView: View {
                         .accessibilityHint(localization.tr("a11y.meeting.copy.link.hint"))
 
                         Button {
-                            NSWorkspace.shared.open(url)
+                            calendarService.openJoinURL(for: event, source: .nextBanner)
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrow.right.circle.fill")

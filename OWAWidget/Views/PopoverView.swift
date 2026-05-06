@@ -94,6 +94,23 @@ struct PopoverView: View {
         .accessibilitySortPriority(selectedEvent == nil ? 1 : 0)
     }
 
+    private var footerEngagementIndicator: some View {
+        let snapshot = service.engagementSnapshot
+        let percent = Int(snapshot.conversionRate * 100)
+        return HStack(spacing: 4) {
+            CompactCircularProgress(
+                progress: snapshot.conversionRate,
+                title: nil,
+                lineWidth: 2
+            )
+            Text("\(percent)%")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .help(localization.effectiveLanguageCode == "ru" ? "Доля подключений: \(snapshot.joinedViaWidget)/\(snapshot.eligibleMeetings)" : "Join rate: \(snapshot.joinedViaWidget)/\(snapshot.eligibleMeetings)")
+    }
+
     // MARK: - Content
 
     @ViewBuilder
@@ -229,6 +246,7 @@ struct PopoverView: View {
                 }
 
                 Spacer(minLength: 8)
+                footerEngagementIndicator
 
                 Text("v\(fullVersion)")
                     .lineLimit(1)
@@ -332,5 +350,28 @@ struct PopoverView: View {
 
         let events = service.events.filter { $0.startDate < dayEnd && $0.endDate > dayStart }
         return [(localization.daySectionLabel(for: dayStart, calendar: calendar), dayStart, events)]
+    }
+}
+
+private struct CompactCircularProgress: View {
+    let progress: Double
+    let title: String?
+    var lineWidth: CGFloat = 3
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.22), lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: max(0, min(progress, 1)))
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            if let title {
+                Text(title)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 16, height: 16)
     }
 }

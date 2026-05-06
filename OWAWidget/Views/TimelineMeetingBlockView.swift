@@ -9,6 +9,7 @@ struct TimelineMeetingBlockView: View {
     var isSelected: Bool = false
 
     @EnvironmentObject private var localization: LocalizationService
+    @EnvironmentObject private var calendarService: CalendarService
     @State private var didCopy = false
 
     init(event: CalendarEvent, compact: Bool = false, showsOrganizer: Bool? = nil, isSelected: Bool = false) {
@@ -75,7 +76,7 @@ struct TimelineMeetingBlockView: View {
                     }
 
                     Button {
-                        NSWorkspace.shared.open(url)
+                        calendarService.openJoinURL(for: event, source: .timelineBlock)
                     } label: {
                         Image(systemName: "arrow.right.circle.fill")
                             .font(.system(size: compact ? 13 : 14))
@@ -162,7 +163,7 @@ struct TimelineMeetingBlockView: View {
         if event.isEffectivelyCancelled {
             return Color.secondary.opacity(0.45)
         }
-        return event.isHappeningNow ? .orange : meetingAccentColor(for: event)
+        return meetingAccentColor(for: event)
     }
 
     private var backgroundColor: Color {
@@ -170,9 +171,9 @@ struct TimelineMeetingBlockView: View {
             return Color(nsColor: .controlBackgroundColor).opacity(0.55)
         }
         if isSelected {
-            return event.isHappeningNow ? Color.orange.opacity(0.22) : meetingAccentColor(for: event).opacity(0.20)
+            return meetingAccentColor(for: event).opacity(0.20)
         }
-        return event.isHappeningNow ? Color.orange.opacity(0.16) : meetingAccentColor(for: event).opacity(0.13)
+        return meetingAccentColor(for: event).opacity(0.13)
     }
 
     private var borderColor: Color {
@@ -182,7 +183,7 @@ struct TimelineMeetingBlockView: View {
         if isSelected {
             return accentColor
         }
-        return event.isHappeningNow ? .orange : meetingAccentColor(for: event).opacity(0.28)
+        return meetingAccentColor(for: event).opacity(0.28)
     }
 
     var borderWidth: CGFloat {

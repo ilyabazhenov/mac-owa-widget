@@ -91,6 +91,21 @@ struct PreferencesView: View {
                 }
             }
 
+            Section(localization.tr("preferences.engagement.section")) {
+                Picker(localization.tr("preferences.engagement.scope"), selection: $vm.meetingEngagementScope) {
+                    Text(localization.tr("preferences.engagement.scope.joinableOnly")).tag(MeetingEngagementScope.joinableOnly)
+                    Text(localization.tr("preferences.engagement.scope.allEvents")).tag(MeetingEngagementScope.allEvents)
+                }
+                .pickerStyle(.menu)
+
+                Picker(localization.tr("preferences.engagement.period"), selection: $vm.meetingEngagementDefaultPeriod) {
+                    Text(localization.tr("preferences.engagement.period.today")).tag(MeetingEngagementPeriod.today)
+                    Text(localization.tr("preferences.engagement.period.7days")).tag(MeetingEngagementPeriod.sevenDays)
+                    Text(localization.tr("preferences.engagement.period.30days")).tag(MeetingEngagementPeriod.thirtyDays)
+                }
+                .pickerStyle(.menu)
+            }
+
             Section {
                 Button(localization.tr("preferences.save")) {
                     vm.savePreferences()

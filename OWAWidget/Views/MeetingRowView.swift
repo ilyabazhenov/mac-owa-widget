@@ -4,6 +4,7 @@ import AppKit
 struct MeetingRowView: View {
     let event: CalendarEvent
     var compact: Bool = false
+    @EnvironmentObject private var calendarService: CalendarService
     @EnvironmentObject private var localization: LocalizationService
     @State private var didCopy = false
 
@@ -72,7 +73,7 @@ struct MeetingRowView: View {
                     .accessibilityHint(localization.tr("a11y.meeting.copy.link.hint"))
 
                     Button {
-                        NSWorkspace.shared.open(url)
+                        calendarService.openJoinURL(for: event, source: .meetingRow)
                     } label: {
                         Text(localization.tr("meeting.join"))
                             .font(.system(size: 11, weight: .semibold))
@@ -141,13 +142,13 @@ struct MeetingRowView: View {
     }
 
     private var timeColor: Color {
-        event.isHappeningNow ? .orange : .secondary
+        .secondary
     }
 
     private var statusColor: Color {
         if event.isEffectivelyCancelled {
             return Color.secondary.opacity(0.45)
         }
-        return event.isHappeningNow ? .orange : meetingAccentColor(for: event).opacity(0.7)
+        return meetingAccentColor(for: event).opacity(0.7)
     }
 }

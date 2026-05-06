@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import os.log
 
@@ -28,6 +29,8 @@ final class CalendarService: ObservableObject {
     @Published private(set) var events: [CalendarEvent] = []
     @Published private(set) var syncStatus: SyncStatus = .idle
     @Published private(set) var accounts: [CalendarAccount] = []
+    @Published private(set) var engagementSnapshot: MeetingEngagementSnapshot = .empty
+    @Published private(set) var engagementPeriod: MeetingEngagementPeriod = .today
 
     private var providers: [any CalendarProvider] = []
     private let scheduler = SyncScheduler()
@@ -35,6 +38,7 @@ final class CalendarService: ObservableObject {
     private let customMeetingReminders: any CustomMeetingReminderControlling
     private let eventCacheStore: any EventCacheStoring
     private let log = Logger(subsystem: "com.owawidget", category: "CalendarService")
+    private let meetingEngagementStats = MeetingEngagementStatsService()
     private var notificationLocalization: NotificationLocalization = .english
     private var nextSyncID = 0
     private var activeSyncIDs = Set<Int>()
@@ -91,10 +95,17 @@ final class CalendarService: ObservableObject {
         self.eventCacheStore = eventCacheStore
         self.notificationService = notificationService
         self.customMeetingReminders = customMeetingReminders
+        self.engagementPeriod = meetingEngagementStats.defaultPeriod
+        if let reminderController = customMeetingReminders as? CustomMeetingReminderController {
+            reminderController.onJoin = { [weak self] item in
+                self?.openJoinURL(for: item, source: .inAppReminder)
+            }
+        }
         if loadPersistedAccounts {
             loadAccounts()
         }
         loadCachedEvents()
+        recalculateEngagementSnapshot()
 
         guard startBackgroundTasks else { return }
 
@@ -166,6 +177,36 @@ final class CalendarService: ObservableObject {
 
     func replaceEventsForTests(_ events: [CalendarEvent]) {
         self.events = events
+        recalculateEngagementSnapshot()
+    }
+
+    var meetingEngagementScope: MeetingEngagementScope {
+        meetingEngagementStats.scope
+    }
+
+    func setMeetingEngagementScope(_ scope: MeetingEngagementScope) {
+        meetingEngagementStats.setScope(scope)
+        recalculateEngagementSnapshot()
+    }
+
+    func setMeetingEngagementPeriod(_ period: MeetingEngagementPeriod) {
+        engagementPeriod = period
+        meetingEngagementStats.setDefaultPeriod(period)
+        recalculateEngagementSnapshot()
+    }
+
+    func openJoinURL(for event: CalendarEvent, source: MeetingJoinSource) {
+        guard let url = event.joinURLForActions else { return }
+        meetingEngagementStats.trackJoin(for: event, source: source)
+        NSWorkspace.shared.open(url)
+        recalculateEngagementSnapshot()
+    }
+
+    func openJoinURL(for reminderItem: MeetingReminderItem, source: MeetingJoinSource) {
+        guard let url = reminderItem.joinURL else { return }
+        meetingEngagementStats.trackJoin(eventID: reminderItem.eventID, startDate: reminderItem.startDate, source: source)
+        NSWorkspace.shared.open(url)
+        recalculateEngagementSnapshot()
     }
 
     #if DEBUG
@@ -269,7 +310,7 @@ final class CalendarService: ObservableObject {
         let now = Date()
         // Fetch from today's start to include already finished meetings from today.
         let start = Calendar.current.startOfDay(for: now)
-        let end = Calendar.current.date(byAdding: .day, value: 7, to: now) ?? now
+        let end = Calendar.current.date(byAdding: .day, value: 30, to: now) ?? now
 
         do {
             var fetched: [CalendarEvent] = []
@@ -294,6 +335,7 @@ final class CalendarService: ObservableObject {
             syncStatus = .lastSynced(Date())
             syncRequestGate.recordSyncSucceeded()
             log.info("Sync \(syncID, privacy: .public) complete events=\(self.events.count, privacy: .public)")
+            recalculateEngagementSnapshot()
 
             await rescheduleMeetingRemindersForCurrentEvents()
 
@@ -365,6 +407,10 @@ final class CalendarService: ObservableObject {
     private func loadCachedEvents() {
         guard let snapshot = eventCacheStore.load() else { return }
         events = snapshot.events.sorted { $0.startDate < $1.startDate }
+    }
+
+    private func recalculateEngagementSnapshot(now: Date = Date()) {
+        engagementSnapshot = meetingEngagementStats.snapshot(events: events, period: engagementPeriod, now: now)
     }
 
     private func persistAccounts() {

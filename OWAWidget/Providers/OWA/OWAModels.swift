@@ -79,13 +79,7 @@ struct OWACalendarItem: Decodable {
         IsAllDayEvent = try c.decodeIfPresent(Bool.self, forKey: .IsAllDayEvent)
         IsCancelled = try c.decodeIfPresent(Bool.self, forKey: .IsCancelled)
         IsOrganizer = try c.decodeIfPresent(Bool.self, forKey: .IsOrganizer)
-        if let arr = try? c.decode([String].self, forKey: .Categories) {
-            Categories = arr
-        } else if let single = try? c.decode(String.self, forKey: .Categories) {
-            Categories = [single]
-        } else {
-            Categories = nil
-        }
+        Categories = Self.decodeCategories(from: c)
         Location = try c.decodeIfPresent(OWALocation.self, forKey: .Location)
         Organizer = try c.decodeIfPresent(OWAOrganizer.self, forKey: .Organizer)
         TextBody = try c.decodeIfPresent(OWATextBody.self, forKey: .TextBody)
@@ -102,6 +96,67 @@ struct OWACalendarItem: Decodable {
         case ItemId, Subject, Start, End, IsAllDayEvent, IsCancelled, IsOrganizer, Categories
         case Location, Organizer, TextBody, Body, UniqueBody, NormalizedBody, Preview
         case JoinOnlineMeetingUrl, RequiredAttendees, OptionalAttendees
+    }
+
+    private struct OWAEncodedCategory: Decodable {
+        let value: String?
+
+        init(from decoder: Decoder) throws {
+            if let single = try? decoder.singleValueContainer(),
+               let text = try? single.decode(String.self) {
+                value = text
+                return
+            }
+
+            if let keyed = try? decoder.container(keyedBy: DynamicCodingKey.self) {
+                let candidateKeys = [
+                    "Name", "DisplayName", "Value", "CategoryName",
+                    "name", "displayName", "value", "categoryName",
+                    "Id", "id", "Color", "color",
+                ]
+                for key in candidateKeys {
+                    guard let codingKey = DynamicCodingKey(stringValue: key) else { continue }
+                    if let text = try? keyed.decode(String.self, forKey: codingKey), !text.isEmpty {
+                        value = text
+                        return
+                    }
+                }
+            }
+
+            value = nil
+        }
+    }
+
+    private struct DynamicCodingKey: CodingKey {
+        var stringValue: String
+        var intValue: Int?
+
+        init?(stringValue: String) {
+            self.stringValue = stringValue
+            self.intValue = nil
+        }
+
+        init?(intValue: Int) {
+            self.stringValue = "\(intValue)"
+            self.intValue = intValue
+        }
+    }
+
+    private static func decodeCategories(from container: KeyedDecodingContainer<CodingKeys>) -> [String]? {
+        if let arr = try? container.decode([String].self, forKey: .Categories) {
+            return arr
+        }
+        if let single = try? container.decode(String.self, forKey: .Categories) {
+            return [single]
+        }
+        if let objects = try? container.decode([OWAEncodedCategory].self, forKey: .Categories) {
+            let values = objects
+                .compactMap(\.value)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            return values.isEmpty ? nil : values
+        }
+        return nil
     }
 }
 

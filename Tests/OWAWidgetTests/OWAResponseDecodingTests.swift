@@ -114,4 +114,52 @@ final class OWAResponseDecodingTests: XCTestCase {
         let first = try XCTUnwrap(response.Body?.Items?.first)
         XCTAssertEqual(first.Categories, ["OnlyOne"])
     }
+
+    func testDecodesCategoriesWhenRepresentedAsObjects() throws {
+        let data = Data(
+            """
+            {
+              "Body": {
+                "Items": [
+                  {
+                    "Subject": "Demo",
+                    "Categories": [
+                      { "Name": "Лиловая категория" },
+                      { "DisplayName": "Blue category" }
+                    ]
+                  }
+                ]
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(OWAServiceResponse.self, from: data)
+        let first = try XCTUnwrap(response.Body?.Items?.first)
+        XCTAssertEqual(first.Categories, ["Лиловая категория", "Blue category"])
+    }
+
+    func testDecodesCategoriesFromValueAndLowercaseKeys() throws {
+        let data = Data(
+            """
+            {
+              "Body": {
+                "Items": [
+                  {
+                    "Subject": "Demo",
+                    "Categories": [
+                      { "value": "Лиловая категория" },
+                      { "categoryName": "Green category" }
+                    ]
+                  }
+                ]
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(OWAServiceResponse.self, from: data)
+        let first = try XCTUnwrap(response.Body?.Items?.first)
+        XCTAssertEqual(first.Categories, ["Лиловая категория", "Green category"])
+    }
 }

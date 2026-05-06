@@ -57,6 +57,14 @@
 "preferences.notifications.sound.tink" = "Tink — light and short";
 "preferences.notifications.sound.ping" = "Ping — clear signal";
 "preferences.notifications.sound.silent" = "Silent";
+"preferences.engagement.section" = "Join statistics";
+"preferences.engagement.scope" = "Eligible meetings";
+"preferences.engagement.scope.joinableOnly" = "Only meetings with join links";
+"preferences.engagement.scope.allEvents" = "All meetings";
+"preferences.engagement.period" = "Default period";
+"preferences.engagement.period.today" = "Today";
+"preferences.engagement.period.7days" = "7 days";
+"preferences.engagement.period.30days" = "30 days";
 "preferences.save" = "Save Preferences";
 "preferences.debug.reminder.delay" = "Test reminder delay";
 "preferences.debug.reminder.trigger" = "Trigger test reminder";

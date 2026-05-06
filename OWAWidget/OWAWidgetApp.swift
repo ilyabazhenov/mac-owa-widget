@@ -10,6 +10,9 @@ struct OWAWidgetApp: App {
 
     init() {
         UNUserNotificationCenter.current().delegate = notificationDelegate
+        notificationDelegate.onJoinFromNotification = { [calendarService] item in
+            calendarService.openJoinURL(for: item, source: .reminderNotification)
+        }
         configureAppIcon()
     }
 
@@ -60,6 +63,7 @@ struct OWAWidgetApp: App {
 // MARK: - Notification delegate
 
 final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
+    var onJoinFromNotification: ((MeetingReminderItem) -> Void)?
 
     // Called when user taps a notification or its action button
     func userNotificationCenter(
@@ -76,11 +80,13 @@ final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,
         let userInfo = response.notification.request.content.userInfo
         if let items = Self.decodeItems(from: userInfo), !items.isEmpty {
             DispatchQueue.main.async {
-                if items.count == 1, let url = items.first?.joinURL {
-                    NSWorkspace.shared.open(url)
+                if items.count == 1, let item = items.first {
+                    self.onJoinFromNotification?(item)
                     return
                 }
-                MeetingJoinSelectionController.shared.present(items: items)
+                MeetingJoinSelectionController.shared.present(items: items) { selected in
+                    self.onJoinFromNotification?(selected)
+                }
             }
             return
         }

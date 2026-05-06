@@ -20,6 +20,7 @@ final class CustomMeetingReminderController {
     private var dismissWorkItem: DispatchWorkItem?
     private var currentSound: MeetingReminderSound = .default
     private let autoDismissSeconds: TimeInterval = 14
+    var onJoin: ((MeetingReminderItem) -> Void)?
 
     func cancelAll() {
         for (_, item) in scheduledWork { item.cancel() }
@@ -113,7 +114,9 @@ final class CustomMeetingReminderController {
             onJoin: { [weak self, weak panel] item in
                 self?.dismissWorkItem?.cancel()
                 self?.dismissWorkItem = nil
-                if let url = item.joinURL {
+                if let onJoin = self?.onJoin {
+                    onJoin(item)
+                } else if let url = item.joinURL {
                     NSWorkspace.shared.open(url)
                 }
                 panel?.close()

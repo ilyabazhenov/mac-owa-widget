@@ -7,7 +7,7 @@ final class MeetingJoinSelectionController {
 
     private var panel: NSPanel?
 
-    func present(items: [MeetingReminderItem]) {
+    func present(items: [MeetingReminderItem], onJoin: @escaping (MeetingReminderItem) -> Void) {
         guard !items.isEmpty else { return }
 
         panel?.close()
@@ -26,9 +26,7 @@ final class MeetingJoinSelectionController {
         panel.hidesOnDeactivate = false
 
         let view = MeetingJoinSelectionView(items: items) { [weak panel] item in
-            if let url = item.joinURL {
-                NSWorkspace.shared.open(url)
-            }
+            onJoin(item)
             panel?.close()
         }
         let hosting = NSHostingView(rootView: view)

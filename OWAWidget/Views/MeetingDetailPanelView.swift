@@ -170,13 +170,14 @@ private struct MeetingDetailActionsView: View {
     let event: CalendarEvent
 
     @EnvironmentObject private var localization: LocalizationService
+    @EnvironmentObject private var calendarService: CalendarService
     @State private var didCopy = false
 
     var body: some View {
         if let url = event.joinURLForActions {
             HStack(spacing: 10) {
                 Button {
-                    NSWorkspace.shared.open(url)
+                    calendarService.openJoinURL(for: event, source: .detailPanel)
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "arrow.right.circle.fill")
