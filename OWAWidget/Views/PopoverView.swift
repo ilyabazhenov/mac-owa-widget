@@ -4,6 +4,7 @@ import AppKit
 struct PopoverView: View {
     @EnvironmentObject var service: CalendarService
     @EnvironmentObject private var localization: LocalizationService
+    @EnvironmentObject private var updateCheck: UpdateCheckService
     @Environment(\.openWindow) private var openWindow
     private let popoverSize = PopoverSize.defaultValue
     private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -134,6 +135,13 @@ struct PopoverView: View {
             VStack(spacing: 0) {
                 dateNavBar
                 Divider()
+                UpdateAvailableBannerView(
+                    updateCheck: updateCheck,
+                    horizontalPadding: contentHorizontalPadding
+                )
+                if updateCheck.availableUpdate != nil {
+                    Divider()
+                }
                 if selectedDayOffset == 0 && !nextEvents.isEmpty {
                     NextMeetingBannerView(
                         events: nextEvents,

@@ -66,6 +66,16 @@
 "preferences.engagement.period.7days" = "7 days";
 "preferences.engagement.period.30days" = "30 days";
 "preferences.save" = "Save Preferences";
+
+"preferences.updates.section" = "Updates";
+"preferences.updates.toggle" = "Check for updates automatically";
+"preferences.updates.hint" = "Checks GitHub releases every 6 hours. Installing updates is still manual.";
+"preferences.updates.checkNow" = "Check now";
+
+"update.banner.title" = "%@ available";
+"update.banner.action.open" = "View release";
+"update.banner.action.skip" = "Skip this version";
+
 "preferences.debug.reminder.delay" = "Test reminder delay";
 "preferences.debug.reminder.trigger" = "Trigger test reminder";
 

@@ -3,6 +3,7 @@ import SwiftUI
 struct PreferencesView: View {
     @ObservedObject var vm: SettingsViewModel
     @EnvironmentObject private var localization: LocalizationService
+    @EnvironmentObject private var updateCheck: UpdateCheckService
 
     private let syncOptions: [(minutes: Int, value: TimeInterval)] = [
         (1, 60),
@@ -104,6 +105,20 @@ struct PreferencesView: View {
                     Text(localization.tr("preferences.engagement.period.30days")).tag(MeetingEngagementPeriod.thirtyDays)
                 }
                 .pickerStyle(.menu)
+            }
+
+            Section(localization.tr("preferences.updates.section")) {
+                Toggle(
+                    localization.tr("preferences.updates.toggle"),
+                    isOn: $updateCheck.isAutomaticChecksEnabled
+                )
+                Text(localization.tr("preferences.updates.hint"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Button(localization.tr("preferences.updates.checkNow")) {
+                    Task { await updateCheck.checkNow() }
+                }
+                .disabled(updateCheck.isChecking)
             }
 
             Section {

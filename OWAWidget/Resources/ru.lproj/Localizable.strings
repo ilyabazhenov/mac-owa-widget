@@ -66,6 +66,16 @@
 "preferences.engagement.period.7days" = "7 дней";
 "preferences.engagement.period.30days" = "30 дней";
 "preferences.save" = "Сохранить настройки";
+
+"preferences.updates.section" = "Обновления";
+"preferences.updates.toggle" = "Проверять обновления автоматически";
+"preferences.updates.hint" = "Раз в 6 часов проверяет релизы на GitHub. Установка обновлений по-прежнему вручную.";
+"preferences.updates.checkNow" = "Проверить сейчас";
+
+"update.banner.title" = "Доступна %@";
+"update.banner.action.open" = "Открыть релиз";
+"update.banner.action.skip" = "Пропустить эту версию";
+
 "preferences.debug.reminder.delay" = "Задержка тестового напоминания";
 "preferences.debug.reminder.trigger" = "Показать тестовое напоминание";
 

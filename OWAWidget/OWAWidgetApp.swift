@@ -6,6 +6,7 @@ import AppKit
 struct OWAWidgetApp: App {
     @StateObject private var calendarService = CalendarService()
     @StateObject private var localizationService = LocalizationService(resourceBundle: .main)
+    @StateObject private var updateCheckService = UpdateCheckService()
     private let notificationDelegate = AppNotificationDelegate()
 
     init() {
@@ -22,6 +23,7 @@ struct OWAWidgetApp: App {
             PopoverView()
                 .environmentObject(calendarService)
                 .environmentObject(localizationService)
+                .environmentObject(updateCheckService)
                 .environment(\.locale, localizationService.locale)
                 .onAppear { syncLocalization() }
                 .onChange(of: localizationService.selectedLanguage) { _ in
@@ -32,16 +34,23 @@ struct OWAWidgetApp: App {
                 .environmentObject(calendarService)
                 .environmentObject(localizationService)
                 .environment(\.locale, localizationService.locale)
-                .onAppear { syncLocalization() }
+                .onAppear {
+                    syncLocalization()
+                    updateCheckService.start()
+                }
         }
         .menuBarExtraStyle(.window)
 
         Window(localizationService.tr("window.settings.title"), id: "settings") {
             SettingsView(calendarService: calendarService)
                 .environmentObject(localizationService)
+                .environmentObject(updateCheckService)
                 .environment(\.locale, localizationService.locale)
                 .frame(minWidth: 480, minHeight: 360)
-                .onAppear { syncLocalization() }
+                .onAppear {
+                    syncLocalization()
+                    updateCheckService.start()
+                }
                 .onChange(of: localizationService.selectedLanguage) { _ in
                     syncLocalization()
                 }
