@@ -1,3 +1,37 @@
+## v1.0.26 - 2026-05-06
+
+### RU
+
+#### Что изменилось
+
+- Технический релиз: обновлены версия и релизные метаданные для публикации нового дистрибутива.
+- Функциональные изменения приложения отсутствуют по сравнению с `v1.0.25`.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+### EN
+
+#### What's Changed
+
+- Technical release: version and release metadata were updated to publish a new distribution package.
+- No functional app changes are included compared to `v1.0.25`.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
 ## v1.0.25 - 2026-05-06
 
 ### RU
