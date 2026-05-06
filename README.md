@@ -184,6 +184,13 @@ A manual GitHub Actions workflow is available at `.github/workflows/release.yml`
 
 The workflow builds the app, creates the zip archive, then creates (or updates) a GitHub Release with tag `v<version>` and publishes the text from `RELEASE_NOTES.md` as release description.
 
+### Agent release command semantics
+
+For AI agents working in this repository:
+
+- Request like "выпусти новый релиз" means full release publication flow: update `VERSION`, update `RELEASE_NOTES.md`, run `make release-package`, publish with `gh release create`.
+- Request like "подготовь релиз" means prepare only: update `VERSION`, update `RELEASE_NOTES.md`, run `make release-package`, without GitHub publication unless explicitly asked.
+
 ---
 
 ## Architecture
