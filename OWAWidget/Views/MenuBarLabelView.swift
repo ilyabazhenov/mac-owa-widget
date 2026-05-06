@@ -3,6 +3,7 @@ import SwiftUI
 struct MenuBarLabelView: View {
     @EnvironmentObject var service: CalendarService
     @EnvironmentObject private var localization: LocalizationService
+    @Environment(\.openWindow) private var openWindow
     @State private var pulseOpacity: Double = 1.0
     @State private var now: Date = .init()
 
@@ -21,6 +22,7 @@ struct MenuBarLabelView: View {
             }
         }
         .opacity(pulseOpacity)
+        .background(MenuBarRightClickHandler(menu: buildContextMenu()))
         .onReceive(ticker) { now = $0 }
         .onChange(of: isHappeningNow) { happening in
             if happening {
@@ -32,6 +34,27 @@ struct MenuBarLabelView: View {
             }
         }
         .help(helpText)
+    }
+
+    private func buildContextMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        menu.addItem(ClosureMenuItem(title: localization.tr("popover.sync.now")) {
+            service.syncNow()
+        })
+
+        menu.addItem(ClosureMenuItem(title: localization.tr("popover.settings") + "…") {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "settings")
+        })
+
+        menu.addItem(.separator())
+
+        menu.addItem(ClosureMenuItem(title: localization.tr("popover.quit")) {
+            NSApplication.shared.terminate(nil)
+        })
+
+        return menu
     }
 
     private var iconName: String {
