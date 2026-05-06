@@ -51,6 +51,7 @@ struct MeetingRowView: View {
                         .foregroundStyle(event.platform.color)
                         .font(.system(size: compact ? 12 : 14))
                         .help(event.platform.displayName(localization: localization))
+                        .accessibilityLabel(event.platform.displayName(localization: localization))
                 }
 
                 if let url = event.joinURL {
@@ -66,6 +67,8 @@ struct MeetingRowView: View {
                     }
                     .buttonStyle(.plain)
                     .help(localization.tr("meeting.copy.link"))
+                    .accessibilityLabel(localization.tr("meeting.copy.link"))
+                    .accessibilityHint(localization.tr("a11y.meeting.copy.link.hint"))
 
                     Button {
                         NSWorkspace.shared.open(url)
@@ -80,6 +83,8 @@ struct MeetingRowView: View {
                     }
                     .buttonStyle(.plain)
                     .help(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
+                    .accessibilityLabel(localization.tr("a11y.meeting.join", event.title))
+                    .accessibilityHint(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
                 }
             }
         }
@@ -99,6 +104,29 @@ struct MeetingRowView: View {
                     .padding(.trailing, event.joinURL != nil ? 90 : 14)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(a11yEventSummary)
+    }
+
+    private var a11yEventSummary: String {
+        let time: String
+        if compact {
+            time = localization.shortTime(event.startDate)
+        } else {
+            time = "\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))"
+        }
+
+        var parts: [String] = [event.title, time]
+        if event.isHappeningNow {
+            parts.append(localization.tr("meeting.happening.now"))
+        }
+        if !compact, let organizer = event.organizer, !organizer.isEmpty {
+            parts.append(organizer)
+        }
+        if event.joinURL != nil {
+            parts.append(localization.tr("a11y.meeting.has.join"))
+        }
+        return parts.joined(separator: ", ")
     }
 
     private var timeColor: Color {

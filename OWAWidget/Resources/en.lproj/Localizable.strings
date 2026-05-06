@@ -61,6 +61,16 @@
 "popover.retry" = "Retry";
 "popover.resize.help" = "Drag to resize";
 
+"a11y.nav.previous.day" = "Previous day";
+"a11y.nav.next.day" = "Next day";
+"a11y.close" = "Close";
+"a11y.meeting.details" = "Meeting details";
+"a11y.meeting.details.close.hint" = "Closes the meeting details panel";
+"a11y.meeting.open.details.hint" = "Opens meeting details";
+"a11y.meeting.has.join" = "Has join link";
+"a11y.meeting.join" = "Join meeting: %@";
+"a11y.meeting.copy.link.hint" = "Copies the meeting link to the clipboard";
+
 "meeting.no.upcoming" = "No upcoming meetings";
 "meeting.join" = "Join";
 "meeting.join.help" = "Join %@ meeting";

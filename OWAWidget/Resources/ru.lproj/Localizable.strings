@@ -61,6 +61,16 @@
 "popover.retry" = "Повторить";
 "popover.resize.help" = "Потяните, чтобы изменить размер";
 
+"a11y.nav.previous.day" = "Предыдущий день";
+"a11y.nav.next.day" = "Следующий день";
+"a11y.close" = "Закрыть";
+"a11y.meeting.details" = "Детали встречи";
+"a11y.meeting.details.close.hint" = "Закрывает панель деталей встречи";
+"a11y.meeting.open.details.hint" = "Открывает детали встречи";
+"a11y.meeting.has.join" = "Есть ссылка для подключения";
+"a11y.meeting.join" = "Подключиться к встрече: %@";
+"a11y.meeting.copy.link.hint" = "Копирует ссылку на встречу в буфер обмена";
+
 "meeting.no.upcoming" = "Нет предстоящих встреч";
 "meeting.join" = "Подключиться";
 "meeting.join.help" = "Подключиться к встрече %@";

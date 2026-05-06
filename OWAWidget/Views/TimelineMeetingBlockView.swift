@@ -58,6 +58,8 @@ struct TimelineMeetingBlockView: View {
                         .buttonStyle(.plain)
                         .padding(.top, 3)
                         .help(localization.tr("meeting.copy.link"))
+                        .accessibilityLabel(localization.tr("meeting.copy.link"))
+                        .accessibilityHint(localization.tr("a11y.meeting.copy.link.hint"))
                     }
 
                     Button {
@@ -70,6 +72,8 @@ struct TimelineMeetingBlockView: View {
                     .buttonStyle(.plain)
                     .padding(.top, compact ? 1 : 2)
                     .help(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
+                    .accessibilityLabel(localization.tr("a11y.meeting.join", event.title))
+                    .accessibilityHint(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
                 }
             }
         }
@@ -88,6 +92,23 @@ struct TimelineMeetingBlockView: View {
                 .strokeBorder(borderColor, lineWidth: borderWidth)
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(a11yEventSummary)
+    }
+
+    private var a11yEventSummary: String {
+        let time = "\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))"
+        var parts: [String] = [event.title, time]
+        if event.isHappeningNow {
+            parts.append(localization.tr("meeting.happening.now"))
+        }
+        if let organizer = event.organizer, !organizer.isEmpty {
+            parts.append(organizer)
+        }
+        if event.joinURL != nil {
+            parts.append(localization.tr("a11y.meeting.has.join"))
+        }
+        return parts.joined(separator: ", ")
     }
 
     private var shouldShowOrganizer: Bool {

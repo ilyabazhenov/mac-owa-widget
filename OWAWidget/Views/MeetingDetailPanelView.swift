@@ -6,6 +6,7 @@ struct MeetingDetailPanelView: View {
     let onClose: () -> Void
 
     @EnvironmentObject private var localization: LocalizationService
+    @AccessibilityFocusState private var closeButtonFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,6 +30,9 @@ struct MeetingDetailPanelView: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 1)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(localization.tr("a11y.meeting.details"))
+        .onAppear { closeButtonFocused = true }
     }
 
     private var panelHeader: some View {
@@ -44,6 +48,9 @@ struct MeetingDetailPanelView: View {
                     )
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(localization.tr("a11y.close"))
+            .accessibilityHint(localization.tr("a11y.meeting.details.close.hint"))
+            .accessibilityFocused($closeButtonFocused)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(event.title)
@@ -64,6 +71,7 @@ struct MeetingDetailPanelView: View {
                 Image(systemName: event.platform.systemIcon)
                     .font(.system(size: 13))
                     .foregroundStyle(event.isHappeningNow ? .orange : event.platform.color)
+                    .accessibilityLabel(event.platform.displayName(localization: localization))
             }
         }
         .padding(.horizontal, 12)
@@ -158,6 +166,8 @@ private struct MeetingDetailActionsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(localization.tr("a11y.meeting.join", event.title))
+                .accessibilityHint(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
 
                 Button {
                     NSPasteboard.general.clearContents()
@@ -174,6 +184,8 @@ private struct MeetingDetailActionsView: View {
                 }
                 .buttonStyle(.plain)
                 .help(localization.tr("meeting.copy.link"))
+                .accessibilityLabel(localization.tr("meeting.copy.link"))
+                .accessibilityHint(localization.tr("a11y.meeting.copy.link.hint"))
             }
         }
     }

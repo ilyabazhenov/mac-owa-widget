@@ -28,6 +28,8 @@ struct PopoverView: View {
             PopoverWindowAligner(popoverSize: popoverSize)
                 .frame(width: 0, height: 0)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(localization.tr("app.name"))
     }
 
     // MARK: - Header
@@ -43,6 +45,7 @@ struct PopoverView: View {
                 ProgressView()
                     .scaleEffect(0.6)
                     .frame(width: 16, height: 16)
+                    .accessibilityLabel(localization.tr("sync.status.syncing"))
             } else {
                 Button {
                     service.syncNow()
@@ -52,6 +55,7 @@ struct PopoverView: View {
                 }
                 .buttonStyle(.plain)
                 .help(localization.tr("popover.sync.now"))
+                .accessibilityLabel(localization.tr("popover.sync.now"))
             }
 
             Button { openSettings() } label: {
@@ -60,6 +64,7 @@ struct PopoverView: View {
             }
             .buttonStyle(.plain)
             .help(localization.tr("popover.settings"))
+            .accessibilityLabel(localization.tr("popover.settings"))
 
             Button { quitApp() } label: {
                 Image(systemName: "power")
@@ -67,9 +72,11 @@ struct PopoverView: View {
             }
             .buttonStyle(.plain)
             .help(localization.tr("popover.quit"))
+            .accessibilityLabel(localization.tr("popover.quit"))
         }
         .padding(.horizontal, contentHorizontalPadding)
         .padding(.vertical, 11)
+        .accessibilitySortPriority(selectedEvent == nil ? 1 : 0)
     }
 
     // MARK: - Content
@@ -110,6 +117,7 @@ struct PopoverView: View {
                     onSelect: selectEvent
                 )
             }
+            .accessibilityHidden(selectedEvent != nil)
             .overlay {
                 if selectedEvent != nil {
                     Color(nsColor: .windowBackgroundColor)
@@ -129,6 +137,8 @@ struct PopoverView: View {
                 .padding(.bottom, 8)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(1)
+                .accessibilityAddTraits(.isModal)
+                .accessibilitySortPriority(100)
             }
         }
         .animation(.easeInOut(duration: 0.18), value: selectedEvent?.id)
@@ -147,6 +157,7 @@ struct PopoverView: View {
             }
             .buttonStyle(.plain)
             .disabled(selectedDayOffset == 0)
+            .accessibilityLabel(localization.tr("a11y.nav.previous.day"))
 
             Spacer()
 
@@ -166,9 +177,11 @@ struct PopoverView: View {
             }
             .buttonStyle(.plain)
             .disabled(selectedDayOffset == 6)
+            .accessibilityLabel(localization.tr("a11y.nav.next.day"))
         }
         .padding(.horizontal, contentHorizontalPadding)
         .padding(.vertical, 6)
+        .accessibilitySortPriority(selectedEvent == nil ? 10 : 0)
     }
 
     // MARK: - Footer

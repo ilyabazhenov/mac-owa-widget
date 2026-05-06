@@ -26,6 +26,7 @@ struct MeetingListView: View {
                     }
                 }
             }
+            .accessibilityElement(children: .contain)
             .onAppear {
                 hasAutoScrolledToCurrentSlot = false
                 scrollToCurrentSlotIfNeeded(proxy: proxy)
@@ -112,6 +113,8 @@ struct MeetingListView: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel(a11yEventLabel(item.event))
+                                .accessibilityHint(localization.tr("a11y.meeting.open.details.hint"))
                                 .frame(
                                     width: CGFloat(cardFrame.width),
                                     height: CGFloat(cardFrame.height),
@@ -159,6 +162,23 @@ struct MeetingListView: View {
                     .padding(.leading, timeColumnWidth + 10)
             }
         }
+        // The grid is a visual scaffold; VoiceOver should focus on actual meeting cards.
+        .accessibilityHidden(true)
+    }
+
+    private func a11yEventLabel(_ event: CalendarEvent) -> String {
+        let time = "\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))"
+        var parts: [String] = [event.title, time]
+        if event.isHappeningNow {
+            parts.append(localization.tr("meeting.happening.now"))
+        }
+        if let organizer = event.organizer, !organizer.isEmpty {
+            parts.append(organizer)
+        }
+        if event.joinURL != nil {
+            parts.append(localization.tr("a11y.meeting.has.join"))
+        }
+        return parts.joined(separator: ", ")
     }
 
     // MARK: - Scroll helpers

@@ -49,6 +49,7 @@ struct NextMeetingBannerView: View {
                         Image(systemName: event.platform.systemIcon)
                             .foregroundStyle(happening ? .orange : event.platform.color)
                             .font(.system(size: 12))
+                            .accessibilityLabel(event.platform.displayName(localization: localization))
                     }
                 }
 
@@ -77,6 +78,8 @@ struct NextMeetingBannerView: View {
                         }
                         .buttonStyle(.plain)
                         .help(localization.tr("meeting.copy.link"))
+                        .accessibilityLabel(localization.tr("meeting.copy.link"))
+                        .accessibilityHint(localization.tr("a11y.meeting.copy.link.hint"))
 
                         Button {
                             NSWorkspace.shared.open(url)
@@ -94,6 +97,8 @@ struct NextMeetingBannerView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 7))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(localization.tr("a11y.meeting.join", event.title))
+                        .accessibilityHint(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
                     }
                 }
             }
@@ -111,6 +116,10 @@ struct NextMeetingBannerView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .onTapGesture { onSelect(event) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(a11yBannerLabel(event, now: now))
+        .accessibilityHint(localization.tr("a11y.meeting.open.details.hint"))
+        .accessibilityAddTraits(.isButton)
         .padding(.horizontal, horizontalPadding)
         .padding(.top, 10)
     }
@@ -137,6 +146,8 @@ struct NextMeetingBannerView: View {
                     MeetingRowView(event: event, compact: true)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(a11yBannerLabel(event, now: now))
+                .accessibilityHint(localization.tr("a11y.meeting.open.details.hint"))
                 if event.id != events.last?.id {
                     Divider().padding(.leading, 12)
                 }
@@ -184,6 +195,20 @@ struct NextMeetingBannerView: View {
     private func remainingLabel(_ event: CalendarEvent, now: Date) -> String {
         let m = minsRemaining(event, now: now)
         return m == 0 ? localization.tr("meeting.happening.now") : localization.tr("meeting.remaining.minutes", localization.minutesShort(m))
+    }
+
+    private func a11yBannerLabel(_ event: CalendarEvent, now: Date) -> String {
+        let time = "\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))"
+        var parts: [String] = [event.title, time]
+        if isNow(event, now: now) {
+            parts.append(localization.tr("meeting.happening.now"))
+        } else {
+            parts.append(countdownLabel(event, now: now))
+        }
+        if event.joinURL != nil {
+            parts.append(localization.tr("a11y.meeting.has.join"))
+        }
+        return parts.joined(separator: ", ")
     }
 
     private func bannerBackground(_ event: CalendarEvent, happening: Bool) -> some View {
