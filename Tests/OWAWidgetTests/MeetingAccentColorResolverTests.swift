@@ -16,4 +16,9 @@ final class MeetingAccentColorResolverTests: XCTestCase {
         let accent = meetingCategoryColor(from: ["Product sync"])
         XCTAssertNil(accent)
     }
+
+    func testRussianLilacCategoryMapsToPurpleAccent() {
+        let accent = meetingCategoryColor(from: ["Лиловая категория"])
+        XCTAssertEqual(accent, .purple)
+    }
 }

@@ -49,7 +49,8 @@ func meetingCategoryColor(from categories: [String]) -> MeetingCategoryAccent? {
         if normalized.contains("pink") || normalized.contains("розов") {
             return .pink
         }
-        if normalized.contains("purple") || normalized.contains("фиолет") {
+        if normalized.contains("purple") || normalized.contains("violet") || normalized.contains("lilac")
+            || normalized.contains("фиолет") || normalized.contains("лилов") {
             return .purple
         }
         if normalized.contains("blue") || normalized.contains("син") || normalized.contains("голуб") {

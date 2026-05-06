@@ -1,8 +1,8 @@
 ## What's Changed
 
-- Added category-aware accent colors for meeting cards and banners, with fallback to platform colors when no category color is recognized.
-- Improved cancelled meeting styling and behavior consistency via effective cancellation detection in UI actions and summaries.
-- Added tests for category color mapping and retained full test-suite coverage for release safety.
+- Improved category color mapping by adding support for lilac/violet naming variants (`Лиловая категория`, `lilac`, `violet`) to ensure consistent purple accents.
+- Added regression test coverage for lilac category mapping in `MeetingAccentColorResolverTests`.
+- Preserved fallback behavior to platform colors when a category has no known color mapping.
 
 ## Installation
 
