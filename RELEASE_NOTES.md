@@ -1,12 +1,12 @@
-## v1.0.16 - 2026-05-06
+## v1.0.23 - 2026-05-06
 
 ### RU
 
 #### Что изменилось
 
-- Добавлено более явное быстрое действие возврата к Today в заголовке навигации по дням.
-- Обновлен UX навигации по датам: `Today` теперь воспринимается как отдельное действие, а не часть текстовой метки даты.
-- Добавлены регрессионные тесты для граничных условий навигации по дням и правил видимости действия `Today`.
+- Добавлен двуязычный формат release notes с обязательными секциями `RU` и `EN` для каждой версии.
+- Обновлены правила релизного процесса: структура заметок и install-инструкция теперь обязательны на двух языках.
+- Добавлена автоматическая валидация `RELEASE_NOTES.md` перед упаковкой релиза, чтобы отлавливать ошибки формата до публикации.
 
 #### Установка
 
@@ -21,9 +21,9 @@ xattr -dr com.apple.quarantine /Applications/OWAWidget.app
 
 #### What's Changed
 
-- Added a clearer quick return action to Today in the day navigation header.
-- Updated the date navigation UX so `Today` is recognized as an action, not part of the date label.
-- Added regression tests for day navigation bounds and visibility rules of the `Today` action.
+- Added a bilingual release notes format with mandatory `RU` and `EN` sections for each version.
+- Updated release workflow rules to require note structure and installation instructions in both languages.
+- Added automatic `RELEASE_NOTES.md` validation before packaging so formatting issues are caught before publishing.
 
 #### Installation
 
