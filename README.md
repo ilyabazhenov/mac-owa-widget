@@ -6,22 +6,6 @@ A macOS menu bar app for quick access to your upcoming meetings from a Microsoft
 ![Swift 6](https://img.shields.io/badge/Swift-6-orange)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green)
 
----
-
-## Screenshots
-
-<p align="center">
-  <img src="Screenshots/popover.png" width="420" alt="Popover with upcoming meetings">
-  &nbsp;&nbsp;
-  <img src="Screenshots/menubar.png" width="280" alt="Menu bar icon">
-</p>
-
-<p align="center">
-  <img src="Screenshots/settings.png" width="420" alt="Account settings">
-</p>
-
----
-
 ## Features
 
 - **Live meeting banner** — the next meeting is always front and center with a one-click Join button
