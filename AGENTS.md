@@ -36,6 +36,7 @@ OWAWidget - macOS menu bar приложение на Swift 6 и SwiftUI для �
 - `OWAWidget/Services/NotificationService.swift` - локальные уведомления о встречах.
 - `OWAWidget/Services/KeychainService.swift` - хранение паролей в Keychain.
 - `OWAWidget/Services/LaunchAtLoginService.swift` - автозапуск при входе (`SMAppService.mainApp`).
+- `OWAWidget/Services/UpdateCheckService.swift` - обертка над Sparkle (`SPUStandardUpdaterController`) для авто-обновлений по EdDSA-подписанному appcast.xml.
 - `OWAWidget/Views/` - SwiftUI интерфейс меню и настроек.
 - `OWAWidget/Views/MeetingListView.swift` - таймлайн-список встреч в popover (тайм-сетка + overlay карточек).
 - `OWAWidget/Views/TimelineMeetingLayout.swift` - алгоритмы раскладки пересекающихся встреч (slotting, clusters, lanes, frame math).
@@ -95,22 +96,22 @@ make run
 ## Релизный процесс по запросу пользователя
 
 - Если пользователь просит **"выпустить новый релиз"** (или эквивалентно), выполняй полный цикл публикации:
-  1. Обновление `VERSION`.
-  2. Обновление `RELEASE_NOTES.md`.
-     - Обязательный формат секции версии:
-       - `## vX.Y.Z - YYYY-MM-DD`
-       - `### RU` и `### EN`
-       - В обеих секциях обязательны подразделы про изменения и установку.
-     - В обоих языках в инструкции по установке обязательно указывай:
-       `xattr -dr com.apple.quarantine /Applications/OWAWidget.app`
-  3. Сборка архива: `make release-package`.
-  4. Публикация на GitHub через `gh release create` с zip из `dist/`.
-  5. Возврат пользователю URL релиза.
+ 1. Обновление `VERSION`.
+ 2. Обновление `RELEASE_NOTES.md`.
+ - Обязательный формат секции версии:
+ - `## vX.Y.Z - YYYY-MM-DD`
+ - `### RU` и `### EN`
+ - В обеих секциях обязательны подразделы про изменения и установку.
+ - В обоих языках в инструкции по установке обязательно указывай, что `xattr -dr com.apple.quarantine /Applications/OWAWidget.app` нужен ТОЛЬКО при первой установке; последующие обновления ставит Sparkle автоматически.
+ 3. Сборка архива и appcast: `make release-package` (создает `dist/OWAWidget-v<ver>-macos.zip` и `dist/appcast.xml`).
+ - Требуется доступ к EdDSA-приватнику (логин-Keychain или env `SPARKLE_ED_PRIVATE_KEY`). Если ключа нет — скрипт упадет; не пытайся выпустить релиз без подписи.
+ 4. Публикация на GitHub через `gh release create` с двумя ассетами: zip и appcast.xml.
+ 5. Возврат пользователю URL релиза.
 
 - Если пользователь просит **"подготовить релиз"** (без явного требования публикации):
-  1. Обнови `VERSION` и `RELEASE_NOTES.md`.
-  2. Собери архив `make release-package`.
-  3. Не публикуй релиз в GitHub, пока пользователь не попросит явно.
+ 1. Обнови `VERSION` и `RELEASE_NOTES.md`.
+ 2. Собери архив и appcast `make release-package` (zip + `dist/appcast.xml`).
+ 3. Не публикуй релиз в GitHub, пока пользователь не попросит явно.
 
 - По умолчанию не изменяй релизные артефакты и метаданные без релизного запроса.
 
@@ -120,8 +121,9 @@ make run
 
 - `VERSION`
 - `RELEASE_NOTES.md`
-- `dist/` (включая zip-артефакты)
+- `dist/` (включая zip-артефакты и `appcast.xml`)
 - теги/релизы GitHub
+- `OWAWidget/Info.plist` ключ `SUPublicEDKey` (трогать только при ротации EdDSA-ключа Sparkle, что ломает обновления у установленных клиентов)
 
 ## Definition of Done для агента
 

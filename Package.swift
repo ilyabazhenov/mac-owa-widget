@@ -7,9 +7,17 @@ let package = Package(
     platforms: [
         .macOS(.v13)
     ],
+    dependencies: [
+        // Sparkle 2 for in-app auto-updates with EdDSA-signed artifacts.
+        // Distributed as a binary xcframework + sign_update / generate_keys CLI tools.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
+    ],
     targets: [
         .executableTarget(
             name: "OWAWidget",
+            dependencies: [
+                .product(name: "Sparkle", package: "Sparkle")
+            ],
             path: "OWAWidget",
             // Exclude non-Swift files so SPM doesn't try to bundle them
             exclude: [
@@ -21,7 +29,12 @@ let package = Package(
                 // on OWAWidget_OWAWidget.bundle in release app execution.
                 "Resources",
             ],
-            resources: []
+            resources: [],
+            linkerSettings: [
+                // Sparkle.framework is dropped into Contents/Frameworks at bundle time.
+                // The dynamic linker needs an rpath relative to the executable to find it.
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
+            ]
         ),
         .testTarget(
             name: "OWAWidgetTests",

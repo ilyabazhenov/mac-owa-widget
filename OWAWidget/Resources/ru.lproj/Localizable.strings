@@ -69,11 +69,11 @@
 
 "preferences.updates.section" = "Обновления";
 "preferences.updates.toggle" = "Проверять обновления автоматически";
-"preferences.updates.hint" = "Раз в 6 часов проверяет релизы на GitHub. Установка обновлений по-прежнему вручную.";
+"preferences.updates.hint" = "Регулярно проверяет новые релизы и устанавливает их в один клик — без ручной загрузки и распаковки.";
 "preferences.updates.checkNow" = "Проверить сейчас";
 
 "update.banner.title" = "Доступна %@";
-"update.banner.action.open" = "Открыть релиз";
+"update.banner.action.install" = "Установить";
 "update.banner.action.skip" = "Пропустить эту версию";
 
 "preferences.debug.reminder.delay" = "Задержка тестового напоминания";

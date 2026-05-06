@@ -37,5 +37,23 @@
     </dict>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <!--
+        Sparkle auto-update configuration.
+
+        SUFeedURL points to a stable URL on GitHub Releases that always resolves to
+        the appcast.xml asset of the latest published release. Each release uploads
+        a freshly generated appcast.xml as an asset alongside the .zip.
+
+        SUPublicEDKey holds the Ed25519 public key used to verify update signatures.
+        It MUST match the private key stored in Keychain / GitHub Secret SPARKLE_ED_PRIVATE_KEY.
+        Run scripts/generate_sparkle_keys.sh once to produce a keypair and paste the
+        public key value into the string below.
+    -->
+    <key>SUFeedURL</key>
+    <string>https://github.com/ilyabazhenov/mac-owa-widget/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>WPYI42Z1jbfBdFNmyBey6tOcbWyU1x6GGVlmn/nNY/I=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
 </dict>
 </plist>

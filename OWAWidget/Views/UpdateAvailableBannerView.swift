@@ -22,9 +22,9 @@ struct UpdateAvailableBannerView: View {
                     Spacer(minLength: 8)
 
                     Button {
-                        updateCheck.openRelease(update)
+                        updateCheck.installUpdate()
                     } label: {
-                        Text(localization.tr("update.banner.action.open"))
+                        Text(localization.tr("update.banner.action.install"))
                             .font(.system(size: 11, weight: .semibold))
                     }
                     .buttonStyle(.bordered)

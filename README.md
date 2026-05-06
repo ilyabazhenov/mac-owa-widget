@@ -49,12 +49,21 @@ The app will appear in the menu bar. No Dock icon — it's menu bar only.
 
 ### Run unsigned app build
 
-If macOS blocks an unsigned build (downloaded from Releases or built locally), remove the quarantine attribute and launch:
+The app is distributed without an Apple Developer ID, so macOS Gatekeeper marks it as quarantined on the **first install**. Remove the quarantine attribute once and launch:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/OWAWidget.app
 open /Applications/OWAWidget.app
 ```
+
+### Auto-updates
+
+After the first install you do **not** need to download/unpack/un-quarantine new releases manually. The app uses [Sparkle](https://sparkle-project.org) with an Ed25519-signed update feed:
+
+- A small "Update available" banner appears in the popover when a new release is published.
+- Clicking **Install** downloads, verifies, swaps the bundle, and relaunches automatically.
+- Auto-checks can be toggled in **Settings → Preferences → Updates**.
+- Update artifacts are signed with an Ed25519 key whose public half is embedded in the app's `Info.plist` (`SUPublicEDKey`); Sparkle refuses to install anything that fails verification.
 
 ### Generate Xcode project (optional)
 
@@ -153,7 +162,15 @@ To build a release archive locally:
 make release-package
 ```
 
-This command builds `.build/OWAWidget.app` and creates `dist/OWAWidget-v<version>-macos.zip`.
+This command builds `.build/OWAWidget.app`, creates `dist/OWAWidget-v<version>-macos.zip`, EdDSA-signs it with Sparkle's `sign_update`, and emits `dist/appcast.xml` with the resulting signature.
+
+The signing key is read from the login Keychain (entry `https://sparkle-project.org` / account `ed25519`) by default, or from the `SPARKLE_ED_PRIVATE_KEY` environment variable when the script is run from CI. To generate the keypair the first time, run:
+
+```bash
+bash scripts/generate_sparkle_keys.sh
+```
+
+The script prints the **public** key (paste into `OWAWidget/Info.plist` as `SUPublicEDKey`) and the **private** key (back it up in your password manager and add it as a GitHub Actions Secret named `SPARKLE_ED_PRIVATE_KEY`). Losing the private key means existing clients can no longer install your updates — back it up.
 
 ### GitHub release flow
 
@@ -166,7 +183,9 @@ A manual GitHub Actions workflow is available at `.github/workflows/release.yml`
 
 > `VERSION` bump is required for each release. Reusing an existing version will overwrite/update the same `v<version>` release tag instead of creating a new release.
 
-The workflow builds the app, creates the zip archive, then creates (or updates) a GitHub Release with tag `v<version>` and publishes the text from `RELEASE_NOTES.md` as release description.
+The workflow builds the app, creates the zip archive, EdDSA-signs it via Sparkle's `sign_update`, generates `appcast.xml` for the new version, then creates (or updates) a GitHub Release with tag `v<version>`. Both the zip and `appcast.xml` are uploaded as release assets so that the stable URL `https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml` always resolves to the latest published feed.
+
+The CI job requires a `SPARKLE_ED_PRIVATE_KEY` repository secret containing the base64 EdDSA private key. Without this secret the workflow aborts early to avoid shipping an unsigned build that already-installed clients would reject.
 
 ### Agent release command semantics
 

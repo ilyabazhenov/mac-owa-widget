@@ -13,8 +13,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build and package release artifact
+      - name: Resolve SwiftPM dependencies
+        # Pre-resolve so Sparkle's binary artifact (sign_update CLI + xcframework)
+        # is materialized before package_release.sh tries to use it.
+        shell: bash
+        run: swift package resolve
+
+      - name: Build, sign, and package release artifacts
         id: package
+        # SPARKLE_ED_PRIVATE_KEY is required: sign_update reads it from stdin
+        # and produces the EdDSA signature embedded into appcast.xml.
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         shell: bash
         run: |
           if [[ ! -f "RELEASE_NOTES.md" ]]; then
@@ -27,11 +37,18 @@ jobs:
             exit 1
           fi
 
+          if [[ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ]]; then
+            echo "SPARKLE_ED_PRIVATE_KEY secret is not set." >&2
+            echo "Add it under Repo Settings -> Secrets and variables -> Actions." >&2
+            exit 1
+          fi
+
           OUTPUT="$(bash scripts/package_release.sh)"
           echo "${OUTPUT}"
 
           VERSION=""
           ARCHIVE_PATH=""
+          APPCAST_PATH=""
           while IFS= read -r line; do
             case "${line}" in
               VERSION=*)
@@ -40,34 +57,43 @@ jobs:
               ARCHIVE_PATH=*)
                 ARCHIVE_PATH="${line#ARCHIVE_PATH=}"
                 ;;
+              APPCAST_PATH=*)
+                APPCAST_PATH="${line#APPCAST_PATH=}"
+                ;;
             esac
           done <<< "${OUTPUT}"
 
-          if [[ -z "${VERSION}" || -z "${ARCHIVE_PATH}" ]]; then
+          if [[ -z "${VERSION}" || -z "${ARCHIVE_PATH}" || -z "${APPCAST_PATH}" ]]; then
             echo "Failed to parse release metadata from package script output" >&2
             exit 1
           fi
 
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "archive_path=${ARCHIVE_PATH}" >> "${GITHUB_OUTPUT}"
+          echo "appcast_path=${APPCAST_PATH}" >> "${GITHUB_OUTPUT}"
 
-      - name: Create GitHub release and upload artifact
+      - name: Create GitHub release and upload artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           VERSION="${{ steps.package.outputs.version }}"
           ARCHIVE_PATH="${{ steps.package.outputs.archive_path }}"
+          APPCAST_PATH="${{ steps.package.outputs.appcast_path }}"
           TAG="v${VERSION}"
 
           gh release view "${TAG}" >/dev/null 2>&1 && EXISTS=1 || EXISTS=0
 
           if [[ "${EXISTS}" -eq 1 ]]; then
-            echo "Release ${TAG} already exists, uploading/updating artifact"
+            echo "Release ${TAG} already exists, uploading/updating artifacts"
             gh release edit "${TAG}" --notes-file RELEASE_NOTES.md
-            gh release upload "${TAG}" "${ARCHIVE_PATH}" --clobber
+            # --clobber so re-runs overwrite both the zip and the appcast.
+            gh release upload "${TAG}" "${ARCHIVE_PATH}" "${APPCAST_PATH}" --clobber
           else
-            gh release create "${TAG}" "${ARCHIVE_PATH}" \
+            # appcast.xml ships as a release asset so that
+            # https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml
+            # always resolves to the latest release's feed.
+            gh release create "${TAG}" "${ARCHIVE_PATH}" "${APPCAST_PATH}" \
               --title "${TAG}" \
               --notes-file RELEASE_NOTES.md
           fi

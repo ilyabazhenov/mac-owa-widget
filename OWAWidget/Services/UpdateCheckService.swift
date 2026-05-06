@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Sparkle
 import os.log
 
 // MARK: - Version comparison
@@ -64,191 +65,184 @@ struct AvailableUpdate: Equatable, Sendable {
 
 // MARK: - Service
 
+/// Front-end for Sparkle's auto-update flow.
+///
+/// Sparkle is the engine that does the heavy lifting (background polling of the
+/// appcast, signature verification, download, install, relaunch). This wrapper
+/// publishes a SwiftUI-friendly view of "is an update available right now" and
+/// "is the user toggling automatic checks", plus thin commands the UI calls.
 @MainActor
-final class UpdateCheckService: ObservableObject {
-    static let latestReleaseURL = URL(string: "https://api.github.com/repos/ilyabazhenov/mac-owa-widget/releases/latest")!
+final class UpdateCheckService: NSObject, ObservableObject {
 
-    private static let minimumIntervalBetweenAutomaticChecks: TimeInterval = 6 * 3600
-    private static let periodicTimerInterval: TimeInterval = 6 * 3600
-
-    private enum Keys {
-        static let automaticEnabled = "updateCheck.automaticChecksEnabled"
-        static let lastCheckAttemptAt = "updateCheck.lastCheckAttemptAt"
-        static let skippedVersion = "updateCheck.skippedVersion"
-        static let cachedLatestVersion = "updateCheck.cachedLatestVersion"
-        static let cachedLatestURL = "updateCheck.cachedLatestURL"
-        static let cachedLatestPublishedAt = "updateCheck.cachedLatestPublishedAt"
-    }
-
-    private struct GitHubLatestRelease: Decodable {
-        let tag_name: String
-        let html_url: String
-        let draft: Bool
-        let prerelease: Bool
-        let published_at: String
-    }
+    // MARK: Published state
 
     @Published private(set) var availableUpdate: AvailableUpdate?
     @Published private(set) var isChecking = false
     @Published var isAutomaticChecksEnabled: Bool {
         didSet {
-            defaults.set(isAutomaticChecksEnabled, forKey: Keys.automaticEnabled)
-            reschedulePeriodicTimer()
-            if isAutomaticChecksEnabled {
-                Task { await performRemoteCheck(automatic: true) }
-            }
+            updaterController?.updater.automaticallyChecksForUpdates = isAutomaticChecksEnabled
         }
     }
 
-    private let defaults: UserDefaults
-    private let urlSession: URLSession
+    // MARK: Dependencies
+
     private let bundle: Bundle
+    private let defaults: UserDefaults
+    private let appVersionOverride: String?
     private let log = Logger(subsystem: "com.owawidget", category: "UpdateCheckService")
-    private var periodicTimer: Timer?
 
+    private var updaterController: SPUStandardUpdaterController?
+    private var delegateBridge: SparkleUpdaterDelegateBridge?
+
+    private enum Keys {
+        static let bannerSkippedVersion = "updateBanner.skippedVersion"
+    }
+
+    private static let releasesIndexURL = URL(string: "https://github.com/ilyabazhenov/mac-owa-widget/releases")!
+
+    // MARK: Init
+
+    /// Designated initializer.
+    /// - Parameter createUpdater: when `false`, no Sparkle controller is created.
+    ///   Used by unit tests to exercise the state mutators in isolation, without
+    ///   loading the Sparkle.framework or reading Info.plist keys.
+    /// - Parameter appVersionOverride: when provided, used in place of the
+    ///   bundle's `CFBundleShortVersionString`. Only used by tests.
     init(
+        bundle: Bundle = .main,
         defaults: UserDefaults = .standard,
-        urlSession: URLSession = .shared,
-        bundle: Bundle = .main
+        appVersionOverride: String? = nil,
+        createUpdater: Bool = true
     ) {
-        self.defaults = defaults
-        self.urlSession = urlSession
         self.bundle = bundle
-        let enabled = defaults.object(forKey: Keys.automaticEnabled) as? Bool ?? true
+        self.defaults = defaults
+        self.appVersionOverride = appVersionOverride
+        // Sparkle persists this in UserDefaults under its own key; we mirror it here for SwiftUI binding.
+        let enabled = defaults.object(forKey: "SUEnableAutomaticChecks") as? Bool ?? true
         _isAutomaticChecksEnabled = Published(initialValue: enabled)
+        super.init()
+        if createUpdater {
+            installUpdaterController()
+        }
     }
 
+    // MARK: Public API
+
+    /// Starts Sparkle's background updater. Call once per app launch.
     func start() {
-        refreshPublishedState()
-        reschedulePeriodicTimer()
-        Task { await performRemoteCheck(automatic: true) }
+        guard let updaterController else { return }
+        do {
+            try updaterController.updater.start()
+            log.debug("Sparkle updater started")
+        } catch {
+            log.error("Sparkle start failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
+    /// User-initiated check. Surfaces Sparkle's standard alert if an update is available.
     func checkNow() async {
-        await performRemoteCheck(automatic: false)
-    }
-
-    func skip(version: String) {
-        let normalized = UpdateVersionComparison.normalize(version)
-        defaults.set(normalized, forKey: Keys.skippedVersion)
-        refreshPublishedState()
-    }
-
-    // MARK: - Private
-
-    private func currentAppVersion() -> String {
-        bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
-    }
-
-    private func reschedulePeriodicTimer() {
-        periodicTimer?.invalidate()
-        periodicTimer = nil
-        guard isAutomaticChecksEnabled else { return }
-        let timer = Timer(timeInterval: Self.periodicTimerInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                await self?.performRemoteCheck(automatic: true)
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        periodicTimer = timer
-    }
-
-    private func isAutomaticFetchThrottled() -> Bool {
-        guard let last = defaults.object(forKey: Keys.lastCheckAttemptAt) as? Date else { return false }
-        return Date().timeIntervalSince(last) < Self.minimumIntervalBetweenAutomaticChecks
-    }
-
-    private func recordCheckAttempt() {
-        defaults.set(Date(), forKey: Keys.lastCheckAttemptAt)
-    }
-
-    private func refreshPublishedState() {
-        guard let version = defaults.string(forKey: Keys.cachedLatestVersion), !version.isEmpty else {
-            availableUpdate = nil
-            return
-        }
-        let normalizedLatest = UpdateVersionComparison.normalize(version)
-        let current = currentAppVersion()
-        if UpdateVersionComparison.compare(normalizedLatest, current) != .orderedDescending {
-            availableUpdate = nil
-            return
-        }
-        if let skipped = defaults.string(forKey: Keys.skippedVersion),
-           UpdateVersionComparison.normalize(skipped) == normalizedLatest {
-            availableUpdate = nil
-            return
-        }
-        guard let urlString = defaults.string(forKey: Keys.cachedLatestURL),
-              let url = URL(string: urlString)
-        else {
-            availableUpdate = nil
-            return
-        }
-        let ts = defaults.double(forKey: Keys.cachedLatestPublishedAt)
-        let published = ts > 0 ? Date(timeIntervalSince1970: ts) : Date()
-        availableUpdate = AvailableUpdate(version: normalizedLatest, releaseURL: url, publishedAt: published)
-    }
-
-    private func performRemoteCheck(automatic: Bool) async {
-        guard !isChecking else { return }
-        if automatic {
-            guard isAutomaticChecksEnabled else { return }
-            guard !isAutomaticFetchThrottled() else { return }
-        }
-
+        guard let updaterController else { return }
         isChecking = true
         defer { isChecking = false }
+        updaterController.checkForUpdates(nil)
+    }
 
-        recordCheckAttempt()
+    /// Triggers Sparkle's full install flow (alert -> download -> install -> relaunch).
+    /// Mapped to the "Install" button in the in-app update banner.
+    func installUpdate() {
+        guard let updaterController else {
+            log.error("installUpdate called without an updater controller")
+            return
+        }
+        updaterController.checkForUpdates(nil)
+    }
 
-        var request = URLRequest(url: Self.latestReleaseURL)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("OWAWidget/\(currentAppVersion()) (macOS)", forHTTPHeaderField: "User-Agent")
-
-        do {
-            let (data, response) = try await urlSession.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                log.error("Update check: non-HTTP response")
-                return
-            }
-            guard (200 ... 299).contains(http.statusCode) else {
-                log.error("Update check: HTTP \(http.statusCode)")
-                return
-            }
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .useDefaultKeys
-            let release = try decoder.decode(GitHubLatestRelease.self, from: data)
-            guard !release.draft, !release.prerelease else {
-                log.debug("Update check: ignoring draft/prerelease")
-                return
-            }
-            let tagVersion = UpdateVersionComparison.normalize(release.tag_name)
-            guard let url = URL(string: release.html_url) else {
-                log.error("Update check: invalid release URL")
-                return
-            }
-            let publishedDate = Self.parseGitHubDate(release.published_at) ?? Date()
-
-            defaults.set(tagVersion, forKey: Keys.cachedLatestVersion)
-            defaults.set(release.html_url, forKey: Keys.cachedLatestURL)
-            defaults.set(publishedDate.timeIntervalSince1970, forKey: Keys.cachedLatestPublishedAt)
-
-            refreshPublishedState()
-        } catch {
-            log.error("Update check failed: \(error.localizedDescription, privacy: .public)")
+    /// Local UI-only dismissal of the update banner for a specific version.
+    /// Does NOT cancel Sparkle's own bookkeeping; subsequent checks still surface
+    /// other (newer) versions normally.
+    func skip(version: String) {
+        let normalized = UpdateVersionComparison.normalize(version)
+        defaults.set(normalized, forKey: Keys.bannerSkippedVersion)
+        if let current = availableUpdate, UpdateVersionComparison.normalize(current.version) == normalized {
+            availableUpdate = nil
         }
     }
 
-    private static func parseGitHubDate(_ raw: String) -> Date? {
-        let withFractional = ISO8601DateFormatter()
-        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = withFractional.date(from: raw) { return d }
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
-        return plain.date(from: raw)
+    /// Legacy entry point preserved for any external callers; under Sparkle this
+    /// just routes to the install flow (no separate "open in browser" action exists).
+    func openRelease(_ update: AvailableUpdate) {
+        installUpdate()
     }
 
-    func openRelease(_ update: AvailableUpdate) {
-        NSWorkspace.shared.open(update.releaseURL)
+    // MARK: Sparkle bridge surface (also used by tests)
+
+    /// Updates published state in response to "an update is available" event.
+    /// Honors the local banner skip flag.
+    func processFoundUpdate(version: String, fileURL: URL?, publishedAt: Date) {
+        let normalized = UpdateVersionComparison.normalize(version)
+        if let skipped = defaults.string(forKey: Keys.bannerSkippedVersion),
+           UpdateVersionComparison.normalize(skipped) == normalized {
+            availableUpdate = nil
+            return
+        }
+        let current = currentAppVersion()
+        if !current.isEmpty,
+           UpdateVersionComparison.compare(normalized, current) != .orderedDescending {
+            availableUpdate = nil
+            return
+        }
+        let releaseURL = URL(string: "https://github.com/ilyabazhenov/mac-owa-widget/releases/tag/v\(normalized)")
+            ?? fileURL
+            ?? Self.releasesIndexURL
+        availableUpdate = AvailableUpdate(version: normalized, releaseURL: releaseURL, publishedAt: publishedAt)
+    }
+
+    /// Updates published state when Sparkle reports no newer version available.
+    func processNoUpdate() {
+        availableUpdate = nil
+    }
+
+    // MARK: Private
+
+    private func currentAppVersion() -> String {
+        if let override = appVersionOverride { return override }
+        return bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+    }
+
+    private func installUpdaterController() {
+        let bridge = SparkleUpdaterDelegateBridge()
+        let controller = SPUStandardUpdaterController(
+            startingUpdater: false,
+            updaterDelegate: bridge,
+            userDriverDelegate: nil
+        )
+        bridge.owner = self
+        self.delegateBridge = bridge
+        self.updaterController = controller
+        controller.updater.automaticallyChecksForUpdates = isAutomaticChecksEnabled
+    }
+}
+
+// MARK: - Sparkle delegate bridge
+
+/// Pure Obj-C delegate adapter. Sparkle requires `NSObject` conformance and
+/// invokes the methods from arbitrary contexts; we extract Sendable primitives
+/// and hop to the main actor before mutating ``UpdateCheckService`` state.
+final class SparkleUpdaterDelegateBridge: NSObject, SPUUpdaterDelegate, @unchecked Sendable {
+    weak var owner: UpdateCheckService?
+
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        let version = item.displayVersionString
+        let fileURL = item.fileURL
+        let date = item.date ?? Date()
+        Task { @MainActor [weak self] in
+            self?.owner?.processFoundUpdate(version: version, fileURL: fileURL, publishedAt: date)
+        }
+    }
+
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        Task { @MainActor [weak self] in
+            self?.owner?.processNoUpdate()
+        }
     }
 }

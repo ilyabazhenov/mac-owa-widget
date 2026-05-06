@@ -1,3 +1,83 @@
+## v1.0.29 - 2026-05-06
+
+### RU
+
+#### Что изменилось
+
+- Исправлен релизный сценарий Sparkle: appcast теперь генерируется официальным `generate_appcast`, что устраняет ошибки чтения обновления в клиенте.
+- Подготовлен корректный повторный релиз после `v1.0.28`, чтобы у обновления был новый build number и оно гарантированно определялось из `v1.0.27`.
+- Актуализированы агентские и пользовательские инструкции по установке/обновлению под новый auto-update flow.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Fixed Sparkle release packaging: appcast is now generated via the official `generate_appcast` tool, which resolves update metadata parsing failures in clients.
+- Prepared a correct follow-up release after `v1.0.28` so the update has a new build number and is reliably detected from `v1.0.27`.
+- Updated agent/user installation and update instructions for the new auto-update flow.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
+## v1.0.28 - 2026-05-06
+
+### RU
+
+#### Что изменилось
+
+- Добавлен in-app автоапдейтер на базе Sparkle 2 с подписью релизных артефактов EdDSA.
+- Обновлен релизный пайплайн: теперь `make release-package` формирует подписанный `OWAWidget-v<version>-macos.zip` и `appcast.xml` для автообновлений.
+- Обновлены интерфейс и локализация раздела обновлений: кнопка «Установить» запускает установку новой версии в один клик.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Added Sparkle 2 based in-app auto-updater with EdDSA-signed release artifacts.
+- Updated the release pipeline: `make release-package` now produces a signed `OWAWidget-v<version>-macos.zip` and `appcast.xml` for automatic updates.
+- Updated update UI and localization: the new **Install** action applies the latest version in one click.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.27 - 2026-05-06
 
 ### RU

@@ -69,11 +69,11 @@
 
 "preferences.updates.section" = "Updates";
 "preferences.updates.toggle" = "Check for updates automatically";
-"preferences.updates.hint" = "Checks GitHub releases every 6 hours. Installing updates is still manual.";
+"preferences.updates.hint" = "Checks for new releases periodically and installs them in one click — no manual download or unpacking.";
 "preferences.updates.checkNow" = "Check now";
 
 "update.banner.title" = "%@ available";
-"update.banner.action.open" = "View release";
+"update.banner.action.install" = "Install";
 "update.banner.action.skip" = "Skip this version";
 
 "preferences.debug.reminder.delay" = "Test reminder delay";
