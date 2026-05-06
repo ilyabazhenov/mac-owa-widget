@@ -14,7 +14,11 @@ VERSION_FILE := VERSION
 RELEASE_NOTES_FILE := RELEASE_NOTES.md
 DIST_DIR := dist
 
-.PHONY: build bundle release-package run kill clean watch logs help
+.PHONY: build bundle validate-release-notes release-package run kill clean watch logs help
+
+## Validate latest release notes structure (RU/EN)
+validate-release-notes:
+	@./scripts/validate_release_notes.sh $(RELEASE_NOTES_FILE)
 
 ## Compile Swift sources
 build:
@@ -46,7 +50,7 @@ bundle: build
 	@echo "✓ Bundle ready: $(APP_PATH)"
 
 ## Build .app and package release zip
-release-package: bundle
+release-package: validate-release-notes bundle
 	@test -f $(VERSION_FILE) || (echo "Missing $(VERSION_FILE)" && exit 1)
 	@test -f $(RELEASE_NOTES_FILE) || (echo "Missing $(RELEASE_NOTES_FILE)" && exit 1)
 	@VERSION=$$(tr -d '[:space:]' < $(VERSION_FILE)); \
