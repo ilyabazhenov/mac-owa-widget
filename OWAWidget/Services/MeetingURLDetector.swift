@@ -9,7 +9,7 @@ struct MeetingURLDetector: Sendable {
             (#"https://[a-z0-9-]+\.zoom\.us/j/[^\s<"')\]]+"#,                      .zoom),
             (#"https://[a-z0-9-]+\.webex\.com/(?:meet|j|wc)/[^\s<"')\]]+"#,        .webex),
             (#"https://meet\.google\.com/[a-z]{3}-[a-z]{4}-[a-z]{3}[^\s<"')\]]*"#, .googleMeet),
-            (#"https://[a-z0-9-]+\.ktalk\.ru/[^\s<"')\]]+"#,                       .ktalk),
+            (#"(?i)(?:https?://)?[a-z0-9-]+\.ktalk\.ru(?:/[^\s<"')\]]*)?"#,        .ktalk),
         ]
         return defs.compactMap { pattern, platform in
             guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
@@ -29,6 +29,11 @@ struct MeetingURLDetector: Sendable {
                 guard let match = regex.firstMatch(in: source, range: range) else { continue }
                 var urlString = nsString.substring(with: match.range)
                 urlString = urlString.trimmingCharacters(in: CharacterSet(charactersIn: ".,;\"'<>)\\]"))
+                if platform == .ktalk,
+                   !urlString.lowercased().hasPrefix("http://"),
+                   !urlString.lowercased().hasPrefix("https://") {
+                    urlString = "https://\(urlString)"
+                }
                 if let url = URL(string: urlString) {
                     return (url, platform)
                 }
