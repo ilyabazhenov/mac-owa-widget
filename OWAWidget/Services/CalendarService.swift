@@ -49,6 +49,7 @@ final class CalendarService: ObservableObject {
     private let notificationLeadKey = "notificationLeadMinutes"
     private let meetingReminderStyleKey = "meetingReminderStyle"
     private let meetingReminderSoundKey = "meetingReminderSound"
+    private let notificationScreenPolicyKey = NotificationScreenPolicy.defaultsKey
 
     var syncInterval: TimeInterval {
         get { UserDefaults.standard.double(forKey: syncIntervalKey).nonZero ?? 300 }
@@ -71,6 +72,11 @@ final class CalendarService: ObservableObject {
             return style
         }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: meetingReminderStyleKey) }
+    }
+
+    var notificationScreenPolicy: NotificationScreenPolicy {
+        get { NotificationScreenPolicy.current }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: notificationScreenPolicyKey) }
     }
 
     var meetingReminderSound: MeetingReminderSound {

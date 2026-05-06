@@ -163,7 +163,7 @@ final class CustomMeetingReminderController {
     }
 
     private func positionPanel(_ panel: NSPanel, contentSize: NSSize) {
-        guard let screen = NSScreen.main else { return }
+        guard let screen = NotificationScreenPolicy.current.resolve() else { return }
         let vf = screen.visibleFrame
         let margin: CGFloat = 16
         let x = vf.maxX - contentSize.width - margin

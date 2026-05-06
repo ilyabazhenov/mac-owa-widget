@@ -48,6 +48,9 @@
 "preferences.notifications.style.both" = "System + in-app";
 "preferences.notifications.remind" = "Remind me";
 "preferences.notifications.before" = "%@ before";
+"preferences.notifications.screen" = "Show banners on";
+"preferences.notifications.screen.main" = "Main screen";
+"preferences.notifications.screen.active" = "Active screen (where cursor is)";
 "preferences.notifications.sound" = "Sound";
 "preferences.notifications.sound.preview" = "Preview";
 "preferences.notifications.sound.glass" = "Glass — bright and clean";

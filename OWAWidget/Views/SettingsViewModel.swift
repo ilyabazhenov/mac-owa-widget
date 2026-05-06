@@ -10,6 +10,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var meetingReminderSound: MeetingReminderSound
     @Published var meetingEngagementScope: MeetingEngagementScope
     @Published var meetingEngagementDefaultPeriod: MeetingEngagementPeriod
+    @Published var notificationScreenPolicy: NotificationScreenPolicy
     @Published var launchAtLogin: Bool
     @Published var launchAtLoginRequiresApproval: Bool
 
@@ -36,6 +37,7 @@ final class SettingsViewModel: ObservableObject {
         self.meetingReminderSound = calendarService.meetingReminderSound
         self.meetingEngagementScope = calendarService.meetingEngagementScope
         self.meetingEngagementDefaultPeriod = calendarService.engagementPeriod
+        self.notificationScreenPolicy = calendarService.notificationScreenPolicy
         self.launchAtLogin = launchAtLoginManager.isEnabled
         self.launchAtLoginRequiresApproval = launchAtLoginManager.requiresApproval
     }
@@ -108,6 +110,7 @@ final class SettingsViewModel: ObservableObject {
         service.notificationLeadMinutes = notificationLeadMinutes
         service.meetingReminderStyle = meetingReminderStyle
         service.meetingReminderSound = meetingReminderSound
+        service.notificationScreenPolicy = notificationScreenPolicy
         service.setMeetingEngagementScope(meetingEngagementScope)
         service.setMeetingEngagementPeriod(meetingEngagementDefaultPeriod)
         service.applySavedPreferences()

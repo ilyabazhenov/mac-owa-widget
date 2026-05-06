@@ -33,7 +33,7 @@ final class MeetingJoinSelectionController {
         let hosting = NSHostingView(rootView: view)
         panel.contentView = hosting
 
-        if let screen = NSScreen.main {
+        if let screen = NotificationScreenPolicy.current.resolve() {
             let visible = screen.visibleFrame
             let x = visible.maxX - panel.frame.width - 18
             let y = visible.maxY - panel.frame.height - 18

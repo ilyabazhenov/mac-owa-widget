@@ -78,6 +78,13 @@ struct PreferencesView: View {
                 }
                 .pickerStyle(.menu)
 
+                Picker(localization.tr("preferences.notifications.screen"), selection: $vm.notificationScreenPolicy) {
+                    ForEach(NotificationScreenPolicy.allCases) { policy in
+                        Text(localization.tr(policy.localizationKey)).tag(policy)
+                    }
+                }
+                .pickerStyle(.menu)
+
                 HStack {
                     Picker(localization.tr("preferences.notifications.sound"), selection: $vm.meetingReminderSound) {
                         ForEach(MeetingReminderSound.allCases) { sound in

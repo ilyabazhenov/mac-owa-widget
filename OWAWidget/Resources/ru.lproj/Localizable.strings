@@ -48,6 +48,9 @@
 "preferences.notifications.style.both" = "Системные и баннер";
 "preferences.notifications.remind" = "Напоминать";
 "preferences.notifications.before" = "за %@";
+"preferences.notifications.screen" = "Показывать баннеры на";
+"preferences.notifications.screen.main" = "Главном экране";
+"preferences.notifications.screen.active" = "Активном экране (где курсор)";
 "preferences.notifications.sound" = "Звук";
 "preferences.notifications.sound.preview" = "Прослушать";
 "preferences.notifications.sound.glass" = "Glass — звонкий и чистый";
