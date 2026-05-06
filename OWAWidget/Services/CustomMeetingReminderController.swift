@@ -18,6 +18,7 @@ final class CustomMeetingReminderController {
     private var queue: [Payload] = []
     private var currentPanel: NSPanel?
     private var dismissWorkItem: DispatchWorkItem?
+    private var currentSound: MeetingReminderSound = .default
     private let autoDismissSeconds: TimeInterval = 14
 
     func cancelAll() {
@@ -30,8 +31,14 @@ final class CustomMeetingReminderController {
         currentPanel = nil
     }
 
-    func reschedule(events: [CalendarEvent], leadMinutes: Int, localization: NotificationLocalization) {
+    func reschedule(
+        events: [CalendarEvent],
+        leadMinutes: Int,
+        localization: NotificationLocalization,
+        sound: MeetingReminderSound
+    ) {
         cancelAll()
+        currentSound = sound
 
         let joinTitle = localization.joinActionTitle
         let dismissTitle = localization.dismissActionTitle
@@ -142,7 +149,7 @@ final class CustomMeetingReminderController {
         currentPanel = panel
         panel.orderFrontRegardless()
 
-        NSSound(named: "Ping")?.play()
+        currentSound.play()
 
         let dismiss = DispatchWorkItem { [weak self, weak panel] in
             panel?.close()

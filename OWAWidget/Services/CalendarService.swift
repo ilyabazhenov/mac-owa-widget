@@ -15,7 +15,12 @@ protocol NotificationServicing: Actor {
 @MainActor
 protocol CustomMeetingReminderControlling: AnyObject {
     func cancelAll()
-    func reschedule(events: [CalendarEvent], leadMinutes: Int, localization: NotificationLocalization)
+    func reschedule(
+        events: [CalendarEvent],
+        leadMinutes: Int,
+        localization: NotificationLocalization,
+        sound: MeetingReminderSound
+    )
 }
 
 @MainActor
@@ -39,6 +44,7 @@ final class CalendarService: ObservableObject {
     private let syncIntervalKey = "syncInterval"
     private let notificationLeadKey = "notificationLeadMinutes"
     private let meetingReminderStyleKey = "meetingReminderStyle"
+    private let meetingReminderSoundKey = "meetingReminderSound"
 
     var syncInterval: TimeInterval {
         get { UserDefaults.standard.double(forKey: syncIntervalKey).nonZero ?? 300 }
@@ -61,6 +67,16 @@ final class CalendarService: ObservableObject {
             return style
         }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: meetingReminderStyleKey) }
+    }
+
+    var meetingReminderSound: MeetingReminderSound {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: meetingReminderSoundKey),
+                  let sound = MeetingReminderSound(rawValue: raw)
+            else { return .default }
+            return sound
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: meetingReminderSoundKey) }
     }
 
     init(
@@ -175,18 +191,19 @@ final class CalendarService: ObservableObject {
         Task {
             let loc = notificationLocalization
             let lead = notificationLeadMinutes
+            let sound = meetingReminderSound
             switch meetingReminderStyle {
             case .system:
                 await notificationService.setup(localization: loc)
                 await notificationService.requestAuthorization()
                 await notificationService.scheduleNotifications(for: [event], leadMinutes: lead, localization: loc)
             case .inApp:
-                customMeetingReminders.reschedule(events: [event], leadMinutes: lead, localization: loc)
+                customMeetingReminders.reschedule(events: [event], leadMinutes: lead, localization: loc, sound: sound)
             case .both:
                 await notificationService.setup(localization: loc)
                 await notificationService.requestAuthorization()
                 await notificationService.scheduleNotifications(for: [event], leadMinutes: lead, localization: loc)
-                customMeetingReminders.reschedule(events: [event], leadMinutes: lead, localization: loc)
+                customMeetingReminders.reschedule(events: [event], leadMinutes: lead, localization: loc, sound: sound)
             }
         }
     }
@@ -303,6 +320,7 @@ final class CalendarService: ObservableObject {
         let lead = notificationLeadMinutes
         let loc = notificationLocalization
         let style = meetingReminderStyle
+        let sound = meetingReminderSound
 
         switch style {
         case .system:
@@ -319,7 +337,7 @@ final class CalendarService: ObservableObject {
         case .inApp:
             await notificationService.removeAllPendingMeetingNotifications()
             customMeetingReminders.cancelAll()
-            customMeetingReminders.reschedule(events: currentEvents, leadMinutes: lead, localization: loc)
+            customMeetingReminders.reschedule(events: currentEvents, leadMinutes: lead, localization: loc, sound: sound)
 
         case .both:
             await notificationService.removeAllPendingMeetingNotifications()
@@ -331,7 +349,7 @@ final class CalendarService: ObservableObject {
                 leadMinutes: lead,
                 localization: loc
             )
-            customMeetingReminders.reschedule(events: currentEvents, leadMinutes: lead, localization: loc)
+            customMeetingReminders.reschedule(events: currentEvents, leadMinutes: lead, localization: loc, sound: sound)
         }
     }
 

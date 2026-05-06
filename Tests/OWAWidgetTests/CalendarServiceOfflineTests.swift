@@ -174,5 +174,10 @@ private actor NoOpNotificationService: NotificationServicing {
 @MainActor
 private final class NoOpMeetingReminderController: CustomMeetingReminderControlling {
     func cancelAll() {}
-    func reschedule(events: [CalendarEvent], leadMinutes: Int, localization: NotificationLocalization) {}
+    func reschedule(
+        events: [CalendarEvent],
+        leadMinutes: Int,
+        localization: NotificationLocalization,
+        sound: MeetingReminderSound
+    ) {}
 }

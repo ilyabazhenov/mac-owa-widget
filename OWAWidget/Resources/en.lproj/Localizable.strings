@@ -48,6 +48,15 @@
 "preferences.notifications.style.both" = "System + in-app";
 "preferences.notifications.remind" = "Remind me";
 "preferences.notifications.before" = "%@ before";
+"preferences.notifications.sound" = "Sound";
+"preferences.notifications.sound.preview" = "Preview";
+"preferences.notifications.sound.glass" = "Glass — bright and clean";
+"preferences.notifications.sound.hero" = "Hero — uplifting chime";
+"preferences.notifications.sound.submarine" = "Submarine — soft and warm";
+"preferences.notifications.sound.purr" = "Purr — calm and muted";
+"preferences.notifications.sound.tink" = "Tink — light and short";
+"preferences.notifications.sound.ping" = "Ping — clear signal";
+"preferences.notifications.sound.silent" = "Silent";
 "preferences.save" = "Save Preferences";
 "preferences.debug.reminder.delay" = "Test reminder delay";
 "preferences.debug.reminder.trigger" = "Trigger test reminder";

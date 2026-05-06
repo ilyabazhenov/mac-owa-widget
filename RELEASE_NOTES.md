@@ -1,8 +1,8 @@
 ## What's Changed
 
-- Improved category color mapping by adding support for lilac/violet naming variants (`Лиловая категория`, `lilac`, `violet`) to ensure consistent purple accents.
-- Added regression test coverage for lilac category mapping in `MeetingAccentColorResolverTests`.
-- Preserved fallback behavior to platform colors when a category has no known color mapping.
+- Added customizable in-app reminder sound selection in Preferences with instant preview.
+- Added localized sound descriptions (RU/EN) and updated default in-app reminder sound to `Submarine`.
+- Kept Notification Center sound behavior unchanged; customization applies only to in-app floating reminders.
 
 ## Installation
 

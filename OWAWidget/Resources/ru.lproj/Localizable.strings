@@ -48,6 +48,15 @@
 "preferences.notifications.style.both" = "Системные и баннер";
 "preferences.notifications.remind" = "Напоминать";
 "preferences.notifications.before" = "за %@";
+"preferences.notifications.sound" = "Звук";
+"preferences.notifications.sound.preview" = "Прослушать";
+"preferences.notifications.sound.glass" = "Glass — звонкий и чистый";
+"preferences.notifications.sound.hero" = "Hero — яркий аккорд";
+"preferences.notifications.sound.submarine" = "Submarine — мягкий и тёплый";
+"preferences.notifications.sound.purr" = "Purr — спокойный и приглушённый";
+"preferences.notifications.sound.tink" = "Tink — лёгкий и короткий";
+"preferences.notifications.sound.ping" = "Ping — чёткий сигнал";
+"preferences.notifications.sound.silent" = "Без звука";
 "preferences.save" = "Сохранить настройки";
 "preferences.debug.reminder.delay" = "Задержка тестового напоминания";
 "preferences.debug.reminder.trigger" = "Показать тестовое напоминание";

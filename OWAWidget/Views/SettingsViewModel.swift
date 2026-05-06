@@ -7,6 +7,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var syncInterval: TimeInterval
     @Published var notificationLeadMinutes: Int
     @Published var meetingReminderStyle: MeetingReminderStyle
+    @Published var meetingReminderSound: MeetingReminderSound
     @Published var launchAtLogin: Bool
     @Published var launchAtLoginRequiresApproval: Bool
 
@@ -30,6 +31,7 @@ final class SettingsViewModel: ObservableObject {
         self.syncInterval = calendarService.syncInterval
         self.notificationLeadMinutes = calendarService.notificationLeadMinutes
         self.meetingReminderStyle = calendarService.meetingReminderStyle
+        self.meetingReminderSound = calendarService.meetingReminderSound
         self.launchAtLogin = launchAtLoginManager.isEnabled
         self.launchAtLoginRequiresApproval = launchAtLoginManager.requiresApproval
     }
@@ -101,7 +103,12 @@ final class SettingsViewModel: ObservableObject {
         service.syncInterval = syncInterval
         service.notificationLeadMinutes = notificationLeadMinutes
         service.meetingReminderStyle = meetingReminderStyle
+        service.meetingReminderSound = meetingReminderSound
         service.applySavedPreferences()
+    }
+
+    func previewMeetingReminderSound() {
+        meetingReminderSound.play()
     }
 
     // MARK: - Launch at login

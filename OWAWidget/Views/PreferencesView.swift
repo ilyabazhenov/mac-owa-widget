@@ -76,6 +76,19 @@ struct PreferencesView: View {
                     }
                 }
                 .pickerStyle(.menu)
+
+                HStack {
+                    Picker(localization.tr("preferences.notifications.sound"), selection: $vm.meetingReminderSound) {
+                        ForEach(MeetingReminderSound.allCases) { sound in
+                            Text(localization.tr(sound.localizationKey)).tag(sound)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    Button(localization.tr("preferences.notifications.sound.preview")) {
+                        vm.previewMeetingReminderSound()
+                    }
+                    .disabled(vm.meetingReminderSound == .none)
+                }
             }
 
             Section {
