@@ -133,3 +133,4 @@
 
 "about.version" = "Версия %@";
 "about.description" = "Быстрый доступ к календарю Exchange из строки меню.";
+"about.github" = "GitHub";
