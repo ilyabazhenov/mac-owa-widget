@@ -147,6 +147,8 @@ CalendarService (@MainActor, ObservableObject)
 Если пользователь просит "выпустить новый релиз" (или формулирует это эквивалентно), агент должен:
 
 1. Подготовить новую версию (`VERSION`) и обновить `RELEASE_NOTES.md`.
+   - В `RELEASE_NOTES.md` обязательно добавлять инструкцию по установке.
+   - В инструкции по установке обязательно упоминать и приводить команду: `xattr -dr com.apple.quarantine /Applications/OWAWidget.app`.
 2. Собрать релизный архив (`make release-package`).
 3. Опубликовать релиз на GitHub через `gh` (создать tag/release и прикрепить zip из `dist/`).
 4. Сообщить пользователю URL опубликованного GitHub release.
