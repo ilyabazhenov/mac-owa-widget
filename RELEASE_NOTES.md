@@ -1,8 +1,8 @@
 ## What's Changed
 
-- Added customizable in-app reminder sound selection in Preferences with instant preview.
-- Added localized sound descriptions (RU/EN) and updated default in-app reminder sound to `Submarine`.
-- Kept Notification Center sound behavior unchanged; customization applies only to in-app floating reminders.
+- Added a clearer quick return action to Today in the day navigation header.
+- Updated the date navigation UX so "Today" is recognized as an action, not part of the date label.
+- Added regression tests for day navigation bounds and visibility rules of the "Today" action.
 
 ## Installation
 

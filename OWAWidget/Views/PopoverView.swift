@@ -12,6 +12,21 @@ struct PopoverView: View {
     let contentHorizontalPadding: CGFloat = 12
     @State private var selectedDayOffset: Int = 0
     @State private var selectedEvent: CalendarEvent? = nil
+    private let maxDayOffset = 6
+
+    enum DateNavBarPolicy {
+        static func shouldShowJumpToToday(selectedDayOffset: Int) -> Bool {
+            selectedDayOffset > 0
+        }
+
+        static func canGoToPreviousDay(selectedDayOffset: Int) -> Bool {
+            selectedDayOffset > 0
+        }
+
+        static func canGoToNextDay(selectedDayOffset: Int, maxDayOffset: Int) -> Bool {
+            selectedDayOffset < maxDayOffset
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -147,7 +162,7 @@ struct PopoverView: View {
     private var dateNavBar: some View {
         HStack {
             Button {
-                if selectedDayOffset > 0 {
+                if DateNavBarPolicy.canGoToPreviousDay(selectedDayOffset: selectedDayOffset) {
                     selectedDayOffset -= 1
                     selectedEvent = nil
                 }
@@ -156,7 +171,7 @@ struct PopoverView: View {
                     .font(.system(size: 11, weight: .medium))
             }
             .buttonStyle(.plain)
-            .disabled(selectedDayOffset == 0)
+            .disabled(!DateNavBarPolicy.canGoToPreviousDay(selectedDayOffset: selectedDayOffset))
             .accessibilityLabel(localization.tr("a11y.nav.previous.day"))
 
             Spacer()
@@ -166,8 +181,23 @@ struct PopoverView: View {
 
             Spacer()
 
+            if DateNavBarPolicy.shouldShowJumpToToday(selectedDayOffset: selectedDayOffset) {
+                Button {
+                    selectedDayOffset = 0
+                    selectedEvent = nil
+                } label: {
+                    Label(localization.tr("popover.nav.today"), systemImage: "arrow.uturn.backward.circle")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .padding(.trailing, 2)
+                .accessibilityLabel(localization.tr("a11y.nav.today"))
+            }
+
             Button {
-                if selectedDayOffset < 6 {
+                if DateNavBarPolicy.canGoToNextDay(selectedDayOffset: selectedDayOffset, maxDayOffset: maxDayOffset) {
                     selectedDayOffset += 1
                     selectedEvent = nil
                 }
@@ -176,7 +206,7 @@ struct PopoverView: View {
                     .font(.system(size: 11, weight: .medium))
             }
             .buttonStyle(.plain)
-            .disabled(selectedDayOffset == 6)
+            .disabled(!DateNavBarPolicy.canGoToNextDay(selectedDayOffset: selectedDayOffset, maxDayOffset: maxDayOffset))
             .accessibilityLabel(localization.tr("a11y.nav.next.day"))
         }
         .padding(.horizontal, contentHorizontalPadding)

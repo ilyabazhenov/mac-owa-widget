@@ -69,9 +69,11 @@
 "popover.open.settings" = "Open Settings";
 "popover.retry" = "Retry";
 "popover.resize.help" = "Drag to resize";
+"popover.nav.today" = "Today";
 
 "a11y.nav.previous.day" = "Previous day";
 "a11y.nav.next.day" = "Next day";
+"a11y.nav.today" = "Jump to today";
 "a11y.close" = "Close";
 "a11y.meeting.details" = "Meeting details";
 "a11y.meeting.details.close.hint" = "Closes the meeting details panel";
