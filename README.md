@@ -1,259 +1,205 @@
 # OWA Widget
 
-A macOS menu bar app for quick access to your upcoming meetings from a Microsoft Exchange / OWA calendar. One click to join Teams, Zoom, Webex, Google Meet, or any other video platform.
+![OWA Widget: встречи из Exchange / OWA в строке меню macOS](docs/images/readme-hero.png)
 
-![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue)
-![Swift 6](https://img.shields.io/badge/Swift-6-orange)
-![License: MIT](https://img.shields.io/badge/License-MIT-green)
+[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue)](#требования)
+[![Swift 6](https://img.shields.io/badge/Swift-6-orange)](DEVELOPMENT.md)
+[![Latest release](https://img.shields.io/github/v/release/ilyabazhenov/mac-owa-widget?label=latest%20release)](https://github.com/ilyabazhenov/mac-owa-widget/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-## Features
+**OWA Widget** показывает ближайшие встречи из Microsoft Exchange / OWA прямо в строке меню macOS и помогает подключаться к Teams, Zoom, Webex, Google Meet и другим звонкам в один клик.
 
-- **Live meeting banner** — the next meeting is always front and center with a one-click Join button
-- **Conflict detection** — multiple meetings starting at the same time are grouped in a stack
-- **Smart URL detection** — finds join links in the dedicated field, location, and meeting body
-- **Platform icons** — Teams, Zoom, Webex, Google Meet, KTalk and more
-- **Local notifications** — get notified N minutes before a meeting starts; tap Join to open the call
-- **Secure storage** — passwords are stored in the macOS Keychain, never in plain text
-- **Scheduled sync** — calendar syncs automatically on a configurable interval
-- **Multiple accounts** — add as many Exchange accounts as you need
-- **On-premise friendly** — works with self-signed TLS certificates for internal Exchange servers
+## Что умеет
 
----
+- Показывает ближайшие встречи в компактном popover из строки меню.
+- Отображает день как таймлайн, включая пересекающиеся и параллельные встречи.
+- Находит ссылку подключения в поле встречи, локации и описании.
+- Распознает Teams, Zoom, Webex, Google Meet, KTalk и другие платформы.
+- Показывает локальные уведомления до начала встречи.
+- Поддерживает несколько Exchange / OWA аккаунтов.
+- Хранит пароли только в macOS Keychain.
+- Устанавливает последующие обновления внутри приложения через Sparkle.
 
-## Requirements
+## Требования
+
+| Что нужно | Версия |
+|---|---|
+| macOS | 13 Ventura или новее |
+| Exchange / OWA | Exchange 2016, 2019 или Exchange Online |
+| Доступ к серверу | Напрямую или через корпоративный VPN |
+
+## Установка
+
+1. Откройте [последний релиз](https://github.com/ilyabazhenov/mac-owa-widget/releases/latest).
+2. Скачайте `.zip` архив для macOS.
+3. Распакуйте архив и перенесите `OWAWidget.app` в `/Applications`.
+4. Если macOS блокирует первый запуск, один раз снимите quarantine-атрибут:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+5. Запустите приложение:
+
+```bash
+open /Applications/OWAWidget.app
+```
+
+После запуска OWA Widget появится в строке меню. Иконки в Dock нет, приложение работает только как menu bar app.
+
+## Первый запуск
+
+1. Нажмите на иконку OWA Widget в строке меню.
+2. Откройте **Настройки**.
+3. На вкладке **Аккаунты** нажмите **+**.
+4. Укажите имя аккаунта, URL OWA-сервера, email и пароль.
+5. Нажмите **Проверить подключение**.
+6. Сохраните аккаунт и разрешите уведомления, когда macOS спросит об этом.
+
+URL OWA-сервера обычно совпадает с адресом корпоративной почты в браузере:
+
+```text
+https://mail.company.com
+https://owa.company.com
+https://outlook.company.com
+```
+
+Если Exchange доступен только из внутренней сети, перед синхронизацией подключитесь к корпоративному VPN.
+
+## Обновления
+
+OWA Widget использует [Sparkle](https://sparkle-project.org) для автоматических обновлений.
+
+- После первой установки новые версии больше не нужно скачивать и распаковывать вручную.
+- Когда доступно обновление, в popover появляется кнопка **Установить**.
+- Приложение скачивает обновление, проверяет подпись, заменяет bundle и перезапускается.
+- Автопроверку обновлений можно настроить в разделе обновлений окна настроек.
+
+Команда `xattr -dr com.apple.quarantine /Applications/OWAWidget.app` нужна только при первой установке. Последующие обновления ставятся через Sparkle автоматически.
+
+## Частые вопросы
+
+**Где взять URL OWA-сервера?**
+
+Используйте адрес, по которому вы открываете корпоративную почту в браузере. Если сомневаетесь, спросите IT-отдел.
+
+**Нужен ли VPN?**
+
+Если Exchange / OWA доступен только из корпоративной сети, да. Приложение должно видеть тот же сервер, что и браузер.
+
+**Где хранится пароль?**
+
+Пароль сохраняется в macOS Keychain. Он не хранится в открытом виде в файлах репозитория или настроек.
+
+**Почему macOS блокирует первый запуск?**
+
+Приложение распространяется без Apple Developer ID подписи, поэтому Gatekeeper может пометить первый скачанный bundle как quarantined. Снимите quarantine-атрибут один раз командой из раздела установки.
+
+**Почему у встречи нет кнопки подключения?**
+
+Кнопка появляется, когда приложение находит ссылку на звонок в данных встречи. Проверьте, что организатор добавил ссылку в описание, локацию или отдельное поле онлайн-встречи.
+
+## Разработка
+
+Информация для разработчиков вынесена в [DEVELOPMENT.md](DEVELOPMENT.md): сборка из исходников, XcodeGen, архитектура, релизная упаковка и GitHub release flow.
+
+## English
+
+**OWA Widget** is a macOS menu bar app that shows upcoming meetings from Microsoft Exchange / OWA and helps you join Teams, Zoom, Webex, Google Meet, and other calls in one click.
+
+### Features
+
+- Compact menu bar popover with upcoming meetings.
+- Day timeline with overlapping and parallel meetings.
+- Join link detection in the meeting field, location, and body.
+- Platform recognition for Teams, Zoom, Webex, Google Meet, KTalk, and more.
+- Local notifications before meetings start.
+- Multiple Exchange / OWA accounts.
+- Password storage in macOS Keychain.
+- In-app automatic updates through Sparkle.
+
+### Requirements
 
 | Requirement | Version |
 |---|---|
 | macOS | 13 Ventura or later |
-| Swift | 6.0+ |
-| Exchange / OWA | 2016, 2019, Exchange Online |
+| Exchange / OWA | Exchange 2016, 2019, or Exchange Online |
+| Network access | Direct access or corporate VPN |
 
-Optional tools:
-- **XcodeGen** — to generate `OWAWidget.xcodeproj` (`brew install xcodegen`)
-- **fswatch** — for `make watch` auto-rebuild (`brew install fswatch`)
-- **xcbeautify** — for prettier build output (`brew install xcbeautify`)
+### Installation
 
----
-
-## Installation
-
-### Build from source
-
-```bash
-git clone https://github.com/ilyabazhenov/mac-owa-widget.git
-cd mac-owa-widget
-make run
-```
-
-The app will appear in the menu bar. No Dock icon — it's menu bar only.
-
-### Run unsigned app build
-
-The app is distributed without an Apple Developer ID, so macOS Gatekeeper marks it as quarantined on the **first install**. Remove the quarantine attribute once and launch:
+1. Open the [latest release](https://github.com/ilyabazhenov/mac-owa-widget/releases/latest).
+2. Download the macOS `.zip` archive.
+3. Extract it and move `OWAWidget.app` to `/Applications`.
+4. If macOS blocks the first launch, remove the quarantine attribute once:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+5. Launch the app:
+
+```bash
 open /Applications/OWAWidget.app
 ```
 
-### Auto-updates
+OWA Widget will appear in the macOS menu bar. It has no Dock icon.
 
-After the first install you do **not** need to download/unpack/un-quarantine new releases manually. The app uses [Sparkle](https://sparkle-project.org) with an Ed25519-signed update feed:
+### First setup
 
-- A small "Update available" banner appears in the popover when a new release is published.
-- Clicking **Install** downloads, verifies, swaps the bundle, and relaunches automatically.
-- Auto-checks can be toggled in **Settings → Preferences → Updates**.
-- Update artifacts are signed with an Ed25519 key whose public half is embedded in the app's `Info.plist` (`SUPublicEDKey`); Sparkle refuses to install anything that fails verification.
+1. Click the OWA Widget menu bar icon.
+2. Open **Settings**.
+3. Go to the **Account** tab and click **+**.
+4. Enter display name, OWA server URL, email, and password.
+5. Click **Test Connection**.
+6. Save the account and allow notifications when macOS asks.
 
-### Generate Xcode project (optional)
+Your OWA server URL is usually the same address you use for corporate webmail:
 
-`OWAWidget.xcodeproj` is not stored in the repository (it's a generated artifact). To open the project in Xcode:
-
-```bash
-xcodegen generate
-open OWAWidget.xcodeproj
+```text
+https://mail.company.com
+https://owa.company.com
+https://outlook.company.com
 ```
 
-Set your **Development Team** in the project's Signing & Capabilities tab to enable code signing.
+If Exchange is only available inside the corporate network, connect to VPN before syncing.
 
----
+### Updates
 
-## Getting Started
+OWA Widget uses [Sparkle](https://sparkle-project.org) for automatic updates.
 
-### 1. Find your OWA server URL
+- After the first install, you do not need to download and unpack every new release manually.
+- When an update is available, the popover shows an **Install** button.
+- The app downloads, verifies, swaps the bundle, and relaunches automatically.
+- Auto-checks can be configured in **Settings -> Preferences -> Updates**.
 
-Your OWA URL is the address you use to access corporate email in the browser. It typically looks like:
+The quarantine command is required only for the first install. All later updates are installed automatically through Sparkle.
 
-```
-https://mail.yourcompany.com
-https://owa.yourcompany.com
-https://outlook.yourcompany.com
-```
+### FAQ
 
-Ask your IT department if you're not sure. The app connects to `/owa/` on that server.
+**Where do I find my OWA server URL?**
 
-> **VPN**: If your Exchange server is on-premise and not internet-facing, make sure you're connected to the corporate VPN before syncing.
+Use the same address you open corporate webmail with in the browser. Ask your IT department if you are not sure.
 
-### 2. Add your account
+**Do I need VPN?**
 
-1. Click the menu bar icon → **Settings** (⚙)
-2. Go to the **Account** tab → click **+**
-3. Fill in:
-   - **Display name** — any label (e.g. "Work")
-   - **Server URL** — your OWA URL (e.g. `https://mail.company.com`)
-   - **Email** — your corporate email address
-   - **Password** — your Windows / Active Directory password
-4. Click **Test Connection** to verify
-5. Click **Save**
+If Exchange / OWA is only available from the corporate network, yes. The app must be able to reach the same server as your browser.
 
-The widget will sync immediately and show your upcoming meetings.
+**Where is my password stored?**
 
-### 3. Configure notifications
+The password is stored in macOS Keychain. It is not stored as plain text in repository or settings files.
 
-Go to **Settings → Preferences** to set:
-- **Sync interval** — how often to fetch new events (default: 5 min)
-- **Notification lead time** — how many minutes before a meeting to send a notification (default: 10 min)
+**Why does macOS block the first launch?**
 
-Allow notifications when macOS prompts you on first launch.
+The app is distributed without an Apple Developer ID signature, so Gatekeeper may mark the first downloaded bundle as quarantined. Remove the quarantine attribute once using the command above.
 
----
+**Why is there no Join button for a meeting?**
 
-## Build commands
+The button appears when the app finds a meeting link in the event data. Check that the organizer included the link in the body, location, or online meeting field.
 
-```bash
-make build    # compile
-make run      # build and launch (kills previous instance)
-make watch    # auto-rebuild on .swift file changes (requires fswatch)
-make clean    # remove build artifacts
-make kill     # stop the running instance
-```
+### Development
 
-Quick compile check without bundling:
-
-```bash
-swift build
-```
-
-### Current app version
-
-The repository-level release version is stored in:
-
-```bash
-VERSION
-```
-
-This is a mandatory release-prep step: bump `VERSION` to a new value before triggering a new GitHub release.
-
-### Release description (required)
-
-Release notes are required and stored in:
-
-```bash
-RELEASE_NOTES.md
-```
-
-The release workflow fails if this file is missing or empty.
-
-### Release packaging
-
-To build a release archive locally:
-
-```bash
-make release-package
-```
-
-This command builds `.build/OWAWidget.app`, creates `dist/OWAWidget-v<version>-macos.zip`, EdDSA-signs it with Sparkle's `sign_update`, and emits `dist/appcast.xml` with the resulting signature.
-
-The signing key is read from the login Keychain (entry `https://sparkle-project.org` / account `ed25519`) by default, or from the `SPARKLE_ED_PRIVATE_KEY` environment variable when the script is run from CI. To generate the keypair the first time, run:
-
-```bash
-bash scripts/generate_sparkle_keys.sh
-```
-
-The script prints the **public** key (paste into `OWAWidget/Info.plist` as `SUPublicEDKey`) and the **private** key (back it up in your password manager and add it as a GitHub Actions Secret named `SPARKLE_ED_PRIVATE_KEY`). Losing the private key means existing clients can no longer install your updates — back it up.
-
-### GitHub release flow
-
-A manual GitHub Actions workflow is available at `.github/workflows/release.yml`.
-
-1. Update `VERSION`
-2. Update `RELEASE_NOTES.md`
-3. Push changes to GitHub
-4. Open **Actions → Release → Run workflow**
-
-> `VERSION` bump is required for each release. Reusing an existing version will overwrite/update the same `v<version>` release tag instead of creating a new release.
-
-The workflow builds the app, creates the zip archive, EdDSA-signs it via Sparkle's `sign_update`, generates `appcast.xml` for the new version, then creates (or updates) a GitHub Release with tag `v<version>`. Both the zip and `appcast.xml` are uploaded as release assets so that the stable URL `https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml` always resolves to the latest published feed.
-
-The CI job requires a `SPARKLE_ED_PRIVATE_KEY` repository secret containing the base64 EdDSA private key. Without this secret the workflow aborts early to avoid shipping an unsigned build that already-installed clients would reject.
-
-### Agent release command semantics
-
-For AI agents working in this repository:
-
-- Request like "выпусти новый релиз" means full release publication flow: update `VERSION`, update `RELEASE_NOTES.md`, run `make release-package`, publish with `gh release create`.
-- Request like "подготовь релиз" means prepare only: update `VERSION`, update `RELEASE_NOTES.md`, run `make release-package`, without GitHub publication unless explicitly asked.
-
----
-
-## Architecture
-
-```
-SwiftUI Views
-    │
-    ▼
-CalendarService (@MainActor, ObservableObject)
-    │
-    ├── CalendarProvider actors
-    │       ├── OWACalendarProvider
-    │       │       └── OWAClient  (auth + REST API)
-    │       └── GoogleCalendarProvider  (stub)
-    │
-    ├── SyncScheduler
-    └── NotificationService
-```
-
-The project uses **Swift 6 strict concurrency** (`SWIFT_STRICT_CONCURRENCY = complete`). Each calendar provider is an actor; `CalendarEvent` and `CalendarAccount` are `Sendable` value types.
-
-### Key files
-
-| File | Purpose |
-|---|---|
-| `OWAWidget/OWAWidgetApp.swift` | App entry point, `MenuBarExtra`, settings window, notification handler |
-| `OWAWidget/Services/CalendarService.swift` | Central `@MainActor` state: accounts, events, sync status |
-| `OWAWidget/Providers/CalendarProvider.swift` | Calendar provider protocol |
-| `OWAWidget/Providers/OWA/OWAClient.swift` | OWA auth, cookies, CANARY token, calendar REST API |
-| `OWAWidget/Providers/OWA/OWACalendarProvider.swift` | Maps OWA response to `CalendarEvent` |
-| `OWAWidget/Services/MeetingURLDetector.swift` | Regex-based join URL detection |
-| `OWAWidget/Services/NotificationService.swift` | Local notification scheduling |
-| `OWAWidget/Views/` | SwiftUI popover and settings views |
-
-### Adding a new calendar provider
-
-1. Create `OWAWidget/Providers/<ProviderName>/`
-2. Implement `actor <ProviderName>CalendarProvider: CalendarProvider`
-3. Implement `fetchEvents(from:to:)` and `validateCredentials()`
-4. Add a new case to `AccountType` in `CalendarAccount.swift`
-5. Wire it up in `CalendarService.rebuildProviders()`
-6. Add account setup UI if needed
-
----
-
-## Security
-
-- Passwords are stored exclusively in the macOS Keychain (`com.owawidget.OWAWidget`)
-- `NSAllowsArbitraryLoads` is enabled to support on-premise Exchange servers with self-signed certificates. For Mac App Store distribution, replace with `NSExceptionDomains` scoped to your Exchange hostname
-- The TLS bypass delegate (`TLSBypassDelegate`) accepts any server trust — intended for internal corporate servers only
-
----
-
-## Contributing
-
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
-
-When adding support for a new meeting platform, update `MeetingURLDetector.swift` and `MeetingPlatform.swift`.
-
----
+Developer documentation lives in [DEVELOPMENT.md](DEVELOPMENT.md): source builds, XcodeGen, architecture, release packaging, and the GitHub release flow.
 
 ## License
 
