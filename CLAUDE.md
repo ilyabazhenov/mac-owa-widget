@@ -141,6 +141,7 @@ CalendarService (@MainActor, ObservableObject)
 - Не коммить и не восстанавливай `OWAWidget.xcodeproj/`; это генерируемый артефакт.
 - Для проверки после изменений запускай `swift build`.
 - Если менялись упаковка приложения, entitlement-файлы или запуск `.app`, дополнительно проверяй `make run`.
+- Не обновляй версию вручную в `OWAWidget/Info.plist`: `make bundle`/`make release-package` автоматически ставят `CFBundleShortVersionString` из `VERSION` и `CFBundleVersion` из git-счётчика коммитов.
 
 ## Релиз по команде пользователя
 

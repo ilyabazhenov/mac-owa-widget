@@ -27,6 +27,16 @@ bundle: build
 	@rm -rf "$(APP_PATH)/$(APP_NAME)_$(APP_NAME).bundle"
 	cp $(BINARY) $(APP_PATH)/Contents/MacOS/$(APP_NAME)
 	cp $(INFO_PLIST) $(APP_PATH)/Contents/
+	@VERSION=$$(tr -d '[:space:]' < "$(VERSION_FILE)"); \
+	[ -n "$$VERSION" ] || (echo "$(VERSION_FILE) is empty" && exit 1); \
+	BUILD_NUMBER=$$(git rev-list --count HEAD 2>/dev/null || echo "1"); \
+	case "$$BUILD_NUMBER" in \
+	  ''|*[!0-9]*) BUILD_NUMBER=1 ;; \
+	esac; \
+	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $$VERSION" "$(APP_PATH)/Contents/Info.plist" >/dev/null 2>&1 || \
+	  /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $$VERSION" "$(APP_PATH)/Contents/Info.plist"; \
+	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $$BUILD_NUMBER" "$(APP_PATH)/Contents/Info.plist" >/dev/null 2>&1 || \
+	  /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $$BUILD_NUMBER" "$(APP_PATH)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $(APP_BUNDLE_ID)" "$(APP_PATH)/Contents/Info.plist"
 	@if [ -d "$(RESOURCE_BUNDLE)" ]; then cp -R "$(RESOURCE_BUNDLE)" $(APP_PATH)/Contents/Resources/; fi
 	@if [ -d "$(SRC_DIR)/Resources" ]; then cp -R $(SRC_DIR)/Resources/*.lproj $(APP_PATH)/Contents/Resources/; fi
