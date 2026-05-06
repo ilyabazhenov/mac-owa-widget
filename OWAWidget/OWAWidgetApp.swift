@@ -12,6 +12,7 @@ struct OWAWidgetApp: App {
         UNUserNotificationCenter.current().delegate = notificationDelegate
         notificationDelegate.onJoinFromNotification = { [calendarService] item in
             calendarService.openJoinURL(for: item, source: .reminderNotification)
+            PostJoinDismissController.shared.dismissAfterJoin(context: .notificationAction)
         }
         configureAppIcon()
     }
@@ -95,6 +96,7 @@ final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,
            let url = URL(string: urlString) {
             DispatchQueue.main.async {
                 NSWorkspace.shared.open(url)
+                PostJoinDismissController.shared.dismissAfterJoin(context: .notificationAction)
             }
         }
     }

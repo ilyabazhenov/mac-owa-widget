@@ -15,7 +15,9 @@ struct MeetingDetailPanelView: View {
             Divider()
 
             ScrollView(.vertical, showsIndicators: false) {
-                MeetingDetailContentView(event: event)
+                MeetingDetailContentView(event: event) {
+                    onClose()
+                }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
             }
@@ -82,12 +84,13 @@ struct MeetingDetailPanelView: View {
 
 struct MeetingDetailContentView: View {
     let event: CalendarEvent
+    var onJoinCompleted: () -> Void = {}
 
     @EnvironmentObject private var localization: LocalizationService
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            MeetingDetailActionsView(event: event)
+            MeetingDetailActionsView(event: event, onJoinCompleted: onJoinCompleted)
 
             VStack(alignment: .leading, spacing: 8) {
                 detailRow(
@@ -168,6 +171,7 @@ struct MeetingDetailContentView: View {
 
 private struct MeetingDetailActionsView: View {
     let event: CalendarEvent
+    var onJoinCompleted: () -> Void = {}
 
     @EnvironmentObject private var localization: LocalizationService
     @EnvironmentObject private var calendarService: CalendarService
@@ -178,6 +182,8 @@ private struct MeetingDetailActionsView: View {
             HStack(spacing: 10) {
                 Button {
                     calendarService.openJoinURL(for: event, source: .detailPanel)
+                    onJoinCompleted()
+                    PostJoinDismissController.shared.dismissAfterJoin(context: .detailPanel)
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "arrow.right.circle.fill")

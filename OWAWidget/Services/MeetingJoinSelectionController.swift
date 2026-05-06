@@ -28,6 +28,7 @@ final class MeetingJoinSelectionController {
         let view = MeetingJoinSelectionView(items: items) { [weak panel] item in
             onJoin(item)
             panel?.close()
+            PostJoinDismissController.shared.dismissAfterJoin(context: .notificationPicker)
         }
         let hosting = NSHostingView(rootView: view)
         panel.contentView = hosting

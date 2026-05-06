@@ -99,6 +99,7 @@ final class CalendarService: ObservableObject {
         if let reminderController = customMeetingReminders as? CustomMeetingReminderController {
             reminderController.onJoin = { [weak self] item in
                 self?.openJoinURL(for: item, source: .inAppReminder)
+                PostJoinDismissController.shared.dismissAfterJoin(context: .inAppReminder)
             }
         }
         if loadPersistedAccounts {

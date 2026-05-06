@@ -74,6 +74,7 @@ struct MeetingRowView: View {
 
                     Button {
                         calendarService.openJoinURL(for: event, source: .meetingRow)
+                        PostJoinDismissController.shared.dismissAfterJoin(context: .popoverContent)
                     } label: {
                         Text(localization.tr("meeting.join"))
                             .font(.system(size: 11, weight: .semibold))

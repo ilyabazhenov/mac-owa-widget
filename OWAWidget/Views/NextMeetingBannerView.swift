@@ -84,6 +84,7 @@ struct NextMeetingBannerView: View {
 
                         Button {
                             calendarService.openJoinURL(for: event, source: .nextBanner)
+                            PostJoinDismissController.shared.dismissAfterJoin(context: .popoverContent)
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrow.right.circle.fill")

@@ -77,6 +77,7 @@ struct TimelineMeetingBlockView: View {
 
                     Button {
                         calendarService.openJoinURL(for: event, source: .timelineBlock)
+                        PostJoinDismissController.shared.dismissAfterJoin(context: .popoverContent)
                     } label: {
                         Image(systemName: "arrow.right.circle.fill")
                             .font(.system(size: compact ? 13 : 14))

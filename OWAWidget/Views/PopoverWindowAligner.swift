@@ -40,6 +40,7 @@ final class PopoverWindowAlignmentView: NSView {
 
     private func alignWindowLeft() {
         guard let window, let coordinator else { return }
+        PostJoinDismissController.shared.registerPopoverWindow(window)
 
         if coordinator.anchorX == nil {
             coordinator.anchorX = window.frame.minX
