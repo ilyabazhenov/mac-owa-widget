@@ -89,12 +89,10 @@ actor OWACalendarProvider: CalendarProvider {
             if let detected = detector.detect(in: locationText) {
                 return (detected.url, detected.platform)
             }
-            // If room is present but doesn't contain a link, do not fallback to agenda text.
-            return (nil, .generic)
         }
 
-        // 3. Body text fallback (only when location is absent/empty)
-        if let body = bodyText(from: item), !body.isEmpty {
+        // 3. Body text fallback
+        for body in bodyTexts(from: item) {
             if let detected = detector.detect(in: body) {
                 return (detected.url, detected.platform)
             }
@@ -103,6 +101,10 @@ actor OWACalendarProvider: CalendarProvider {
     }
 
     private static func bodyText(from item: OWACalendarItem) -> String? {
+        bodyTexts(from: item).first
+    }
+
+    private static func bodyTexts(from item: OWACalendarItem) -> [String] {
         let candidates: [String?] = [
             item.TextBody?.Value,
             item.UniqueBody?.Value,
@@ -111,11 +113,13 @@ actor OWACalendarProvider: CalendarProvider {
             item.Preview,
         ]
 
+        var result: [String] = []
+        result.reserveCapacity(candidates.count)
         for candidate in candidates {
             guard let text = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { continue }
-            return text
+            result.append(text)
         }
-        return nil
+        return result
     }
 
     // MARK: - Date parsing

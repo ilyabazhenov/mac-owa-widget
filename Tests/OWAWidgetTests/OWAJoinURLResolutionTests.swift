@@ -15,7 +15,7 @@ final class OWAJoinURLResolutionTests: XCTestCase {
         XCTAssertEqual(platform, .ktalk)
     }
 
-    func testBodyFallbackSkippedWhenLocationIsPresent() {
+    func testBodyFallbackUsedWhenLocationIsPresentWithoutMeetingLink() {
         let item = makeItem(
             location: "Conference Room 101",
             textBody: "Agenda: подключение https://acme.ktalk.ru/room/123"
@@ -23,8 +23,41 @@ final class OWAJoinURLResolutionTests: XCTestCase {
 
         let (url, platform) = OWACalendarProvider.resolveJoinURL(from: item)
 
-        XCTAssertNil(url)
-        XCTAssertEqual(platform, .generic)
+        XCTAssertEqual(url?.absoluteString, "https://acme.ktalk.ru/room/123")
+        XCTAssertEqual(platform, .ktalk)
+    }
+
+    func testBodyKTalkDetectedWithOtherNonMeetingLinksPresent() {
+        let item = makeItem(
+            location: "Office 5.12",
+            textBody: """
+            https://jira.example.net/secure/Dashboard.jspa?selectPageId=83410
+            https://jira.example.net/secure/Dashboard.jspa?selectPageId=90710
+            https://intranet/pbreports/powerbi/report
+            https://acme.ktalk.ru/hlppwr2q3pab
+            """
+        )
+
+        let (url, platform) = OWACalendarProvider.resolveJoinURL(from: item)
+
+        XCTAssertEqual(url?.absoluteString, "https://acme.ktalk.ru/hlppwr2q3pab")
+        XCTAssertEqual(platform, .ktalk)
+    }
+
+    func testBodyFallbackChecksAllBodyFieldsNotOnlyFirst() {
+        let item = makeItem(
+            location: nil,
+            textBody: "https://jira.example.net/secure/Dashboard.jspa?selectPageId=83410",
+            uniqueBody: """
+            https://jira.example.net/secure/Dashboard.jspa?selectPageId=90710
+            https://acme.ktalk.ru/hlppwr2q3pab
+            """
+        )
+
+        let (url, platform) = OWACalendarProvider.resolveJoinURL(from: item)
+
+        XCTAssertEqual(url?.absoluteString, "https://acme.ktalk.ru/hlppwr2q3pab")
+        XCTAssertEqual(platform, .ktalk)
     }
 
     func testJoinOnlineMeetingURLHasHighestPriority() {

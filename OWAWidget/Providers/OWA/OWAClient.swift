@@ -59,6 +59,7 @@ actor OWAClient {
     private let sessionDelegate: OWASessionDelegate
     private let session: URLSession
     private let log = Logger(subsystem: "com.owawidget", category: "OWAClient")
+    private let getCalendarViewDebugFlagKey = "debugDumpGetCalendarViewResponse"
 
     init(serverURL: String, username: String, password: String) throws {
         self.baseURL = try Self.parseBaseURL(serverURL)
@@ -409,6 +410,12 @@ actor OWAClient {
         log.info(
             "OWA request completed sync=\(syncID, privacy: .public) request=\(requestID, privacy: .public) action=GetCalendarView folderMode=\(folderMode, privacy: .public) status=\(http.statusCode, privacy: .public) bytes=\(data.count, privacy: .public) durationMs=\(durationMS, privacy: .public)"
         )
+        dumpGetCalendarViewResponseIfNeeded(
+            data: data,
+            statusCode: http.statusCode,
+            requestID: requestID,
+            syncID: syncID
+        )
 
         guard (200..<300).contains(http.statusCode) else {
             let msg = String(data: data.prefix(300), encoding: .utf8) ?? ""
@@ -419,6 +426,51 @@ actor OWAClient {
         }
 
         return (try JSONDecoder().decode(OWAServiceResponse.self, from: data)).Body?.Items ?? []
+    }
+
+    private func dumpGetCalendarViewResponseIfNeeded(
+        data: Data,
+        statusCode: Int,
+        requestID: Int,
+        syncID: String
+    ) {
+        guard isGetCalendarViewDebugEnabled() else { return }
+
+        let fileManager = FileManager.default
+        let appSupportBase = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
+        let debugDirectory = appSupportBase
+            .appendingPathComponent("OWAWidget", isDirectory: true)
+            .appendingPathComponent("owa-debug", isDirectory: true)
+        do {
+            try fileManager.createDirectory(at: debugDirectory, withIntermediateDirectories: true)
+            let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+            let filename = "getcalendarview-\(timestamp)-status\(statusCode)-req\(requestID)-sync\(syncID).json"
+            let fileURL = debugDirectory.appendingPathComponent(filename)
+            let outputData = prettyPrintedJSONDataIfPossible(from: data) ?? data
+            try outputData.write(to: fileURL, options: .atomic)
+            log.notice(
+                "OWA GetCalendarView debug dump saved sync=\(syncID, privacy: .public) request=\(requestID, privacy: .public) status=\(statusCode, privacy: .public) path=\(fileURL.path, privacy: .public)"
+            )
+        } catch {
+            log.error(
+                "OWA GetCalendarView debug dump failed sync=\(syncID, privacy: .public) request=\(requestID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    private func prettyPrintedJSONDataIfPossible(from data: Data) -> Data? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        return try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+    }
+
+    private func isGetCalendarViewDebugEnabled() -> Bool {
+        let env = ProcessInfo.processInfo.environment
+        if let raw = env["OWA_DEBUG_GETCALENDARVIEW_RESPONSE"]?.lowercased() {
+            return raw == "1" || raw == "true" || raw == "yes"
+        }
+        return UserDefaults.standard.bool(forKey: getCalendarViewDebugFlagKey)
     }
 
     private func resolveDefaultCalendarFolderIdentifier(canary: String) async throws -> OWAFolderIdentifier? {

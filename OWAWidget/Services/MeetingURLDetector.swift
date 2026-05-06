@@ -19,7 +19,8 @@ struct MeetingURLDetector: Sendable {
 
     func detect(in text: String) -> (url: URL, platform: MeetingPlatform)? {
         let plain = stripHTML(text)
-        let sources = plain == text ? [text] : [text, plain]
+        let baseSources = plain == text ? [text] : [text, plain]
+        let sources = uniquePreservingOrder(baseSources.map(normalizeEscapedURLs) + baseSources)
 
         for source in sources {
             let nsString = source as NSString
@@ -52,5 +53,21 @@ struct MeetingURLDetector: Sendable {
         let nsString = string as NSString
         let range = NSRange(location: 0, length: nsString.length)
         return regex.stringByReplacingMatches(in: string, range: range, withTemplate: " ")
+    }
+
+    private func normalizeEscapedURLs(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: #"\/"#, with: "/")
+            .replacingOccurrences(of: "&amp;", with: "&")
+    }
+
+    private func uniquePreservingOrder(_ sources: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        result.reserveCapacity(sources.count)
+        for source in sources where seen.insert(source).inserted {
+            result.append(source)
+        }
+        return result
     }
 }

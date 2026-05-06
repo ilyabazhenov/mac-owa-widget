@@ -31,4 +31,13 @@ final class MeetingURLDetectorTests: XCTestCase {
         XCTAssertEqual(result?.url.absoluteString, "https://acme.ktalk.ru/hlppwr2q3pab")
         XCTAssertEqual(result?.platform, .ktalk)
     }
+
+    func testDetectsKTalkWhenURLIsEscapedWithBackslashes() {
+        let escaped = #"Подключение: https:\/\/acme.ktalk.ru\/hlppwr2q3pab"#
+
+        let result = detector.detect(in: escaped)
+
+        XCTAssertEqual(result?.url.absoluteString, "https://acme.ktalk.ru/hlppwr2q3pab")
+        XCTAssertEqual(result?.platform, .ktalk)
+    }
 }
