@@ -53,7 +53,8 @@ struct MenuBarLabelView: View {
         guard let event = nextUpcomingEvent else { return nil }
         let minutes = Int(event.startDate.timeIntervalSince(now) / 60)
         guard minutes > 0 else { return nil }
-        return minutes < 60 ? "\(minutes)m" : "\(minutes / 60)h"
+        if minutes < 60 { return "\(minutes)m" }
+        return localization.shortTime(event.startDate)
     }
 
     private var helpText: String {
