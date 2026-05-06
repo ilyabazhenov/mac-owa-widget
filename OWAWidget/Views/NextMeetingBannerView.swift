@@ -65,7 +65,7 @@ struct NextMeetingBannerView: View {
 
                     Spacer()
 
-                    if let url = event.joinURL {
+                    if let url = event.joinURLForActions {
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(url.absoluteString, forType: .string)
@@ -205,8 +205,11 @@ struct NextMeetingBannerView: View {
         } else {
             parts.append(countdownLabel(event, now: now))
         }
-        if event.joinURL != nil {
+        if event.joinURLForActions != nil {
             parts.append(localization.tr("a11y.meeting.has.join"))
+        }
+        if event.isEffectivelyCancelled {
+            parts.append(localization.tr("meeting.status.cancelled"))
         }
         return parts.joined(separator: ", ")
     }

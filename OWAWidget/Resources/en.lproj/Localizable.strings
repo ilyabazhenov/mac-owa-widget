@@ -84,6 +84,11 @@
 "meeting.parallel.window" = "%d parallel · %@–%@";
 "meeting.platform.generic" = "Meeting";
 "meeting.location.unspecified" = "Not specified";
+"meeting.status.cancelled" = "Cancelled";
+"meeting.role.organizer" = "You are the organizer";
+"meeting.role.organizer.short" = "Host";
+"meeting.categories" = "Categories";
+"meeting.categories.more" = "%d more";
 
 "menubar.now" = "now";
 "menubar.in.minutes" = "in %@";

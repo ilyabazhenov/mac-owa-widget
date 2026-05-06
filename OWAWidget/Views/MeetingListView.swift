@@ -175,8 +175,11 @@ struct MeetingListView: View {
         if let organizer = event.organizer, !organizer.isEmpty {
             parts.append(organizer)
         }
-        if event.joinURL != nil {
+        if event.joinURLForActions != nil {
             parts.append(localization.tr("a11y.meeting.has.join"))
+        }
+        if event.isEffectivelyCancelled {
+            parts.append(localization.tr("meeting.status.cancelled"))
         }
         return parts.joined(separator: ", ")
     }

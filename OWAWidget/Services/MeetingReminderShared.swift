@@ -53,7 +53,7 @@ enum MeetingReminderClusterBuilder {
 
     static func clusters(from events: [CalendarEvent], now: Date) -> [MeetingReminderCluster] {
         let candidates = events
-            .filter { !$0.isAllDay && $0.endDate > now }
+            .filter { !$0.isAllDay && !$0.isEffectivelyCancelled && $0.endDate > now }
             .sorted { $0.startDate < $1.startDate }
 
         guard !candidates.isEmpty else { return [] }

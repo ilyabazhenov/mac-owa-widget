@@ -23,7 +23,8 @@ struct TimelineMeetingBlockView: View {
             VStack(alignment: .leading, spacing: titleToMetaSpacing) {
                 Text(event.title)
                     .font(.system(size: compact ? 11 : 12, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(event.isEffectivelyCancelled ? .secondary : .primary)
+                    .strikethrough(event.isEffectivelyCancelled)
                     .lineLimit(compact ? 1 : 1)
 
                 HStack(spacing: metaItemsSpacing) {
@@ -31,6 +32,17 @@ struct TimelineMeetingBlockView: View {
                         .font(.system(size: compact ? 9 : 10, weight: .medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+
+                    if event.isOrganizer {
+                        Text(localization.tr("meeting.role.organizer.short"))
+                            .font(.system(size: compact ? 8 : 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .accessibilityLabel(localization.tr("meeting.role.organizer"))
+                    }
 
                     if shouldShowOrganizer, let organizer = event.organizer {
                         Text("· \(organizer)")
@@ -42,7 +54,7 @@ struct TimelineMeetingBlockView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let url = event.joinURL {
+            if let url = event.joinURLForActions {
                 HStack(alignment: .top, spacing: 4) {
                     if !compact {
                         Button {
@@ -105,8 +117,11 @@ struct TimelineMeetingBlockView: View {
         if let organizer = event.organizer, !organizer.isEmpty {
             parts.append(organizer)
         }
-        if event.joinURL != nil {
+        if event.joinURLForActions != nil {
             parts.append(localization.tr("a11y.meeting.has.join"))
+        }
+        if event.isEffectivelyCancelled {
+            parts.append(localization.tr("meeting.status.cancelled"))
         }
         return parts.joined(separator: ", ")
     }
@@ -144,10 +159,16 @@ struct TimelineMeetingBlockView: View {
     }
 
     private var accentColor: Color {
-        event.isHappeningNow ? .orange : event.platform.color
+        if event.isEffectivelyCancelled {
+            return Color.secondary.opacity(0.45)
+        }
+        return event.isHappeningNow ? .orange : event.platform.color
     }
 
     private var backgroundColor: Color {
+        if event.isEffectivelyCancelled {
+            return Color(nsColor: .controlBackgroundColor).opacity(0.55)
+        }
         if isSelected {
             return event.isHappeningNow ? Color.orange.opacity(0.22) : event.platform.color.opacity(0.20)
         }
@@ -155,6 +176,9 @@ struct TimelineMeetingBlockView: View {
     }
 
     private var borderColor: Color {
+        if event.isEffectivelyCancelled {
+            return Color.secondary.opacity(0.22)
+        }
         if isSelected {
             return accentColor
         }

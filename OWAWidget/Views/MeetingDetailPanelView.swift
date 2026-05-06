@@ -55,7 +55,8 @@ struct MeetingDetailPanelView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(event.title)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .foregroundStyle(Color(nsColor: event.isEffectivelyCancelled ? .secondaryLabelColor : .labelColor))
+                    .strikethrough(event.isEffectivelyCancelled)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
@@ -94,7 +95,19 @@ struct MeetingDetailContentView: View {
                     text: "\(dayLabel) · \(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))"
                 )
 
+                if event.isEffectivelyCancelled {
+                    detailRow(systemImage: "xmark.circle", text: localization.tr("meeting.status.cancelled"))
+                }
+
+                if event.isOrganizer {
+                    detailRow(systemImage: "person.fill.checkmark", text: localization.tr("meeting.role.organizer"))
+                }
+
                 detailRow(systemImage: "mappin.and.ellipse", text: locationLabel)
+
+                if let categoriesLine = categoriesLine {
+                    detailRow(systemImage: "tag", text: categoriesLine)
+                }
 
                 if let organizer = event.organizer {
                     detailRow(systemImage: "person", text: organizer)
@@ -139,6 +152,18 @@ struct MeetingDetailContentView: View {
         let trimmed = event.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? localization.tr("meeting.location.unspecified") : trimmed
     }
+
+    private var categoriesLine: String? {
+        let cats = event.categories
+        guard !cats.isEmpty else { return nil }
+        let maxShow = 2
+        let head = cats.prefix(maxShow).joined(separator: ", ")
+        guard cats.count > maxShow else {
+            return "\(localization.tr("meeting.categories")): \(head)"
+        }
+        let rest = cats.count - maxShow
+        return "\(localization.tr("meeting.categories")): \(head) (\(localization.tr("meeting.categories.more", rest)))"
+    }
 }
 
 private struct MeetingDetailActionsView: View {
@@ -148,7 +173,7 @@ private struct MeetingDetailActionsView: View {
     @State private var didCopy = false
 
     var body: some View {
-        if let url = event.joinURL {
+        if let url = event.joinURLForActions {
             HStack(spacing: 10) {
                 Button {
                     NSWorkspace.shared.open(url)

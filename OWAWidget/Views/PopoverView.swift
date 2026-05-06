@@ -281,7 +281,7 @@ struct PopoverView: View {
     /// Meetings starting within 5 minutes of the earliest upcoming, sorted: with URL first
     private var nextEvents: [CalendarEvent] {
         let upcoming = service.events
-            .filter { $0.startDate > now || $0.isHappeningNow }
+            .filter { !$0.isEffectivelyCancelled && ($0.startDate > now || $0.isHappeningNow) }
             .sorted { $0.startDate < $1.startDate }
 
         guard let earliest = upcoming.first else { return [] }

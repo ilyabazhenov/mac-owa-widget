@@ -36,7 +36,24 @@ final class MeetingReminderClusterBuilderTests: XCTestCase {
         XCTAssertEqual(delay, 300, accuracy: 0.001)
     }
 
-    private func makeEvent(id: String, start: Date, joinURL: URL?) -> CalendarEvent {
+    func testCancelledEventsExcludedFromClusters() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let active = makeEvent(id: "a", start: now.addingTimeInterval(600), joinURL: URL(string: "https://a"))
+        let cancelled = makeEvent(
+            id: "b",
+            start: now.addingTimeInterval(660),
+            joinURL: URL(string: "https://b"),
+            isCancelled: true
+        )
+
+        let clusters = MeetingReminderClusterBuilder.clusters(from: [active, cancelled], now: now)
+
+        XCTAssertEqual(clusters.count, 1)
+        XCTAssertEqual(clusters[0].items.count, 1)
+        XCTAssertEqual(clusters[0].items.first?.eventID, "a")
+    }
+
+    private func makeEvent(id: String, start: Date, joinURL: URL?, isCancelled: Bool = false) -> CalendarEvent {
         CalendarEvent(
             id: id,
             title: "Meeting \(id)",
@@ -48,7 +65,8 @@ final class MeetingReminderClusterBuilderTests: XCTestCase {
             platform: .teams,
             isAllDay: false,
             organizer: nil,
-            accountID: accountID
+            accountID: accountID,
+            isCancelled: isCancelled
         )
     }
 }

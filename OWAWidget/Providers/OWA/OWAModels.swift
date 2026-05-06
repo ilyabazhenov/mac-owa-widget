@@ -16,6 +16,9 @@ struct OWACalendarItem: Decodable {
     let Start: String?
     let End: String?
     let IsAllDayEvent: Bool?
+    let IsCancelled: Bool?
+    let IsOrganizer: Bool?
+    let Categories: [String]?
     let Location: OWALocation?
     let Organizer: OWAOrganizer?
     let TextBody: OWATextBody?
@@ -26,6 +29,80 @@ struct OWACalendarItem: Decodable {
     let JoinOnlineMeetingUrl: String?
     let RequiredAttendees: OWAAttendeeList?
     let OptionalAttendees: OWAAttendeeList?
+
+    init(
+        ItemId: OWAItemId?,
+        Subject: String?,
+        Start: String?,
+        End: String?,
+        IsAllDayEvent: Bool?,
+        Location: OWALocation?,
+        Organizer: OWAOrganizer?,
+        TextBody: OWATextBody?,
+        Body: OWABodyContent?,
+        UniqueBody: OWABodyContent?,
+        NormalizedBody: OWABodyContent?,
+        Preview: String?,
+        JoinOnlineMeetingUrl: String?,
+        RequiredAttendees: OWAAttendeeList?,
+        OptionalAttendees: OWAAttendeeList?,
+        IsCancelled: Bool? = nil,
+        IsOrganizer: Bool? = nil,
+        Categories: [String]? = nil
+    ) {
+        self.ItemId = ItemId
+        self.Subject = Subject
+        self.Start = Start
+        self.End = End
+        self.IsAllDayEvent = IsAllDayEvent
+        self.IsCancelled = IsCancelled
+        self.IsOrganizer = IsOrganizer
+        self.Categories = Categories
+        self.Location = Location
+        self.Organizer = Organizer
+        self.TextBody = TextBody
+        self.Body = Body
+        self.UniqueBody = UniqueBody
+        self.NormalizedBody = NormalizedBody
+        self.Preview = Preview
+        self.JoinOnlineMeetingUrl = JoinOnlineMeetingUrl
+        self.RequiredAttendees = RequiredAttendees
+        self.OptionalAttendees = OptionalAttendees
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ItemId = try c.decodeIfPresent(OWAItemId.self, forKey: .ItemId)
+        Subject = try c.decodeIfPresent(String.self, forKey: .Subject)
+        Start = try c.decodeIfPresent(String.self, forKey: .Start)
+        End = try c.decodeIfPresent(String.self, forKey: .End)
+        IsAllDayEvent = try c.decodeIfPresent(Bool.self, forKey: .IsAllDayEvent)
+        IsCancelled = try c.decodeIfPresent(Bool.self, forKey: .IsCancelled)
+        IsOrganizer = try c.decodeIfPresent(Bool.self, forKey: .IsOrganizer)
+        if let arr = try? c.decode([String].self, forKey: .Categories) {
+            Categories = arr
+        } else if let single = try? c.decode(String.self, forKey: .Categories) {
+            Categories = [single]
+        } else {
+            Categories = nil
+        }
+        Location = try c.decodeIfPresent(OWALocation.self, forKey: .Location)
+        Organizer = try c.decodeIfPresent(OWAOrganizer.self, forKey: .Organizer)
+        TextBody = try c.decodeIfPresent(OWATextBody.self, forKey: .TextBody)
+        Body = try c.decodeIfPresent(OWABodyContent.self, forKey: .Body)
+        UniqueBody = try c.decodeIfPresent(OWABodyContent.self, forKey: .UniqueBody)
+        NormalizedBody = try c.decodeIfPresent(OWABodyContent.self, forKey: .NormalizedBody)
+        Preview = try c.decodeIfPresent(String.self, forKey: .Preview)
+        JoinOnlineMeetingUrl = try c.decodeIfPresent(String.self, forKey: .JoinOnlineMeetingUrl)
+        RequiredAttendees = try c.decodeIfPresent(OWAAttendeeList.self, forKey: .RequiredAttendees)
+        OptionalAttendees = try c.decodeIfPresent(OWAAttendeeList.self, forKey: .OptionalAttendees)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ItemId, Subject, Start, End, IsAllDayEvent, IsCancelled, IsOrganizer, Categories
+        case Location, Organizer, TextBody, Body, UniqueBody, NormalizedBody, Preview
+        case JoinOnlineMeetingUrl, RequiredAttendees, OptionalAttendees
+    }
 }
 
 struct OWAItemId: Decodable {

@@ -67,7 +67,10 @@ actor OWACalendarProvider: CalendarProvider {
             isAllDay: item.IsAllDayEvent ?? false,
             organizer: item.Organizer?.Mailbox?.Name,
             attendees: attendees,
-            accountID: account.id
+            accountID: account.id,
+            isCancelled: item.IsCancelled ?? false,
+            isOrganizer: item.IsOrganizer ?? false,
+            categories: Self.normalizedCategories(from: item)
         )
     }
 
@@ -102,6 +105,10 @@ actor OWACalendarProvider: CalendarProvider {
 
     private static func bodyText(from item: OWACalendarItem) -> String? {
         bodyTexts(from: item).first
+    }
+
+    private static func normalizedCategories(from item: OWACalendarItem) -> [String] {
+        (item.Categories ?? []).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     }
 
     private static func bodyTexts(from item: OWACalendarItem) -> [String] {

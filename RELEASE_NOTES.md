@@ -1,8 +1,9 @@
 ## What's Changed
 
-- Improved KTalk meeting link detection when links are provided without scheme (for example, `acme.ktalk.ru/room` now resolves correctly).
-- Added URL normalization to `https://` for matched KTalk links without explicit protocol.
-- Extended tests for KTalk URL detection in plain text and HTML content.
+- Fixed KTalk join-link extraction from OWA events by scanning all available body fields and handling escaped URL payloads.
+- Added GetCalendarView debug dump support to inspect full raw OWA responses when troubleshooting parsing issues.
+- Added meeting metadata support for `IsCancelled`, `IsOrganizer`, and `Categories`, including UI updates and cancellation-aware behavior for banners and reminders.
+- Improved cancelled-meeting detection fallback for legacy/cached items with `Отменено:` / `Cancelled:` subject prefixes.
 
 ## Installation
 

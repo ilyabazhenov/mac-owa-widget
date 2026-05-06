@@ -68,4 +68,50 @@ final class OWAResponseDecodingTests: XCTestCase {
         XCTAssertEqual(first.UniqueBody?.BodyType, "HTML")
         XCTAssertEqual(first.Preview, "agenda preview")
     }
+
+    func testDecodesCalendarItemMetadataFields() throws {
+        let data = Data(
+            """
+            {
+              "Body": {
+                "Items": [
+                  {
+                    "Subject": "Demo",
+                    "IsCancelled": true,
+                    "IsOrganizer": false,
+                    "Categories": ["Alpha", "Beta"]
+                  }
+                ]
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(OWAServiceResponse.self, from: data)
+        let first = try XCTUnwrap(response.Body?.Items?.first)
+        XCTAssertEqual(first.IsCancelled, true)
+        XCTAssertEqual(first.IsOrganizer, false)
+        XCTAssertEqual(first.Categories, ["Alpha", "Beta"])
+    }
+
+    func testDecodesCategoriesWhenSingleString() throws {
+        let data = Data(
+            """
+            {
+              "Body": {
+                "Items": [
+                  {
+                    "Subject": "Demo",
+                    "Categories": "OnlyOne"
+                  }
+                ]
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(OWAServiceResponse.self, from: data)
+        let first = try XCTUnwrap(response.Body?.Items?.first)
+        XCTAssertEqual(first.Categories, ["OnlyOne"])
+    }
 }

@@ -32,7 +32,8 @@ struct MeetingRowView: View {
                 Text(event.title)
                     .font(.system(size: compact ? 12 : 13, weight: .medium))
                     .lineLimit(1)
-                    .foregroundStyle(event.isHappeningNow ? .primary : .primary)
+                    .foregroundStyle(event.isEffectivelyCancelled ? .secondary : .primary)
+                    .strikethrough(event.isEffectivelyCancelled)
 
                 if !compact, let organizer = event.organizer {
                     Text(organizer)
@@ -54,7 +55,7 @@ struct MeetingRowView: View {
                         .accessibilityLabel(event.platform.displayName(localization: localization))
                 }
 
-                if let url = event.joinURL {
+                if let url = event.joinURLForActions {
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(url.absoluteString, forType: .string)
@@ -90,7 +91,7 @@ struct MeetingRowView: View {
         }
         .padding(.vertical, compact ? 5 : 8)
         .padding(.horizontal, 14)
-        .background(event.isHappeningNow ? Color.orange.opacity(0.06) : Color.clear)
+        .background(rowBackground)
         .contentShape(Rectangle())
         .overlay(alignment: .trailing) {
             if event.isHappeningNow && !compact {
@@ -101,7 +102,7 @@ struct MeetingRowView: View {
                     .padding(.vertical, 2)
                     .background(Color.orange)
                     .clipShape(Capsule())
-                    .padding(.trailing, event.joinURL != nil ? 90 : 14)
+                    .padding(.trailing, event.joinURLForActions != nil ? 90 : 14)
             }
         }
         .accessibilityElement(children: .ignore)
@@ -123,10 +124,20 @@ struct MeetingRowView: View {
         if !compact, let organizer = event.organizer, !organizer.isEmpty {
             parts.append(organizer)
         }
-        if event.joinURL != nil {
+        if event.joinURLForActions != nil {
             parts.append(localization.tr("a11y.meeting.has.join"))
         }
+        if event.isEffectivelyCancelled {
+            parts.append(localization.tr("meeting.status.cancelled"))
+        }
         return parts.joined(separator: ", ")
+    }
+
+    private var rowBackground: Color {
+        if event.isEffectivelyCancelled {
+            return Color.secondary.opacity(0.06)
+        }
+        return event.isHappeningNow ? Color.orange.opacity(0.06) : Color.clear
     }
 
     private var timeColor: Color {
@@ -134,6 +145,9 @@ struct MeetingRowView: View {
     }
 
     private var statusColor: Color {
-        event.isHappeningNow ? .orange : event.platform.color.opacity(0.7)
+        if event.isEffectivelyCancelled {
+            return Color.secondary.opacity(0.45)
+        }
+        return event.isHappeningNow ? .orange : event.platform.color.opacity(0.7)
     }
 }
