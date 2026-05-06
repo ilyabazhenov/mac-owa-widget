@@ -1,3 +1,39 @@
+## v1.0.25 - 2026-05-06
+
+### RU
+
+#### Что изменилось
+
+- Добавлен индикатор доступной новой версии в popover с проверкой релизов GitHub каждые 6 часов.
+- В плашке обновления доступны действия «Открыть релиз» и «Пропустить эту версию».
+- В Preferences добавлен раздел обновлений: автопроверка и ручная кнопка «Проверить сейчас».
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+### EN
+
+#### What's Changed
+
+- Added a new-version indicator in the popover with GitHub release checks every 6 hours.
+- Added “View release” and “Skip this version” actions in the update banner.
+- Added an Updates section in Preferences with automatic checks and a manual “Check now” action.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
 ## v1.0.24 - 2026-05-06
 
 ### RU
