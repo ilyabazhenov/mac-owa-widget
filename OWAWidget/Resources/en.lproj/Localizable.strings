@@ -41,6 +41,10 @@
 
 "preferences.sync.section" = "Sync";
 "preferences.sync.interval" = "Sync interval";
+"preferences.menubar.section" = "Menu Bar";
+"preferences.menubar.display" = "Menu bar display";
+"preferences.menubar.display.countdown" = "Countdown (current)";
+"preferences.menubar.display.status" = "Status: Next / Now / Free";
 "preferences.notifications.section" = "Notifications";
 "preferences.notifications.style" = "Reminder style";
 "preferences.notifications.style.system" = "System notifications";

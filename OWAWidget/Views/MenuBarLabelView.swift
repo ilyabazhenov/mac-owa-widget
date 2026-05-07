@@ -65,17 +65,10 @@ struct MenuBarLabelView: View {
         service.events.contains { $0.startDate <= now && $0.endDate > now }
     }
 
-    private var nextUpcomingEvent: CalendarEvent? {
-        service.events
-            .filter { $0.startDate > now }
-            .sorted { $0.startDate < $1.startDate }
-            .first
-    }
-
     private var countdownLabel: String? {
-        guard let event = nextUpcomingEvent else { return nil }
-        return MenuBarCountdownFormatter.label(
-            eventStartDate: event.startDate,
+        MenuBarLabelFormatter.label(
+            mode: service.menuBarDisplayMode,
+            events: service.events,
             now: now,
             shortTimeFormatter: localization.shortTime
         )

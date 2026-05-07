@@ -6,6 +6,7 @@ final class CalendarServiceOfflineTests: XCTestCase {
     override func tearDown() {
         super.tearDown()
         UserDefaults.standard.removeObject(forKey: "meetingReminderStyle")
+        UserDefaults.standard.removeObject(forKey: "menuBarDisplayMode")
     }
 
     func testInitRestoresEventsFromCache() {
@@ -129,6 +130,44 @@ final class CalendarServiceOfflineTests: XCTestCase {
         await service.performSyncForTests()
 
         XCTAssertEqual(reminderController.cancelCalls, [true])
+    }
+
+    func testMenuBarDisplayModeDefaultsToCountdown() {
+        UserDefaults.standard.removeObject(forKey: "menuBarDisplayMode")
+        let service = CalendarService(
+            providers: [],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: NoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+
+        XCTAssertEqual(service.menuBarDisplayMode, .countdown)
+    }
+
+    func testMenuBarDisplayModePersistsAndRestoresFromUserDefaults() {
+        UserDefaults.standard.removeObject(forKey: "menuBarDisplayMode")
+        let firstService = CalendarService(
+            providers: [],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: NoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+        firstService.menuBarDisplayMode = .status
+
+        let secondService = CalendarService(
+            providers: [],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: NoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+
+        XCTAssertEqual(secondService.menuBarDisplayMode, .status)
     }
 
     private func makeEvent(id: String) -> CalendarEvent {

@@ -63,6 +63,14 @@ struct PreferencesView: View {
                 .pickerStyle(.menu)
             }
 
+            Section(localization.tr("preferences.menubar.section")) {
+                Picker(localization.tr("preferences.menubar.display"), selection: $vm.menuBarDisplayMode) {
+                    Text(localization.tr("preferences.menubar.display.countdown")).tag(MenuBarDisplayMode.countdown)
+                    Text(localization.tr("preferences.menubar.display.status")).tag(MenuBarDisplayMode.status)
+                }
+                .pickerStyle(.menu)
+            }
+
             Section(localization.tr("preferences.notifications.section")) {
                 Picker(localization.tr("preferences.notifications.remind"), selection: $vm.notificationLeadMinutes) {
                     ForEach(leadOptions, id: \.value) { opt in

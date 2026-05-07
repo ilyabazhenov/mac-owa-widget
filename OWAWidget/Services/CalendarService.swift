@@ -50,6 +50,7 @@ final class CalendarService: ObservableObject {
     private let meetingReminderStyleKey = "meetingReminderStyle"
     private let meetingReminderSoundKey = "meetingReminderSound"
     private let notificationScreenPolicyKey = NotificationScreenPolicy.defaultsKey
+    private let menuBarDisplayModeKey = "menuBarDisplayMode"
 
     var syncInterval: TimeInterval {
         get { UserDefaults.standard.double(forKey: syncIntervalKey).nonZero ?? 300 }
@@ -92,6 +93,16 @@ final class CalendarService: ObservableObject {
             return sound
         }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: meetingReminderSoundKey) }
+    }
+
+    var menuBarDisplayMode: MenuBarDisplayMode {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: menuBarDisplayModeKey),
+                  let mode = MenuBarDisplayMode(rawValue: raw)
+            else { return .countdown }
+            return mode
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: menuBarDisplayModeKey) }
     }
 
     init(
