@@ -1,3 +1,41 @@
+## v1.0.35 - 2026-05-07
+
+### RU
+
+#### Что изменилось
+
+- Повторно выпущен релиз с новым build-number для Sparkle, чтобы обновление корректно предлагалось пользователям на `v1.0.33`.
+- Сохранено поведение `v1.0.34`: при скрытии/закрытии popover открытые детали встречи сбрасываются и не восстанавливаются при следующем открытии.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Re-released with a new Sparkle build number so the update is correctly offered to users on `v1.0.33`.
+- Keeps the `v1.0.34` behavior: opened meeting details are reset when the popover/app is hidden or closed and do not reopen automatically.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.34 - 2026-05-07
 
 ### RU

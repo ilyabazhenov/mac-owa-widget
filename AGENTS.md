@@ -103,15 +103,19 @@ make run
  - `### RU` и `### EN`
  - В обеих секциях обязательны подразделы про изменения и установку.
  - В обоих языках в инструкции по установке обязательно указывай, что `xattr -dr com.apple.quarantine /Applications/OWAWidget.app` нужен ТОЛЬКО при первой установке; последующие обновления ставит Sparkle автоматически.
- 3. Сборка архива и appcast: `make release-package` (создает `dist/OWAWidget-v<ver>-macos.zip` и `dist/appcast.xml`).
+ 3. Перед упаковкой обязательно зафиксируй релизные изменения (`VERSION`, `RELEASE_NOTES.md` и связанные файлы) в git commit, чтобы `CFBundleVersion`/`sparkle:version` гарантированно выросли относительно предыдущего релиза (build номер берется из `git rev-list --count HEAD`).
+ 4. Сборка архива и appcast: `make release-package` (создает `dist/OWAWidget-v<ver>-macos.zip` и `dist/appcast.xml`).
  - Требуется доступ к EdDSA-приватнику (логин-Keychain или env `SPARKLE_ED_PRIVATE_KEY`). Если ключа нет — скрипт упадет; не пытайся выпустить релиз без подписи.
- 4. Публикация на GitHub через `gh release create` с двумя ассетами: zip и appcast.xml.
- 5. Возврат пользователю URL релиза.
+ 5. Перед публикацией проверь `dist/appcast.xml`: `sparkle:version` нового релиза должен быть строго больше `sparkle:version` предыдущего опубликованного релиза.
+ 6. Публикация на GitHub через `gh release create` с двумя ассетами: zip и appcast.xml.
+ 7. Возврат пользователю URL релиза.
 
 - Если пользователь просит **"подготовить релиз"** (без явного требования публикации):
  1. Обнови `VERSION` и `RELEASE_NOTES.md`.
- 2. Собери архив и appcast `make release-package` (zip + `dist/appcast.xml`).
- 3. Не публикуй релиз в GitHub, пока пользователь не попросит явно.
+ 2. Перед упаковкой обязательно зафиксируй релизные изменения в git commit, чтобы build номер в appcast вырос.
+ 3. Собери архив и appcast `make release-package` (zip + `dist/appcast.xml`).
+ 4. Убедись, что `sparkle:version` в `dist/appcast.xml` строго больше предыдущего релиза.
+ 5. Не публикуй релиз в GitHub, пока пользователь не попросит явно.
 
 - По умолчанию не изменяй релизные артефакты и метаданные без релизного запроса.
 
