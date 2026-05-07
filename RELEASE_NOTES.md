@@ -1,3 +1,41 @@
+## v1.0.31 - 2026-05-07
+
+### RU
+
+#### Что изменилось
+
+- Улучшен countdown в menubar: минуты до ближайшей встречи теперь округляются вверх (например, `1:01` → `2m`) и корректно обрабатываются граничные значения.
+- Добавлены unit-тесты на форматирование countdown для защиты от регрессий.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Improved the menu bar countdown: minutes until the next meeting now round up (e.g. `1:01` → `2m`) and edge cases are handled correctly.
+- Added unit tests for countdown formatting to prevent regressions.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.30 - 2026-05-07
 
 ### RU
