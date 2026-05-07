@@ -88,10 +88,14 @@ final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         defer { completionHandler() }
-
-        guard response.actionIdentifier == NotificationService.actionID ||
-              response.actionIdentifier == UNNotificationDefaultActionIdentifier
-        else { return }
+        let handled = removeDeliveredForJoinAction(
+            actionIdentifier: response.actionIdentifier,
+            requestIdentifier: response.notification.request.identifier,
+            removeDelivered: { ids in
+                center.removeDeliveredNotifications(withIdentifiers: ids)
+            }
+        )
+        guard handled else { return }
 
         let userInfo = response.notification.request.content.userInfo
         if let items = Self.decodeItems(from: userInfo), !items.isEmpty {
@@ -129,5 +133,22 @@ final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,
         guard let raw = userInfo[NotificationService.itemsUserInfoKey] as? String,
               let data = raw.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode([MeetingReminderItem].self, from: data)
+    }
+
+    @discardableResult
+    func removeDeliveredForJoinAction(
+        actionIdentifier: String,
+        requestIdentifier: String,
+        removeDelivered: ([String]) -> Void
+    ) -> Bool {
+        guard actionIdentifier == NotificationService.actionID ||
+              actionIdentifier == UNNotificationDefaultActionIdentifier
+        else { return false }
+
+        // Ensure the clicked notification is removed from Notification Center.
+        // Without this, macOS may keep the delivered banner visible after Join.
+        removeDelivered([requestIdentifier])
+
+        return true
     }
 }

@@ -1,3 +1,43 @@
+## v1.0.32 - 2026-05-07
+
+### RU
+
+#### Что изменилось
+
+- Стабилизирована логика напоминаний: улучшены пересчет и пересоздание локальных уведомлений при изменениях встреч и повторных синках.
+- Улучшена локализация напоминаний и связанных системных сообщений, чтобы текст уведомлений корректнее соответствовал выбранному языку.
+- Обновлены тесты офлайн-синхронизации календаря для защиты сценариев с задержкой сети и перестроением расписания напоминаний.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Stabilized reminder logic by improving local notification recalculation and rescheduling after meeting changes and follow-up syncs.
+- Improved reminder localization and related system-facing messages so notification text better matches the selected app language.
+- Updated offline calendar sync tests to protect delayed-network and reminder-rescheduling scenarios from regressions.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.31 - 2026-05-07
 
 ### RU

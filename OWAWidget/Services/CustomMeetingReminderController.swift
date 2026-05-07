@@ -31,9 +31,9 @@ final class CustomMeetingReminderController {
         for (_, item) in scheduledWork { item.cancel() }
         scheduledWork.removeAll()
         queue.removeAll()
-        dismissWorkItem?.cancel()
-        dismissWorkItem = nil
         if closeActiveReminder {
+            dismissWorkItem?.cancel()
+            dismissWorkItem = nil
             currentPanel?.close()
             currentPanel = nil
         }

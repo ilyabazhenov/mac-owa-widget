@@ -1,4 +1,5 @@
 import XCTest
+@preconcurrency import UserNotifications
 @testable import OWAWidget
 
 final class AppNotificationDelegateTests: XCTestCase {
@@ -36,5 +37,32 @@ final class AppNotificationDelegateTests: XCTestCase {
         let decoded = AppNotificationDelegate.decodeItems(from: userInfo)
 
         XCTAssertNil(decoded)
+    }
+
+    func testHandleNotificationActionRemovesDeliveredNotificationForJoinAction() {
+        let delegate = AppNotificationDelegate()
+        var removedIDs: [String] = []
+        let processed = delegate.removeDeliveredForJoinAction(
+            actionIdentifier: NotificationService.actionID,
+            requestIdentifier: "req-1",
+            removeDelivered: { removedIDs = $0 }
+        )
+
+        XCTAssertTrue(processed)
+        XCTAssertEqual(removedIDs, ["req-1"])
+    }
+
+    func testHandleNotificationActionDoesNotRemoveDeliveredForNonJoinAction() {
+        let delegate = AppNotificationDelegate()
+        var removeCalled = false
+
+        let processed = delegate.removeDeliveredForJoinAction(
+            actionIdentifier: UNNotificationDismissActionIdentifier,
+            requestIdentifier: "req-2",
+            removeDelivered: { _ in removeCalled = true }
+        )
+
+        XCTAssertFalse(processed)
+        XCTAssertFalse(removeCalled)
     }
 }
