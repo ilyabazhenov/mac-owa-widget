@@ -29,6 +29,12 @@ struct PopoverView: View {
         }
     }
 
+    enum MeetingDetailStatePolicy {
+        static func selectedEventAfterPopoverDisappear(_ currentSelection: CalendarEvent?) -> CalendarEvent? {
+            nil
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -46,6 +52,9 @@ struct PopoverView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(localization.tr("app.name"))
+        .onDisappear {
+            resetMeetingDetailState()
+        }
     }
 
     // MARK: - Header
@@ -170,7 +179,7 @@ struct PopoverView: View {
             if let selectedEvent {
                 MeetingDetailPanelView(event: selectedEvent) {
                     withAnimation(.easeInOut(duration: 0.18)) {
-                        self.selectedEvent = nil
+                        resetMeetingDetailState()
                     }
                 }
                 .padding(.horizontal, contentHorizontalPadding)
@@ -189,7 +198,7 @@ struct PopoverView: View {
             Button {
                 if DateNavBarPolicy.canGoToPreviousDay(selectedDayOffset: selectedDayOffset) {
                     selectedDayOffset -= 1
-                    selectedEvent = nil
+                    resetMeetingDetailState()
                 }
             } label: {
                 Image(systemName: "chevron.left")
@@ -209,7 +218,7 @@ struct PopoverView: View {
             if DateNavBarPolicy.shouldShowJumpToToday(selectedDayOffset: selectedDayOffset) {
                 Button {
                     selectedDayOffset = 0
-                    selectedEvent = nil
+                    resetMeetingDetailState()
                 } label: {
                     Label(localization.tr("popover.nav.today"), systemImage: "arrow.uturn.backward.circle")
                         .labelStyle(.titleAndIcon)
@@ -224,7 +233,7 @@ struct PopoverView: View {
             Button {
                 if DateNavBarPolicy.canGoToNextDay(selectedDayOffset: selectedDayOffset, maxDayOffset: maxDayOffset) {
                     selectedDayOffset += 1
-                    selectedEvent = nil
+                    resetMeetingDetailState()
                 }
             } label: {
                 Image(systemName: "chevron.right")
@@ -279,6 +288,10 @@ struct PopoverView: View {
         withAnimation(.easeInOut(duration: 0.18)) {
             selectedEvent = event
         }
+    }
+
+    private func resetMeetingDetailState() {
+        selectedEvent = MeetingDetailStatePolicy.selectedEventAfterPopoverDisappear(selectedEvent)
     }
 
     // MARK: - Error / empty states

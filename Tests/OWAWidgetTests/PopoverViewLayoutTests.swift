@@ -23,4 +23,34 @@ final class PopoverViewLayoutTests: XCTestCase {
         XCTAssertTrue(PopoverView.DateNavBarPolicy.canGoToNextDay(selectedDayOffset: 5, maxDayOffset: 6))
         XCTAssertFalse(PopoverView.DateNavBarPolicy.canGoToNextDay(selectedDayOffset: 6, maxDayOffset: 6))
     }
+
+    func testMeetingDetailStatePolicyResetsSelectedEventOnPopoverDisappear() {
+        let event = makeEvent(id: "selected")
+
+        let result = PopoverView.MeetingDetailStatePolicy.selectedEventAfterPopoverDisappear(event)
+
+        XCTAssertNil(result)
+    }
+
+    func testMeetingDetailStatePolicyKeepsNilWhenNothingSelected() {
+        let result = PopoverView.MeetingDetailStatePolicy.selectedEventAfterPopoverDisappear(nil)
+
+        XCTAssertNil(result)
+    }
+
+    private func makeEvent(id: String) -> CalendarEvent {
+        CalendarEvent(
+            id: id,
+            title: "Team sync",
+            startDate: Date(timeIntervalSince1970: 1_700_000_000),
+            endDate: Date(timeIntervalSince1970: 1_700_000_600),
+            location: nil,
+            bodyPreview: nil,
+            joinURL: nil,
+            platform: .teams,
+            isAllDay: false,
+            organizer: nil,
+            accountID: UUID()
+        )
+    }
 }

@@ -1,3 +1,79 @@
+## v1.0.34 - 2026-05-07
+
+### RU
+
+#### Что изменилось
+
+- Исправлено поведение popover: при скрытии/закрытии приложения теперь сбрасывается открытая панель деталей встречи и при следующем открытии она не восстанавливается.
+- Добавлены регрессионные тесты для логики сброса деталей встречи при скрытии popover.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Fixed popover behavior: when the app/popover is hidden or closed, the opened meeting details panel is now reset and does not reappear on the next open.
+- Added regression tests for the meeting-detail reset behavior on popover hide.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
+## v1.0.33 - 2026-05-07
+
+### RU
+
+#### Что изменилось
+
+- Технический релиз для публикации новой подписанной сборки и обновления канала Sparkle.
+- Функциональные изменения приложения отсутствуют по сравнению с `v1.0.32`.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Technical release to publish a new signed build and refresh the Sparkle update channel metadata.
+- No functional app changes are included compared to `v1.0.32`.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.32 - 2026-05-07
 
 ### RU
