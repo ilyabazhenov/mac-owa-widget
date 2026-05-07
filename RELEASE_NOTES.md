@@ -1,3 +1,43 @@
+## v1.0.30 - 2026-05-07
+
+### RU
+
+#### Что изменилось
+
+- Обновлена документация проекта: добавлен `DEVELOPMENT.md` с рабочими процессами разработки и поддержкой агентов.
+- Улучшен `README.md`: актуализировано описание приложения и добавлены новые визуальные материалы для GitHub-страницы проекта.
+- Добавлены графические ассеты для репозитория (`readme-hero` и social preview), чтобы упростить онбординг и навигацию по проекту.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Updated project docs: added `DEVELOPMENT.md` with day-to-day development workflows and agent guidance.
+- Improved `README.md` with refreshed app description and new visual assets for the GitHub project page.
+- Added repository image assets (`readme-hero` and social preview) to make onboarding and project navigation clearer.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.29 - 2026-05-06
 
 ### RU
