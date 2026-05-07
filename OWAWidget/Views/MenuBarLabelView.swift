@@ -7,7 +7,7 @@ struct MenuBarLabelView: View {
     @State private var pulseOpacity: Double = 1.0
     @State private var now: Date = .init()
 
-    private let ticker = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         HStack(spacing: 4) {
@@ -74,8 +74,9 @@ struct MenuBarLabelView: View {
 
     private var countdownLabel: String? {
         guard let event = nextUpcomingEvent else { return nil }
-        let minutes = Int(event.startDate.timeIntervalSince(now) / 60)
-        guard minutes > 0 else { return nil }
+        let interval = event.startDate.timeIntervalSince(now)
+        guard interval > 0 else { return nil }
+        let minutes = max(1, Int(interval / 60))
         if minutes < 60 { return "\(minutes)m" }
         return localization.shortTime(event.startDate)
     }
