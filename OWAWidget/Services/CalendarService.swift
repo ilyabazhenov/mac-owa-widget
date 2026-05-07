@@ -66,12 +66,17 @@ final class CalendarService: ObservableObject {
 
     var meetingReminderStyle: MeetingReminderStyle {
         get {
-            guard let raw = UserDefaults.standard.string(forKey: meetingReminderStyleKey),
-                  let style = MeetingReminderStyle(rawValue: raw)
-            else { return .inApp }
-            return style
+            guard let raw = UserDefaults.standard.string(forKey: meetingReminderStyleKey) else {
+                return .inApp
+            }
+            if let style = MeetingReminderStyle(rawValue: raw) {
+                return style
+            }
+            // Silent migration for legacy values ("system", "both").
+            UserDefaults.standard.set(MeetingReminderStyle.inApp.rawValue, forKey: meetingReminderStyleKey)
+            return .inApp
         }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: meetingReminderStyleKey) }
+        set { UserDefaults.standard.set(MeetingReminderStyle.inApp.rawValue, forKey: meetingReminderStyleKey) }
     }
 
     var notificationScreenPolicy: NotificationScreenPolicy {
@@ -118,9 +123,6 @@ final class CalendarService: ObservableObject {
 
         Task {
             await notificationService.setup(localization: notificationLocalization)
-            if meetingReminderStyle.usesSystemNotifications {
-                await notificationService.requestAuthorization()
-            }
             await rebuildProviders()
             await startScheduler()
         }
@@ -240,19 +242,7 @@ final class CalendarService: ObservableObject {
             let loc = notificationLocalization
             let lead = notificationLeadMinutes
             let sound = meetingReminderSound
-            switch meetingReminderStyle {
-            case .system:
-                await notificationService.setup(localization: loc)
-                await notificationService.requestAuthorization()
-                await notificationService.scheduleNotifications(for: [event], leadMinutes: lead, localization: loc)
-            case .inApp:
-                customMeetingReminders.reschedule(events: [event], leadMinutes: lead, localization: loc, sound: sound)
-            case .both:
-                await notificationService.setup(localization: loc)
-                await notificationService.requestAuthorization()
-                await notificationService.scheduleNotifications(for: [event], leadMinutes: lead, localization: loc)
-                customMeetingReminders.reschedule(events: [event], leadMinutes: lead, localization: loc, sound: sound)
-            }
+            customMeetingReminders.reschedule(events: [event], leadMinutes: lead, localization: loc, sound: sound)
         }
     }
     #endif
@@ -368,38 +358,11 @@ final class CalendarService: ObservableObject {
         let currentEvents = events
         let lead = notificationLeadMinutes
         let loc = notificationLocalization
-        let style = meetingReminderStyle
         let sound = meetingReminderSound
 
-        switch style {
-        case .system:
-            customMeetingReminders.cancelAll()
-            await notificationService.removeAllPendingMeetingNotifications()
-            await notificationService.setup(localization: loc)
-            await notificationService.requestAuthorization()
-            await notificationService.scheduleNotifications(
-                for: currentEvents,
-                leadMinutes: lead,
-                localization: loc
-            )
-
-        case .inApp:
-            await notificationService.removeAllPendingMeetingNotifications()
-            customMeetingReminders.cancelAll()
-            customMeetingReminders.reschedule(events: currentEvents, leadMinutes: lead, localization: loc, sound: sound)
-
-        case .both:
-            await notificationService.removeAllPendingMeetingNotifications()
-            customMeetingReminders.cancelAll()
-            await notificationService.setup(localization: loc)
-            await notificationService.requestAuthorization()
-            await notificationService.scheduleNotifications(
-                for: currentEvents,
-                leadMinutes: lead,
-                localization: loc
-            )
-            customMeetingReminders.reschedule(events: currentEvents, leadMinutes: lead, localization: loc, sound: sound)
-        }
+        await notificationService.removeAllPendingMeetingNotifications()
+        customMeetingReminders.cancelAll()
+        customMeetingReminders.reschedule(events: currentEvents, leadMinutes: lead, localization: loc, sound: sound)
     }
 
     // MARK: - Persistence

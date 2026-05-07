@@ -99,4 +99,38 @@ final class LocalizationServiceTests: XCTestCase {
 
         XCTAssertEqual(label, "Today, May 4")
     }
+
+    func testNotificationBodyWithJoinFormatInEnglish() {
+        let service = LocalizationService(
+            selectedLanguage: .english,
+            preferredLanguages: ["en-US"]
+        )
+        let localization = service.notificationLocalization
+
+        let text = String(
+            format: localization.bodyWithJoinFormat,
+            locale: Locale(identifier: localization.localeIdentifier),
+            "5 minutes",
+            "2:12 PM"
+        )
+
+        XCTAssertEqual(text, "Your meeting starts in 5 minutes at 2:12 PM. Tap Join.")
+    }
+
+    func testNotificationBodyWithJoinFormatInRussian() {
+        let service = LocalizationService(
+            selectedLanguage: .russian,
+            preferredLanguages: ["en-US"]
+        )
+        let localization = service.notificationLocalization
+
+        let text = String(
+            format: localization.bodyWithJoinFormat,
+            locale: Locale(identifier: localization.localeIdentifier),
+            "5 минут",
+            "14:12"
+        )
+
+        XCTAssertEqual(text, "Встреча начнётся через 5 минут, в 14:12. Нажмите «Подключиться».")
+    }
 }

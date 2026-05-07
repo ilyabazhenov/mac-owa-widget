@@ -122,9 +122,9 @@ enum MeetingReminderSchedule {
         let lead = TimeInterval(leadMinutes * 60)
         let secondsUntilIdealFire = event.startDate.timeIntervalSince(now) - lead
         if secondsUntilIdealFire <= 1 {
-            // Ideal fire time has passed but meeting hasn't started yet — fire immediately.
-            guard event.startDate > now else { return nil }
-            return 1
+            // Skip if we are already in (or at the edge of) the lead window.
+            // This avoids duplicate reminders on subsequent sync cycles.
+            return nil
         }
         return secondsUntilIdealFire
     }

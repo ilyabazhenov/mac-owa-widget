@@ -3,6 +3,11 @@ import XCTest
 
 @MainActor
 final class CalendarServiceOfflineTests: XCTestCase {
+    override func tearDown() {
+        super.tearDown()
+        UserDefaults.standard.removeObject(forKey: "meetingReminderStyle")
+    }
+
     func testInitRestoresEventsFromCache() {
         let cachedEvent = makeEvent(id: "cached-init")
         let cache = InMemoryEventCacheStore(
@@ -93,6 +98,21 @@ final class CalendarServiceOfflineTests: XCTestCase {
         guard case .error = service.syncStatus else {
             return XCTFail("Expected error status when cache is absent")
         }
+    }
+
+    func testLegacyReminderStyleMigratesSilentlyToInApp() {
+        UserDefaults.standard.set("both", forKey: "meetingReminderStyle")
+        let service = CalendarService(
+            providers: [],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: NoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+
+        XCTAssertEqual(service.meetingReminderStyle, .inApp)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "meetingReminderStyle"), MeetingReminderStyle.inApp.rawValue)
     }
 
     private func makeEvent(id: String) -> CalendarEvent {

@@ -64,13 +64,6 @@ struct PreferencesView: View {
             }
 
             Section(localization.tr("preferences.notifications.section")) {
-                Picker(localization.tr("preferences.notifications.style"), selection: $vm.meetingReminderStyle) {
-                    ForEach(MeetingReminderStyle.allCases) { style in
-                        Text(localization.tr(style.localizationKey)).tag(style)
-                    }
-                }
-                .pickerStyle(.menu)
-
                 Picker(localization.tr("preferences.notifications.remind"), selection: $vm.notificationLeadMinutes) {
                     ForEach(leadOptions, id: \.value) { opt in
                         Text(localization.tr("preferences.notifications.before", localization.minutes(opt.minutes))).tag(opt.value)

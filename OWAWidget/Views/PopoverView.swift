@@ -345,8 +345,12 @@ struct PopoverView: View {
         // Only surface the banner for meetings starting within 30 minutes
         guard earliest.minutesUntilStart <= 30 || earliest.isHappeningNow else { return [] }
 
+        // Если следующая встреча начинается в течение 5 минут — продвигаем её поверх текущей
+        let promoted = upcoming.first { !$0.isHappeningNow && $0.startDate.timeIntervalSinceNow <= 5 * 60 }
+        let reference = promoted ?? earliest
+
         let group = upcoming.filter {
-            abs($0.startDate.timeIntervalSince(earliest.startDate)) <= 300
+            abs($0.startDate.timeIntervalSince(reference.startDate)) <= 300
         }
         return group.sorted { ($0.joinURL != nil ? 0 : 1) < ($1.joinURL != nil ? 0 : 1) }
     }

@@ -37,6 +37,7 @@ struct OWAWidgetApp: App {
                 .onAppear {
                     syncLocalization()
                     updateCheckService.start()
+
                 }
         }
         .menuBarExtraStyle(.window)
