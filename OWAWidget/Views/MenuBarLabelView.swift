@@ -74,11 +74,11 @@ struct MenuBarLabelView: View {
 
     private var countdownLabel: String? {
         guard let event = nextUpcomingEvent else { return nil }
-        let interval = event.startDate.timeIntervalSince(now)
-        guard interval > 0 else { return nil }
-        let minutes = max(1, Int(interval / 60))
-        if minutes < 60 { return "\(minutes)m" }
-        return localization.shortTime(event.startDate)
+        return MenuBarCountdownFormatter.label(
+            eventStartDate: event.startDate,
+            now: now,
+            shortTimeFormatter: localization.shortTime
+        )
     }
 
     private var helpText: String {

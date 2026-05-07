@@ -26,3 +26,7 @@ swift build
 ```
 
 Если нужен Xcode-проект, генерируй его через `xcodegen generate` из `project.yml`.
+
+## Ограничения агентов
+
+- Никогда не используй `isolation: "worktree"` при вызове Agent tool. Worktree изоляция запрещена.
