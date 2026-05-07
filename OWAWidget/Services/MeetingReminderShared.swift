@@ -182,16 +182,14 @@ enum MeetingReminderText {
 
     static func title(
         cluster: MeetingReminderCluster,
-        localeIdentifier: String
+        localization: NotificationLocalization
     ) -> String {
         if let only = cluster.items.first, cluster.items.count == 1 {
             return only.title
         }
-        let meetings = localizedMeetings(cluster.items.count, localeIdentifier: localeIdentifier)
-        if localeIdentifier == "ru" {
-            return "Скоро начнутся: \(meetings)"
-        }
-        return "Starting soon: \(meetings)"
+        let locale = Locale(identifier: localization.localeIdentifier)
+        let meetings = localizedMeetings(cluster.items.count, localeIdentifier: localization.localeIdentifier)
+        return String(format: localization.clusterTitleFormat, locale: locale, meetings)
     }
 
     private static func shortTime(_ date: Date, locale: Locale) -> String {

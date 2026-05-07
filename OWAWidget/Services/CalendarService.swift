@@ -15,7 +15,7 @@ protocol NotificationServicing: Actor {
 
 @MainActor
 protocol CustomMeetingReminderControlling: AnyObject {
-    func cancelAll()
+    func cancelAll(closeActiveReminder: Bool)
     func reschedule(
         events: [CalendarEvent],
         leadMinutes: Int,
@@ -39,7 +39,7 @@ final class CalendarService: ObservableObject {
     private let eventCacheStore: any EventCacheStoring
     private let log = Logger(subsystem: "com.owawidget", category: "CalendarService")
     private let meetingEngagementStats = MeetingEngagementStatsService()
-    private var notificationLocalization: NotificationLocalization = .english
+    private var notificationLocalization: NotificationLocalization
     private var nextSyncID = 0
     private var activeSyncIDs = Set<Int>()
     private var syncRequestGate = SyncRequestGate()
@@ -99,6 +99,7 @@ final class CalendarService: ObservableObject {
         eventCacheStore: any EventCacheStoring = EventCacheStore(),
         notificationService: any NotificationServicing = NotificationService(),
         customMeetingReminders: any CustomMeetingReminderControlling = CustomMeetingReminderController(),
+        initialNotificationLocalization: NotificationLocalization = .english,
         loadPersistedAccounts: Bool = true,
         startBackgroundTasks: Bool = true
     ) {
@@ -106,6 +107,7 @@ final class CalendarService: ObservableObject {
         self.eventCacheStore = eventCacheStore
         self.notificationService = notificationService
         self.customMeetingReminders = customMeetingReminders
+        self.notificationLocalization = initialNotificationLocalization
         self.engagementPeriod = meetingEngagementStats.defaultPeriod
         if let reminderController = customMeetingReminders as? CustomMeetingReminderController {
             reminderController.onJoin = { [weak self] item in
@@ -171,6 +173,7 @@ final class CalendarService: ObservableObject {
     }
 
     func setNotificationLocalization(_ localization: NotificationLocalization) {
+        guard notificationLocalization != localization else { return }
         notificationLocalization = localization
         Task { await rescheduleMeetingRemindersForCurrentEvents() }
     }
@@ -297,7 +300,7 @@ final class CalendarService: ObservableObject {
         guard !providers.isEmpty else {
             syncStatus = .idle
             log.info("Sync \(syncID, privacy: .public) skipped: no providers")
-            customMeetingReminders.cancelAll()
+            customMeetingReminders.cancelAll(closeActiveReminder: true)
             await notificationService.removeAllPendingMeetingNotifications()
             return
         }
@@ -361,7 +364,7 @@ final class CalendarService: ObservableObject {
         let sound = meetingReminderSound
 
         await notificationService.removeAllPendingMeetingNotifications()
-        customMeetingReminders.cancelAll()
+        customMeetingReminders.cancelAll(closeActiveReminder: false)
         customMeetingReminders.reschedule(events: currentEvents, leadMinutes: lead, localization: loc, sound: sound)
     }
 

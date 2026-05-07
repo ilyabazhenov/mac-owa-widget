@@ -141,6 +141,7 @@
 
 "notification.action.join" = "Подключиться";
 "notification.action.dismiss" = "Закрыть";
+"notification.title.cluster" = "Скоро начнутся: %@";
 "notification.body.with.join" = "Встреча начнётся через %@, в %@. Нажмите «Подключиться».";
 "notification.body.without.join" = "Начнётся через %@ в %@";
 

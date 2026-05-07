@@ -21,16 +21,22 @@ final class CustomMeetingReminderController {
     private var dismissWorkItem: DispatchWorkItem?
     private var currentSound: MeetingReminderSound = .default
     private let postStartGrace: TimeInterval = 5 * 60
+    private let duplicateSuppressWindow: TimeInterval = 60
+    private var scheduleGeneration: UInt64 = 0
+    private var recentlyPresentedAt: [String: Date] = [:]
     var onJoin: ((MeetingReminderItem) -> Void)?
 
-    func cancelAll() {
+    func cancelAll(closeActiveReminder: Bool) {
+        scheduleGeneration &+= 1
         for (_, item) in scheduledWork { item.cancel() }
         scheduledWork.removeAll()
         queue.removeAll()
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
-        currentPanel?.close()
-        currentPanel = nil
+        if closeActiveReminder {
+            currentPanel?.close()
+            currentPanel = nil
+        }
     }
 
     func reschedule(
@@ -39,8 +45,9 @@ final class CustomMeetingReminderController {
         localization: NotificationLocalization,
         sound: MeetingReminderSound
     ) {
-        cancelAll()
+        cancelAll(closeActiveReminder: false)
         currentSound = sound
+        let generation = scheduleGeneration
 
         let joinTitle = localization.joinActionTitle
         let dismissTitle = localization.dismissActionTitle
@@ -56,7 +63,7 @@ final class CustomMeetingReminderController {
             let subtitle = MeetingReminderText.reminderBody(cluster: cluster, leadMinutes: leadMinutes, localization: localization)
             let payload = Payload(
                 clusterID: cluster.id,
-                title: MeetingReminderText.title(cluster: cluster, localeIdentifier: localization.localeIdentifier),
+                title: MeetingReminderText.title(cluster: cluster, localization: localization),
                 subtitle: subtitle,
                 items: cluster.items,
                 joinTitle: joinTitle,
@@ -64,19 +71,28 @@ final class CustomMeetingReminderController {
                 meetingStartDate: cluster.anchorEvent.startDate
             )
 
-            let work = DispatchWorkItem { [weak self] in
+            var work: DispatchWorkItem?
+            work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 Task { @MainActor in
                     self.scheduledWork.removeValue(forKey: cluster.id)
+                    guard generation == self.scheduleGeneration else { return }
+                    guard !(work?.isCancelled ?? true) else { return }
                     self.enqueue(payload)
                 }
             }
+            guard let work else { continue }
             scheduledWork[cluster.id] = work
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         }
     }
 
     private func enqueue(_ payload: Payload) {
+        evictExpiredPresentedClusters(now: Date())
+        if let lastPresented = recentlyPresentedAt[payload.clusterID],
+           Date().timeIntervalSince(lastPresented) < duplicateSuppressWindow {
+            return
+        }
         queue.append(payload)
         presentNextIfIdle()
     }
@@ -88,6 +104,7 @@ final class CustomMeetingReminderController {
     }
 
     private func present(_ payload: Payload) {
+        recentlyPresentedAt[payload.clusterID] = Date()
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
 
@@ -179,6 +196,10 @@ final class CustomMeetingReminderController {
         dismissWorkItem = nil
         currentPanel = nil
         presentNextIfIdle()
+    }
+
+    private func evictExpiredPresentedClusters(now: Date) {
+        recentlyPresentedAt = recentlyPresentedAt.filter { now.timeIntervalSince($0.value) < duplicateSuppressWindow }
     }
 }
 

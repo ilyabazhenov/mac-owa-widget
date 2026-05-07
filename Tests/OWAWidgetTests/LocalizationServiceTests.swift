@@ -133,4 +133,34 @@ final class LocalizationServiceTests: XCTestCase {
 
         XCTAssertEqual(text, "Встреча начнётся через 5 минут, в 14:12. Нажмите «Подключиться».")
     }
+
+    func testNotificationClusterTitleFormatInEnglish() {
+        let service = LocalizationService(
+            selectedLanguage: .english,
+            preferredLanguages: ["en-US"]
+        )
+        let localization = service.notificationLocalization
+        let text = String(
+            format: localization.clusterTitleFormat,
+            locale: Locale(identifier: localization.localeIdentifier),
+            "2 meetings"
+        )
+
+        XCTAssertEqual(text, "Starting soon: 2 meetings")
+    }
+
+    func testNotificationClusterTitleFormatInRussian() {
+        let service = LocalizationService(
+            selectedLanguage: .russian,
+            preferredLanguages: ["en-US"]
+        )
+        let localization = service.notificationLocalization
+        let text = String(
+            format: localization.clusterTitleFormat,
+            locale: Locale(identifier: localization.localeIdentifier),
+            "2 встречи"
+        )
+
+        XCTAssertEqual(text, "Скоро начнутся: 2 встречи")
+    }
 }

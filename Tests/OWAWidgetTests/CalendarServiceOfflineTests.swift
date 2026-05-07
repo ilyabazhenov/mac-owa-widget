@@ -115,6 +115,22 @@ final class CalendarServiceOfflineTests: XCTestCase {
         XCTAssertEqual(UserDefaults.standard.string(forKey: "meetingReminderStyle"), MeetingReminderStyle.inApp.rawValue)
     }
 
+    func testSyncWithoutProvidersClosesActiveReminder() async {
+        let reminderController = RecordingMeetingReminderController()
+        let service = CalendarService(
+            providers: [],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: reminderController,
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+
+        await service.performSyncForTests()
+
+        XCTAssertEqual(reminderController.cancelCalls, [true])
+    }
+
     private func makeEvent(id: String) -> CalendarEvent {
         CalendarEvent(
             id: id,
@@ -193,7 +209,23 @@ private actor NoOpNotificationService: NotificationServicing {
 
 @MainActor
 private final class NoOpMeetingReminderController: CustomMeetingReminderControlling {
-    func cancelAll() {}
+    func cancelAll(closeActiveReminder: Bool) {}
+    func reschedule(
+        events: [CalendarEvent],
+        leadMinutes: Int,
+        localization: NotificationLocalization,
+        sound: MeetingReminderSound
+    ) {}
+}
+
+@MainActor
+private final class RecordingMeetingReminderController: CustomMeetingReminderControlling {
+    private(set) var cancelCalls: [Bool] = []
+
+    func cancelAll(closeActiveReminder: Bool) {
+        cancelCalls.append(closeActiveReminder)
+    }
+
     func reschedule(
         events: [CalendarEvent],
         leadMinutes: Int,

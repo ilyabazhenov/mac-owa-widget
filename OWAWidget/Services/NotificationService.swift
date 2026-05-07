@@ -12,19 +12,21 @@ protocol UserNotificationCentering: Sendable {
 
 extension UNUserNotificationCenter: UserNotificationCentering {}
 
-struct NotificationLocalization: Sendable {
+struct NotificationLocalization: Sendable, Equatable {
     let localeIdentifier: String
     let joinActionTitle: String
     let dismissActionTitle: String
     let bodyWithJoinFormat: String
     let bodyWithoutJoinFormat: String
+    let clusterTitleFormat: String
 
     static let english = NotificationLocalization(
         localeIdentifier: "en",
         joinActionTitle: "Join",
         dismissActionTitle: "Dismiss",
         bodyWithJoinFormat: "Starts in %@ at %@. Tap Join to connect",
-        bodyWithoutJoinFormat: "Starts in %@ at %@"
+        bodyWithoutJoinFormat: "Starts in %@ at %@",
+        clusterTitleFormat: "Starting soon: %@"
     )
 }
 
@@ -88,7 +90,7 @@ actor NotificationService {
             ) else { continue }
 
             let content = UNMutableNotificationContent()
-            content.title = MeetingReminderText.title(cluster: cluster, localeIdentifier: localization.localeIdentifier)
+            content.title = MeetingReminderText.title(cluster: cluster, localization: localization)
             content.body = MeetingReminderText.reminderBody(cluster: cluster, leadMinutes: leadMinutes, localization: localization)
             content.sound = .default
             content.categoryIdentifier = NotificationService.categoryID

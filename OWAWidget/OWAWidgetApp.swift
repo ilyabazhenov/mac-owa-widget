@@ -4,12 +4,17 @@ import AppKit
 
 @main
 struct OWAWidgetApp: App {
-    @StateObject private var calendarService = CalendarService()
-    @StateObject private var localizationService = LocalizationService(resourceBundle: .main)
+    @StateObject private var calendarService: CalendarService
+    @StateObject private var localizationService: LocalizationService
     @StateObject private var updateCheckService = UpdateCheckService()
     private let notificationDelegate = AppNotificationDelegate()
 
     init() {
+        let localizationService = LocalizationService(resourceBundle: .main)
+        _localizationService = StateObject(wrappedValue: localizationService)
+        _calendarService = StateObject(
+            wrappedValue: CalendarService(initialNotificationLocalization: localizationService.notificationLocalization)
+        )
         UNUserNotificationCenter.current().delegate = notificationDelegate
         notificationDelegate.onJoinFromNotification = { [calendarService] item in
             calendarService.openJoinURL(for: item, source: .reminderNotification)

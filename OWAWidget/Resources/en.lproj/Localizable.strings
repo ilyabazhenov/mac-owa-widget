@@ -141,6 +141,7 @@
 
 "notification.action.join" = "Join";
 "notification.action.dismiss" = "Dismiss";
+"notification.title.cluster" = "Starting soon: %@";
 "notification.body.with.join" = "Your meeting starts in %@ at %@. Tap Join.";
 "notification.body.without.join" = "Starts in %@ at %@";
 
