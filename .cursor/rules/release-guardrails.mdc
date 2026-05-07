@@ -1,0 +1,26 @@
+---
+description: Guardrails for release metadata and Sparkle artifacts.
+alwaysApply: true
+---
+
+# Release guardrails
+
+Do not modify release metadata or release artifacts unless the user explicitly asks to prepare or publish a release.
+Reading protected release files for verification or review is allowed.
+
+Protected paths and metadata:
+
+- `VERSION`
+- `RELEASE_NOTES.md`
+- `dist/**`
+- Git tags
+- GitHub releases
+- `OWAWidget/Info.plist` key `SUPublicEDKey`
+
+Release workflow rules:
+
+- For "prepare release", update `VERSION` and `RELEASE_NOTES.md`, commit release metadata before packaging, run `make release-package`, and verify that the new `sparkle:version` is strictly greater than the previous published release.
+- For "publish release", complete the full GitHub release flow only after packaging succeeds.
+- Do not manually update `CFBundleShortVersionString` or `CFBundleVersion` in `OWAWidget/Info.plist`; `make bundle` and `make release-package` derive those values from `VERSION` and git commit count.
+- Do not publish unsigned Sparkle release artifacts.
+

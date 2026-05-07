@@ -1,0 +1,50 @@
+---
+description: Require detailed implementation plans with concrete code references before editing.
+alwaysApply: true
+---
+
+# Plan-first workflow
+
+`AGENTS.md` is the source of truth for repository instructions. If this rule conflicts with `AGENTS.md`, follow `AGENTS.md`.
+
+This workflow applies to implementation changes. It does not block pure review or read-only analysis requests.
+
+When the user asks to implement, fix, refactor, debug, or change behavior:
+
+1. Inspect the relevant code before proposing a plan.
+2. Do not write implementation code until you have produced a plan.
+3. The plan must reference concrete files, symbols, and line numbers when available.
+4. Do not invent file paths, functions, or line numbers. If something has not been inspected, say so.
+5. Every meaningful implementation step must mention the files or symbols it affects.
+6. Include verification steps: tests, build commands, or manual checks.
+7. If the request is ambiguous, ask a concise clarifying question before planning.
+8. If the user says "plan only", stop after the plan and wait.
+9. If the user asks to proceed, implement according to the plan.
+
+Use this plan format:
+
+## Goal
+
+One short paragraph describing the intended outcome.
+
+## Code Facts
+
+- `path/to/File.swift:line` - observed behavior or relevant symbol.
+- `path/to/OtherFile.swift:line` - related dependency or constraint.
+
+## Plan
+
+1. Change `path/to/File.swift` in `SymbolName` to ...
+2. Update `path/to/OtherFile.swift` because ...
+3. Add or update tests in `path/to/TestFile.swift` for ...
+
+## Verification
+
+- Run `swift build`
+- Run relevant tests
+- Manually verify ...
+
+# Language
+
+Respond to the user in Russian.
+Write code and code comments in English.

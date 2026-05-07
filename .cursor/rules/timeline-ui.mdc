@@ -1,0 +1,35 @@
+---
+description: Timeline meeting layout invariants and tests.
+globs: ["OWAWidget/Views/MeetingListView.swift", "OWAWidget/Views/TimelineMeetingLayout.swift", "OWAWidget/Views/TimelineMeetingBlockView.swift", "Tests/OWAWidgetTests/Timeline*.swift", "Tests/OWAWidgetTests/MeetingListViewLayoutTests.swift", "Tests/OWAWidgetTests/PopoverViewLayoutTests.swift"]
+---
+
+# Timeline UI invariants
+
+The timeline is one of the most sensitive UI areas. Preserve the current layout model unless the user explicitly asks to redesign it.
+
+Observed project facts:
+
+- `OWAWidget/Views/MeetingListView.swift:8` uses local state to auto-scroll to the current slot.
+- `OWAWidget/Views/MeetingListView.swift:10` through `OWAWidget/Views/MeetingListView.swift:13` define the timeline time column, points-per-minute scale, card gap, and 30-minute slot size.
+- `OWAWidget/Views/MeetingListView.swift:65` through `OWAWidget/Views/MeetingListView.swift:72` deduplicate event cards so each event appears in only its first overlapping slot.
+- `OWAWidget/Views/TimelineMeetingLayout.swift:84` through `OWAWidget/Views/TimelineMeetingLayout.swift:87` use half-open slot overlap checks.
+- `OWAWidget/Views/TimelineMeetingLayout.swift:267` through `OWAWidget/Views/TimelineMeetingLayout.swift:291` use half-open cluster and lane behavior: events whose previous lane end is `<= event.startDate` can share a lane.
+- `OWAWidget/Views/TimelineMeetingBlockView.swift:31` through `OWAWidget/Views/TimelineMeetingBlockView.swift:35` always render the event's own time interval, including compact cards.
+
+Rules:
+
+- Use half-open overlap semantics: `lhs.startDate < rhs.endDate && rhs.startDate < lhs.endDate`.
+- Compact timeline cards must still show their own event time interval.
+- Do not remove event-card deduplication across slots unless the visual model changes deliberately.
+- Keep frame math stable: slot height, `pointsPerMinute`, lane width, card center, and overlay coordinates must agree.
+- If changing overlap, slotting, lane assignment, card sizing, or compact rendering, update or add focused tests.
+- For visual changes, verify both normal and compact cards, selected state, cancelled state, organizer badges, join button visibility, and accessibility labels.
+
+Relevant tests to consider:
+
+- `Tests/OWAWidgetTests/TimelineMeetingLayoutTests.swift`
+- `Tests/OWAWidgetTests/TimelineMeetingBlockViewTests.swift`
+- `Tests/OWAWidgetTests/MeetingListViewLayoutTests.swift`
+- `Tests/OWAWidgetTests/PopoverViewLayoutTests.swift`
+- `Tests/OWAWidgetTests/PopoverSizeTests.swift`
+

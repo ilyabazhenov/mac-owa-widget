@@ -1,0 +1,25 @@
+# Build artifacts
+.build/**
+DerivedData/**
+*.dSYM/**
+
+# Generated Xcode project
+OWAWidget.xcodeproj/**
+*.xcodeproj/xcuserdata/**
+*.xcodeproj/project.xcworkspace/xcuserdata/**
+
+# Local and temporary files
+tmp/**
+.DS_Store
+.AppleDouble
+._*
+
+# Secrets and local environment
+.env
+*.env
+.env.local
+.claude/settings.local.json
+
+# IDE state
+.idea/**
+*.xcuserstate

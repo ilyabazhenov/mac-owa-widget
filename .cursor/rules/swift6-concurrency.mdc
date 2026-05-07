@@ -1,0 +1,33 @@
+---
+description: Swift 6 concurrency and actor-boundary rules for OWAWidget.
+globs: ["OWAWidget/**/*.swift", "Tests/**/*.swift"]
+---
+
+# Swift 6 concurrency
+
+Preserve strict Swift 6 concurrency boundaries.
+
+Observed project facts:
+
+- `OWAWidget/Services/CalendarService.swift:27` declares `CalendarService` as `@MainActor`.
+- `OWAWidget/Services/CalendarService.swift:29` through `OWAWidget/Services/CalendarService.swift:33` expose UI-observed `@Published private(set)` state.
+- `OWAWidget/Providers/CalendarProvider.swift:5` declares `CalendarProvider` as an `Actor`.
+- `OWAWidget/Services/CalendarService.swift:35` stores providers as `[any CalendarProvider]`.
+- `OWAWidget/Services/CalendarService.swift:318` through `OWAWidget/Services/CalendarService.swift:325` use `withThrowingTaskGroup` to fetch provider events concurrently.
+
+Rules:
+
+- Treat `CalendarService` as the main-actor state owner. Do not mutate its published state from non-main actor contexts.
+- Keep calendar providers actor-isolated. Do not convert providers to classes or structs unless the concurrency design is explicitly reworked.
+- When crossing actor boundaries, make `Sendable` reasoning explicit in the plan.
+- Do not add `@unchecked Sendable`, `nonisolated`, detached tasks, or broad `@MainActor` annotations to silence compiler warnings without a concrete explanation.
+- Prefer dependency-injected protocols for tests over global state or sleeps.
+- When editing async sync, notification, scheduler, or provider code, check for races between manual sync, scheduled sync, provider rebuilds, event cache fallback, and reminder rescheduling.
+
+Relevant tests to consider:
+
+- `Tests/OWAWidgetTests/CalendarServiceOfflineTests.swift`
+- `Tests/OWAWidgetTests/SyncSchedulerTests.swift`
+- `Tests/OWAWidgetTests/SyncRequestGateTests.swift`
+- `Tests/OWAWidgetTests/NotificationServiceAggregationTests.swift`
+- `Tests/OWAWidgetTests/MeetingReminderScheduleTests.swift`

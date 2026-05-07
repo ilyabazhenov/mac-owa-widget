@@ -1,0 +1,39 @@
+---
+description: Core OWAWidget project context and source-of-truth files.
+alwaysApply: true
+---
+
+# Project context
+
+`AGENTS.md` is the source of truth for repository-specific agent instructions. If any Cursor rule conflicts with `AGENTS.md`, follow `AGENTS.md`.
+
+OWAWidget is a Swift 6 / SwiftUI macOS menu bar app for showing upcoming Microsoft Exchange / OWA meetings and quickly joining online calls.
+
+Primary code lives in `OWAWidget/`.
+
+Important files and responsibilities:
+
+- `OWAWidget/OWAWidgetApp.swift` - app entry point, `MenuBarExtra`, settings window, notification handling.
+- `OWAWidget/Services/CalendarService.swift` - main `@MainActor` observable state owner for accounts, events, sync status, reminders, and engagement stats.
+- `OWAWidget/Providers/CalendarProvider.swift` - actor-based provider abstraction.
+- `OWAWidget/Providers/OWA/**` - OWA authentication, CANARY token handling, calendar requests, response mapping.
+- `OWAWidget/Providers/GoogleCalendar/GoogleCalendarProvider.swift` - placeholder provider for future Google Calendar support.
+- `OWAWidget/Services/MeetingURLDetector.swift` - meeting URL detection for Teams, Zoom, Webex, Google Meet, and related platforms.
+- `OWAWidget/Services/NotificationService.swift` - local notification scheduling.
+- `OWAWidget/Services/KeychainService.swift` - password storage in Keychain.
+- `OWAWidget/Services/LaunchAtLoginService.swift` - login item integration via `SMAppService.mainApp`.
+- `OWAWidget/Services/UpdateCheckService.swift` - Sparkle updater wrapper.
+- `OWAWidget/Views/MeetingListView.swift` - timeline list in the popover, including time grid and overlay cards.
+- `OWAWidget/Views/TimelineMeetingLayout.swift` - timeline slotting, overlap clusters, lanes, and frame math.
+- `OWAWidget/Views/TimelineMeetingBlockView.swift` - visual meeting card for normal and compact timeline layouts.
+
+Build and run commands come from `Makefile`:
+
+- `swift build` - fast compile verification.
+- `make build` - compile via Makefile.
+- `make run` - build bundle and launch the app.
+- `make watch` - rebuild on Swift file changes; requires `fswatch`.
+- `make clean` - remove build artifacts.
+
+Do not manually edit generated `OWAWidget.xcodeproj`. Update `project.yml` for XcodeGen project settings and `Package.swift` for SwiftPM settings.
+

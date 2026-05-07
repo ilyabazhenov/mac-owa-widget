@@ -1,0 +1,23 @@
+---
+description: Required checks before reporting completion.
+alwaysApply: true
+---
+
+# Verification
+
+Before reporting completion:
+
+- If Swift code, app logic, tests, models, views, services, providers, scripts, or project configuration changed, run `swift build` at minimum.
+- If packaging, entitlements, app bundle launch, Sparkle, `Info.plist`, resources, app icons, or release scripts changed, also run `make run`.
+- If release notes changed, run `make validate-release-notes`.
+- If timeline layout changed, run the focused timeline/layout tests when possible in addition to `swift build`.
+- If OWA request/response mapping changed, run focused OWA tests when possible in addition to `swift build`.
+- If only Cursor rules, docs, comments, or ignore files changed, do not run `swift build` unless there is a specific reason.
+- For `.cursor/rules/**` and `.cursorignore` only changes, no build or runtime command is required.
+
+Final response must include:
+
+- Changed files.
+- Verification commands that were run.
+- Pass/fail result, including any command that could not be run and why.
+
