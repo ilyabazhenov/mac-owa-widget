@@ -12,6 +12,7 @@ final class CustomMeetingReminderController {
         let items: [MeetingReminderItem]
         let joinTitle: String
         let dismissTitle: String
+        let meetingStartDate: Date
     }
 
     private var scheduledWork: [String: DispatchWorkItem] = [:]
@@ -19,7 +20,7 @@ final class CustomMeetingReminderController {
     private var currentPanel: NSPanel?
     private var dismissWorkItem: DispatchWorkItem?
     private var currentSound: MeetingReminderSound = .default
-    private let autoDismissSeconds: TimeInterval = 14
+    private let postStartGrace: TimeInterval = 5 * 60
     var onJoin: ((MeetingReminderItem) -> Void)?
 
     func cancelAll() {
@@ -59,7 +60,8 @@ final class CustomMeetingReminderController {
                 subtitle: subtitle,
                 items: cluster.items,
                 joinTitle: joinTitle,
-                dismissTitle: dismissTitle
+                dismissTitle: dismissTitle,
+                meetingStartDate: cluster.anchorEvent.startDate
             )
 
             let work = DispatchWorkItem { [weak self] in
@@ -159,7 +161,8 @@ final class CustomMeetingReminderController {
             self?.finishPresentation()
         }
         dismissWorkItem = dismiss
-        DispatchQueue.main.asyncAfter(deadline: .now() + autoDismissSeconds, execute: dismiss)
+        let autoDismissDeadline = max(payload.meetingStartDate + postStartGrace, Date() + 30)
+        DispatchQueue.main.asyncAfter(deadline: .now() + autoDismissDeadline.timeIntervalSinceNow, execute: dismiss)
     }
 
     private func positionPanel(_ panel: NSPanel, contentSize: NSSize) {
