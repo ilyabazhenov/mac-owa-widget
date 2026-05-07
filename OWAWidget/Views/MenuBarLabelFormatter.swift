@@ -1,13 +1,18 @@
 import Foundation
 
 enum MenuBarLabelFormatter {
-    static func label(
+    struct Presentation: Equatable {
+        let text: String
+        let statusKind: MenuBarStatusFormatter.Kind?
+    }
+
+    static func presentation(
         mode: MenuBarDisplayMode,
         events: [CalendarEvent],
         now: Date,
         shortTimeFormatter: (Date) -> String,
         calendar: Calendar = .current
-    ) -> String? {
+    ) -> Presentation? {
         switch mode {
         case .countdown:
             guard let event = events
@@ -15,14 +20,33 @@ enum MenuBarLabelFormatter {
                 .sorted(by: { $0.startDate < $1.startDate })
                 .first
             else { return nil }
-            return MenuBarCountdownFormatter.label(
+            guard let text = MenuBarCountdownFormatter.label(
                 eventStartDate: event.startDate,
                 now: now,
                 shortTimeFormatter: shortTimeFormatter,
                 calendar: calendar
             )
+            else { return nil }
+            return Presentation(text: text, statusKind: nil)
         case .status:
-            return MenuBarStatusFormatter.label(events: events, now: now, calendar: calendar)
+            let status = MenuBarStatusFormatter.presentation(events: events, now: now, calendar: calendar)
+            return Presentation(text: status.text, statusKind: status.kind)
         }
+    }
+
+    static func label(
+        mode: MenuBarDisplayMode,
+        events: [CalendarEvent],
+        now: Date,
+        shortTimeFormatter: (Date) -> String,
+        calendar: Calendar = .current
+    ) -> String? {
+        presentation(
+            mode: mode,
+            events: events,
+            now: now,
+            shortTimeFormatter: shortTimeFormatter,
+            calendar: calendar
+        )?.text
     }
 }

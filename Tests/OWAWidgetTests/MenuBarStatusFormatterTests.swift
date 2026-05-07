@@ -18,6 +18,16 @@ final class MenuBarStatusFormatterTests: XCTestCase {
         XCTAssertEqual(label, "Now 18m")
     }
 
+    func testPresentationMarksSingleActiveMeetingAsNow() {
+        let now = makeDate(hour: 10, minute: 0)
+        let active = makeEvent(startHour: 9, startMinute: 55, endHour: 10, endMinute: 18)
+
+        let presentation = MenuBarStatusFormatter.presentation(events: [active], now: now, calendar: calendar)
+
+        XCTAssertEqual(presentation.kind, .now)
+        XCTAssertEqual(presentation.text, "Now 18m")
+    }
+
     func testShowsNowCountForMultipleActiveMeetings() {
         let now = makeDate(hour: 10, minute: 0)
         let first = makeEvent(startHour: 9, startMinute: 0, endHour: 10, endMinute: 20, id: "a")
@@ -28,6 +38,17 @@ final class MenuBarStatusFormatterTests: XCTestCase {
         XCTAssertEqual(label, "Now x2")
     }
 
+    func testPresentationMarksMultipleActiveMeetingsAsOverlappingNow() {
+        let now = makeDate(hour: 10, minute: 0)
+        let first = makeEvent(startHour: 9, startMinute: 0, endHour: 10, endMinute: 20, id: "a")
+        let second = makeEvent(startHour: 9, startMinute: 30, endHour: 10, endMinute: 45, id: "b")
+
+        let presentation = MenuBarStatusFormatter.presentation(events: [first, second], now: now, calendar: calendar)
+
+        XCTAssertEqual(presentation.kind, .overlappingNow)
+        XCTAssertEqual(presentation.text, "Now x2")
+    }
+
     func testShowsNextWhenUpcomingMeetingStartsInFifteenMinutesOrLess() {
         let now = makeDate(hour: 10, minute: 0)
         let upcoming = makeEvent(startHour: 10, startMinute: 7, endHour: 10, endMinute: 40)
@@ -35,6 +56,16 @@ final class MenuBarStatusFormatterTests: XCTestCase {
         let label = MenuBarStatusFormatter.label(events: [upcoming], now: now, calendar: calendar)
 
         XCTAssertEqual(label, "Next 7m")
+    }
+
+    func testPresentationMarksSoonMeetingAsNext() {
+        let now = makeDate(hour: 10, minute: 0)
+        let upcoming = makeEvent(startHour: 10, startMinute: 7, endHour: 10, endMinute: 40)
+
+        let presentation = MenuBarStatusFormatter.presentation(events: [upcoming], now: now, calendar: calendar)
+
+        XCTAssertEqual(presentation.kind, .next)
+        XCTAssertEqual(presentation.text, "Next 7m")
     }
 
     func testShowsNextForExactlyFifteenMinutesBoundary() {
@@ -87,6 +118,14 @@ final class MenuBarStatusFormatterTests: XCTestCase {
         let label = MenuBarStatusFormatter.label(events: [tomorrowMeeting], now: now, calendar: calendar)
 
         XCTAssertEqual(label, "Free")
+    }
+
+    func testPresentationMarksNoMeetingTodayAsFree() {
+        let now = makeDate(hour: 20, minute: 0)
+        let presentation = MenuBarStatusFormatter.presentation(events: [], now: now, calendar: calendar)
+
+        XCTAssertEqual(presentation.kind, .free)
+        XCTAssertEqual(presentation.text, "Free")
     }
 
     func testIgnoresAllDayEventsInStatusCalculations() {
