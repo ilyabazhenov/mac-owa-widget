@@ -4,15 +4,16 @@ import Foundation
 @MainActor
 final class SettingsViewModel: ObservableObject {
     @Published var accounts: [CalendarAccount] = []
-    @Published var syncInterval: TimeInterval
-    @Published var notificationLeadMinutes: Int
-    @Published var meetingReminderSound: MeetingReminderSound
-    @Published var meetingEngagementScope: MeetingEngagementScope
-    @Published var meetingEngagementDefaultPeriod: MeetingEngagementPeriod
-    @Published var notificationScreenPolicy: NotificationScreenPolicy
-    @Published var menuBarDisplayMode: MenuBarDisplayMode
+    @Published var syncInterval: TimeInterval { didSet { updateUnsavedChanges() } }
+    @Published var notificationLeadMinutes: Int { didSet { updateUnsavedChanges() } }
+    @Published var meetingReminderSound: MeetingReminderSound { didSet { updateUnsavedChanges() } }
+    @Published var meetingEngagementScope: MeetingEngagementScope { didSet { updateUnsavedChanges() } }
+    @Published var meetingEngagementDefaultPeriod: MeetingEngagementPeriod { didSet { updateUnsavedChanges() } }
+    @Published var notificationScreenPolicy: NotificationScreenPolicy { didSet { updateUnsavedChanges() } }
+    @Published var menuBarDisplayMode: MenuBarDisplayMode { didSet { updateUnsavedChanges() } }
     @Published var launchAtLogin: Bool
     @Published var launchAtLoginRequiresApproval: Bool
+    @Published private(set) var hasUnsavedChanges: Bool = false
 
     // Per-account edit state
     @Published var editingAccount: CalendarAccount?
@@ -23,6 +24,7 @@ final class SettingsViewModel: ObservableObject {
 
     private let service: CalendarService
     private let launchAtLoginManager: any LaunchAtLoginManaging
+    private var baselinePreferences: PreferencesSnapshot
 
     init(
         calendarService: CalendarService,
@@ -40,6 +42,16 @@ final class SettingsViewModel: ObservableObject {
         self.menuBarDisplayMode = calendarService.menuBarDisplayMode
         self.launchAtLogin = launchAtLoginManager.isEnabled
         self.launchAtLoginRequiresApproval = launchAtLoginManager.requiresApproval
+        self.baselinePreferences = PreferencesSnapshot(
+            syncInterval: calendarService.syncInterval,
+            notificationLeadMinutes: calendarService.notificationLeadMinutes,
+            meetingReminderSound: calendarService.meetingReminderSound,
+            meetingEngagementScope: calendarService.meetingEngagementScope,
+            meetingEngagementDefaultPeriod: calendarService.engagementPeriod,
+            notificationScreenPolicy: calendarService.notificationScreenPolicy,
+            menuBarDisplayMode: calendarService.menuBarDisplayMode
+        )
+        updateUnsavedChanges()
     }
 
     // MARK: - Connection test
@@ -114,6 +126,8 @@ final class SettingsViewModel: ObservableObject {
         service.setMeetingEngagementScope(meetingEngagementScope)
         service.setMeetingEngagementPeriod(meetingEngagementDefaultPeriod)
         service.applySavedPreferences()
+        baselinePreferences = currentPreferencesSnapshot()
+        updateUnsavedChanges()
     }
 
     func previewMeetingReminderSound() {
@@ -143,6 +157,32 @@ final class SettingsViewModel: ObservableObject {
     private func refreshLaunchAtLoginState() {
         launchAtLogin = launchAtLoginManager.isEnabled
         launchAtLoginRequiresApproval = launchAtLoginManager.requiresApproval
+    }
+
+    private struct PreferencesSnapshot: Equatable {
+        let syncInterval: TimeInterval
+        let notificationLeadMinutes: Int
+        let meetingReminderSound: MeetingReminderSound
+        let meetingEngagementScope: MeetingEngagementScope
+        let meetingEngagementDefaultPeriod: MeetingEngagementPeriod
+        let notificationScreenPolicy: NotificationScreenPolicy
+        let menuBarDisplayMode: MenuBarDisplayMode
+    }
+
+    private func currentPreferencesSnapshot() -> PreferencesSnapshot {
+        PreferencesSnapshot(
+            syncInterval: syncInterval,
+            notificationLeadMinutes: notificationLeadMinutes,
+            meetingReminderSound: meetingReminderSound,
+            meetingEngagementScope: meetingEngagementScope,
+            meetingEngagementDefaultPeriod: meetingEngagementDefaultPeriod,
+            notificationScreenPolicy: notificationScreenPolicy,
+            menuBarDisplayMode: menuBarDisplayMode
+        )
+    }
+
+    private func updateUnsavedChanges() {
+        hasUnsavedChanges = currentPreferencesSnapshot() != baselinePreferences
     }
 
     #if DEBUG

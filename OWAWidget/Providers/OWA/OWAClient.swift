@@ -473,6 +473,52 @@ actor OWAClient {
         return UserDefaults.standard.bool(forKey: getCalendarViewDebugFlagKey)
     }
 
+    func respondToMeeting(itemId: String, changeKey: String, action: MeetingResponseAction) async throws {
+        if canaryToken == nil {
+            try await authenticate()
+        }
+        do {
+            try await performRespondRequest(itemId: itemId, changeKey: changeKey, action: action)
+        } catch OWAError.httpError(440, _), OWAError.httpError(401, _) {
+            canaryToken = nil
+            try await authenticate()
+            try await performRespondRequest(itemId: itemId, changeKey: changeKey, action: action)
+        }
+    }
+
+    private func performRespondRequest(itemId: String, changeKey: String, action: MeetingResponseAction) async throws {
+        guard let canary = canaryToken else { throw OWAError.notAuthenticated }
+
+        let payload = OWAMeetingRespondPayload.make(
+            itemId: itemId,
+            changeKey: changeKey,
+            action: action,
+            timezoneID: windowsTimezoneID()
+        )
+        let jsonData = try JSONSerialization.data(withJSONObject: payload, options: .prettyPrinted)
+        guard let jsonString = String(data: jsonData, encoding: .utf8) else { throw OWAError.encodingFailed }
+
+        log.debug(
+            "respondToMeeting payload itemId=\(itemId.prefix(30), privacy: .public) changeKey=\(changeKey.prefix(20), privacy: .public) action=\(String(describing: action), privacy: .public)"
+        )
+        log.debug("respondToMeeting json=\(jsonString, privacy: .public)")
+
+        let sendData = try JSONSerialization.data(withJSONObject: payload)
+        guard let sendString = String(data: sendData, encoding: .utf8) else { throw OWAError.encodingFailed }
+
+        var request = try serviceRequest(action: "CreateItem", canary: canary)
+        request.setValue(sendString.formEncoded, forHTTPHeaderField: "X-OWA-UrlPostData")
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
+        let responseBody = String(data: data.prefix(500), encoding: .utf8) ?? ""
+        log.debug("respondToMeeting response status=\(http.statusCode, privacy: .public) body=\(responseBody, privacy: .public)")
+        guard (200..<300).contains(http.statusCode) else {
+            let msg = String(data: data.prefix(300), encoding: .utf8) ?? ""
+            throw OWAError.httpError(http.statusCode, msg)
+        }
+    }
+
     private func resolveDefaultCalendarFolderIdentifier(canary: String) async throws -> OWAFolderIdentifier? {
         if let defaultCalendarFolderIdentifier {
             return defaultCalendarFolderIdentifier

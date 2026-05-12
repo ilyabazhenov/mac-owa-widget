@@ -49,7 +49,7 @@ struct MeetingReminderCluster: Sendable, Hashable {
 }
 
 enum MeetingReminderClusterBuilder {
-    static let simultaneousWindow: TimeInterval = 5 * 60
+    static let simultaneousWindow: TimeInterval = 10 * 60
 
     static func clusters(from events: [CalendarEvent], now: Date) -> [MeetingReminderCluster] {
         let candidates = events

@@ -126,6 +126,14 @@
 "meeting.categories" = "Категории";
 "meeting.categories.more" = "ещё %d";
 
+"meeting.rsvp.accept" = "Принять";
+"meeting.rsvp.tentative" = "Под вопросом";
+"meeting.rsvp.decline" = "Отклонить";
+"meeting.rsvp.response.sent" = "Ответ отправлен";
+"meeting.rsvp.pending.help" = "Ожидает ответа";
+"meeting.rsvp.error.provider.not.supported" = "Этот календарь не поддерживает ответы на приглашения.";
+"a11y.meeting.rsvp.pending" = "Ожидает ответа";
+
 "menubar.now" = "сейчас";
 "menubar.in.minutes" = "через %@";
 "menubar.concurrent.in.minutes" = "%d через %@";

@@ -254,7 +254,7 @@ final class MenuBarCountdownFormatterTests: XCTestCase {
         XCTAssertEqual(capturedDate, tomorrowMeeting)
     }
 
-    func testUsesHourLabelForEventAfterTomorrow() {
+    func testUsesDayLabelForEventAfterTomorrow() {
         let now = Date(timeIntervalSince1970: 1_700_000_000) // 2023-11-14 22:13:20 UTC
         let eventStartDate = calendar.date(byAdding: .day, value: 2, to: now)!
 
@@ -265,6 +265,48 @@ final class MenuBarCountdownFormatterTests: XCTestCase {
             calendar: calendar
         )
 
-        XCTAssertEqual(label, "48h")
+        XCTAssertEqual(label, " 2d")
+    }
+
+    func testRoundsUpSixtySevenHoursToThreeDays() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let eventStartDate = now.addingTimeInterval((67 * 3_600) + 1)
+
+        let label = MenuBarCountdownFormatter.label(
+            eventStartDate: eventStartDate,
+            now: now,
+            shortTimeFormatter: { _ in "10:00" },
+            calendar: calendar
+        )
+
+        XCTAssertEqual(label, " 3d")
+    }
+
+    func testTomorrowStillUsesShortTimeEvenWhenOverTwentyFourHours() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let eventStartDate = now.addingTimeInterval((24 * 3_600) + 1)
+
+        let label = MenuBarCountdownFormatter.label(
+            eventStartDate: eventStartDate,
+            now: now,
+            shortTimeFormatter: { _ in "10:00" },
+            calendar: calendar
+        )
+
+        XCTAssertEqual(label, "10:00")
+    }
+
+    func testRoundsUpJustOverFortyEightHoursToThreeDays() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let eventStartDate = now.addingTimeInterval((48 * 3_600) + 1)
+
+        let label = MenuBarCountdownFormatter.label(
+            eventStartDate: eventStartDate,
+            now: now,
+            shortTimeFormatter: { _ in "10:00" },
+            calendar: calendar
+        )
+
+        XCTAssertEqual(label, " 3d")
     }
 }

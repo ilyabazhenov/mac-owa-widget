@@ -2,7 +2,7 @@ import Foundation
 import os.log
 
 actor OWACalendarProvider: CalendarProvider {
-    let account: CalendarAccount
+    nonisolated let account: CalendarAccount
     private let client: OWAClient
     private let urlDetector = MeetingURLDetector()
     private let log = Logger(subsystem: "com.owawidget", category: "OWACalendarProvider")
@@ -35,6 +35,13 @@ actor OWACalendarProvider: CalendarProvider {
 
     func validateCredentials() async throws {
         try await client.authenticate()
+    }
+
+    func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {
+        guard let changeKey = event.changeKey else {
+            throw OWAError.invalidResponse
+        }
+        try await client.respondToMeeting(itemId: event.id, changeKey: changeKey, action: action)
     }
 
     // MARK: - Mapping
@@ -70,7 +77,9 @@ actor OWACalendarProvider: CalendarProvider {
             accountID: account.id,
             isCancelled: item.IsCancelled ?? false,
             isOrganizer: item.IsOrganizer ?? false,
-            categories: Self.normalizedCategories(from: item)
+            categories: Self.normalizedCategories(from: item),
+            responseType: Self.mapResponseType(item.ResponseType, isOrganizer: item.IsOrganizer ?? false),
+            changeKey: item.ItemId?.ChangeKey
         )
     }
 
@@ -105,6 +114,17 @@ actor OWACalendarProvider: CalendarProvider {
 
     private static func bodyText(from item: OWACalendarItem) -> String? {
         bodyTexts(from: item).first
+    }
+
+    private static func mapResponseType(_ raw: String?, isOrganizer: Bool) -> MeetingResponseType {
+        if isOrganizer { return .organizer }
+        switch raw {
+        case "Accept":    return .accepted
+        case "Tentative": return .tentative
+        case "Decline":   return .declined
+        case "Organizer": return .organizer
+        default:          return .notResponded
+        }
     }
 
     private static func normalizedCategories(from item: OWACalendarItem) -> [String] {

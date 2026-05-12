@@ -48,6 +48,14 @@ struct MeetingRowView: View {
 
             // Platform icon + Join button
             HStack(spacing: 6) {
+                if event.responseType == .notResponded {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: compact ? 11 : 12))
+                        .foregroundStyle(.secondary)
+                        .help(localization.tr("meeting.rsvp.pending.help"))
+                        .accessibilityLabel(localization.tr("a11y.meeting.rsvp.pending"))
+                }
+
                 if event.platform != .generic {
                     Image(systemName: event.platform.systemIcon)
                         .foregroundStyle(meetingAccentColor(for: event))
@@ -78,6 +86,7 @@ struct MeetingRowView: View {
                     } label: {
                         Text(localization.tr("meeting.join"))
                             .font(.system(size: 11, weight: .semibold))
+                            .lineLimit(1)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .background(meetingAccentColor(for: event).opacity(0.15))
@@ -90,6 +99,7 @@ struct MeetingRowView: View {
                     .accessibilityHint(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
                 }
             }
+            .layoutPriority(1)
         }
         .padding(.vertical, compact ? 5 : 8)
         .padding(.horizontal, 14)

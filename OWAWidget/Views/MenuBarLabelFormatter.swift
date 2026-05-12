@@ -16,7 +16,7 @@ enum MenuBarLabelFormatter {
         switch mode {
         case .countdown:
             guard let event = events
-                .filter({ $0.startDate > now })
+                .filter({ !$0.isAllDay && $0.startDate > now })
                 .sorted(by: { $0.startDate < $1.startDate })
                 .first
             else { return nil }

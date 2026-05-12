@@ -77,6 +77,8 @@ swift build
 - При добавлении нового календарного провайдера реализуй `CalendarProvider`, добавь тип аккаунта в `CalendarAccount`, затем подключи провайдер в `CalendarService.rebuildProviders()`.
 - Для UI параллельных встреч придерживайся инварианта: даже в compact-карточке нужно показывать собственный интервал времени события.
 - Для проверки логики пересечений используй критерий полуинтервалов: `lhs.startDate < rhs.endDate && rhs.startDate < lhs.endDate`.
+- В `CustomMeetingReminderController` ручное закрытие (`onDismiss`) **обязано** передавать `clearQueue: true` в `closeCurrentPanelAndFinish`. При `clearQueue: true` метод инкрементирует `scheduleGeneration`, отменяет все `scheduledWork` и очищает `queue`. Это критично: без инкремента `scheduleGeneration` Tasks, уже стоящие в очереди MainActor (от DispatchWorkItem-ов, сработавших до закрытия), выполняются после `queue.removeAll()` и вновь добавляют панель. Автозакрытие по таймеру (`dismissWorkItem`) вызывает `finishPresentation()` напрямую без `clearQueue` — следующая встреча должна показаться.
+- Любой `NSHostingView` внутри `nonactivatingPanel` требует подкласса `FirstMouseHostingView` с `override func acceptsFirstMouse(for:) → true`. Без этого кнопки в плавающей панели требуют двух кликов: первый активирует окно, второй нажимает кнопку.
 - Не обновляй версию вручную в `OWAWidget/Info.plist`: `make bundle`/`make release-package` автоматически ставят `CFBundleShortVersionString` из `VERSION` и `CFBundleVersion` из git-счётчика коммитов.
 
 ## Проверка

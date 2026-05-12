@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import OWAWidget
 
@@ -32,6 +33,39 @@ final class CustomMeetingReminderControllerTests: XCTestCase {
         controller.cancelAll(closeActiveReminder: true)
     }
 
+    func testJoinActionClosesVisibleBannerAndClearsDismissWorkItem() async throws {
+        let controller = CustomMeetingReminderController()
+        UserDefaults.standard.set(0.05, forKey: debugDelayKey)
+        var onJoinCalls = 0
+        controller.onJoin = { _ in onJoinCalls += 1 }
+        let event = makeDebugEvent(id: "debug-reminder-join-close")
+
+        controller.reschedule(
+            events: [event],
+            leadMinutes: 1,
+            localization: .english,
+            sound: .none
+        )
+
+        try await waitForVisibleBanner(on: controller)
+        XCTAssertNotNil(currentPanel(on: controller))
+        XCTAssertNotNil(currentDismissWorkItem(on: controller))
+
+        let reminderItem = MeetingReminderItem(
+            eventID: event.id,
+            title: event.title,
+            startDate: event.startDate,
+            endDate: event.endDate,
+            platform: event.platform,
+            joinURL: event.joinURL
+        )
+        controller.handleJoinAction(item: reminderItem, fallbackPanel: nil)
+
+        XCTAssertEqual(onJoinCalls, 1)
+        XCTAssertNil(currentPanel(on: controller))
+        XCTAssertNil(currentDismissWorkItem(on: controller))
+    }
+
     private func waitForVisibleBanner(
         on controller: CustomMeetingReminderController,
         timeout: TimeInterval = 2.0
@@ -49,6 +83,11 @@ final class CustomMeetingReminderControllerTests: XCTestCase {
     private func currentDismissWorkItem(on controller: CustomMeetingReminderController) -> DispatchWorkItem? {
         let mirror = Mirror(reflecting: controller)
         return mirror.descendant("dismissWorkItem") as? DispatchWorkItem
+    }
+
+    private func currentPanel(on controller: CustomMeetingReminderController) -> NSPanel? {
+        let mirror = Mirror(reflecting: controller)
+        return mirror.descendant("currentPanel") as? NSPanel
     }
 
     private func makeDebugEvent(id: String) -> CalendarEvent {

@@ -4,10 +4,11 @@ import XCTest
 final class MeetingReminderClusterBuilderTests: XCTestCase {
     private let accountID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
 
-    func testClustersMergeEventsWithinFiveMinutes() {
+    func testClustersMergeEventsWithinSimultaneousWindow() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let first = makeEvent(id: "a", start: now.addingTimeInterval(600), joinURL: URL(string: "https://a"))
-        let second = makeEvent(id: "b", start: now.addingTimeInterval(840), joinURL: URL(string: "https://b")) // +4m
+        // `simultaneousWindow` is 10 minutes; +4m keeps both in one cluster.
+        let second = makeEvent(id: "b", start: now.addingTimeInterval(840), joinURL: URL(string: "https://b"))
 
         let clusters = MeetingReminderClusterBuilder.clusters(from: [first, second], now: now)
 
@@ -15,10 +16,11 @@ final class MeetingReminderClusterBuilderTests: XCTestCase {
         XCTAssertEqual(clusters[0].items.count, 2)
     }
 
-    func testClustersSplitEventsOutsideFiveMinutes() {
+    func testClustersSplitEventsOutsideSimultaneousWindow() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let first = makeEvent(id: "a", start: now.addingTimeInterval(600), joinURL: URL(string: "https://a"))
-        let second = makeEvent(id: "b", start: now.addingTimeInterval(960), joinURL: URL(string: "https://b")) // +6m
+        // More than `MeetingReminderClusterBuilder.simultaneousWindow` after first start.
+        let second = makeEvent(id: "b", start: first.startDate.addingTimeInterval(601), joinURL: URL(string: "https://b"))
 
         let clusters = MeetingReminderClusterBuilder.clusters(from: [first, second], now: now)
 

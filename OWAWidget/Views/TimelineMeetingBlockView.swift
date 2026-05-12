@@ -34,6 +34,14 @@ struct TimelineMeetingBlockView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
+                    if event.responseType == .notResponded {
+                        Image(systemName: "questionmark.circle")
+                            .font(.system(size: compact ? 8 : 9))
+                            .foregroundStyle(.secondary)
+                            .help(localization.tr("meeting.rsvp.pending.help"))
+                            .accessibilityLabel(localization.tr("a11y.meeting.rsvp.pending"))
+                    }
+
                     if event.isOrganizer {
                         Text(localization.tr("meeting.role.organizer.short"))
                             .font(.system(size: compact ? 8 : 9, weight: .semibold))

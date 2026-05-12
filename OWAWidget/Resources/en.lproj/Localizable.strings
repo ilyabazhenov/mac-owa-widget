@@ -126,6 +126,14 @@
 "meeting.categories" = "Categories";
 "meeting.categories.more" = "%d more";
 
+"meeting.rsvp.accept" = "Accept";
+"meeting.rsvp.tentative" = "Tentative";
+"meeting.rsvp.decline" = "Decline";
+"meeting.rsvp.response.sent" = "Response sent";
+"meeting.rsvp.pending.help" = "Awaiting your response";
+"meeting.rsvp.error.provider.not.supported" = "This calendar does not support meeting responses.";
+"a11y.meeting.rsvp.pending" = "Awaiting response";
+
 "menubar.now" = "now";
 "menubar.in.minutes" = "in %@";
 "menubar.concurrent.in.minutes" = "%d in %@";

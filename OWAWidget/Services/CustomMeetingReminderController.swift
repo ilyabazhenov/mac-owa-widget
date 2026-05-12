@@ -131,25 +131,14 @@ final class CustomMeetingReminderController {
             joinTitle: payload.joinTitle,
             dismissTitle: payload.dismissTitle,
             onJoin: { [weak self, weak panel] item in
-                self?.dismissWorkItem?.cancel()
-                self?.dismissWorkItem = nil
-                if let onJoin = self?.onJoin {
-                    onJoin(item)
-                } else if let url = item.joinURL {
-                    NSWorkspace.shared.open(url)
-                }
-                panel?.close()
-                self?.finishPresentation()
+                self?.handleJoinAction(item: item, fallbackPanel: panel)
             },
             onDismiss: { [weak self, weak panel] in
-                self?.dismissWorkItem?.cancel()
-                self?.dismissWorkItem = nil
-                panel?.close()
-                self?.finishPresentation()
+                self?.closeCurrentPanelAndFinish(fallbackPanel: panel, clearQueue: true)
             }
         )
 
-        let hosting = NSHostingView(rootView: view)
+        let hosting = FirstMouseHostingView(rootView: view)
         hosting.translatesAutoresizingMaskIntoConstraints = false
         let container = NSView(frame: .zero)
         container.addSubview(hosting)
@@ -198,9 +187,48 @@ final class CustomMeetingReminderController {
         presentNextIfIdle()
     }
 
+    func handleJoinAction(item: MeetingReminderItem, fallbackPanel: NSPanel?) {
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
+        if let onJoin {
+            onJoin(item)
+        } else if let url = item.joinURL {
+            NSWorkspace.shared.open(url)
+        }
+        // Use controller-owned panel reference to avoid weak capture races.
+        closeCurrentPanelAndFinish(fallbackPanel: fallbackPanel)
+    }
+
+    private func closeCurrentPanelAndFinish(fallbackPanel: NSPanel?, clearQueue: Bool = false) {
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
+
+        if let panel = currentPanel {
+            panel.close()
+        } else {
+            fallbackPanel?.close()
+        }
+
+        if clearQueue {
+            // Invalidate any in-flight Tasks created by work items before this dismiss.
+            // Without the generation bump, a Task already queued on the MainActor could
+            // call enqueue() after the queue.removeAll() below, bypassing the clear.
+            scheduleGeneration &+= 1
+            for (_, item) in scheduledWork { item.cancel() }
+            scheduledWork.removeAll()
+            queue.removeAll()
+        }
+
+        finishPresentation()
+    }
+
     private func evictExpiredPresentedClusters(now: Date) {
         recentlyPresentedAt = recentlyPresentedAt.filter { now.timeIntervalSince($0.value) < duplicateSuppressWindow }
     }
 }
 
 extension CustomMeetingReminderController: CustomMeetingReminderControlling {}
+
+private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}

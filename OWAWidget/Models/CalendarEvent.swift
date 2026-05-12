@@ -16,6 +16,8 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
     let isCancelled: Bool
     let isOrganizer: Bool
     let categories: [String]
+    let responseType: MeetingResponseType
+    let changeKey: String?
 
     init(
         id: String,
@@ -32,7 +34,9 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         accountID: UUID,
         isCancelled: Bool = false,
         isOrganizer: Bool = false,
-        categories: [String] = []
+        categories: [String] = [],
+        responseType: MeetingResponseType = .notResponded,
+        changeKey: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -49,6 +53,8 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         self.isCancelled = isCancelled
         self.isOrganizer = isOrganizer
         self.categories = categories
+        self.responseType = responseType
+        self.changeKey = changeKey
     }
 
     init(from decoder: Decoder) throws {
@@ -68,6 +74,8 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         isCancelled = try c.decodeIfPresent(Bool.self, forKey: .isCancelled) ?? false
         isOrganizer = try c.decodeIfPresent(Bool.self, forKey: .isOrganizer) ?? false
         categories = try c.decodeIfPresent([String].self, forKey: .categories) ?? []
+        responseType = try c.decodeIfPresent(MeetingResponseType.self, forKey: .responseType) ?? .notResponded
+        changeKey = try c.decodeIfPresent(String.self, forKey: .changeKey)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -87,12 +95,25 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         try c.encode(isCancelled, forKey: .isCancelled)
         try c.encode(isOrganizer, forKey: .isOrganizer)
         try c.encode(categories, forKey: .categories)
+        try c.encode(responseType, forKey: .responseType)
+        try c.encodeIfPresent(changeKey, forKey: .changeKey)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, title, startDate, endDate, location, bodyPreview, joinURL, platform
         case isAllDay, organizer, attendees, accountID
-        case isCancelled, isOrganizer, categories
+        case isCancelled, isOrganizer, categories, responseType, changeKey
+    }
+
+    func withResponseType(_ type: MeetingResponseType) -> CalendarEvent {
+        CalendarEvent(
+            id: id, title: title, startDate: startDate, endDate: endDate,
+            location: location, bodyPreview: bodyPreview, joinURL: joinURL,
+            platform: platform, isAllDay: isAllDay, organizer: organizer,
+            attendees: attendees, accountID: accountID,
+            isCancelled: isCancelled, isOrganizer: isOrganizer,
+            categories: categories, responseType: type, changeKey: changeKey
+        )
     }
 
     var isHappeningNow: Bool {

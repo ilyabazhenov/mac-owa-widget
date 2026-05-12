@@ -178,47 +178,179 @@ private struct MeetingDetailActionsView: View {
     @State private var didCopy = false
 
     var body: some View {
-        if let url = event.joinURLForActions {
-            HStack(spacing: 10) {
-                Button {
-                    calendarService.openJoinURL(for: event, source: .detailPanel)
-                    onJoinCompleted()
-                    PostJoinDismissController.shared.dismissAfterJoin(context: .detailPanel)
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.right.circle.fill")
-                        Text(localization.tr("meeting.join"))
-                            .fontWeight(.semibold)
+        VStack(alignment: .leading, spacing: 10) {
+            if let url = event.joinURLForActions {
+                HStack(spacing: 10) {
+                    Button {
+                        calendarService.openJoinURL(for: event, source: .detailPanel)
+                        onJoinCompleted()
+                        PostJoinDismissController.shared.dismissAfterJoin(context: .detailPanel)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.right.circle.fill")
+                            Text(localization.tr("meeting.join"))
+                                .fontWeight(.semibold)
+                        }
+                        .font(.system(size: 12))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(event.isHappeningNow ? Color.orange : meetingAccentColor(for: event))
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
-                    .font(.system(size: 12))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(event.isHappeningNow ? Color.orange : meetingAccentColor(for: event))
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(localization.tr("a11y.meeting.join", event.title))
-                .accessibilityHint(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(localization.tr("a11y.meeting.join", event.title))
+                    .accessibilityHint(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
 
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
-                    didCopy = true
-                    Task { try? await Task.sleep(for: .seconds(1.5)); didCopy = false }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
-                        Text(localization.tr("meeting.copy.link"))
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        didCopy = true
+                        Task { try? await Task.sleep(for: .seconds(1.5)); didCopy = false }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                            Text(localization.tr("meeting.copy.link"))
+                        }
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
                     }
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
+                    .help(localization.tr("meeting.copy.link"))
+                    .accessibilityLabel(localization.tr("meeting.copy.link"))
+                    .accessibilityHint(localization.tr("a11y.meeting.copy.link.hint"))
                 }
-                .buttonStyle(.plain)
-                .help(localization.tr("meeting.copy.link"))
-                .accessibilityLabel(localization.tr("meeting.copy.link"))
-                .accessibilityHint(localization.tr("a11y.meeting.copy.link.hint"))
+            }
+
+            if !event.isOrganizer && event.responseType != .organizer && event.changeKey != nil {
+                RSVPActionsView(event: event)
             }
         }
+    }
+}
+
+private struct RSVPActionsView: View {
+    let event: CalendarEvent
+    @EnvironmentObject private var calendarService: CalendarService
+    @EnvironmentObject private var localization: LocalizationService
+
+    @State private var sendingAction: MeetingResponseAction? = nil
+    @State private var feedbackState: FeedbackState = .none
+
+    private enum FeedbackState: Equatable {
+        case none, success, failure(String)
+    }
+
+    private struct RSVPOption {
+        let action: MeetingResponseAction
+        let responseType: MeetingResponseType
+        let icon: String
+        let labelKey: String
+        let color: Color
+    }
+
+    private let options: [RSVPOption] = [
+        RSVPOption(action: .accept, responseType: .accepted, icon: "checkmark", labelKey: "meeting.rsvp.accept", color: .green),
+        RSVPOption(action: .tentative, responseType: .tentative, icon: "questionmark", labelKey: "meeting.rsvp.tentative", color: .orange),
+        RSVPOption(action: .decline, responseType: .declined, icon: "xmark", labelKey: "meeting.rsvp.decline", color: .red),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                ForEach(options, id: \.action) { option in
+                    rsvpButton(for: option)
+                }
+            }
+
+            switch feedbackState {
+            case .none:
+                EmptyView()
+            case .success:
+                Label(localization.tr("meeting.rsvp.response.sent"), systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.green)
+                    .accessibilityLabel(localization.tr("meeting.rsvp.response.sent"))
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            case .failure(let message):
+                Label(message, systemImage: "exclamationmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(message)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: feedbackState == .none)
+    }
+
+    @ViewBuilder
+    private func rsvpButton(for option: RSVPOption) -> some View {
+        let isActive = event.responseType == option.responseType
+        let isSending = sendingAction == option.action
+        let isDisabled = sendingAction != nil
+
+        Button {
+            send(option)
+        } label: {
+            HStack(spacing: 4) {
+                if isSending {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .frame(width: 10, height: 10)
+                } else {
+                    Image(systemName: option.icon)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(option.color)
+                }
+                Text(localization.tr(option.labelKey))
+                    .font(.system(size: 11))
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(isActive ? option.color.opacity(0.15) : Color(nsColor: .controlBackgroundColor))
+            .foregroundStyle(isActive ? option.color : Color(nsColor: .secondaryLabelColor))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(
+                        isActive ? option.color.opacity(0.5) : Color(nsColor: .separatorColor),
+                        lineWidth: isActive ? 1.5 : 1
+                    )
+            }
+            .opacity(isDisabled && !isSending ? 0.5 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .help(localization.tr(option.labelKey))
+        .accessibilityLabel(localization.tr(option.labelKey))
+    }
+
+    private func send(_ option: RSVPOption) {
+        guard sendingAction == nil else { return }
+        sendingAction = option.action
+        feedbackState = .none
+
+        Task {
+            do {
+                try await calendarService.respondToMeeting(event, action: option.action)
+                feedbackState = .success
+                try? await Task.sleep(for: .seconds(2))
+                feedbackState = .none
+            } catch {
+                feedbackState = .failure(rsvpFailureMessage(for: error))
+                try? await Task.sleep(for: .seconds(5))
+                feedbackState = .none
+            }
+            sendingAction = nil
+        }
+    }
+
+    private func rsvpFailureMessage(for error: Error) -> String {
+        if let calendarError = error as? CalendarProviderError, case .notSupported = calendarError {
+            return localization.tr("meeting.rsvp.error.provider.not.supported")
+        }
+        return error.localizedDescription
     }
 }

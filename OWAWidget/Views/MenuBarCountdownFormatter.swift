@@ -12,6 +12,7 @@ enum MenuBarCountdownFormatter {
 
         let minuteBoundary = 60.0
         let hourBoundary = 3600.0
+        let dayBoundary = 24 * hourBoundary
 
         if calendar.isDate(eventStartDate, inSameDayAs: now) {
             if interval < hourBoundary {
@@ -30,6 +31,11 @@ enum MenuBarCountdownFormatter {
         if interval < hourBoundary {
             let minutes = Int(ceil(interval / minuteBoundary))
             return String(format: "%2d", minutes) + "m"
+        }
+
+        if interval >= dayBoundary {
+            let days = Int(ceil(interval / dayBoundary))
+            return String(format: "%2d", days) + "d"
         }
 
         let hours = Int(ceil(interval / hourBoundary))

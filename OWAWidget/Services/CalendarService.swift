@@ -218,6 +218,32 @@ final class CalendarService: ObservableObject {
         recalculateEngagementSnapshot()
     }
 
+    func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {
+        guard let provider = providers.first(where: { $0.account.id == event.accountID }) else { return }
+
+        let optimisticType: MeetingResponseType
+        switch action {
+        case .accept:    optimisticType = .accepted
+        case .tentative: optimisticType = .tentative
+        case .decline:   optimisticType = .declined
+        }
+
+        applyResponseType(optimisticType, to: event.id)
+        do {
+            try await provider.respondToMeeting(event, action: action)
+            log.info("respondToMeeting succeeded eventID=\(event.id, privacy: .public)")
+        } catch {
+            applyResponseType(event.responseType, to: event.id)
+            log.error("respondToMeeting failed eventID=\(event.id, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
+    private func applyResponseType(_ type: MeetingResponseType, to eventID: String) {
+        guard let idx = events.firstIndex(where: { $0.id == eventID }) else { return }
+        events[idx] = events[idx].withResponseType(type)
+    }
+
     func openJoinURL(for event: CalendarEvent, source: MeetingJoinSource) {
         guard let url = event.joinURLForActions else { return }
         meetingEngagementStats.trackJoin(for: event, source: source)
@@ -375,7 +401,6 @@ final class CalendarService: ObservableObject {
         let sound = meetingReminderSound
 
         await notificationService.removeAllPendingMeetingNotifications()
-        customMeetingReminders.cancelAll(closeActiveReminder: false)
         customMeetingReminders.reschedule(events: currentEvents, leadMinutes: lead, localization: loc, sound: sound)
     }
 

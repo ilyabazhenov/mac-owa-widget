@@ -129,12 +129,6 @@ struct PreferencesView: View {
                 .disabled(updateCheck.isChecking)
             }
 
-            Section {
-                Button(localization.tr("preferences.save")) {
-                    vm.savePreferences()
-                }
-            }
-
             #if DEBUG
             Section("Debug") {
                 HStack {
@@ -156,5 +150,19 @@ struct PreferencesView: View {
         }
         .formStyle(.grouped)
         .frame(minWidth: 320)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Divider()
+            HStack {
+                Spacer()
+                Button(localization.tr("preferences.save")) {
+                    vm.savePreferences()
+                }
+                .keyboardShortcut("s", modifiers: [.command])
+                .buttonStyle(.borderedProminent)
+                .disabled(!vm.hasUnsavedChanges)
+            }
+            .padding(12)
+            .background(.regularMaterial)
+        }
     }
 }
