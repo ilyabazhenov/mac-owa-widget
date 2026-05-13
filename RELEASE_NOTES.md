@@ -1,3 +1,45 @@
+## v1.0.36 - 2026-05-13
+
+### RU
+
+#### Что изменилось
+
+- Меню-бар: режимы отображения и форматирование статуса/обратного отсчёта до ближайшей встречи (настраивается в настройках).
+- OWA: ответы на приглашения (RSVP) и отображение вашего ответа в карточке и деталях встречи.
+- Напоминания: исправлено появление дублирующих панелей; RSVP выполняется через EWS SOAP для большей совместимости с Exchange.
+- Таймлайн: опция приглушения прошедших встреч и правки вёрстки карточек.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Menu bar: display modes and status/countdown formatting for the next meeting (configurable in Settings).
+- OWA: meeting RSVP and showing your response in the row and meeting details.
+- Reminders: fixed duplicate reminder panels; RSVP uses EWS SOAP for better Exchange compatibility.
+- Timeline: optional dimming of past meetings and layout fixes for meeting cards.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.35 - 2026-05-07
 
 ### RU
