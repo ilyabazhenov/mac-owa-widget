@@ -230,6 +230,9 @@ final class CalendarService: ObservableObject {
 
         applyResponseType(optimisticType, to: event.id)
         do {
+            // RSVP runs here without a parallel TaskGroup timeout: URLSession already applies
+            // `timeoutIntervalForRequest` on the EWS request, and an extra in-process race can
+            // cancel the in-flight task and surface URLError.networkConnectionLost (-1005).
             try await provider.respondToMeeting(event, action: action)
             log.info("respondToMeeting succeeded eventID=\(event.id, privacy: .public)")
         } catch {

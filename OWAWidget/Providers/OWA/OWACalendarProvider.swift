@@ -38,9 +38,7 @@ actor OWACalendarProvider: CalendarProvider {
     }
 
     func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {
-        guard let changeKey = event.changeKey else {
-            throw OWAError.invalidResponse
-        }
+        guard let changeKey = event.changeKey else { throw OWAError.invalidResponse }
         try await client.respondToMeeting(itemId: event.id, changeKey: changeKey, action: action)
     }
 
@@ -79,7 +77,8 @@ actor OWACalendarProvider: CalendarProvider {
             isOrganizer: item.IsOrganizer ?? false,
             categories: Self.normalizedCategories(from: item),
             responseType: Self.mapResponseType(item.ResponseType, isOrganizer: item.IsOrganizer ?? false),
-            changeKey: item.ItemId?.ChangeKey
+            changeKey: item.ItemId?.ChangeKey,
+            instanceKey: item.InstanceKey
         )
     }
 

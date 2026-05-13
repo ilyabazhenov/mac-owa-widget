@@ -132,6 +132,7 @@
 "meeting.rsvp.response.sent" = "Ответ отправлен";
 "meeting.rsvp.pending.help" = "Ожидает ответа";
 "meeting.rsvp.error.provider.not.supported" = "Этот календарь не поддерживает ответы на приглашения.";
+"meeting.rsvp.error.send.failed" = "Ошибка отправки";
 "a11y.meeting.rsvp.pending" = "Ожидает ответа";
 
 "menubar.now" = "сейчас";

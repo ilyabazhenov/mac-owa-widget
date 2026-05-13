@@ -351,6 +351,30 @@ private struct RSVPActionsView: View {
         if let calendarError = error as? CalendarProviderError, case .notSupported = calendarError {
             return localization.tr("meeting.rsvp.error.provider.not.supported")
         }
-        return error.localizedDescription
+        let headline = localization.tr("meeting.rsvp.error.send.failed")
+        guard let detail = rsvpFailureDetailLine(for: error), !detail.isEmpty else {
+            return headline
+        }
+        return "\(headline)\n\(detail)"
+    }
+
+    /// Secondary line for diagnostics (e.g. EWS / HTTP reason); keep short for the popover.
+    private func rsvpFailureDetailLine(for error: Error) -> String? {
+        if error is CancellationError { return nil }
+        if let localized = error as? LocalizedError, let d = localized.errorDescription?.trimmingCharacters(in: .whitespacesAndNewlines), !d.isEmpty {
+            return String(d.prefix(240))
+        }
+        let raw = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.isEmpty || Self.isGenericSystemFailureText(raw) { return nil }
+        return String(raw.prefix(240))
+    }
+
+    private static func isGenericSystemFailureText(_ s: String) -> Bool {
+        let lower = s.lowercased()
+        if lower == "the operation couldn’t be completed." { return true }
+        if lower == "the operation couldn't be completed." { return true }
+        // Common CancellationError phrasing on Apple platforms
+        if lower.contains("cancel") && (lower.contains("operation") || lower.contains("операц")) { return true }
+        return false
     }
 }

@@ -170,13 +170,31 @@ enum MeetingReminderText {
         leadMinutes: Int,
         localization: NotificationLocalization
     ) -> String {
-        if cluster.items.count == 1 {
-            return reminderBody(event: cluster.anchorEvent, leadMinutes: leadMinutes, localization: localization)
-        }
+        reminderBody(
+            items: cluster.items,
+            anchorStartDate: cluster.anchorEvent.startDate,
+            leadMinutes: leadMinutes,
+            localization: localization
+        )
+    }
+
+    static func reminderBody(
+        items: [MeetingReminderItem],
+        anchorStartDate: Date,
+        leadMinutes: Int,
+        localization: NotificationLocalization
+    ) -> String {
         let locale = Locale(identifier: localization.localeIdentifier)
-        let timeStr = shortTime(cluster.anchorEvent.startDate, locale: locale)
         let minutes = localizedMinutes(leadMinutes, localeIdentifier: localization.localeIdentifier)
-        let meetings = localizedMeetings(cluster.items.count, localeIdentifier: localization.localeIdentifier)
+        if items.count == 1, let item = items.first {
+            let timeStr = shortTime(item.startDate, locale: locale)
+            if item.hasJoinURL {
+                return String(format: localization.bodyWithJoinFormat, locale: locale, minutes, timeStr)
+            }
+            return String(format: localization.bodyWithoutJoinFormat, locale: locale, minutes, timeStr)
+        }
+        let timeStr = shortTime(anchorStartDate, locale: locale)
+        let meetings = localizedMeetings(items.count, localeIdentifier: localization.localeIdentifier)
         return "\(minutes) • \(timeStr) • \(meetings)"
     }
 
@@ -184,11 +202,18 @@ enum MeetingReminderText {
         cluster: MeetingReminderCluster,
         localization: NotificationLocalization
     ) -> String {
-        if let only = cluster.items.first, cluster.items.count == 1 {
+        title(items: cluster.items, localization: localization)
+    }
+
+    static func title(
+        items: [MeetingReminderItem],
+        localization: NotificationLocalization
+    ) -> String {
+        if items.count == 1, let only = items.first {
             return only.title
         }
         let locale = Locale(identifier: localization.localeIdentifier)
-        let meetings = localizedMeetings(cluster.items.count, localeIdentifier: localization.localeIdentifier)
+        let meetings = localizedMeetings(items.count, localeIdentifier: localization.localeIdentifier)
         return String(format: localization.clusterTitleFormat, locale: locale, meetings)
     }
 

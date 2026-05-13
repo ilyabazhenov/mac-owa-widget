@@ -67,46 +67,6 @@ enum OWACalendarViewRequestPayload {
     }
 }
 
-enum OWAMeetingRespondPayload {
-    static func make(itemId: String, changeKey: String, action: MeetingResponseAction, timezoneID: String) -> [String: Any] {
-        let itemTypeName: String
-        switch action {
-        case .accept:    itemTypeName = "AcceptItem"
-        case .tentative: itemTypeName = "TentativelyAcceptItem"
-        case .decline:   itemTypeName = "DeclineItem"
-        }
-
-        return [
-            "__type": "CreateItemJsonRequest:#Exchange",
-            "Header": [
-                "__type": "JsonRequestHeaders:#Exchange",
-                "RequestServerVersion": "V2017_08_18",
-                "TimeZoneContext": [
-                    "__type": "TimeZoneContext:#Exchange",
-                    "TimeZoneDefinition": [
-                        "__type": "TimeZoneDefinitionType:#Exchange",
-                        "Id": timezoneID,
-                    ] as [String: Any],
-                ] as [String: Any],
-            ] as [String: Any],
-            "Body": [
-                "__type": "CreateItemRequest:#Exchange",
-                "Items": [
-                    itemTypeName: [
-                        "__type": "\(itemTypeName):#Exchange",
-                        "ReferenceItemId": [
-                            "__type": "ItemId:#Exchange",
-                            "Id": itemId,
-                            "ChangeKey": changeKey,
-                        ] as [String: Any],
-                    ] as [String: Any],
-                ] as [String: Any],
-                "MessageDisposition": "SendOnly",
-            ] as [String: Any],
-        ]
-    }
-}
-
 enum OWACalendarFoldersParser {
     static func defaultCalendarFolderIdentifier(from data: Data) -> OWAFolderIdentifier? {
         guard let json = try? JSONSerialization.jsonObject(with: data) else { return nil }

@@ -77,9 +77,84 @@ swift build
 - При добавлении нового календарного провайдера реализуй `CalendarProvider`, добавь тип аккаунта в `CalendarAccount`, затем подключи провайдер в `CalendarService.rebuildProviders()`.
 - Для UI параллельных встреч придерживайся инварианта: даже в compact-карточке нужно показывать собственный интервал времени события.
 - Для проверки логики пересечений используй критерий полуинтервалов: `lhs.startDate < rhs.endDate && rhs.startDate < lhs.endDate`.
-- В `CustomMeetingReminderController` ручное закрытие (`onDismiss`) **обязано** передавать `clearQueue: true` в `closeCurrentPanelAndFinish`. При `clearQueue: true` метод инкрементирует `scheduleGeneration`, отменяет все `scheduledWork` и очищает `queue`. Это критично: без инкремента `scheduleGeneration` Tasks, уже стоящие в очереди MainActor (от DispatchWorkItem-ов, сработавших до закрытия), выполняются после `queue.removeAll()` и вновь добавляют панель. Автозакрытие по таймеру (`dismissWorkItem`) вызывает `finishPresentation()` напрямую без `clearQueue` — следующая встреча должна показаться.
-- Любой `NSHostingView` внутри `nonactivatingPanel` требует подкласса `FirstMouseHostingView` с `override func acceptsFirstMouse(for:) → true`. Без этого кнопки в плавающей панели требуют двух кликов: первый активирует окно, второй нажимает кнопку.
+- `CustomMeetingReminderController` использует архитектуру **live-update single panel**: в любой момент времени отображается не более одного `NSPanel`. Если при срабатывании нового напоминания панель уже открыта, вызывается `updateCurrentPanel(merging:)`, который мёрджит новые встречи в `currentDisplayedItems`, пересчитывает title/subtitle и заменяет `currentHostingView.rootView` (SwiftUI делает diff in-place). Очереди (`queue: [Payload]`) не существует — не добавляй её. `finishPresentation()` очищает `currentPanel`, `currentHostingView`, `currentDisplayedItems`, `currentAnchorStartDate`, `currentDismissDeadline` без вызова какого-либо «следующего» элемента. Автозакрытие по таймеру и ручное закрытие оба вызывают `finishPresentation()` / `closeCurrentPanelAndFinish()` без дополнительных флагов.
+- Reminder-панель показывается через `panel.orderFrontRegardless()` + `panel.makeKey()`. `orderFrontRegardless()` обязателен, потому что OWA Widget — фоновое menu-bar приложение: `makeKeyAndOrderFront(nil)` в таком случае молча не работает. `makeKey()` после `orderFrontRegardless()` даёт панели статус key window, и SwiftUI-кнопки срабатывают с первого клика. Без `makeKey()` первый клик «активирует» окно, а второй уже нажимает кнопку.
 - Не обновляй версию вручную в `OWAWidget/Info.plist`: `make bundle`/`make release-package` автоматически ставят `CFBundleShortVersionString` из `VERSION` и `CFBundleVersion` из git-счётчика коммитов.
+
+## Debug-логирование в файл
+
+`make run` и `make watch` собирают **debug**-конфигурацию (`swift build` без `--configuration release`), поэтому блоки `#if DEBUG` активны именно в этих режимах. Используй это для инструментирования нового кода.
+
+### Правило
+
+При разработке новой фичи или диагностике бага **добавляй файловый лог** в компонент, который меняешь. Это позволяет агенту после запуска `make run` прочитать лог через `Read`-инструмент и увидеть точный поток выполнения без вмешательства пользователя.
+
+### Канонический паттерн
+
+```swift
+import os.log
+
+// В теле класса/актора — os.log для production:
+private let log = Logger(subsystem: "com.owawidget", category: "MyComponent")
+
+#if DEBUG
+// Путь: /tmp/owawidget_<компонент>.log
+private static let debugLogURL = URL(fileURLWithPath: "/tmp/owawidget_mycomponent.log")
+
+// Вызывать в init() — сбрасывает файл при каждом запуске приложения:
+private func setupDebugLog() {
+    let header = "=== MyComponent Log started \(Date()) ===\n"
+    try? header.write(to: Self.debugLogURL, atomically: true, encoding: .utf8)
+}
+
+// Вызывать вместо / вместе с log.info:
+private func dlog(_ message: String) {
+    let f = DateFormatter()
+    f.dateFormat = "HH:mm:ss.SSS"
+    let line = "[\(f.string(from: Date()))] \(message)\n"
+    guard let data = line.data(using: .utf8) else { return }
+    if let handle = try? FileHandle(forWritingTo: Self.debugLogURL) {
+        handle.seekToEndOfFile()
+        handle.write(data)
+        try? handle.close()
+    } else {
+        try? data.write(to: Self.debugLogURL, options: .atomic)
+    }
+}
+#endif
+```
+
+### Соглашения по именованию файлов
+
+| Компонент | Путь |
+|---|---|
+| `CustomMeetingReminderController` | `/tmp/owawidget_reminder.log` |
+| `CalendarService` | `/tmp/owawidget_calendar.log` |
+| Новый компонент `FooService` | `/tmp/owawidget_foo.log` |
+
+### Как агент читает логи
+
+После того как пользователь сообщил о воспроизведении бага:
+
+```bash
+# Посмотреть последние N строк:
+tail -100 /tmp/owawidget_reminder.log
+
+# Найти ключевые события:
+grep -n "present\|enqueue\|SUPPRESSED\|WARNING" /tmp/owawidget_reminder.log
+```
+
+Или использовать `Read`-инструмент напрямую с `offset`/`limit` для больших файлов.
+
+### Что логировать
+
+Логируй на ключевых точках потока выполнения:
+- вход в публичные методы с аргументами;
+- изменение центрального состояния (`currentPanel`, `scheduleGeneration`, etc.);
+- ветки, где происходит принятие решения (suppressed / present / merge);
+- предупреждения о неожиданных состояниях.
+
+Не логируй в tight loops и не добавляй `sleep` для «дать время» логам записаться — файловая запись синхронная.
 
 ## Проверка
 

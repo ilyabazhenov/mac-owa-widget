@@ -31,6 +31,7 @@ struct OWACalendarItem: Decodable {
     let OptionalAttendees: OWAAttendeeList?
     let ResponseType: String?
     let IsResponseRequested: Bool?
+    let InstanceKey: String?
 
     init(
         ItemId: OWAItemId?,
@@ -52,7 +53,8 @@ struct OWACalendarItem: Decodable {
         IsOrganizer: Bool? = nil,
         Categories: [String]? = nil,
         ResponseType: String? = nil,
-        IsResponseRequested: Bool? = nil
+        IsResponseRequested: Bool? = nil,
+        InstanceKey: String? = nil
     ) {
         self.ItemId = ItemId
         self.Subject = Subject
@@ -74,6 +76,7 @@ struct OWACalendarItem: Decodable {
         self.OptionalAttendees = OptionalAttendees
         self.ResponseType = ResponseType
         self.IsResponseRequested = IsResponseRequested
+        self.InstanceKey = InstanceKey
     }
 
     init(from decoder: Decoder) throws {
@@ -98,13 +101,14 @@ struct OWACalendarItem: Decodable {
         OptionalAttendees = try c.decodeIfPresent(OWAAttendeeList.self, forKey: .OptionalAttendees)
         ResponseType = try c.decodeIfPresent(String.self, forKey: .ResponseType)
         IsResponseRequested = try c.decodeIfPresent(Bool.self, forKey: .IsResponseRequested)
+        InstanceKey = try c.decodeIfPresent(String.self, forKey: .InstanceKey)
     }
 
     private enum CodingKeys: String, CodingKey {
         case ItemId, Subject, Start, End, IsAllDayEvent, IsCancelled, IsOrganizer, Categories
         case Location, Organizer, TextBody, Body, UniqueBody, NormalizedBody, Preview
         case JoinOnlineMeetingUrl, RequiredAttendees, OptionalAttendees
-        case ResponseType, IsResponseRequested
+        case ResponseType, IsResponseRequested, InstanceKey
     }
 
     private struct OWAEncodedCategory: Decodable {

@@ -18,6 +18,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
     let categories: [String]
     let responseType: MeetingResponseType
     let changeKey: String?
+    let instanceKey: String?
 
     init(
         id: String,
@@ -36,7 +37,8 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         isOrganizer: Bool = false,
         categories: [String] = [],
         responseType: MeetingResponseType = .notResponded,
-        changeKey: String? = nil
+        changeKey: String? = nil,
+        instanceKey: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -55,6 +57,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         self.categories = categories
         self.responseType = responseType
         self.changeKey = changeKey
+        self.instanceKey = instanceKey
     }
 
     init(from decoder: Decoder) throws {
@@ -76,6 +79,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         categories = try c.decodeIfPresent([String].self, forKey: .categories) ?? []
         responseType = try c.decodeIfPresent(MeetingResponseType.self, forKey: .responseType) ?? .notResponded
         changeKey = try c.decodeIfPresent(String.self, forKey: .changeKey)
+        instanceKey = try c.decodeIfPresent(String.self, forKey: .instanceKey)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -97,12 +101,13 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         try c.encode(categories, forKey: .categories)
         try c.encode(responseType, forKey: .responseType)
         try c.encodeIfPresent(changeKey, forKey: .changeKey)
+        try c.encodeIfPresent(instanceKey, forKey: .instanceKey)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, title, startDate, endDate, location, bodyPreview, joinURL, platform
         case isAllDay, organizer, attendees, accountID
-        case isCancelled, isOrganizer, categories, responseType, changeKey
+        case isCancelled, isOrganizer, categories, responseType, changeKey, instanceKey
     }
 
     func withResponseType(_ type: MeetingResponseType) -> CalendarEvent {
@@ -112,7 +117,8 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
             platform: platform, isAllDay: isAllDay, organizer: organizer,
             attendees: attendees, accountID: accountID,
             isCancelled: isCancelled, isOrganizer: isOrganizer,
-            categories: categories, responseType: type, changeKey: changeKey
+            categories: categories, responseType: type, changeKey: changeKey,
+            instanceKey: instanceKey
         )
     }
 

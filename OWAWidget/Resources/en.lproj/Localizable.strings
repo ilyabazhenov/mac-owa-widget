@@ -132,6 +132,7 @@
 "meeting.rsvp.response.sent" = "Response sent";
 "meeting.rsvp.pending.help" = "Awaiting your response";
 "meeting.rsvp.error.provider.not.supported" = "This calendar does not support meeting responses.";
+"meeting.rsvp.error.send.failed" = "Failed to send response";
 "a11y.meeting.rsvp.pending" = "Awaiting response";
 
 "menubar.now" = "now";

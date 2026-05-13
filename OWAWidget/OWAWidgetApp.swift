@@ -4,22 +4,20 @@ import AppKit
 
 @main
 struct OWAWidgetApp: App {
-    @StateObject private var calendarService: CalendarService
-    @StateObject private var localizationService: LocalizationService
+    // Using property-initializer syntax so SwiftUI evaluates each expression exactly once,
+    // regardless of how many times the App struct is re-instantiated during startup.
+    // With the old pattern (_foo = StateObject(wrappedValue: Foo()) inside an explicit init()),
+    // SwiftUI can call init() multiple times, each creating a live CalendarService + background
+    // tasks — causing duplicate reminder panels.
+    @StateObject private var localizationService = LocalizationService(resourceBundle: .main)
+    @StateObject private var calendarService = CalendarService()
     @StateObject private var updateCheckService = UpdateCheckService()
-    private let notificationDelegate = AppNotificationDelegate()
+
+    // Static: one delegate instance survives across App struct re-evaluations.
+    private static let notificationDelegate = AppNotificationDelegate()
 
     init() {
-        let localizationService = LocalizationService(resourceBundle: .main)
-        _localizationService = StateObject(wrappedValue: localizationService)
-        _calendarService = StateObject(
-            wrappedValue: CalendarService(initialNotificationLocalization: localizationService.notificationLocalization)
-        )
-        UNUserNotificationCenter.current().delegate = notificationDelegate
-        notificationDelegate.onJoinFromNotification = { [calendarService] item in
-            calendarService.openJoinURL(for: item, source: .reminderNotification)
-            PostJoinDismissController.shared.dismissAfterJoin(context: .notificationAction)
-        }
+        UNUserNotificationCenter.current().delegate = Self.notificationDelegate
         configureAppIcon()
     }
 
@@ -30,7 +28,10 @@ struct OWAWidgetApp: App {
                 .environmentObject(localizationService)
                 .environmentObject(updateCheckService)
                 .environment(\.locale, localizationService.locale)
-                .onAppear { syncLocalization() }
+                .onAppear {
+                    setupNotificationDelegate()
+                    syncLocalization()
+                }
                 .onChange(of: localizationService.selectedLanguage) { _ in
                     syncLocalization()
                 }
@@ -42,7 +43,6 @@ struct OWAWidgetApp: App {
                 .onAppear {
                     syncLocalization()
                     updateCheckService.start()
-
                 }
         }
         .menuBarExtraStyle(.window)
@@ -63,6 +63,15 @@ struct OWAWidgetApp: App {
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
+    }
+
+    /// Wires the notification delegate to the live CalendarService owned by SwiftUI.
+    /// Called from onAppear so it runs after @StateObject is fully initialised.
+    private func setupNotificationDelegate() {
+        Self.notificationDelegate.onJoinFromNotification = { [calendarService] item in
+            calendarService.openJoinURL(for: item, source: .reminderNotification)
+            PostJoinDismissController.shared.dismissAfterJoin(context: .notificationAction)
+        }
     }
 
     private func syncLocalization() {

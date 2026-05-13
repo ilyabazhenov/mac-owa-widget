@@ -474,49 +474,79 @@ actor OWAClient {
     }
 
     func respondToMeeting(itemId: String, changeKey: String, action: MeetingResponseAction) async throws {
-        if canaryToken == nil {
-            try await authenticate()
-        }
-        do {
-            try await performRespondRequest(itemId: itemId, changeKey: changeKey, action: action)
-        } catch OWAError.httpError(440, _), OWAError.httpError(401, _) {
-            canaryToken = nil
-            try await authenticate()
-            try await performRespondRequest(itemId: itemId, changeKey: changeKey, action: action)
-        }
+        try await performEWSRespondRequest(itemId: itemId, changeKey: changeKey, action: action)
     }
 
-    private func performRespondRequest(itemId: String, changeKey: String, action: MeetingResponseAction) async throws {
-        guard let canary = canaryToken else { throw OWAError.notAuthenticated }
+    private func performEWSRespondRequest(itemId: String, changeKey: String, action: MeetingResponseAction) async throws {
+        let elementName: String
+        switch action {
+        case .accept:    elementName = "AcceptItem"
+        case .tentative: elementName = "TentativelyAcceptItem"
+        case .decline:   elementName = "DeclineItem"
+        }
 
-        let payload = OWAMeetingRespondPayload.make(
-            itemId: itemId,
-            changeKey: changeKey,
-            action: action,
-            timezoneID: windowsTimezoneID()
+        let soap = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" \
+        xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" \
+        xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">
+          <soap:Header>
+            <t:RequestServerVersion Version="Exchange2013_SP1"/>
+          </soap:Header>
+          <soap:Body>
+            <m:CreateItem MessageDisposition="SendAndSaveCopy">
+              <m:Items>
+                <t:\(elementName)>
+                  <t:ReferenceItemId Id="\(itemId)" ChangeKey="\(changeKey)"/>
+                </t:\(elementName)>
+              </m:Items>
+            </m:CreateItem>
+          </soap:Body>
+        </soap:Envelope>
+        """
+
+        let ewsURL = url("/EWS/Exchange.asmx")
+        var request = URLRequest(url: ewsURL, timeoutInterval: 15)
+        request.httpMethod = "POST"
+        request.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        let credentials = "\(username):\(password)"
+        let basicAuth = "Basic \(Data(credentials.utf8).base64EncodedString())"
+        request.setValue(basicAuth, forHTTPHeaderField: "Authorization")
+        request.setValue(
+            "\"http://schemas.microsoft.com/exchange/services/2006/messages/CreateItem\"",
+            forHTTPHeaderField: "SOAPAction"
         )
-        let jsonData = try JSONSerialization.data(withJSONObject: payload, options: .prettyPrinted)
-        guard let jsonString = String(data: jsonData, encoding: .utf8) else { throw OWAError.encodingFailed }
+        addCommonHeaders(&request)
+        request.httpBody = Data(soap.utf8)
 
-        log.debug(
-            "respondToMeeting payload itemId=\(itemId.prefix(30), privacy: .public) changeKey=\(changeKey.prefix(20), privacy: .public) action=\(String(describing: action), privacy: .public)"
+        log.info(
+            "EWS respondToMeeting itemId=\(String(itemId.prefix(40)), privacy: .public) action=\(elementName, privacy: .public)"
         )
-        log.debug("respondToMeeting json=\(jsonString, privacy: .public)")
-
-        let sendData = try JSONSerialization.data(withJSONObject: payload)
-        guard let sendString = String(data: sendData, encoding: .utf8) else { throw OWAError.encodingFailed }
-
-        var request = try serviceRequest(action: "CreateItem", canary: canary)
-        request.setValue(sendString.formEncoded, forHTTPHeaderField: "X-OWA-UrlPostData")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
-        let responseBody = String(data: data.prefix(500), encoding: .utf8) ?? ""
-        log.debug("respondToMeeting response status=\(http.statusCode, privacy: .public) body=\(responseBody, privacy: .public)")
+        let responseBody = String(data: data.prefix(600), encoding: .utf8) ?? ""
+        log.info(
+            "EWS respondToMeeting status=\(http.statusCode, privacy: .public) bytes=\(data.count, privacy: .public)"
+        )
+        log.debug("EWS respondToMeeting response preview=\(responseBody, privacy: .private)")
+
         guard (200..<300).contains(http.statusCode) else {
-            let msg = String(data: data.prefix(300), encoding: .utf8) ?? ""
-            throw OWAError.httpError(http.statusCode, msg)
+            throw OWAError.httpError(http.statusCode, responseBody)
         }
+
+        // EWS returns HTTP 200 even for errors — check SOAP body
+        if let soapError = extractEWSResponseCode(from: responseBody), soapError != "NoError" {
+            throw OWAError.httpError(200, soapError)
+        }
+    }
+
+    private func extractEWSResponseCode(from body: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: "<m:ResponseCode>([^<]+)</m:ResponseCode>") else { return nil }
+        let ns = body as NSString
+        guard let match = re.firstMatch(in: body, range: NSRange(location: 0, length: ns.length)),
+              match.numberOfRanges > 1 else { return nil }
+        return ns.substring(with: match.range(at: 1))
     }
 
     private func resolveDefaultCalendarFolderIdentifier(canary: String) async throws -> OWAFolderIdentifier? {
