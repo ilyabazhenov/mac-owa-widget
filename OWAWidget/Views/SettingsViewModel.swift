@@ -11,6 +11,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var meetingEngagementDefaultPeriod: MeetingEngagementPeriod { didSet { updateUnsavedChanges() } }
     @Published var notificationScreenPolicy: NotificationScreenPolicy { didSet { updateUnsavedChanges() } }
     @Published var menuBarDisplayMode: MenuBarDisplayMode { didSet { updateUnsavedChanges() } }
+    @Published var dimPastMeetingsOnTimeline: Bool { didSet { updateUnsavedChanges() } }
     @Published var launchAtLogin: Bool
     @Published var launchAtLoginRequiresApproval: Bool
     @Published private(set) var hasUnsavedChanges: Bool = false
@@ -40,6 +41,7 @@ final class SettingsViewModel: ObservableObject {
         self.meetingEngagementDefaultPeriod = calendarService.engagementPeriod
         self.notificationScreenPolicy = calendarService.notificationScreenPolicy
         self.menuBarDisplayMode = calendarService.menuBarDisplayMode
+        self.dimPastMeetingsOnTimeline = calendarService.dimPastMeetingsOnTimeline
         self.launchAtLogin = launchAtLoginManager.isEnabled
         self.launchAtLoginRequiresApproval = launchAtLoginManager.requiresApproval
         self.baselinePreferences = PreferencesSnapshot(
@@ -49,7 +51,8 @@ final class SettingsViewModel: ObservableObject {
             meetingEngagementScope: calendarService.meetingEngagementScope,
             meetingEngagementDefaultPeriod: calendarService.engagementPeriod,
             notificationScreenPolicy: calendarService.notificationScreenPolicy,
-            menuBarDisplayMode: calendarService.menuBarDisplayMode
+            menuBarDisplayMode: calendarService.menuBarDisplayMode,
+            dimPastMeetingsOnTimeline: calendarService.dimPastMeetingsOnTimeline
         )
         updateUnsavedChanges()
     }
@@ -123,6 +126,7 @@ final class SettingsViewModel: ObservableObject {
         service.meetingReminderSound = meetingReminderSound
         service.notificationScreenPolicy = notificationScreenPolicy
         service.menuBarDisplayMode = menuBarDisplayMode
+        service.dimPastMeetingsOnTimeline = dimPastMeetingsOnTimeline
         service.setMeetingEngagementScope(meetingEngagementScope)
         service.setMeetingEngagementPeriod(meetingEngagementDefaultPeriod)
         service.applySavedPreferences()
@@ -167,6 +171,7 @@ final class SettingsViewModel: ObservableObject {
         let meetingEngagementDefaultPeriod: MeetingEngagementPeriod
         let notificationScreenPolicy: NotificationScreenPolicy
         let menuBarDisplayMode: MenuBarDisplayMode
+        let dimPastMeetingsOnTimeline: Bool
     }
 
     private func currentPreferencesSnapshot() -> PreferencesSnapshot {
@@ -177,7 +182,8 @@ final class SettingsViewModel: ObservableObject {
             meetingEngagementScope: meetingEngagementScope,
             meetingEngagementDefaultPeriod: meetingEngagementDefaultPeriod,
             notificationScreenPolicy: notificationScreenPolicy,
-            menuBarDisplayMode: menuBarDisplayMode
+            menuBarDisplayMode: menuBarDisplayMode,
+            dimPastMeetingsOnTimeline: dimPastMeetingsOnTimeline
         )
     }
 

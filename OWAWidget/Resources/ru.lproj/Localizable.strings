@@ -45,6 +45,9 @@
 "preferences.menubar.display" = "Отображение в строке меню";
 "preferences.menubar.display.countdown" = "Как сейчас: countdown";
 "preferences.menubar.display.status" = "Status: Next / Now / Free";
+
+"preferences.timeline.section" = "Таймлайн";
+"preferences.timeline.dimPastMeetings" = "Приглушать прошедшие встречи на сегодня";
 "preferences.notifications.section" = "Уведомления";
 "preferences.notifications.style" = "Тип напоминания";
 "preferences.notifications.style.system" = "Системные уведомления";

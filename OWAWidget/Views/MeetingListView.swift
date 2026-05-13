@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct MeetingListView: View {
     let sections: [(label: String, date: Date, events: [CalendarEvent])]
@@ -53,6 +54,7 @@ struct MeetingListView: View {
 
     // MARK: - Section layout
 
+    @ViewBuilder
     private func hourlySection(
         section: (label: String, date: Date, events: [CalendarEvent])
     ) -> some View {
@@ -62,30 +64,30 @@ struct MeetingListView: View {
             referenceDate: Date()
         )
 
-        guard let firstSlot = slots.first else { return AnyView(EmptyView()) }
+        if let firstSlot = slots.first {
+            let allItems: [HourSlotMeetingItem] = {
+                var seenIDs = Set<String>()
+                return slots.flatMap(\.items).filter { seenIDs.insert($0.id).inserted }
+            }()
+            let gridStart = firstSlot.startDate
+            let fixedSlotHeight = CGFloat(slotDurationMinutes) * timelinePointsPerMinute
+            let gridPixelHeight = CGFloat(slots.count) * fixedSlotHeight
 
-        // Each event appears in only its first overlapping slot; deduplicate for the overlay.
-        var seenIDs = Set<String>()
-        let allItems = slots.flatMap { $0.items }.filter { seenIDs.insert($0.id).inserted }
-        let gridStart = firstSlot.startDate
-        let fixedSlotHeight = CGFloat(slotDurationMinutes) * timelinePointsPerMinute
-
-        return AnyView(
-            VStack(spacing: 0) {
-                ForEach(slots) { slot in
-                    timeGridRow(slot, fixedHeight: fixedSlotHeight)
-                        .id(slotID(for: section.date, slotStart: slot.startDate))
+            ZStack(alignment: .topLeading) {
+                VStack(spacing: 0) {
+                    ForEach(slots) { slot in
+                        timeGridRow(slot, fixedHeight: fixedSlotHeight)
+                            .id(slotID(for: section.date, slotStart: slot.startDate))
+                    }
                 }
-            }
-            .overlay(alignment: .topLeading) {
-                if !allItems.isEmpty {
-                    GeometryReader { geo in
-                        // Cards are placed starting after the time column.
-                        let leftInset = timeColumnWidth + 10
-                        let cardAreaWidth = max(0, geo.size.width - leftInset)
-                        let laneSpacing: CGFloat = 0
 
-                        ZStack(alignment: .topLeading) {
+                GeometryReader { geo in
+                    ZStack(alignment: .topLeading) {
+                        if !allItems.isEmpty {
+                            let leftInset = timeColumnWidth + 10
+                            let cardAreaWidth = max(0, geo.size.width - leftInset)
+                            let laneSpacing: CGFloat = 0
+
                             ForEach(allItems) { item in
                                 let laneCount = max(1, item.laneCount)
                                 let cardFrame = TimelineMeetingLayout.cardFrame(
@@ -126,13 +128,13 @@ struct MeetingListView: View {
                                 )
                             }
                         }
-                        .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
                     }
+                    .frame(width: geo.size.width, height: max(geo.size.height, gridPixelHeight), alignment: .topLeading)
                 }
             }
             .padding(.horizontal, contentHorizontalPadding)
             .padding(.bottom, 12)
-        )
+        }
     }
 
     // MARK: - Time grid row (no cards)
@@ -245,6 +247,4 @@ struct MeetingListView: View {
         }
         return slotID(for: section.date, slotStart: slotStart)
     }
-
-
 }

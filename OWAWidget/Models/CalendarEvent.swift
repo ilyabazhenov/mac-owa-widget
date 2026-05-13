@@ -127,6 +127,11 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         return startDate <= now && endDate > now
     }
 
+    /// Past for today only: ended meetings are dimmed on the timeline; other days are unchanged.
+    var isPast: Bool {
+        endDate < Date() && Calendar.current.isDateInToday(startDate)
+    }
+
     var minutesUntilStart: Int {
         max(0, Int(startDate.timeIntervalSinceNow / 60))
     }

@@ -45,6 +45,9 @@
 "preferences.menubar.display" = "Menu bar display";
 "preferences.menubar.display.countdown" = "Countdown (current)";
 "preferences.menubar.display.status" = "Status: Next / Now / Free";
+
+"preferences.timeline.section" = "Timeline";
+"preferences.timeline.dimPastMeetings" = "Dim past meetings on today's timeline";
 "preferences.notifications.section" = "Notifications";
 "preferences.notifications.style" = "Reminder style";
 "preferences.notifications.style.system" = "System notifications";

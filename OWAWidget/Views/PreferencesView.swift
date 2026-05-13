@@ -71,6 +71,13 @@ struct PreferencesView: View {
                 .pickerStyle(.menu)
             }
 
+            Section(localization.tr("preferences.timeline.section")) {
+                Toggle(
+                    localization.tr("preferences.timeline.dimPastMeetings"),
+                    isOn: $vm.dimPastMeetingsOnTimeline
+                )
+            }
+
             Section(localization.tr("preferences.notifications.section")) {
                 Picker(localization.tr("preferences.notifications.remind"), selection: $vm.notificationLeadMinutes) {
                     ForEach(leadOptions, id: \.value) { opt in

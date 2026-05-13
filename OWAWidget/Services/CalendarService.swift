@@ -51,6 +51,7 @@ final class CalendarService: ObservableObject {
     private let meetingReminderSoundKey = "meetingReminderSound"
     private let notificationScreenPolicyKey = NotificationScreenPolicy.defaultsKey
     private let menuBarDisplayModeKey = "menuBarDisplayMode"
+    private let dimPastMeetingsOnTimelineKey = "dimPastMeetingsOnTimeline"
 
     var syncInterval: TimeInterval {
         get { UserDefaults.standard.double(forKey: syncIntervalKey).nonZero ?? 300 }
@@ -103,6 +104,17 @@ final class CalendarService: ObservableObject {
             return mode
         }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: menuBarDisplayModeKey) }
+    }
+
+    /// When `true` (default), ended meetings on today’s timeline render at reduced opacity.
+    var dimPastMeetingsOnTimeline: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: dimPastMeetingsOnTimelineKey) == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: dimPastMeetingsOnTimelineKey)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: dimPastMeetingsOnTimelineKey) }
     }
 
     init(
@@ -191,6 +203,7 @@ final class CalendarService: ObservableObject {
 
     /// Call after saving preferences from Settings (style, lead time, etc.).
     func applySavedPreferences() {
+        objectWillChange.send()
         Task { await rescheduleMeetingRemindersForCurrentEvents() }
     }
 

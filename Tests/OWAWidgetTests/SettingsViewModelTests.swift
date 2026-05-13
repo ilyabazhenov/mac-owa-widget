@@ -22,6 +22,20 @@ final class SettingsViewModelTests: XCTestCase {
         super.tearDown()
     }
 
+    func testSavePreferencesPersistsDimPastMeetingsOnTimelineToService() {
+        let (service, vm, _) = makeSUT()
+
+        XCTAssertTrue(vm.dimPastMeetingsOnTimeline)
+        XCTAssertTrue(service.dimPastMeetingsOnTimeline)
+
+        vm.dimPastMeetingsOnTimeline = false
+        XCTAssertTrue(vm.hasUnsavedChanges)
+        vm.savePreferences()
+
+        XCTAssertFalse(service.dimPastMeetingsOnTimeline)
+        XCTAssertFalse(vm.hasUnsavedChanges)
+    }
+
     func testSavePreferencesPersistsMenuBarDisplayModeToService() {
         let (service, vm, _) = makeSUT()
 
@@ -109,6 +123,7 @@ final class SettingsViewModelTests: XCTestCase {
         defaults.removeObject(forKey: "meetingReminderSound")
         defaults.removeObject(forKey: NotificationScreenPolicy.defaultsKey)
         defaults.removeObject(forKey: "menuBarDisplayMode")
+        defaults.removeObject(forKey: "dimPastMeetingsOnTimeline")
         defaults.removeObject(forKey: "meetingEngagementStats.storage.v1")
     }
 

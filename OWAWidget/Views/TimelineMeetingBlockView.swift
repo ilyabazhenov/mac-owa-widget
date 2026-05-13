@@ -114,6 +114,7 @@ struct TimelineMeetingBlockView: View {
                 .strokeBorder(borderColor, lineWidth: borderWidth)
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .opacity((calendarService.dimPastMeetingsOnTimeline && event.isPast) ? 0.58 : 1.0)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(a11yEventSummary)
     }
