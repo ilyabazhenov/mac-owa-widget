@@ -204,4 +204,80 @@ final class OWARequestPayloadTests: XCTestCase {
         let addl = try XCTUnwrap(personaShape["AdditionalProperties"] as? [[String: Any]])
         XCTAssertTrue(addl.contains { ($0["FieldURI"] as? String) == "PersonaAttributions" })
     }
+
+    func testUserAvailabilityPayloadSerializesMailboxesAndWindow() throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let end = start.addingTimeInterval(86_400)
+        let payload = OWAUserAvailabilityPayload.make(
+            emails: ["a@x.com", "b@y.org"],
+            start: start,
+            end: end,
+            timezoneID: "Russian Standard Time"
+        )
+        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: payload))
+        let request = try XCTUnwrap(payload["request"] as? [String: Any])
+        XCTAssertEqual(request["__type"] as? String, "GetUserAvailabilityInternalJsonRequest:#Exchange")
+        let body = try XCTUnwrap(request["Body"] as? [String: Any])
+        let mailboxes = try XCTUnwrap(body["MailboxDataArray"] as? [[String: Any]])
+        XCTAssertEqual(mailboxes.count, 2)
+        let firstMailbox = try XCTUnwrap(mailboxes.first?["Email"] as? [String: Any])
+        XCTAssertEqual(firstMailbox["__type"] as? String, "EmailAddress:#Exchange")
+        XCTAssertEqual(firstMailbox["Address"] as? String, "a@x.com")
+        let opts = try XCTUnwrap(body["FreeBusyViewOptions"] as? [String: Any])
+        XCTAssertEqual((opts["MergedFreeBusyIntervalInMinutes"] as? NSNumber)?.intValue, 30)
+        XCTAssertEqual(opts["RequestedView"] as? String, "DetailedMerged")
+        let tw = try XCTUnwrap(opts["TimeWindow"] as? [String: Any])
+        XCTAssertNotNil(tw["StartTime"] as? String)
+        XCTAssertNotNil(tw["EndTime"] as? String)
+    }
+
+    func testCreateCalendarEventPayloadShape() throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let end = start.addingTimeInterval(3600)
+        let attendees = [
+            ResolvedAttendee(displayName: "Ada", email: "ada@example.com", jobTitle: nil),
+        ]
+        let payload = OWACreateCalendarEventPayload.make(
+            title: "Sync",
+            start: start,
+            end: end,
+            attendees: attendees,
+            timezoneID: "Russian Standard Time",
+            folderIdentifier: OWAFolderIdentifier(id: "fid-1", changeKey: "ck-1")
+        )
+        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: payload))
+        XCTAssertEqual(payload["__type"] as? String, "CreateItemJsonRequest:#Exchange")
+        let body = try XCTUnwrap(payload["Body"] as? [String: Any])
+        XCTAssertEqual(body["__type"] as? String, "CreateItemRequest:#Exchange")
+        let saved = try XCTUnwrap(body["SavedItemFolderId"] as? [String: Any])
+        let base = try XCTUnwrap(saved["BaseFolderId"] as? [String: Any])
+        XCTAssertEqual(base["Id"] as? String, "fid-1")
+        XCTAssertEqual(base["ChangeKey"] as? String, "ck-1")
+        let items = try XCTUnwrap(body["Items"] as? [[String: Any]])
+        let item = try XCTUnwrap(items.first)
+        XCTAssertEqual(item["Subject"] as? String, "Sync")
+        XCTAssertEqual(item["__type"] as? String, "CalendarItem:#Exchange")
+        XCTAssertNotNil(item["ClientSeriesId"] as? String)
+        let req = try XCTUnwrap(item["RequiredAttendees"] as? [[String: Any]])
+        XCTAssertEqual(req.count, 1)
+        let mb = try XCTUnwrap(req[0]["Mailbox"] as? [String: Any])
+        XCTAssertEqual(mb["EmailAddress"] as? String, "ada@example.com")
+    }
+
+    func testCreateCalendarEventPayloadUsesDistinguishedCalendarWhenFolderNil() throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let payload = OWACreateCalendarEventPayload.make(
+            title: "T",
+            start: start,
+            end: start.addingTimeInterval(1800),
+            attendees: [],
+            timezoneID: "Russian Standard Time",
+            folderIdentifier: nil
+        )
+        let body = try XCTUnwrap(payload["Body"] as? [String: Any])
+        let saved = try XCTUnwrap(body["SavedItemFolderId"] as? [String: Any])
+        let base = try XCTUnwrap(saved["BaseFolderId"] as? [String: Any])
+        XCTAssertEqual(base["__type"] as? String, "DistinguishedFolderId:#Exchange")
+        XCTAssertEqual(base["Id"] as? String, "calendar")
+    }
 }

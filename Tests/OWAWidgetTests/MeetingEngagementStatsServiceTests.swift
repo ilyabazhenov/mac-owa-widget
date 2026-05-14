@@ -37,7 +37,7 @@ final class MeetingEngagementStatsServiceTests: XCTestCase {
         defaults.removePersistentDomain(forName: defaultsSuiteName(defaults))
         let service = MeetingEngagementStatsService(defaults: defaults)
         let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let calendar = Calendar.current
+        let calendar = AppTimeZone.calendar
         let today = calendar.startOfDay(for: now)
         let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
 

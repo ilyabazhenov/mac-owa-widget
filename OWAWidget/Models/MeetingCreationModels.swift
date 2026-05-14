@@ -40,13 +40,17 @@ enum MeetingSearchRange: String, CaseIterable, Sendable {
     case today, tomorrow, thisWeek, nextWeek
 
     var dateInterval: DateInterval {
+        dateInterval(referenceNow: Date())
+    }
+
+    /// Same as `dateInterval` but with a fixed "now" for tests and previews.
+    func dateInterval(referenceNow: Date) -> DateInterval {
         let cal = AppTimeZone.calendar
-        let now = Date()
-        let todayStart = cal.startOfDay(for: now)
+        let todayStart = cal.startOfDay(for: referenceNow)
         switch self {
         case .today:
             let end = cal.date(bySettingHour: 18, minute: 0, second: 0, of: todayStart)!
-            return DateInterval(start: max(now, todayStart), end: end)
+            return DateInterval(start: max(referenceNow, todayStart), end: end)
         case .tomorrow:
             let start = cal.date(byAdding: .day, value: 1, to: todayStart)!
             let end = cal.date(bySettingHour: 18, minute: 0, second: 0, of: start)!
@@ -54,7 +58,7 @@ enum MeetingSearchRange: String, CaseIterable, Sendable {
         case .thisWeek:
             let end = cal.date(byAdding: .day, value: 5, to: todayStart)!
             let endOfWeek = cal.date(bySettingHour: 18, minute: 0, second: 0, of: end)!
-            return DateInterval(start: max(now, todayStart), end: endOfWeek)
+            return DateInterval(start: max(referenceNow, todayStart), end: endOfWeek)
         case .nextWeek:
             let start = cal.date(byAdding: .day, value: 7, to: todayStart)!
             let end = cal.date(byAdding: .day, value: 12, to: todayStart)!
