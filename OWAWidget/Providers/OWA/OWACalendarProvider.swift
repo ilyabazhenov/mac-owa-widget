@@ -54,14 +54,22 @@ actor OWACalendarProvider: CalendarProvider {
         try await client.getUserAvailabilityInternal(emails: emails, from: start, to: end)
     }
 
-    func createMeeting(title: String, agenda: String, start: Date, end: Date, attendees: [ResolvedAttendee]) async throws {
+    func createMeeting(
+        title: String,
+        agenda: String,
+        start: Date,
+        end: Date,
+        requiredAttendees: [ResolvedAttendee],
+        optionalAttendees: [ResolvedAttendee]
+    ) async throws {
         let folderIdentifier = await client.resolvedFolderIdentifier
         try await client.createCalendarEvent(
             title: title,
             agenda: agenda,
             start: start,
             end: end,
-            attendees: attendees,
+            requiredAttendees: requiredAttendees,
+            optionalAttendees: optionalAttendees,
             folderIdentifier: folderIdentifier
         )
     }

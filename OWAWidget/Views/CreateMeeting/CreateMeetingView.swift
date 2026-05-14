@@ -11,7 +11,8 @@ private struct SearchFieldHeightKey: PreferenceKey {
 struct CreateMeetingView: View {
     @EnvironmentObject private var localization: LocalizationService
     @StateObject private var vm: CreateMeetingViewModel
-    @State private var searchFieldHeight: CGFloat = 36
+    @State private var requiredFieldHeight: CGFloat = 36
+    @State private var optionalFieldHeight: CGFloat = 36
 
     init(calendarService: CalendarService, accountID: UUID) {
         _vm = StateObject(wrappedValue: CreateMeetingViewModel(
@@ -116,39 +117,62 @@ struct CreateMeetingView: View {
     // MARK: - Attendees
 
     private var attendeesField: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionLabel(localization.tr("create.meeting.attendees.label"))
-            AttendeeSearchField(vm: vm)
-                .background(
-                    // Measure the search field's height so the dropdown can offset by exactly that.
-                    GeometryReader { geo in
-                        Color.clear.preference(key: SearchFieldHeightKey.self, value: geo.size.height)
-                    }
-                )
-                .onPreferenceChange(SearchFieldHeightKey.self) { searchFieldHeight = $0 }
-                .overlay(alignment: .topLeading) {
-                    if vm.showDropdown {
-                        AttendeeDropdown(vm: vm)
-                            .offset(y: searchFieldHeight + 4)
-                    }
-                }
-                .zIndex(1)
-            if !vm.draft.attendees.isEmpty {
-                attendeeChips
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            attendeeGroup(
+                title: localization.tr("create.meeting.attendees.required"),
+                placeholder: localization.tr("create.meeting.attendees.required.placeholder"),
+                kind: .required,
+                list: vm.draft.requiredAttendees
+            )
+            .zIndex(vm.focusedSearchKind == .required ? 2 : 1)
+
+            attendeeGroup(
+                title: localization.tr("create.meeting.attendees.optional"),
+                placeholder: localization.tr("create.meeting.attendees.optional.placeholder"),
+                kind: .optional,
+                list: vm.draft.optionalAttendees
+            )
+            .zIndex(vm.focusedSearchKind == .optional ? 2 : 1)
         }
         .zIndex(1)
     }
 
-    private var attendeeChips: some View {
-        FlowLayout(spacing: 6) {
-            ForEach(vm.draft.attendees) { attendee in
-                AttendeeChipView(attendee: attendee) {
-                    vm.removeAttendee(attendee)
+    private func attendeeGroup(title: String, placeholder: String, kind: AttendeeKind, list: [ResolvedAttendee]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel(title)
+            AttendeeSearchField(vm: vm, kind: kind, placeholder: placeholder)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: SearchFieldHeightKey.self, value: geo.size.height)
+                    }
+                )
+                .onPreferenceChange(SearchFieldHeightKey.self) { newHeight in
+                    if kind == .required { requiredFieldHeight = newHeight }
+                    else { optionalFieldHeight = newHeight }
                 }
+                .overlay(alignment: .topLeading) {
+                    if vm.showDropdown(for: kind) {
+                        AttendeeDropdown(vm: vm, kind: kind)
+                            .offset(y: (kind == .required ? requiredFieldHeight : optionalFieldHeight) + 4)
+                    }
+                }
+            if !list.isEmpty {
+                FlowLayout(spacing: 6) {
+                    ForEach(list) { attendee in
+                        AttendeeChipView(
+                            attendee: attendee,
+                            kind: kind,
+                            toggleHint: localization.tr(kind == .required
+                                ? "create.meeting.attendees.make.optional"
+                                : "create.meeting.attendees.make.required"),
+                            onToggleKind: { vm.toggleAttendeeKind(attendee) },
+                            onRemove: { vm.removeAttendee(attendee) }
+                        )
+                    }
+                }
+                .padding(.top, 2)
             }
         }
-        .padding(.top, 2)
     }
 
     // MARK: - Range & Duration
@@ -194,7 +218,7 @@ struct CreateMeetingView: View {
                     spacing: 8
                 ) {
                     ForEach(vm.suggestedAttendees) { attendee in
-                        let isAdded = vm.draft.attendees.contains(attendee)
+                        let isAdded = vm.draft.allAttendees.contains(attendee)
                         FrequentContactCard(attendee: attendee, isAdded: isAdded) {
                             if isAdded {
                                 vm.removeAttendee(attendee)
@@ -231,7 +255,7 @@ struct CreateMeetingView: View {
             .padding(.vertical, 8)
         }
         .buttonStyle(.bordered)
-        .disabled(vm.draft.attendees.isEmpty || vm.isLoadingSlots)
+        .disabled(vm.draft.requiredAttendees.isEmpty || vm.isLoadingSlots)
         .controlSize(.regular)
     }
 
@@ -348,25 +372,28 @@ struct CreateMeetingView: View {
 
 private struct AttendeeDropdown: View {
     @ObservedObject var vm: CreateMeetingViewModel
+    let kind: AttendeeKind
 
     private static let rowHeight: CGFloat = 50
     private static let maxRows = 5
 
+    private var results: [ResolvedAttendee] { vm.results(for: kind) }
+
     /// As an overlay child, SwiftUI proposes the parent (search field) height to us — too small for content.
     /// Compute an explicit height instead so the dropdown sizes to its rows (and scrolls only when needed).
     private var computedHeight: CGFloat {
-        let visibleRows = min(vm.searchResults.count, Self.maxRows)
+        let visibleRows = min(results.count, Self.maxRows)
         return CGFloat(visibleRows) * Self.rowHeight
     }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                ForEach(vm.searchResults) { attendee in
+                ForEach(results) { attendee in
                     DropdownRowView(attendee: attendee) {
-                        vm.addAttendee(attendee)
+                        vm.addAttendee(attendee, kind: kind)
                     }
-                    if attendee.id != vm.searchResults.last?.id {
+                    if attendee.id != results.last?.id {
                         Divider().padding(.horizontal, 10)
                     }
                 }
@@ -426,6 +453,9 @@ private struct DropdownRowView: View {
 
 private struct AttendeeChipView: View {
     let attendee: ResolvedAttendee
+    let kind: AttendeeKind
+    let toggleHint: String
+    let onToggleKind: () -> Void
     let onRemove: () -> Void
 
     var body: some View {
@@ -433,7 +463,17 @@ private struct AttendeeChipView: View {
             InitialsAvatar(name: attendee.displayName, size: 18)
             Text(attendee.displayName.components(separatedBy: " ").prefix(2).joined(separator: " "))
                 .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(kind == .required ? .primary : .secondary)
                 .lineLimit(1)
+            Button(action: onToggleKind) {
+                Image(systemName: kind == .required
+                      ? "person.fill.checkmark"
+                      : "person.crop.circle.badge.questionmark")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(toggleHint)
             Button(action: onRemove) {
                 Image(systemName: "xmark")
                     .font(.system(size: 7, weight: .bold))
@@ -446,11 +486,17 @@ private struct AttendeeChipView: View {
         .padding(.vertical, 3)
         .background(
             Capsule()
-                .fill(Color(nsColor: .controlColor))
+                .fill(Color(nsColor: .controlColor).opacity(kind == .required ? 1.0 : 0.55))
         )
         .overlay(
             Capsule()
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                .stroke(
+                    Color(nsColor: .separatorColor),
+                    style: StrokeStyle(
+                        lineWidth: kind == .required ? 0.5 : 1.0,
+                        dash: kind == .optional ? [3, 2] : []
+                    )
+                )
         )
     }
 }

@@ -173,6 +173,12 @@
 "create.meeting.agenda.placeholder" = "Optional notes for attendees…";
 "create.meeting.attendees.label" = "Attendees";
 "create.meeting.attendees.placeholder" = "Search by name or email…";
+"create.meeting.attendees.required" = "Required";
+"create.meeting.attendees.optional" = "Optional";
+"create.meeting.attendees.required.placeholder" = "Add required attendee…";
+"create.meeting.attendees.optional.placeholder" = "Add optional attendee…";
+"create.meeting.attendees.make.optional" = "Make optional";
+"create.meeting.attendees.make.required" = "Make required";
 "create.meeting.range.label" = "Date range";
 "create.meeting.duration.label" = "Duration";
 "create.meeting.find.slots" = "Find available slots";

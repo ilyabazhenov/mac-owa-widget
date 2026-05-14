@@ -340,25 +340,30 @@ enum OWACreateCalendarEventPayload {
         agenda: String,
         start: Date,
         end: Date,
-        attendees: [ResolvedAttendee],
+        requiredAttendees: [ResolvedAttendee],
+        optionalAttendees: [ResolvedAttendee] = [],
         timezoneID: String,
         folderIdentifier: OWAFolderIdentifier?
     ) -> [String: Any] {
         let fmt = owaLocalDateFormatter(withMilliseconds: true)
-        let attendeeItems: [[String: Any]] = attendees.map { attendee in
-            [
-                "__type": "AttendeeType:#Exchange",
-                "Mailbox": [
-                    "Name": attendee.displayName,
-                    "EmailAddress": attendee.email,
-                    "RoutingType": "SMTP",
-                    "MailboxType": "Mailbox",
-                    "OriginalDisplayName": attendee.email,
-                ] as [String: Any],
-            ]
+        func attendeeItems(_ list: [ResolvedAttendee]) -> [[String: Any]] {
+            list.map { attendee in
+                [
+                    "__type": "AttendeeType:#Exchange",
+                    "Mailbox": [
+                        "Name": attendee.displayName,
+                        "EmailAddress": attendee.email,
+                        "RoutingType": "SMTP",
+                        "MailboxType": "Mailbox",
+                        "OriginalDisplayName": attendee.email,
+                    ] as [String: Any],
+                ]
+            }
         }
+        let requiredItems = attendeeItems(requiredAttendees)
+        let optionalItems = attendeeItems(optionalAttendees)
 
-        let calendarItem: [String: Any] = [
+        var calendarItem: [String: Any] = [
             "__type": "CalendarItem:#Exchange",
             "ClientSeriesId": UUID().uuidString.lowercased(),
             "Subject": title,
@@ -376,7 +381,7 @@ enum OWACreateCalendarEventPayload {
             "Start": fmt.string(from: start),
             "End": fmt.string(from: end),
             "FreeBusyType": "Busy",
-            "RequiredAttendees": attendeeItems,
+            "RequiredAttendees": requiredItems,
             "Location": [
                 "__type": "EnhancedLocation:#Exchange",
                 "Annotation": "",
@@ -389,6 +394,9 @@ enum OWACreateCalendarEventPayload {
             ] as [String: Any],
             "unfoldedIndex": 0,
         ]
+        if !optionalItems.isEmpty {
+            calendarItem["OptionalAttendees"] = optionalItems
+        }
 
         let savedFolderID: [String: Any]
         if let folderIdentifier {

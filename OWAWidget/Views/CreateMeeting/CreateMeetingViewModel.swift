@@ -5,9 +5,19 @@ import SwiftUI
 @MainActor
 final class CreateMeetingViewModel: ObservableObject {
     @Published var draft = MeetingDraft()
-    @Published var searchQuery = ""
-    @Published var searchResults: [ResolvedAttendee] = []
-    @Published var isSearching = false
+
+    // Two fully independent search states — one per attendee group.
+    @Published var requiredQuery = ""
+    @Published var requiredResults: [ResolvedAttendee] = []
+    @Published var isRequiredSearching = false
+
+    @Published var optionalQuery = ""
+    @Published var optionalResults: [ResolvedAttendee] = []
+    @Published var isOptionalSearching = false
+
+    /// Which search field currently has keyboard focus — controls which dropdown is visible.
+    @Published var focusedSearchKind: AttendeeKind? = nil
+
     @Published var freeSlots: [FreeSlot] = []
     @Published var selectedSlotID: UUID? = nil
     @Published var isLoadingSlots = false
@@ -17,9 +27,20 @@ final class CreateMeetingViewModel: ObservableObject {
     @Published var slotsSearched = false
     @Published var recentAttendees: [ResolvedAttendee] = []
 
-    var showDropdown: Bool { !searchResults.isEmpty }
-
     var suggestedAttendees: [ResolvedAttendee] { recentAttendees }
+
+    func results(for kind: AttendeeKind) -> [ResolvedAttendee] {
+        kind == .required ? requiredResults : optionalResults
+    }
+
+    func isSearching(for kind: AttendeeKind) -> Bool {
+        kind == .required ? isRequiredSearching : isOptionalSearching
+    }
+
+    /// Only the focused field's dropdown is shown — typing in one field never overlays the other.
+    func showDropdown(for kind: AttendeeKind) -> Bool {
+        focusedSearchKind == kind && !results(for: kind).isEmpty
+    }
 
     var selectedDuration: MeetingDurationOption {
         get { MeetingDurationOption(rawValue: draft.durationMinutes) ?? .min30 }
@@ -49,7 +70,8 @@ final class CreateMeetingViewModel: ObservableObject {
     let accountID: UUID
 
     private var cancellables = Set<AnyCancellable>()
-    private var searchTask: Task<Void, Never>?
+    private var requiredSearchTask: Task<Void, Never>?
+    private var optionalSearchTask: Task<Void, Never>?
     /// Invalidates in-flight slot fetches when parameters change again.
     private var findSlotsGeneration = 0
 
@@ -60,11 +82,19 @@ final class CreateMeetingViewModel: ObservableObject {
         self.calendarService = calendarService
         self.accountID = accountID
 
-        $searchQuery
+        $requiredQuery
             .removeDuplicates()
             .debounce(for: .milliseconds(350), scheduler: RunLoop.main)
             .sink { [weak self] query in
-                self?.scheduleSearch(query: query)
+                self?.scheduleSearch(kind: .required, query: query)
+            }
+            .store(in: &cancellables)
+
+        $optionalQuery
+            .removeDuplicates()
+            .debounce(for: .milliseconds(350), scheduler: RunLoop.main)
+            .sink { [weak self] query in
+                self?.scheduleSearch(kind: .optional, query: query)
             }
             .store(in: &cancellables)
 
@@ -83,55 +113,114 @@ final class CreateMeetingViewModel: ObservableObject {
 
     // MARK: - Search
 
-    private func scheduleSearch(query: String) {
-        searchTask?.cancel()
+    private func scheduleSearch(kind: AttendeeKind, query: String) {
+        cancelSearch(kind: kind)
         guard query.count >= 2 else {
-            searchResults = []
+            setResults([], kind: kind)
             return
         }
-        searchTask = Task { @MainActor in
+        let task = Task { @MainActor in
             guard !Task.isCancelled else { return }
-            isSearching = true
-            defer { isSearching = false }
+            setSearching(true, kind: kind)
+            defer { setSearching(false, kind: kind) }
             do {
-                let results = try await calendarService.findPeople(query: query, accountID: accountID)
-                guard !Task.isCancelled, searchQuery == query else { return }
-                searchResults = Array(
-                    results
-                        .filter { r in !draft.attendees.contains(r) }
+                let people = try await calendarService.findPeople(query: query, accountID: accountID)
+                guard !Task.isCancelled, currentQuery(for: kind) == query else { return }
+                let filtered = Array(
+                    people
+                        .filter { r in !draft.allAttendees.contains(r) }
                         .prefix(Self.maxSearchDropdownResults)
                 )
+                setResults(filtered, kind: kind)
             } catch is CancellationError {
                 // normal — user typed more
             } catch {
-                searchResults = []
+                setResults([], kind: kind)
                 print("[CreateMeetingVM] findPeople error: \(error)")
             }
         }
+        switch kind {
+        case .required: requiredSearchTask = task
+        case .optional: optionalSearchTask = task
+        }
     }
 
-    func selectFirstResult() {
-        guard let first = searchResults.first else { return }
-        addAttendee(first)
+    func selectFirstResult(kind: AttendeeKind) {
+        guard let first = results(for: kind).first else { return }
+        addAttendee(first, kind: kind)
+    }
+
+    private func currentQuery(for kind: AttendeeKind) -> String {
+        kind == .required ? requiredQuery : optionalQuery
+    }
+
+    private func setResults(_ results: [ResolvedAttendee], kind: AttendeeKind) {
+        switch kind {
+        case .required: requiredResults = results
+        case .optional: optionalResults = results
+        }
+    }
+
+    private func setSearching(_ value: Bool, kind: AttendeeKind) {
+        switch kind {
+        case .required: isRequiredSearching = value
+        case .optional: isOptionalSearching = value
+        }
+    }
+
+    private func cancelSearch(kind: AttendeeKind) {
+        switch kind {
+        case .required: requiredSearchTask?.cancel()
+        case .optional: optionalSearchTask?.cancel()
+        }
     }
 
     // MARK: - Attendees
 
-    func addAttendee(_ attendee: ResolvedAttendee) {
-        guard !draft.attendees.contains(attendee) else { return }
+    func addAttendee(_ attendee: ResolvedAttendee, kind: AttendeeKind = .required) {
+        guard !draft.allAttendees.contains(attendee) else { return }
         var d = draft
-        d.attendees.append(attendee)
+        switch kind {
+        case .required: d.requiredAttendees.append(attendee)
+        case .optional: d.optionalAttendees.append(attendee)
+        }
         draft = d
-        searchTask?.cancel()
-        searchQuery = ""
-        searchResults = []
+        clearSearch(kind: kind)
+    }
+
+    func clearSearch(kind: AttendeeKind) {
+        cancelSearch(kind: kind)
+        switch kind {
+        case .required:
+            requiredQuery = ""
+            requiredResults = []
+        case .optional:
+            optionalQuery = ""
+            optionalResults = []
+        }
     }
 
     func removeAttendee(_ attendee: ResolvedAttendee) {
         var d = draft
-        let before = d.attendees.count
-        d.attendees.removeAll { $0 == attendee }
-        guard d.attendees.count != before else { return }
+        let beforeReq = d.requiredAttendees.count
+        let beforeOpt = d.optionalAttendees.count
+        d.requiredAttendees.removeAll { $0 == attendee }
+        d.optionalAttendees.removeAll { $0 == attendee }
+        guard d.requiredAttendees.count != beforeReq || d.optionalAttendees.count != beforeOpt else { return }
+        draft = d
+    }
+
+    func toggleAttendeeKind(_ attendee: ResolvedAttendee) {
+        var d = draft
+        if let idx = d.requiredAttendees.firstIndex(where: { $0 == attendee }) {
+            let item = d.requiredAttendees.remove(at: idx)
+            d.optionalAttendees.append(item)
+        } else if let idx = d.optionalAttendees.firstIndex(where: { $0 == attendee }) {
+            let item = d.optionalAttendees.remove(at: idx)
+            d.requiredAttendees.append(item)
+        } else {
+            return
+        }
         draft = d
     }
 
@@ -141,7 +230,7 @@ final class CreateMeetingViewModel: ObservableObject {
         findSlotsGeneration += 1
         let gen = findSlotsGeneration
 
-        guard !draft.attendees.isEmpty else {
+        guard !draft.requiredAttendees.isEmpty else {
             isLoadingSlots = false
             freeSlots = []
             selectedSlotID = nil
@@ -156,13 +245,15 @@ final class CreateMeetingViewModel: ObservableObject {
         selectedSlotID = nil
         slotsSearched = false
 
-        let emails = draft.attendees.map(\.email)
+        let requiredEmails = draft.requiredAttendees.map(\.email)
+        let optionalEmails = draft.optionalAttendees.map(\.email)
         let range = draft.searchRange.dateInterval
         let duration = draft.durationMinutes
 
         do {
             let slots = try await calendarService.findFreeSlots(
-                emails: emails,
+                requiredEmails: requiredEmails,
+                optionalEmails: optionalEmails,
                 range: range,
                 durationMinutes: duration,
                 accountID: accountID
@@ -199,10 +290,11 @@ final class CreateMeetingViewModel: ObservableObject {
                 title: draft.title,
                 agenda: draft.agenda,
                 slot: slot,
-                attendees: draft.attendees,
+                requiredAttendees: draft.requiredAttendees,
+                optionalAttendees: draft.optionalAttendees,
                 accountID: accountID
             )
-            RecentAttendeesStore.record(draft.attendees)
+            RecentAttendeesStore.record(draft.allAttendees)
             recentAttendees = RecentAttendeesStore.load()
             successMessage = "create.meeting.success"
         } catch {

@@ -844,7 +844,8 @@ actor OWAClient {
         agenda: String,
         start: Date,
         end: Date,
-        attendees: [ResolvedAttendee],
+        requiredAttendees: [ResolvedAttendee],
+        optionalAttendees: [ResolvedAttendee] = [],
         folderIdentifier: OWAFolderIdentifier?
     ) async throws {
         let fmt = DateFormatter()
@@ -852,9 +853,17 @@ actor OWAClient {
         fmt.timeZone = TimeZone(identifier: "UTC")
         fmt.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
 
-        let attendeesXML = attendees.map { a in
-            "<t:Attendee><t:Mailbox><t:EmailAddress>\(escapeXML(a.email))</t:EmailAddress></t:Mailbox></t:Attendee>"
-        }.joined()
+        func attendeesXML(_ list: [ResolvedAttendee]) -> String {
+            list.map { a in
+                "<t:Attendee><t:Mailbox><t:EmailAddress>\(escapeXML(a.email))</t:EmailAddress></t:Mailbox></t:Attendee>"
+            }.joined()
+        }
+
+        let requiredXML = attendeesXML(requiredAttendees)
+        // EWS schema order: RequiredAttendees must precede OptionalAttendees in CalendarItem.
+        let optionalXML = optionalAttendees.isEmpty
+            ? ""
+            : "<t:OptionalAttendees>\(attendeesXML(optionalAttendees))</t:OptionalAttendees>"
 
         let agendaTrimmed = agenda.trimmingCharacters(in: .whitespacesAndNewlines)
         let bodyXML: String
@@ -885,7 +894,8 @@ actor OWAClient {
                   <t:End>\(fmt.string(from: end))</t:End>
                   <t:IsReminderSet>true</t:IsReminderSet>
                   <t:ReminderMinutesBeforeStart>15</t:ReminderMinutesBeforeStart>
-                  <t:RequiredAttendees>\(attendeesXML)</t:RequiredAttendees>
+                  <t:RequiredAttendees>\(requiredXML)</t:RequiredAttendees>
+                  \(optionalXML)
                 </t:CalendarItem>
               </m:Items>
             </m:CreateItem>
@@ -906,7 +916,7 @@ actor OWAClient {
         addCommonHeaders(&request)
         request.httpBody = Data(soap.utf8)
 
-        log.info("EWS CreateItem subject=\(title, privacy: .private) attendees=\(attendees.count, privacy: .public)")
+        log.info("EWS CreateItem subject=\(title, privacy: .private) required=\(requiredAttendees.count, privacy: .public) optional=\(optionalAttendees.count, privacy: .public)")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
@@ -918,7 +928,8 @@ actor OWAClient {
                 agenda: agenda,
                 start: start,
                 end: end,
-                attendees: attendees,
+                requiredAttendees: requiredAttendees,
+                optionalAttendees: optionalAttendees,
                 folderIdentifier: folderIdentifier
             )
             return

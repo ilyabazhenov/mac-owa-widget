@@ -242,7 +242,7 @@ final class OWARequestPayloadTests: XCTestCase {
             agenda: "",
             start: start,
             end: end,
-            attendees: attendees,
+            requiredAttendees: attendees,
             timezoneID: "Russian Standard Time",
             folderIdentifier: OWAFolderIdentifier(id: "fid-1", changeKey: "ck-1")
         )
@@ -263,6 +263,38 @@ final class OWARequestPayloadTests: XCTestCase {
         XCTAssertEqual(req.count, 1)
         let mb = try XCTUnwrap(req[0]["Mailbox"] as? [String: Any])
         XCTAssertEqual(mb["EmailAddress"] as? String, "ada@example.com")
+        XCTAssertNil(item["OptionalAttendees"], "OptionalAttendees must be absent when no optional attendees provided")
+    }
+
+    func testCreateCalendarEventPayloadIncludesOptionalAttendees() throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let required = [
+            ResolvedAttendee(displayName: "Ada", email: "ada@example.com", jobTitle: nil),
+        ]
+        let optional = [
+            ResolvedAttendee(displayName: "Bob", email: "bob@example.com", jobTitle: nil),
+            ResolvedAttendee(displayName: "Cara", email: "cara@example.com", jobTitle: nil),
+        ]
+        let payload = OWACreateCalendarEventPayload.make(
+            title: "Sync",
+            agenda: "",
+            start: start,
+            end: start.addingTimeInterval(1800),
+            requiredAttendees: required,
+            optionalAttendees: optional,
+            timezoneID: "Russian Standard Time",
+            folderIdentifier: nil
+        )
+        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: payload))
+        let body = try XCTUnwrap(payload["Body"] as? [String: Any])
+        let items = try XCTUnwrap(body["Items"] as? [[String: Any]])
+        let item = try XCTUnwrap(items.first)
+        let req = try XCTUnwrap(item["RequiredAttendees"] as? [[String: Any]])
+        XCTAssertEqual(req.count, 1)
+        let opt = try XCTUnwrap(item["OptionalAttendees"] as? [[String: Any]])
+        XCTAssertEqual(opt.count, 2)
+        let mb = try XCTUnwrap(opt[0]["Mailbox"] as? [String: Any])
+        XCTAssertEqual(mb["EmailAddress"] as? String, "bob@example.com")
     }
 
     func testCreateCalendarEventPayloadEmbedsAgendaInBody() throws {
@@ -272,7 +304,7 @@ final class OWARequestPayloadTests: XCTestCase {
             agenda: "Goals\nDiscuss <budget>",
             start: start,
             end: start.addingTimeInterval(1800),
-            attendees: [],
+            requiredAttendees: [],
             timezoneID: "Russian Standard Time",
             folderIdentifier: nil
         )
@@ -293,7 +325,7 @@ final class OWARequestPayloadTests: XCTestCase {
             agenda: "",
             start: start,
             end: start.addingTimeInterval(1800),
-            attendees: [],
+            requiredAttendees: [],
             timezoneID: "Russian Standard Time",
             folderIdentifier: nil
         )

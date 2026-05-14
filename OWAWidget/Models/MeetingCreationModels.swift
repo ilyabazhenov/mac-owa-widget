@@ -29,16 +29,34 @@ struct FreeSlot: Identifiable, Sendable {
     }
 }
 
+enum AttendeeKind: Sendable, Hashable {
+    case required
+    case optional
+}
+
 struct MeetingDraft: Sendable {
     var title: String = ""
     var agenda: String = ""
-    var attendees: [ResolvedAttendee] = []
+    var requiredAttendees: [ResolvedAttendee] = []
+    var optionalAttendees: [ResolvedAttendee] = []
     var durationMinutes: Int = 30
     var searchRange: MeetingSearchRange = .thisWeek
 
-    /// Stable key for debounced slot auto-refresh (`CreateMeetingViewModel`): attendees, range, duration.
+    var allAttendees: [ResolvedAttendee] {
+        requiredAttendees + optionalAttendees
+    }
+
+    func kind(of attendee: ResolvedAttendee) -> AttendeeKind? {
+        if requiredAttendees.contains(attendee) { return .required }
+        if optionalAttendees.contains(attendee) { return .optional }
+        return nil
+    }
+
+    /// Stable key for debounced slot auto-refresh (`CreateMeetingViewModel`).
+    /// Only required attendees participate in slot search (v1), so optional list is excluded
+    /// to avoid useless re-fetches when only optional participants change.
     var slotAutoRefreshKey: String {
-        attendees.map(\.email).sorted().joined(separator: "\u{1e}")
+        requiredAttendees.map(\.email).sorted().joined(separator: "\u{1e}")
             + "|\(searchRange.rawValue)|\(durationMinutes)"
     }
 }

@@ -7,14 +7,14 @@ final class MeetingDraftTests: XCTestCase {
         var a = MeetingDraft()
         a.title = "A"
         a.agenda = "X"
-        a.attendees = [ResolvedAttendee(displayName: "U", email: "u@e.com", jobTitle: nil)]
+        a.requiredAttendees = [ResolvedAttendee(displayName: "U", email: "u@e.com", jobTitle: nil)]
         a.searchRange = .nextWeek
         a.durationMinutes = 45
 
         var b = MeetingDraft()
         b.title = "B"
         b.agenda = "Y"
-        b.attendees = [ResolvedAttendee(displayName: "U", email: "u@e.com", jobTitle: nil)]
+        b.requiredAttendees = [ResolvedAttendee(displayName: "U", email: "u@e.com", jobTitle: nil)]
         b.searchRange = .nextWeek
         b.durationMinutes = 45
 
@@ -25,9 +25,9 @@ final class MeetingDraftTests: XCTestCase {
         let u = ResolvedAttendee(displayName: "U", email: "u@e.com", jobTitle: nil)
         let v = ResolvedAttendee(displayName: "V", email: "v@e.com", jobTitle: nil)
         var a = MeetingDraft()
-        a.attendees = [u, v]
+        a.requiredAttendees = [u, v]
         var b = MeetingDraft()
-        b.attendees = [v, u]
+        b.requiredAttendees = [v, u]
         XCTAssertEqual(a.slotAutoRefreshKey, b.slotAutoRefreshKey)
     }
 
@@ -49,12 +49,35 @@ final class MeetingDraftTests: XCTestCase {
 
     func testSlotAutoRefreshKeyChangesWhenAttendeeSetChanges() {
         var a = MeetingDraft()
-        a.attendees = [ResolvedAttendee(displayName: "U", email: "u@e.com", jobTitle: nil)]
+        a.requiredAttendees = [ResolvedAttendee(displayName: "U", email: "u@e.com", jobTitle: nil)]
         var b = MeetingDraft()
-        b.attendees = [
+        b.requiredAttendees = [
             ResolvedAttendee(displayName: "U", email: "u@e.com", jobTitle: nil),
             ResolvedAttendee(displayName: "V", email: "v@e.com", jobTitle: nil),
         ]
         XCTAssertNotEqual(a.slotAutoRefreshKey, b.slotAutoRefreshKey)
+    }
+
+    func testSlotAutoRefreshKeyIgnoresOptionalAttendeeChanges() {
+        let u = ResolvedAttendee(displayName: "U", email: "u@e.com", jobTitle: nil)
+        let v = ResolvedAttendee(displayName: "V", email: "v@e.com", jobTitle: nil)
+        var a = MeetingDraft()
+        a.requiredAttendees = [u]
+        var b = MeetingDraft()
+        b.requiredAttendees = [u]
+        b.optionalAttendees = [v]
+        // v1: optional attendees do not affect slot search, so the refresh key must not change.
+        XCTAssertEqual(a.slotAutoRefreshKey, b.slotAutoRefreshKey)
+    }
+
+    func testAllAttendeesCombinesRequiredAndOptional() {
+        let u = ResolvedAttendee(displayName: "U", email: "u@e.com", jobTitle: nil)
+        let v = ResolvedAttendee(displayName: "V", email: "v@e.com", jobTitle: nil)
+        var draft = MeetingDraft()
+        draft.requiredAttendees = [u]
+        draft.optionalAttendees = [v]
+        XCTAssertEqual(draft.allAttendees, [u, v])
+        XCTAssertEqual(draft.kind(of: u), .required)
+        XCTAssertEqual(draft.kind(of: v), .optional)
     }
 }

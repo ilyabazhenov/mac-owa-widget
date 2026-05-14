@@ -2,7 +2,19 @@ import SwiftUI
 
 struct AttendeeSearchField: View {
     @ObservedObject var vm: CreateMeetingViewModel
+    let kind: AttendeeKind
+    let placeholder: String
     @FocusState private var isFocused: Bool
+
+    private var query: Binding<String> {
+        Binding(
+            get: { kind == .required ? vm.requiredQuery : vm.optionalQuery },
+            set: { newValue in
+                if kind == .required { vm.requiredQuery = newValue }
+                else { vm.optionalQuery = newValue }
+            }
+        )
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -10,8 +22,8 @@ struct AttendeeSearchField: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 13))
                     .foregroundStyle(.tertiary)
-                    .opacity(vm.isSearching ? 0 : 1)
-                if vm.isSearching {
+                    .opacity(vm.isSearching(for: kind) ? 0 : 1)
+                if vm.isSearching(for: kind) {
                     ProgressView()
                         .scaleEffect(0.5)
                         .frame(width: 14, height: 14)
@@ -19,19 +31,23 @@ struct AttendeeSearchField: View {
             }
             .frame(width: 14, height: 14)
 
-            TextField(
-                vm.draft.attendees.isEmpty ? "Поиск по имени или email…" : "Добавить участника…",
-                text: $vm.searchQuery
-            )
-            .textFieldStyle(.plain)
-            .font(.system(size: 13))
-            .focused($isFocused)
-            .onSubmit { vm.selectFirstResult() }
-            .onExitCommand { vm.searchQuery = "" }
+            TextField(placeholder, text: query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .focused($isFocused)
+                .onSubmit { vm.selectFirstResult(kind: kind) }
+                .onExitCommand { vm.clearSearch(kind: kind) }
+                .onChange(of: isFocused) { focused in
+                    if focused {
+                        vm.focusedSearchKind = kind
+                    } else if vm.focusedSearchKind == kind {
+                        vm.focusedSearchKind = nil
+                    }
+                }
 
-            if !vm.searchQuery.isEmpty {
+            if !query.wrappedValue.isEmpty {
                 Button {
-                    vm.searchQuery = ""
+                    vm.clearSearch(kind: kind)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 13))

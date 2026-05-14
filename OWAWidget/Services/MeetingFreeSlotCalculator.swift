@@ -8,11 +8,13 @@ enum MeetingFreeSlotCalculator {
 
     static func compute(
         from availability: [AttendeeAvailability],
+        optionalAvailability: [AttendeeAvailability] = [],
         organizerAvailability: AttendeeAvailability?,
         organizerEvents: [CalendarEvent],
         range: DateInterval,
         durationMinutes: Int
     ) -> [FreeSlot] {
+        _ = optionalAvailability  // v1: optional attendees do not affect slot selection; param reserved for v2 ranking
         guard range.end > range.start else { return [] }
         let intervalSec: TimeInterval = 30 * 60
         let slotsNeeded = max(1, Int(ceil(Double(durationMinutes) / 30.0)))

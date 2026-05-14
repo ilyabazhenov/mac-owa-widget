@@ -252,12 +252,13 @@ final class CalendarService: ObservableObject {
     }
 
     func findFreeSlots(
-        emails: [String],
+        requiredEmails: [String],
+        optionalEmails: [String] = [],
         range: DateInterval,
         durationMinutes: Int,
         accountID: UUID
     ) async throws -> [FreeSlot] {
-        guard !emails.isEmpty else { return [] }
+        guard !requiredEmails.isEmpty else { return [] }
         guard let provider = providers.first(where: { $0.account.id == accountID }) else { return [] }
 
         let cal = AppTimeZone.calendar
@@ -267,9 +268,10 @@ final class CalendarService: ObservableObject {
             calendar: cal
         )
 
-        // Include organizer's own availability by resolving their SMTP email from the domain login
+        // Include organizer's own availability by resolving their SMTP email from the domain login.
+        // v1: optionalEmails do not affect slot selection — we don't even fetch their availability.
         let organizerSMTP = try? await provider.resolveOrganizerSMTPEmail()
-        var allEmails = emails
+        var allEmails = requiredEmails
         if let smtp = organizerSMTP, !allEmails.contains(smtp) {
             allEmails.insert(smtp, at: 0)
         }
@@ -290,6 +292,7 @@ final class CalendarService: ObservableObject {
                 && !ev.isCancelled
                 && ev.responseType != .declined
         }
+        _ = optionalEmails  // reserved for v2 ranking
         return MeetingFreeSlotCalculator.compute(
             from: attendeeAvailability,
             organizerAvailability: organizerAvailability,
@@ -303,7 +306,8 @@ final class CalendarService: ObservableObject {
         title: String,
         agenda: String,
         slot: FreeSlot,
-        attendees: [ResolvedAttendee],
+        requiredAttendees: [ResolvedAttendee],
+        optionalAttendees: [ResolvedAttendee] = [],
         accountID: UUID
     ) async throws {
         guard let provider = providers.first(where: { $0.account.id == accountID }) else { return }
@@ -312,7 +316,8 @@ final class CalendarService: ObservableObject {
             agenda: agenda,
             start: slot.start,
             end: slot.end,
-            attendees: attendees
+            requiredAttendees: requiredAttendees,
+            optionalAttendees: optionalAttendees
         )
         syncNow()
     }

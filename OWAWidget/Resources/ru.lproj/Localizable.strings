@@ -173,6 +173,12 @@
 "create.meeting.agenda.placeholder" = "Необязательно — темы и заметки для участников";
 "create.meeting.attendees.label" = "Участники";
 "create.meeting.attendees.placeholder" = "Поиск по имени или email…";
+"create.meeting.attendees.required" = "Обязательные";
+"create.meeting.attendees.optional" = "Опциональные";
+"create.meeting.attendees.required.placeholder" = "Добавить обязательного…";
+"create.meeting.attendees.optional.placeholder" = "Добавить опционального…";
+"create.meeting.attendees.make.optional" = "Сделать опциональным";
+"create.meeting.attendees.make.required" = "Сделать обязательным";
 "create.meeting.range.label" = "Диапазон дат";
 "create.meeting.duration.label" = "Длительность";
 "create.meeting.find.slots" = "Найти свободные слоты";
