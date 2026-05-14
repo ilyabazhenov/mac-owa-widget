@@ -574,9 +574,16 @@ private struct MeetingSlotGridLineOverlay: ViewModifier {
     var top = false
     var trailing = true
     var bottom = true
+    /// Full-hour horizontal (e.g. 10:00); half-hour rows use a softer line.
+    var topIsMajor = false
+    var bottomIsMajor = false
 
-    private var separator: Color {
-        Color(nsColor: .separatorColor).opacity(0.6)
+    private var verticalStroke: Color {
+        Color(nsColor: .separatorColor).opacity(0.45)
+    }
+
+    private func horizontalStroke(isMajor: Bool) -> Color {
+        Color(nsColor: .separatorColor).opacity(isMajor ? 0.62 : 0.22)
     }
 
     func body(content: Content) -> some View {
@@ -584,7 +591,7 @@ private struct MeetingSlotGridLineOverlay: ViewModifier {
             .overlay(alignment: .top) {
                 if top {
                     Rectangle()
-                        .fill(separator)
+                        .fill(horizontalStroke(isMajor: topIsMajor))
                         .frame(height: 1)
                         .allowsHitTesting(false)
                 }
@@ -592,7 +599,7 @@ private struct MeetingSlotGridLineOverlay: ViewModifier {
             .overlay(alignment: .leading) {
                 if leading {
                     Rectangle()
-                        .fill(separator)
+                        .fill(verticalStroke)
                         .frame(width: 1)
                         .allowsHitTesting(false)
                 }
@@ -600,7 +607,7 @@ private struct MeetingSlotGridLineOverlay: ViewModifier {
             .overlay(alignment: .bottom) {
                 if bottom {
                     Rectangle()
-                        .fill(separator)
+                        .fill(horizontalStroke(isMajor: bottomIsMajor))
                         .frame(height: 1)
                         .allowsHitTesting(false)
                 }
@@ -608,7 +615,7 @@ private struct MeetingSlotGridLineOverlay: ViewModifier {
             .overlay(alignment: .trailing) {
                 if trailing {
                     Rectangle()
-                        .fill(separator)
+                        .fill(verticalStroke)
                         .frame(width: 1)
                         .allowsHitTesting(false)
                 }
@@ -621,9 +628,20 @@ private extension View {
         leading: Bool = false,
         top: Bool = false,
         trailing: Bool = true,
-        bottom: Bool = true
+        bottom: Bool = true,
+        topIsMajor: Bool = false,
+        bottomIsMajor: Bool = false
     ) -> some View {
-        modifier(MeetingSlotGridLineOverlay(leading: leading, top: top, trailing: trailing, bottom: bottom))
+        modifier(
+            MeetingSlotGridLineOverlay(
+                leading: leading,
+                top: top,
+                trailing: trailing,
+                bottom: bottom,
+                topIsMajor: topIsMajor,
+                bottomIsMajor: bottomIsMajor
+            )
+        )
     }
 }
 
@@ -704,19 +722,20 @@ private struct WeekGridSlotView: View {
 
     var body: some View {
         let data = gridData
-        let topEdge = Color(nsColor: .separatorColor).opacity(0.6)
+        let topEdge = Color(nsColor: .separatorColor).opacity(0.62)
         Grid(horizontalSpacing: 0, verticalSpacing: 0) {
             GridRow {
                 Color.clear
                     .frame(minWidth: MeetingSlotGridMetrics.timeColumnWidth, maxWidth: MeetingSlotGridMetrics.timeColumnWidth, minHeight: 28)
-                    .meetingSlotGridLines(leading: true, trailing: true, bottom: true)
+                    .meetingSlotGridLines(leading: true, trailing: true, bottom: true, bottomIsMajor: true)
                 ForEach(data.days, id: \.self) { day in
                     columnHeader(for: day)
                         .padding(.vertical, 4)
-                        .meetingSlotGridLines(trailing: true, bottom: true)
+                        .meetingSlotGridLines(trailing: true, bottom: true, bottomIsMajor: true)
                 }
             }
             ForEach(Self.timeRows, id: \.self) { timeKey in
+                let rowEndsOnHour = (timeKey + 30) % 60 == 0
                 GridRow(alignment: .top) {
                     Text(timeLabel(timeKey))
                         .font(.system(size: timeKey % 60 == 0 ? 9 : 8, weight: timeKey % 60 == 0 ? .medium : .regular))
@@ -725,7 +744,7 @@ private struct WeekGridSlotView: View {
                         .padding(.trailing, 4)
                         .frame(width: MeetingSlotGridMetrics.timeColumnWidth, height: MeetingSlotGridMetrics.rowHeight)
                         .gridColumnAlignment(.trailing)
-                        .meetingSlotGridLines(leading: true, trailing: true, bottom: true)
+                        .meetingSlotGridLines(leading: true, trailing: true, bottom: true, bottomIsMajor: rowEndsOnHour)
                     ForEach(data.days, id: \.self) { day in
                         let slot = data.lookup[day]?[timeKey]
                         SlotCell(
@@ -735,7 +754,7 @@ private struct WeekGridSlotView: View {
                             if let slot { selectedSlotID = slot.id }
                         }
                         .frame(maxWidth: .infinity, minHeight: MeetingSlotGridMetrics.rowHeight, maxHeight: MeetingSlotGridMetrics.rowHeight)
-                        .meetingSlotGridLines(trailing: true, bottom: true)
+                        .meetingSlotGridLines(trailing: true, bottom: true, bottomIsMajor: rowEndsOnHour)
                     }
                 }
             }
