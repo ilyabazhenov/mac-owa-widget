@@ -27,6 +27,15 @@ final class MeetingSearchRangeTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(interval.start.timeIntervalSince(dayStart), 0)
     }
 
+    func testTodayRangeClampsStartWhenAfterWorkdayEnd() {
+        let ref = moscowDate(year: 2025, month: 5, day: 14, hour: 19, minute: 0)
+        let interval = MeetingSearchRange.today.dateInterval(referenceNow: ref)
+        let dayEnd = moscowDate(year: 2025, month: 5, day: 14, hour: 18, minute: 0)
+        assertEqualDates(interval.end, dayEnd)
+        assertEqualDates(interval.start, dayEnd)
+        XCTAssertLessThanOrEqual(interval.start.timeIntervalSince(interval.end), 0)
+    }
+
     func testTomorrowRangeIsNextCalendarDay() {
         let ref = moscowDate(year: 2025, month: 5, day: 14, hour: 9, minute: 0)
         let interval = MeetingSearchRange.tomorrow.dateInterval(referenceNow: ref)
@@ -46,14 +55,49 @@ final class MeetingSearchRangeTests: XCTestCase {
         assertEqualDates(interval.end, expectedEnd)
     }
 
-    func testNextWeekSpansSevenDaysOut() {
+    func testNextWeekSearchRangeMatchesSlotGridWorkweek() {
         let ref = moscowDate(year: 2025, month: 5, day: 14, hour: 12, minute: 0)
         let interval = MeetingSearchRange.nextWeek.dateInterval(referenceNow: ref)
-        let todayStart = moscowDate(year: 2025, month: 5, day: 14, hour: 0, minute: 0)
-        let expectedStart = moscow.date(byAdding: .day, value: 7, to: todayStart)!
-        let endAnchor = moscow.date(byAdding: .day, value: 12, to: todayStart)!
-        let expectedEnd = moscow.date(bySettingHour: 18, minute: 0, second: 0, of: endAnchor)!
-        assertEqualDates(interval.start, expectedStart)
+        let week = MeetingSearchRange.nextWeek.slotGridWeekInterval(referenceNow: ref)
+        let cols = week.weekdayColumnStartDates(calendar: AppTimeZone.calendar)
+        XCTAssertEqual(cols.count, 5)
+        assertEqualDates(interval.start, cols[0])
+        let friday = cols[4]
+        let expectedEnd = AppTimeZone.calendar.date(bySettingHour: 18, minute: 0, second: 0, of: friday)!
         assertEqualDates(interval.end, expectedEnd)
+    }
+
+    func testNextWeekSlotGridIsFollowingCalendarWeek() {
+        let ref = moscowDate(year: 2025, month: 5, day: 14, hour: 12, minute: 0)
+        let week = MeetingSearchRange.nextWeek.slotGridWeekInterval(referenceNow: ref)
+        let cols = week.weekdayColumnStartDates(calendar: AppTimeZone.calendar)
+        XCTAssertEqual(cols.count, 5)
+        let first = moscowDate(year: 2025, month: 5, day: 19, hour: 0, minute: 0)
+        assertEqualDates(cols[0], first)
+    }
+
+    func testTomorrowSlotGridShowsFullWorkweek() {
+        let ref = moscowDate(year: 2025, month: 5, day: 14, hour: 9, minute: 0)
+        let week = MeetingSearchRange.tomorrow.slotGridWeekInterval(referenceNow: ref)
+        let cols = week.weekdayColumnStartDates(calendar: AppTimeZone.calendar)
+        XCTAssertEqual(cols.count, 5)
+    }
+
+    func testThisWeekSlotGridStartsOnMonday() {
+        let ref = moscowDate(year: 2025, month: 5, day: 14, hour: 10, minute: 0)
+        let week = MeetingSearchRange.thisWeek.slotGridWeekInterval(referenceNow: ref)
+        let cols = week.weekdayColumnStartDates(calendar: AppTimeZone.calendar)
+        XCTAssertEqual(cols.count, 5)
+        let mon = moscowDate(year: 2025, month: 5, day: 12, hour: 0, minute: 0)
+        assertEqualDates(cols[0], mon)
+    }
+
+    func testWeekendOnlyIntervalYieldsNoColumns() {
+        let cal = AppTimeZone.calendar
+        let sat = moscowDate(year: 2025, month: 5, day: 17, hour: 0, minute: 0)
+        let sunEnd = moscowDate(year: 2025, month: 5, day: 18, hour: 12, minute: 0)
+        let interval = DateInterval(start: sat, end: sunEnd)
+        let cols = interval.weekdayColumnStartDates(calendar: cal)
+        XCTAssertTrue(cols.isEmpty)
     }
 }

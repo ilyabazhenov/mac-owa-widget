@@ -186,11 +186,11 @@ final class MeetingFreeSlotCalculatorTests: XCTestCase {
         assertEqualDates(slots[0].start, moscowDate(year: 2025, month: 5, day: 12, hour: 10, minute: 30))
     }
 
-    func testCapsAtTenSlots() {
-        let avail = attendee(allFreeSlotCount: 96)
+    func testCapsReturnedFreeSlots() {
+        let avail = attendee(allFreeSlotCount: 5000)
         let range = DateInterval(
             start: moscowDate(year: 2025, month: 5, day: 12, hour: 9, minute: 0),
-            end: moscowDate(year: 2025, month: 5, day: 12, hour: 18, minute: 0)
+            end: moscowDate(year: 2025, month: 5, day: 30, hour: 18, minute: 0)
         )
         let slots = MeetingFreeSlotCalculator.compute(
             from: [avail],
@@ -199,6 +199,25 @@ final class MeetingFreeSlotCalculatorTests: XCTestCase {
             range: range,
             durationMinutes: 30
         )
-        XCTAssertEqual(slots.count, 10)
+        XCTAssertEqual(slots.count, MeetingFreeSlotCalculator.maxReturnedFreeSlots)
+    }
+
+    /// Regression: old hard cap (10) hid Thu–Fri when Mon–Wed had enough free half-hours.
+    func testFullMonFriWorkWeekIncludesFridayAfternoon() {
+        let avail = attendee(allFreeSlotCount: 500)
+        let range = DateInterval(
+            start: moscowDate(year: 2025, month: 5, day: 12, hour: 9, minute: 0),
+            end: moscowDate(year: 2025, month: 5, day: 16, hour: 18, minute: 0)
+        )
+        let slots = MeetingFreeSlotCalculator.compute(
+            from: [avail],
+            organizerAvailability: nil,
+            organizerEvents: [],
+            range: range,
+            durationMinutes: 30
+        )
+        XCTAssertGreaterThanOrEqual(slots.count, 17, "expect most of Mon; full week has ~85 half-hour starts")
+        let fri1730 = moscowDate(year: 2025, month: 5, day: 16, hour: 17, minute: 30)
+        XCTAssertTrue(slots.contains { abs($0.start.timeIntervalSince(fri1730)) < 2 })
     }
 }

@@ -10,7 +10,7 @@ protocol CalendarProvider: Actor {
     func findPeople(query: String) async throws -> [ResolvedAttendee]
     func resolveOrganizerSMTPEmail() async throws -> String?
     func getUserAvailability(emails: [String], from start: Date, to end: Date) async throws -> [AttendeeAvailability]
-    func createMeeting(title: String, start: Date, end: Date, attendees: [ResolvedAttendee]) async throws
+    func createMeeting(title: String, agenda: String, start: Date, end: Date, attendees: [ResolvedAttendee]) async throws
 }
 
 extension CalendarProvider {
@@ -30,7 +30,7 @@ extension CalendarProvider {
         throw CalendarProviderError.notSupported
     }
 
-    func createMeeting(title: String, start: Date, end: Date, attendees: [ResolvedAttendee]) async throws {
+    func createMeeting(title: String, agenda: String, start: Date, end: Date, attendees: [ResolvedAttendee]) async throws {
         throw CalendarProviderError.notSupported
     }
 }

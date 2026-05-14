@@ -841,6 +841,7 @@ actor OWAClient {
 
     func createCalendarEvent(
         title: String,
+        agenda: String,
         start: Date,
         end: Date,
         attendees: [ResolvedAttendee],
@@ -854,6 +855,15 @@ actor OWAClient {
         let attendeesXML = attendees.map { a in
             "<t:Attendee><t:Mailbox><t:EmailAddress>\(escapeXML(a.email))</t:EmailAddress></t:Mailbox></t:Attendee>"
         }.joined()
+
+        let agendaTrimmed = agenda.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bodyXML: String
+        if agendaTrimmed.isEmpty {
+            bodyXML = ""
+        } else {
+            let html = OWACreateCalendarEventPayload.calendarBodyHTML(plainAgenda: agenda)
+            bodyXML = "<t:Body BodyType=\"HTML\"><![CDATA[\(html)]]></t:Body>"
+        }
 
         let soap = """
         <?xml version="1.0" encoding="utf-8"?>
@@ -870,6 +880,7 @@ actor OWAClient {
               <m:Items>
                 <t:CalendarItem>
                   <t:Subject>\(escapeXML(title))</t:Subject>
+                  \(bodyXML)
                   <t:Start>\(fmt.string(from: start))</t:Start>
                   <t:End>\(fmt.string(from: end))</t:End>
                   <t:IsReminderSet>true</t:IsReminderSet>
@@ -902,7 +913,14 @@ actor OWAClient {
 
         if http.statusCode == 401 {
             try await authenticate()
-            try await createCalendarEvent(title: title, start: start, end: end, attendees: attendees, folderIdentifier: folderIdentifier)
+            try await createCalendarEvent(
+                title: title,
+                agenda: agenda,
+                start: start,
+                end: end,
+                attendees: attendees,
+                folderIdentifier: folderIdentifier
+            )
             return
         }
 

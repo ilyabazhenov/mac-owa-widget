@@ -316,8 +316,28 @@ enum OWAUserAvailabilityPayload {
 // MARK: - CreateCalendarEvent
 
 enum OWACreateCalendarEventPayload {
+    /// HTML for calendar item body; plain-text lines become `<br/>`-separated escaped text.
+    static func calendarBodyHTML(plainAgenda: String) -> String {
+        let sanitized = plainAgenda.replacingOccurrences(of: "]]>", with: "]] >")
+        let trimmed = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return emptyHTMLBody() }
+        let inner = trimmed.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { escapePlainForHTMLFragment(String($0)) }
+            .joined(separator: "<br/>")
+        return "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">" +
+            "</head><body dir=\"ltr\"><div>\(inner)</div></body></html>"
+    }
+
+    private static func escapePlainForHTMLFragment(_ s: String) -> String {
+        s.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+
     static func make(
         title: String,
+        agenda: String,
         start: Date,
         end: Date,
         attendees: [ResolvedAttendee],
@@ -345,7 +365,7 @@ enum OWACreateCalendarEventPayload {
             "Body": [
                 "__type": "BodyContentType:#Exchange",
                 "BodyType": "HTML",
-                "Value": emptyHTMLBody(),
+                "Value": Self.calendarBodyHTML(plainAgenda: agenda),
             ] as [String: Any],
             "Sensitivity": "Normal",
             "ReminderIsSet": true,

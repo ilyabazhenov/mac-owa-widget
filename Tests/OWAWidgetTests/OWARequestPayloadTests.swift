@@ -239,6 +239,7 @@ final class OWARequestPayloadTests: XCTestCase {
         ]
         let payload = OWACreateCalendarEventPayload.make(
             title: "Sync",
+            agenda: "",
             start: start,
             end: end,
             attendees: attendees,
@@ -264,10 +265,32 @@ final class OWARequestPayloadTests: XCTestCase {
         XCTAssertEqual(mb["EmailAddress"] as? String, "ada@example.com")
     }
 
+    func testCreateCalendarEventPayloadEmbedsAgendaInBody() throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let payload = OWACreateCalendarEventPayload.make(
+            title: "T",
+            agenda: "Goals\nDiscuss <budget>",
+            start: start,
+            end: start.addingTimeInterval(1800),
+            attendees: [],
+            timezoneID: "Russian Standard Time",
+            folderIdentifier: nil
+        )
+        let body = try XCTUnwrap(payload["Body"] as? [String: Any])
+        let items = try XCTUnwrap(body["Items"] as? [[String: Any]])
+        let item = try XCTUnwrap(items.first)
+        let bodyContent = try XCTUnwrap(item["Body"] as? [String: Any])
+        let value = try XCTUnwrap(bodyContent["Value"] as? String)
+        XCTAssertTrue(value.contains("Goals"))
+        XCTAssertTrue(value.contains("Discuss"))
+        XCTAssertTrue(value.contains("&lt;budget&gt;"))
+    }
+
     func testCreateCalendarEventPayloadUsesDistinguishedCalendarWhenFolderNil() throws {
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let payload = OWACreateCalendarEventPayload.make(
             title: "T",
+            agenda: "",
             start: start,
             end: start.addingTimeInterval(1800),
             attendees: [],

@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import SwiftUI
 
 @MainActor
 final class CreateMeetingViewModel: ObservableObject {
@@ -22,7 +23,26 @@ final class CreateMeetingViewModel: ObservableObject {
 
     var selectedDuration: MeetingDurationOption {
         get { MeetingDurationOption(rawValue: draft.durationMinutes) ?? .min30 }
-        set { draft.durationMinutes = newValue.rawValue }
+        set {
+            let newVal = newValue.rawValue
+            guard draft.durationMinutes != newVal else { return }
+            var d = draft
+            d.durationMinutes = newVal
+            draft = d
+        }
+    }
+
+    /// Picker binding so `searchRange` changes reassign `draft` and trigger slot auto-refresh.
+    var searchRangeBinding: Binding<MeetingSearchRange> {
+        Binding(
+            get: { self.draft.searchRange },
+            set: { newValue in
+                guard self.draft.searchRange != newValue else { return }
+                var d = self.draft
+                d.searchRange = newValue
+                self.draft = d
+            }
+        )
     }
 
     let calendarService: CalendarService
@@ -30,6 +50,8 @@ final class CreateMeetingViewModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var searchTask: Task<Void, Never>?
+    /// Invalidates in-flight slot fetches when parameters change again.
+    private var findSlotsGeneration = 0
 
     /// Cap dropdown height and OWA result noise; full directory matches can be huge.
     private static let maxSearchDropdownResults = 10
@@ -43,6 +65,19 @@ final class CreateMeetingViewModel: ObservableObject {
             .debounce(for: .milliseconds(350), scheduler: RunLoop.main)
             .sink { [weak self] query in
                 self?.scheduleSearch(query: query)
+            }
+            .store(in: &cancellables)
+
+        $draft
+            .map { d in
+                d.attendees.map(\.email).sorted().joined(separator: "\u{1e}")
+                    + "|\(d.searchRange.rawValue)|\(d.durationMinutes)"
+            }
+            .removeDuplicates()
+            .debounce(for: .milliseconds(450), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                Task { await self.findSlots() }
             }
             .store(in: &cancellables)
 
@@ -87,38 +122,66 @@ final class CreateMeetingViewModel: ObservableObject {
 
     func addAttendee(_ attendee: ResolvedAttendee) {
         guard !draft.attendees.contains(attendee) else { return }
-        draft.attendees.append(attendee)
+        var d = draft
+        d.attendees.append(attendee)
+        draft = d
         searchTask?.cancel()
         searchQuery = ""
         searchResults = []
     }
 
     func removeAttendee(_ attendee: ResolvedAttendee) {
-        draft.attendees.removeAll { $0 == attendee }
+        var d = draft
+        let before = d.attendees.count
+        d.attendees.removeAll { $0 == attendee }
+        guard d.attendees.count != before else { return }
+        draft = d
     }
 
     // MARK: - Slots
 
     func findSlots() async {
-        guard !draft.attendees.isEmpty else { return }
+        findSlotsGeneration += 1
+        let gen = findSlotsGeneration
+
+        guard !draft.attendees.isEmpty else {
+            isLoadingSlots = false
+            freeSlots = []
+            selectedSlotID = nil
+            slotsSearched = false
+            errorMessage = nil
+            return
+        }
+
         isLoadingSlots = true
-        slotsSearched = false
+        errorMessage = nil
         freeSlots = []
         selectedSlotID = nil
-        errorMessage = nil
-        defer { isLoadingSlots = false; slotsSearched = true }
+        slotsSearched = false
+
+        let emails = draft.attendees.map(\.email)
+        let range = draft.searchRange.dateInterval
+        let duration = draft.durationMinutes
 
         do {
             let slots = try await calendarService.findFreeSlots(
-                emails: draft.attendees.map(\.email),
-                range: draft.searchRange.dateInterval,
-                durationMinutes: draft.durationMinutes,
+                emails: emails,
+                range: range,
+                durationMinutes: duration,
                 accountID: accountID
             )
+            guard gen == findSlotsGeneration else { return }
             freeSlots = slots
             selectedSlotID = slots.first?.id
+            slotsSearched = true
         } catch {
+            guard gen == findSlotsGeneration else { return }
             errorMessage = error.localizedDescription
+            slotsSearched = true
+        }
+
+        if gen == findSlotsGeneration {
+            isLoadingSlots = false
         }
     }
 
@@ -137,6 +200,7 @@ final class CreateMeetingViewModel: ObservableObject {
         do {
             try await calendarService.createMeeting(
                 title: draft.title,
+                agenda: draft.agenda,
                 slot: slot,
                 attendees: draft.attendees,
                 accountID: accountID

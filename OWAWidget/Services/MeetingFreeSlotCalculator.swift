@@ -2,6 +2,10 @@ import Foundation
 
 /// Pure free-busy → candidate slot computation used by `CalendarService.findFreeSlots`.
 enum MeetingFreeSlotCalculator {
+    /// Cap returned suggestions so UI stays responsive; must cover a Mon–Fri 9:00–17:30 half-hour grid
+    /// (~90 starts for 30-minute meetings) so later weekdays are not hidden after filling the cap Mon–Wed.
+    static let maxReturnedFreeSlots = 96
+
     static func compute(
         from availability: [AttendeeAvailability],
         organizerAvailability: AttendeeAvailability?,
@@ -9,6 +13,7 @@ enum MeetingFreeSlotCalculator {
         range: DateInterval,
         durationMinutes: Int
     ) -> [FreeSlot] {
+        guard range.end > range.start else { return [] }
         let intervalSec: TimeInterval = 30 * 60
         let slotsNeeded = max(1, Int(ceil(Double(durationMinutes) / 30.0)))
         let cal = AppTimeZone.calendar
@@ -114,7 +119,7 @@ enum MeetingFreeSlotCalculator {
             #endif
 
             results.append(FreeSlot(start: slotStart, end: slotEnd))
-            if results.count >= 10 { break }
+            if results.count >= maxReturnedFreeSlots { break }
             i += slotsNeeded
         }
 

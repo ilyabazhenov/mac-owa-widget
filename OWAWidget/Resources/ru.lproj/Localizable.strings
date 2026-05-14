@@ -167,17 +167,21 @@
 
 "window.create.meeting.title" = "Новая встреча";
 "popover.new.meeting" = "Новая встреча";
+"create.meeting.title.label" = "Название встречи";
 "create.meeting.title.placeholder" = "Название встречи";
+"create.meeting.agenda.label" = "Повестка";
+"create.meeting.agenda.placeholder" = "Необязательно — темы и заметки для участников";
 "create.meeting.attendees.label" = "Участники";
 "create.meeting.attendees.placeholder" = "Поиск по имени или email…";
 "create.meeting.range.label" = "Диапазон дат";
 "create.meeting.duration.label" = "Длительность";
 "create.meeting.find.slots" = "Найти свободные слоты";
+"create.meeting.refresh.slots" = "Обновить слоты";
 "create.meeting.create" = "Создать встречу";
 "create.meeting.no.slots" = "Нет свободных слотов в выбранном диапазоне";
 "create.meeting.available.slots" = "Доступные слоты";
 "create.meeting.recent.label" = "Недавние";
-"create.meeting.slots.hint" = "Добавьте участников и нажмите\n«Найти свободные слоты»";
+"create.meeting.slots.hint" = "Добавьте хотя бы одного участника — свободные слоты подгрузятся сами.";
 "create.meeting.success" = "Встреча создана";
 "meeting.range.today" = "Сегодня";
 "meeting.range.tomorrow" = "Завтра";

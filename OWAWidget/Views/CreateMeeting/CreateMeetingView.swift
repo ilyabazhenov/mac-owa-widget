@@ -27,6 +27,7 @@ struct CreateMeetingView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     VStack(alignment: .leading, spacing: 16) {
                         titleField
+                        agendaField
                         attendeesField
                         rangeAndDuration
                         findSlotsButton
@@ -40,7 +41,7 @@ struct CreateMeetingView: View {
                         Spacer()
                     }
                 }
-                .frame(width: 300)
+                .frame(width: 320)
 
                 Divider()
 
@@ -51,26 +52,28 @@ struct CreateMeetingView: View {
                     }
                     .padding(20)
                 }
-                .frame(width: 340)
+                .frame(width: 580)
                 .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
             }
             bottomBar
         }
-        .frame(width: 660)
+        .frame(width: 900)
         .background(Color(nsColor: .windowBackgroundColor))
         .background(FloatingWindowSetter())
     }
 
-    // MARK: - Title
+    // MARK: - Title & agenda
 
     private var titleField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionLabel(localization.tr("create.meeting.title.placeholder"))
-            TextField(localization.tr("create.meeting.title.placeholder"), text: $vm.draft.title)
+            sectionLabel(localization.tr("create.meeting.title.label"))
+            TextField(localization.tr("create.meeting.title.placeholder"), text: $vm.draft.title, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
+                .lineLimit(1...3)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.vertical, 10)
+                .frame(minHeight: 64, alignment: .topLeading)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color(nsColor: .controlBackgroundColor))
@@ -79,6 +82,34 @@ struct CreateMeetingView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
                 )
+        }
+    }
+
+    private var agendaField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel(localization.tr("create.meeting.agenda.label"))
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+                if vm.draft.agenda.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(localization.tr("create.meeting.agenda.placeholder"))
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color(nsColor: .placeholderTextColor))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 12)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $vm.draft.agenda)
+                    .font(.system(size: 13))
+                    .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 4)
+            }
+            .frame(minHeight: 100, maxHeight: 200, alignment: .topLeading)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            )
         }
     }
 
@@ -126,7 +157,7 @@ struct CreateMeetingView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 sectionLabel(localization.tr("create.meeting.range.label"))
-                Picker("", selection: $vm.draft.searchRange) {
+                Picker("", selection: vm.searchRangeBinding) {
                     ForEach(MeetingSearchRange.allCases, id: \.self) { range in
                         Text(localization.tr(range.localizationKey)).tag(range)
                     }
@@ -190,16 +221,16 @@ struct CreateMeetingView: View {
                 if vm.isLoadingSlots {
                     ProgressView().scaleEffect(0.7).frame(width: 14, height: 14)
                 } else {
-                    Image(systemName: "calendar.badge.clock")
+                    Image(systemName: "arrow.clockwise")
                         .font(.system(size: 12))
                 }
-                Text(localization.tr("create.meeting.find.slots"))
+                Text(localization.tr("create.meeting.refresh.slots"))
                     .font(.system(size: 13, weight: .medium))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.bordered)
         .disabled(vm.draft.attendees.isEmpty || vm.isLoadingSlots)
         .controlSize(.regular)
     }
@@ -216,26 +247,28 @@ struct CreateMeetingView: View {
                 Spacer()
             }
             .frame(maxWidth: .infinity)
-        } else if vm.slotsSearched && vm.freeSlots.isEmpty {
-            VStack(spacing: 10) {
-                Image(systemName: "calendar.badge.exclamationmark")
-                    .font(.system(size: 28))
-                    .foregroundStyle(.secondary)
-                Text(localization.tr("create.meeting.no.slots"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 50)
-        } else if !vm.freeSlots.isEmpty {
+        } else if vm.slotsSearched {
             VStack(alignment: .leading, spacing: 10) {
+                if vm.freeSlots.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "calendar.badge.exclamationmark")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.secondary)
+                        Text(localization.tr("create.meeting.no.slots"))
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 HStack(spacing: 8) {
                     sectionLabel(localization.tr("create.meeting.available.slots"))
                     Spacer()
                     TimeZoneBadge()
                 }
-                SlotsByDayView(slots: vm.freeSlots, selectedSlotID: $vm.selectedSlotID)
+                WeekGridSlotView(
+                    slots: vm.freeSlots,
+                    selectedSlotID: $vm.selectedSlotID,
+                    gridWeekInterval: vm.draft.searchRange.slotGridWeekInterval()
+                )
             }
         } else {
             // Idle — prompt user to add attendees and search
@@ -482,97 +515,226 @@ private struct FrequentContactCard: View {
     }
 }
 
-// MARK: - Slots grouped by day
+// MARK: - Week grid slot picker
 
-private struct SlotsByDayView: View {
+/// One grid row = one 30-minute free-busy step (matches `MeetingFreeSlotCalculator` interval).
+private enum MeetingSlotGridMetrics {
+    static let rowHeight: CGFloat = 24
+    static let timeColumnWidth: CGFloat = 44
+}
+
+private struct MeetingSlotGridLineOverlay: ViewModifier {
+    var leading = false
+    var top = false
+    var trailing = true
+    var bottom = true
+
+    private var separator: Color {
+        Color(nsColor: .separatorColor).opacity(0.6)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .top) {
+                if top {
+                    Rectangle()
+                        .fill(separator)
+                        .frame(height: 1)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .leading) {
+                if leading {
+                    Rectangle()
+                        .fill(separator)
+                        .frame(width: 1)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if bottom {
+                    Rectangle()
+                        .fill(separator)
+                        .frame(height: 1)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .trailing) {
+                if trailing {
+                    Rectangle()
+                        .fill(separator)
+                        .frame(width: 1)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+}
+
+private extension View {
+    func meetingSlotGridLines(
+        leading: Bool = false,
+        top: Bool = false,
+        trailing: Bool = true,
+        bottom: Bool = true
+    ) -> some View {
+        modifier(MeetingSlotGridLineOverlay(leading: leading, top: top, trailing: trailing, bottom: bottom))
+    }
+}
+
+private struct WeekGridSlotView: View {
+    private typealias TimeKey = Int
+    private typealias DayKey = Date
+
+    private struct GridData {
+        let days: [DayKey]
+        let lookup: [DayKey: [TimeKey: FreeSlot]]
+    }
+
     let slots: [FreeSlot]
     @Binding var selectedSlotID: UUID?
+    let gridWeekInterval: DateInterval
 
-    private static let dayKeyFmt: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = AppTimeZone.zone; return f
-    }()
-    private static let dayHeaderFmt: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "EEEE, d MMMM"; f.timeZone = AppTimeZone.zone; return f
-    }()
-    private static let timeFmt: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "HH:mm"; f.timeZone = AppTimeZone.zone; return f
+    private static let timeRows: [TimeKey] = Array(stride(from: 540, to: 1080, by: 30))
+
+    private static let weekdayFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE"
+        f.timeZone = AppTimeZone.zone
+        return f
     }()
 
-    private var grouped: [(day: String, header: String, slots: [FreeSlot])] {
-        var order: [String] = []
-        var map: [String: [FreeSlot]] = [:]
-        for slot in slots {
-            let key = Self.dayKeyFmt.string(from: slot.start)
-            if map[key] == nil { order.append(key) }
-            map[key, default: []].append(slot)
+    private static let dayNumFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "d"
+        f.timeZone = AppTimeZone.zone
+        return f
+    }()
+
+    private var gridData: GridData {
+        let cal = AppTimeZone.calendar
+        let order = gridWeekInterval.weekdayColumnStartDates(calendar: cal)
+        var lookup: [DayKey: [TimeKey: FreeSlot]] = [:]
+        for day in order {
+            for timeKey in Self.timeRows {
+                if let slot = Self.slotCoveringRow(slots: slots, day: day, timeKey: timeKey, calendar: cal) {
+                    if lookup[day] == nil { lookup[day] = [:] }
+                    lookup[day]?[timeKey] = slot
+                }
+            }
         }
-        return order.map { key in
-            let header = Self.dayHeaderFmt.string(from: map[key]!.first!.start).capitalized
-            return (day: key, header: header, slots: map[key]!)
+        return GridData(days: order, lookup: lookup)
+    }
+
+    /// Half-open row `[rowStart, rowEnd)` overlaps slot `[slot.start, slot.end)`.
+    private static func slotCoveringRow(
+        slots: [FreeSlot],
+        day: DayKey,
+        timeKey: TimeKey,
+        calendar cal: Calendar
+    ) -> FreeSlot? {
+        guard let rowStart = cal.date(bySettingHour: timeKey / 60, minute: timeKey % 60, second: 0, of: day),
+              cal.startOfDay(for: rowStart) == day
+        else { return nil }
+        let rowEnd = cal.date(byAdding: .minute, value: 30, to: rowStart) ?? rowStart.addingTimeInterval(30 * 60)
+        return slots.first { slot in
+            cal.startOfDay(for: slot.start) == day && slot.start < rowEnd && slot.end > rowStart
         }
     }
 
+    private func timeLabel(_ key: TimeKey) -> String {
+        String(format: "%02d:%02d", key / 60, key % 60)
+    }
+
+    private func columnHeader(for day: DayKey) -> some View {
+        VStack(spacing: 1) {
+            Text(Self.weekdayFmt.string(from: day).capitalized)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(Self.dayNumFmt.string(from: day))
+                .font(.system(size: 12, weight: .semibold))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(grouped, id: \.day) { group in
-                VStack(alignment: .leading, spacing: 0) {
-                    // Day header
-                    HStack(spacing: 6) {
-                        Text(group.header)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
-                        Rectangle()
-                            .fill(Color.accentColor.opacity(0.2))
-                            .frame(height: 1)
-                    }
-                    .padding(.bottom, 6)
-
-                    // Slots for this day
-                    VStack(spacing: 6) {
-                        ForEach(group.slots) { slot in
-                            let isSelected = selectedSlotID == slot.id
-                            Button {
-                                selectedSlotID = slot.id
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                        .font(.system(size: 15))
-                                        .foregroundStyle(isSelected ? Color.accentColor : Color(nsColor: .tertiaryLabelColor))
-                                        .frame(width: 20)
-
-                                    Text("\(Self.timeFmt.string(from: slot.start)) – \(Self.timeFmt.string(from: slot.end))")
-                                        .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                                        .foregroundStyle(Color(nsColor: .labelColor))
-
-                                    Spacer()
-
-                                    if isSelected {
-                                        Text("выбрано")
-                                            .font(.system(size: 10, weight: .medium))
-                                            .foregroundStyle(Color.accentColor)
-                                            .padding(.horizontal, 7)
-                                            .padding(.vertical, 3)
-                                            .background(Color.accentColor.opacity(0.1))
-                                            .clipShape(Capsule())
-                                    }
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(isSelected ? Color.accentColor.opacity(0.08) : Color(nsColor: .controlBackgroundColor))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(isSelected ? Color.accentColor.opacity(0.4) : Color(nsColor: .separatorColor), lineWidth: isSelected ? 1 : 0.5)
-                                )
-                            }
-                            .buttonStyle(.plain)
+        let data = gridData
+        let topEdge = Color(nsColor: .separatorColor).opacity(0.6)
+        Grid(horizontalSpacing: 0, verticalSpacing: 0) {
+            GridRow {
+                Color.clear
+                    .frame(minWidth: MeetingSlotGridMetrics.timeColumnWidth, maxWidth: MeetingSlotGridMetrics.timeColumnWidth, minHeight: 28)
+                    .meetingSlotGridLines(leading: true, trailing: true, bottom: true)
+                ForEach(data.days, id: \.self) { day in
+                    columnHeader(for: day)
+                        .padding(.vertical, 4)
+                        .meetingSlotGridLines(trailing: true, bottom: true)
+                }
+            }
+            ForEach(Self.timeRows, id: \.self) { timeKey in
+                GridRow(alignment: .top) {
+                    Text(timeLabel(timeKey))
+                        .font(.system(size: timeKey % 60 == 0 ? 9 : 8, weight: timeKey % 60 == 0 ? .medium : .regular))
+                        .foregroundStyle(timeKey % 60 == 0 ? Color.secondary : Color(nsColor: .tertiaryLabelColor))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                        .padding(.trailing, 4)
+                        .frame(width: MeetingSlotGridMetrics.timeColumnWidth, height: MeetingSlotGridMetrics.rowHeight)
+                        .gridColumnAlignment(.trailing)
+                        .meetingSlotGridLines(leading: true, trailing: true, bottom: true)
+                    ForEach(data.days, id: \.self) { day in
+                        let slot = data.lookup[day]?[timeKey]
+                        SlotCell(
+                            slot: slot,
+                            isSelected: slot.map { $0.id == selectedSlotID } == true
+                        ) {
+                            if let slot { selectedSlotID = slot.id }
                         }
+                        .frame(maxWidth: .infinity, minHeight: MeetingSlotGridMetrics.rowHeight, maxHeight: MeetingSlotGridMetrics.rowHeight)
+                        .meetingSlotGridLines(trailing: true, bottom: true)
                     }
                 }
             }
         }
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(topEdge)
+                .frame(height: 1)
+                .allowsHitTesting(false)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct SlotCell: View {
+    let slot: FreeSlot?
+    let isSelected: Bool
+    let onTap: () -> Void
+    @State private var isHovered = false
+
+    private var bg: Color {
+        guard slot != nil else { return .clear }
+        if isSelected { return Color.accentColor }
+        return Color.accentColor.opacity(isHovered ? 0.22 : 0.12)
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 5).fill(bg)
+            if isSelected, slot != nil {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .padding(.horizontal, 2)
+        .frame(maxWidth: .infinity)
+        .frame(height: MeetingSlotGridMetrics.rowHeight)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if slot != nil { onTap() }
+        }
+        .onHover { isHovered = $0 && slot != nil }
+        .animation(.easeInOut(duration: 0.12), value: isSelected)
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
     }
 }
 
