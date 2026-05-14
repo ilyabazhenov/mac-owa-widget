@@ -83,6 +83,14 @@ struct PopoverView: View {
                 .accessibilityLabel(localization.tr("popover.sync.now"))
             }
 
+            Button { openCreateMeeting() } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 13))
+            }
+            .buttonStyle(.plain)
+            .help(localization.tr("popover.new.meeting"))
+            .accessibilityLabel(localization.tr("popover.new.meeting"))
+
             Button { openSettings() } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 13))
@@ -210,8 +218,11 @@ struct PopoverView: View {
 
             Spacer()
 
-            Text(localization.daySectionLabel(for: selectedDate, calendar: .current))
-                .font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 6) {
+                Text(localization.daySectionLabel(for: selectedDate, calendar: AppTimeZone.calendar))
+                    .font(.system(size: 12, weight: .semibold))
+                TimeZoneBadge()
+            }
 
             Spacer()
 
@@ -273,6 +284,11 @@ struct PopoverView: View {
                 .padding(.horizontal, contentHorizontalPadding)
                 .padding(.vertical, 7)
         }
+    }
+
+    private func openCreateMeeting() {
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow(id: "create-meeting")
     }
 
     private func openSettings() {
@@ -343,8 +359,8 @@ struct PopoverView: View {
     private var now: Date { Date() }
 
     private var selectedDate: Date {
-        Calendar.current.date(byAdding: .day, value: selectedDayOffset,
-            to: Calendar.current.startOfDay(for: Date()))!
+        AppTimeZone.calendar.date(byAdding: .day, value: selectedDayOffset,
+            to: AppTimeZone.calendar.startOfDay(for: Date()))!
     }
 
     /// Meetings starting within 5 minutes of the earliest upcoming, sorted: with URL first
@@ -381,7 +397,7 @@ struct PopoverView: View {
     }
 
     private var eventSections: [(label: String, date: Date, events: [CalendarEvent])] {
-        let calendar = Calendar.current
+        let calendar = AppTimeZone.calendar
         let dayStart = calendar.startOfDay(for: selectedDate)
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
 

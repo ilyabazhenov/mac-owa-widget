@@ -56,10 +56,39 @@ actor OWAClient {
     private var defaultCalendarFolderIdentifier: OWAFolderIdentifier?
     private var forceDistinguishedCalendarFolder = false
     private var requestSequence = 0
+    private var cachedOrganizerSMTPEmail: String?
+    /// Default GAL address list id from `GetPeopleFilters`, required for `FindPeople` on many Exchange builds.
+    private var cachedGalAddressListFolderId: String?
+    private var galFolderIdFetchCompleted = false
+    /// After a successful `FindPeople`, retry that payload shape first (fewer round-trips per keystroke).
+    private var preferredFindPeoplePayloadVariant: FindPeoplePayloadVariant?
     private let sessionDelegate: OWASessionDelegate
     private let session: URLSession
     private let log = Logger(subsystem: "com.owawidget", category: "OWAClient")
     private let getCalendarViewDebugFlagKey = "debugDumpGetCalendarViewResponse"
+
+    #if DEBUG
+    private static let debugLogURL = URL(fileURLWithPath: "/tmp/owawidget_owaclient.log")
+
+    private nonisolated func setupDebugLog() {
+        let header = "=== OWAClient Log started \(Date()) ===\n"
+        try? header.write(to: Self.debugLogURL, atomically: true, encoding: .utf8)
+    }
+
+    private nonisolated func dlog(_ message: String) {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        let line = "[\(f.string(from: Date()))] \(message)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        if let handle = try? FileHandle(forWritingTo: Self.debugLogURL) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        } else {
+            try? data.write(to: Self.debugLogURL, options: .atomic)
+        }
+    }
+    #endif
 
     init(serverURL: String, username: String, password: String) throws {
         self.baseURL = try Self.parseBaseURL(serverURL)
@@ -74,6 +103,9 @@ actor OWAClient {
         let delegate = OWASessionDelegate()
         self.sessionDelegate = delegate
         self.session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+        #if DEBUG
+        setupDebugLog()
+        #endif
     }
 
     // MARK: - Auth
@@ -82,6 +114,9 @@ actor OWAClient {
         let syncID = SyncDiagnostics.syncIDText
         log.info("OWA auth started sync=\(syncID, privacy: .public)")
         sessionDelegate.reset()
+        cachedGalAddressListFolderId = nil
+        galFolderIdFetchCompleted = false
+        preferredFindPeoplePayloadVariant = nil
 
         // 1. Скачиваем страницу логина, получаем action и скрытые поля формы
         let loginForm = await fetchLoginForm()
@@ -477,6 +512,429 @@ actor OWAClient {
         try await performEWSRespondRequest(itemId: itemId, changeKey: changeKey, action: action)
     }
 
+    /// Retries a few times on stale HTTP keep-alive (`URLError.networkConnectionLost`).
+    private func sessionDataAllowingStaleReconnect(for request: URLRequest) async throws -> (Data, URLResponse) {
+        let maxStaleRetries = 3
+        var attempt = 0
+        while true {
+            attempt += 1
+            do {
+                return try await session.data(for: request)
+            } catch let urlError as URLError where urlError.code == .networkConnectionLost {
+                #if DEBUG
+                dlog("sessionData: networkConnectionLost attempt \(attempt)/\(maxStaleRetries)")
+                #endif
+                guard attempt < maxStaleRetries else {
+                    #if DEBUG
+                    dlog("sessionData: giving up after \(maxStaleRetries) stale-connection failures")
+                    #endif
+                    throw urlError
+                }
+                try await Task.sleep(nanoseconds: 80_000_000)
+            }
+        }
+    }
+
+    // MARK: - FindPeople (OWA JSON ComposeHAR)
+
+    #if DEBUG
+    private static let findPeopleTraceURL = URL(fileURLWithPath: "/tmp/owawidget_findpeople_trace.log")
+
+    private nonisolated func ftrace(_ message: String) {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        let line = "[\(f.string(from: Date()))] \(message)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        if let handle = try? FileHandle(forWritingTo: Self.findPeopleTraceURL) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        } else {
+            try? data.write(to: Self.findPeopleTraceURL, options: .atomic)
+        }
+    }
+    #endif
+
+    func findPeople(query: String) async throws -> [ResolvedAttendee] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else { return [] }
+
+        try Task.checkCancellation()
+        let direct = try await findPeopleComposeHAR(query: trimmed)
+        if !direct.isEmpty { return direct }
+
+        let tokens = trimmed.split(whereSeparator: { $0.isWhitespace })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.count >= 2 }
+        guard tokens.count >= 2 else { return [] }
+
+        let sortedTokens = tokens.sorted { $0.count > $1.count }
+        for seed in sortedTokens {
+            try Task.checkCancellation()
+            let broad = try await findPeopleComposeHAR(query: seed)
+            guard !broad.isEmpty else { continue }
+            let seedLower = seed.lowercased()
+            let otherTokens = tokens.map { $0.lowercased() }.filter { $0 != seedLower }
+            guard !otherTokens.isEmpty else { continue }
+            let narrowed = broad.filter { person in
+                otherTokens.allSatisfy { token in
+                    person.displayName.lowercased().contains(token) ||
+                    person.email.lowercased().contains(token)
+                }
+            }
+            if !narrowed.isEmpty { return narrowed }
+        }
+
+        return []
+    }
+
+    private func findPeopleComposeHAR(query: String) async throws -> [ResolvedAttendee] {
+        let canary = try await ensureCanary()
+        try Task.checkCancellation()
+
+        let payload = OWAFindPeoplePayload.makeComposeCalendarHAR(
+            query: query,
+            timezoneID: windowsTimezoneID()
+        )
+        let jsonString = Self.serializeJSONTypeFirst(payload)
+        let jsonBody = Data(jsonString.utf8)
+
+        var components = URLComponents(url: url("/owa/service.svc"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "action", value: "FindPeople"),
+            URLQueryItem(name: "ID", value: "-199"),
+            URLQueryItem(name: "AC", value: "1"),
+        ]
+        guard let serviceURL = components.url else { throw OWAError.invalidURL("/owa/service.svc") }
+
+        var request = URLRequest(url: serviceURL, timeoutInterval: 18)
+        request.httpMethod = "POST"
+        request.httpBody = jsonBody
+        request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        request.setValue("ru,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        request.setValue(canary, forHTTPHeaderField: "X-OWA-CANARY")
+        request.setValue("FindPeople", forHTTPHeaderField: "Action")
+        request.setValue("-199", forHTTPHeaderField: "X-OWA-ActionId")
+        request.setValue("ComposeForms", forHTTPHeaderField: "X-OWA-ActionName")
+        request.setValue("1", forHTTPHeaderField: "X-OWA-Attempt")
+        request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+        request.setValue(baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")), forHTTPHeaderField: "Origin")
+        let correlationId = Self.makeCorrelationId()
+        request.setValue(correlationId, forHTTPHeaderField: "X-OWA-CorrelationId")
+        request.setValue(correlationId, forHTTPHeaderField: "client-request-id")
+        request.setValue(Self.iso8601Millis(Date()), forHTTPHeaderField: "X-OWA-ClientBegin")
+        request.setValue("15.2.1748.10", forHTTPHeaderField: "X-OWA-ClientBuildVersion")
+        request.setValue(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+            forHTTPHeaderField: "User-Agent"
+        )
+        request.setValue("?0", forHTTPHeaderField: "sec-ch-ua-mobile")
+        request.setValue("\"macOS\"", forHTTPHeaderField: "sec-ch-ua-platform")
+
+        #if DEBUG
+        ftrace("=== FindPeople REQUEST ===")
+        ftrace("URL: \(serviceURL.absoluteString)")
+        ftrace("Method: POST")
+        if let headers = request.allHTTPHeaderFields {
+            for k in headers.keys.sorted() {
+                let v = headers[k] ?? ""
+                let display = (k.uppercased() == "X-OWA-CANARY" || k.lowercased() == "authorization") ? "<redacted len=\(v.count)>" : v
+                ftrace("Header: \(k): \(display)")
+            }
+        }
+        let cookieJar = session.configuration.httpCookieStorage
+        if let cookies = cookieJar?.cookies(for: serviceURL) {
+            let names = cookies.map(\.name).sorted().joined(separator: ", ")
+            ftrace("Cookies sent (\(cookies.count)): \(names)")
+        }
+        ftrace("Body bytes: \(jsonBody.count)")
+        ftrace("Body:\n\(jsonString)")
+        #endif
+
+        let (data, response) = try await sessionDataAllowingStaleReconnect(for: request)
+        guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
+
+        #if DEBUG
+        ftrace("=== FindPeople RESPONSE ===")
+        ftrace("Status: \(http.statusCode)")
+        for (k, v) in http.allHeaderFields {
+            ftrace("RespHeader: \(k): \(v)")
+        }
+        let raw = String(data: data, encoding: .utf8) ?? "<non-utf8 bytes=\(data.count)>"
+        ftrace("Body bytes: \(data.count)")
+        ftrace("Body:\n\(raw)")
+        ftrace("=== END ===\n")
+        #endif
+
+        if http.statusCode == 440 || http.statusCode == 401 {
+            canaryToken = nil
+            try await authenticate()
+            return try await findPeopleComposeHAR(query: query)
+        }
+
+        guard (200..<300).contains(http.statusCode) else { return [] }
+        return OWAFindPeopleParser.attendees(fromJSONData: data)
+    }
+
+    /// Serialize JSON with `__type` always FIRST. .NET DataContractJsonSerializer needs the discriminator
+    /// before any other property when the destination is an abstract base — otherwise it throws
+    /// `MemberAccessException: "Cannot create an abstract class."` mid-parse.
+    private static func serializeJSONTypeFirst(_ obj: Any) -> String {
+        if let dict = obj as? [String: Any] {
+            var keys = Array(dict.keys)
+            keys.sort { a, b in
+                if a == "__type" && b != "__type" { return true }
+                if b == "__type" && a != "__type" { return false }
+                return a < b
+            }
+            let parts = keys.map { key -> String in
+                let value = dict[key]!
+                return "\(escapeJSONString(key)):\(serializeJSONTypeFirst(value))"
+            }
+            return "{" + parts.joined(separator: ",") + "}"
+        }
+        if let arr = obj as? [Any] {
+            return "[" + arr.map { serializeJSONTypeFirst($0) }.joined(separator: ",") + "]"
+        }
+        if let b = obj as? Bool {
+            return b ? "true" : "false"
+        }
+        if let n = obj as? NSNumber {
+            // NSNumber may be wrapped Bool — handled above. Otherwise numeric.
+            return n.stringValue
+        }
+        if let i = obj as? Int { return String(i) }
+        if let d = obj as? Double { return String(d) }
+        if let s = obj as? String {
+            return escapeJSONString(s)
+        }
+        if obj is NSNull { return "null" }
+        return "null"
+    }
+
+    private static func escapeJSONString(_ s: String) -> String {
+        var out = "\""
+        for scalar in s.unicodeScalars {
+            switch scalar {
+            case "\"": out += "\\\""
+            case "\\": out += "\\\\"
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            case "\u{08}": out += "\\b"
+            case "\u{0C}": out += "\\f"
+            default:
+                if scalar.value < 0x20 {
+                    out += String(format: "\\u%04x", scalar.value)
+                } else {
+                    out.unicodeScalars.append(scalar)
+                }
+            }
+        }
+        out += "\""
+        return out
+    }
+
+    private static func makeCorrelationId() -> String {
+        let hex = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        let suffix = String(Int64.random(in: 100_000_000_000_000...999_999_999_999_999))
+        return "\(hex)_\(suffix)"
+    }
+
+    private static func iso8601Millis(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+        return f.string(from: date)
+    }
+
+    // MARK: - Organizer SMTP resolution
+
+    func resolveOrganizerSMTPEmail() async throws -> String? {
+        if let cached = cachedOrganizerSMTPEmail { return cached }
+        // Strip domain prefix: "moscow\U_M1G4U" → "U_M1G4U"
+        let alias = username.components(separatedBy: "\\").last ?? username
+        let results = (try? await findPeople(query: alias)) ?? []
+        // Prefer exact alias match in email localpart, fall back to first result
+        let match = results.first(where: { $0.email.lowercased().hasPrefix(alias.lowercased()) }) ?? results.first
+        cachedOrganizerSMTPEmail = match?.email
+        #if DEBUG
+        dlog("resolveOrganizerSMTPEmail: alias='\(alias)' → \(match?.email ?? "nil")")
+        #endif
+        return match?.email
+    }
+
+    // MARK: - GetUserAvailabilityInternal
+
+    func getUserAvailabilityInternal(emails: [String], from start: Date, to end: Date) async throws -> [AttendeeAvailability] {
+        let canary = try await ensureCanary()
+        let payload = OWAUserAvailabilityPayload.make(emails: emails, start: start, end: end, timezoneID: windowsTimezoneID())
+        let jsonData = try JSONSerialization.data(withJSONObject: payload)
+        let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+
+        var req = try serviceRequest(action: "GetUserAvailabilityInternal", canary: canary)
+        req.setValue(jsonString.formEncoded, forHTTPHeaderField: "X-OWA-UrlPostData")
+
+        let (data, response) = try await session.data(for: req)
+        if let http = response as? HTTPURLResponse, http.statusCode == 440 || http.statusCode == 401 {
+            canaryToken = nil
+            try await authenticate()
+            return try await getUserAvailabilityInternal(emails: emails, from: start, to: end)
+        }
+        #if DEBUG
+        dlog("getUserAvailability: windowStart=\(start) emails=\(emails)")
+        if let raw = String(data: data, encoding: .utf8) {
+            dlog("getUserAvailability: raw response (first 1000):\n\(String(raw.prefix(1000)))")
+        }
+        #endif
+        return parseAvailabilityResponse(data, emails: emails, windowStart: start)
+    }
+
+    private func parseAvailabilityResponse(_ data: Data, emails: [String], windowStart: Date) -> [AttendeeAvailability] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        var mergedStrings: [String] = []
+        collectMergedFreeBusy(from: json, into: &mergedStrings)
+
+        #if DEBUG
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm"
+        for (email, merged) in zip(emails, mergedStrings) {
+            // Decode: index i → windowStart + i*30min, char: 0=free 1=tentative 2=busy 3=OOF
+            let slots = merged.enumerated().map { (i, ch) -> String in
+                let t = windowStart.addingTimeInterval(Double(i) * 1800)
+                return "\(fmt.string(from: t))=\(ch)"
+            }
+            dlog("availability[\(email)]: \(merged)")
+            dlog("  decoded slots: \(slots.joined(separator: " "))")
+        }
+        #endif
+
+        return zip(emails, mergedStrings).map { email, merged in
+            AttendeeAvailability(
+                email: email,
+                mergedFreeBusy: merged,
+                windowStart: windowStart,
+                intervalMinutes: 30
+            )
+        }
+    }
+
+    private func collectMergedFreeBusy(from value: Any, into results: inout [String]) {
+        if let dict = value as? [String: Any] {
+            if let merged = dict["MergedFreeBusy"] as? String, !merged.isEmpty {
+                results.append(merged)
+                return
+            }
+            for val in dict.values {
+                collectMergedFreeBusy(from: val, into: &results)
+            }
+        } else if let arr = value as? [Any] {
+            for item in arr {
+                collectMergedFreeBusy(from: item, into: &results)
+            }
+        }
+    }
+
+    // MARK: - CreateCalendarEvent (EWS SOAP)
+
+    func createCalendarEvent(
+        title: String,
+        start: Date,
+        end: Date,
+        attendees: [ResolvedAttendee],
+        folderIdentifier: OWAFolderIdentifier?
+    ) async throws {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.timeZone = TimeZone(identifier: "UTC")
+        fmt.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+
+        let attendeesXML = attendees.map { a in
+            "<t:Attendee><t:Mailbox><t:EmailAddress>\(escapeXML(a.email))</t:EmailAddress></t:Mailbox></t:Attendee>"
+        }.joined()
+
+        let soap = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" \
+        xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" \
+        xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">
+          <soap:Header>
+            <t:RequestServerVersion Version="Exchange2013_SP1"/>
+            <t:TimeZoneContext><t:TimeZoneDefinition Id="UTC"/></t:TimeZoneContext>
+          </soap:Header>
+          <soap:Body>
+            <m:CreateItem SendMeetingInvitations="SendToAllAndSaveCopy">
+              <m:SavedItemFolderId><t:DistinguishedFolderId Id="calendar"/></m:SavedItemFolderId>
+              <m:Items>
+                <t:CalendarItem>
+                  <t:Subject>\(escapeXML(title))</t:Subject>
+                  <t:Start>\(fmt.string(from: start))</t:Start>
+                  <t:End>\(fmt.string(from: end))</t:End>
+                  <t:IsReminderSet>true</t:IsReminderSet>
+                  <t:ReminderMinutesBeforeStart>15</t:ReminderMinutesBeforeStart>
+                  <t:RequiredAttendees>\(attendeesXML)</t:RequiredAttendees>
+                </t:CalendarItem>
+              </m:Items>
+            </m:CreateItem>
+          </soap:Body>
+        </soap:Envelope>
+        """
+
+        let ewsURL = url("/EWS/Exchange.asmx")
+        var request = URLRequest(url: ewsURL, timeoutInterval: 20)
+        request.httpMethod = "POST"
+        request.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        let credentials = "\(username):\(password)"
+        request.setValue("Basic \(Data(credentials.utf8).base64EncodedString())", forHTTPHeaderField: "Authorization")
+        request.setValue(
+            "\"http://schemas.microsoft.com/exchange/services/2006/messages/CreateItem\"",
+            forHTTPHeaderField: "SOAPAction"
+        )
+        addCommonHeaders(&request)
+        request.httpBody = Data(soap.utf8)
+
+        log.info("EWS CreateItem subject=\(title, privacy: .private) attendees=\(attendees.count, privacy: .public)")
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
+
+        if http.statusCode == 401 {
+            try await authenticate()
+            try await createCalendarEvent(title: title, start: start, end: end, attendees: attendees, folderIdentifier: folderIdentifier)
+            return
+        }
+
+        let body = String(data: data, encoding: .utf8) ?? ""
+        #if DEBUG
+        dlog("createCalendarEvent: HTTP \(http.statusCode) response:\n\(body.prefix(800))")
+        #endif
+
+        guard (200..<300).contains(http.statusCode) else {
+            throw OWAError.httpError(http.statusCode, body)
+        }
+        let code = extractEWSResponseCode(from: body)
+        guard code == "NoError" else {
+            throw OWAError.ewsError(code ?? "UnknownError")
+        }
+    }
+
+    // MARK: - Public accessors
+
+    var resolvedFolderIdentifier: OWAFolderIdentifier? {
+        defaultCalendarFolderIdentifier
+    }
+
+    // MARK: - Auth helper
+
+    private func ensureCanary() async throws -> String {
+        if let token = canaryToken { return token }
+        try await authenticate()
+        guard let token = canaryToken else { throw OWAError.notAuthenticated }
+        return token
+    }
+
     private func performEWSRespondRequest(itemId: String, changeKey: String, action: MeetingResponseAction) async throws {
         let elementName: String
         switch action {
@@ -539,6 +997,13 @@ actor OWAClient {
         if let soapError = extractEWSResponseCode(from: responseBody), soapError != "NoError" {
             throw OWAError.httpError(200, soapError)
         }
+    }
+
+    private func escapeXML(_ s: String) -> String {
+        s.replacingOccurrences(of: "&", with: "&amp;")
+         .replacingOccurrences(of: "<", with: "&lt;")
+         .replacingOccurrences(of: ">", with: "&gt;")
+         .replacingOccurrences(of: "\"", with: "&quot;")
     }
 
     private func extractEWSResponseCode(from body: String) -> String? {

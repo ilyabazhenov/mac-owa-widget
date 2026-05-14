@@ -231,6 +231,204 @@ final class CalendarService: ObservableObject {
         recalculateEngagementSnapshot()
     }
 
+    // MARK: - Meeting creation
+
+    private struct FindPeopleTimeoutError: Error {}
+
+    func findPeople(query: String, accountID: UUID) async throws -> [ResolvedAttendee] {
+        guard let provider = providers.first(where: { $0.account.id == accountID }) else { return [] }
+        return try await withThrowingTaskGroup(of: [ResolvedAttendee].self) { group in
+            group.addTask {
+                try await provider.findPeople(query: query)
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(40))
+                throw FindPeopleTimeoutError()
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next() else { return [] }
+            return first
+        }
+    }
+
+    func findFreeSlots(
+        emails: [String],
+        range: DateInterval,
+        durationMinutes: Int,
+        accountID: UUID
+    ) async throws -> [FreeSlot] {
+        guard !emails.isEmpty else { return [] }
+        guard let provider = providers.first(where: { $0.account.id == accountID }) else { return [] }
+
+        let cal = AppTimeZone.calendar
+        let requestStart = cal.startOfDay(for: range.start)
+        let requestEnd: Date = {
+            let end = cal.startOfDay(for: range.end)
+            return cal.date(byAdding: .day, value: 1, to: end) ?? range.end
+        }()
+
+        // Include organizer's own availability by resolving their SMTP email from the domain login
+        let organizerSMTP = try? await provider.resolveOrganizerSMTPEmail()
+        var allEmails = emails
+        if let smtp = organizerSMTP, !allEmails.contains(smtp) {
+            allEmails.insert(smtp, at: 0)
+        }
+
+        let availability = try await provider.getUserAvailability(emails: allEmails, from: requestStart, to: requestEnd)
+
+        // Remove organizer's row before returning — we only need to block on it, not confuse zip
+        let organizerIdx = organizerSMTP.flatMap { smtp in allEmails.firstIndex(of: smtp) }
+        let organizerAvailability = organizerIdx.flatMap { availability.count > $0 ? availability[$0] : nil }
+        let attendeeAvailability = availability.filter { $0.email != organizerSMTP }
+
+        // Treat as a real conflict on the organizer's calendar: anything that's on the calendar AND
+        // the organizer hasn't declined / wasn't cancelled. Crucially, this keeps `.notResponded` —
+        // those are invites pending the organizer's reply that the availability API often reports
+        // as "free" (since the user hasn't accepted yet), but the organizer is realistically blocked.
+        let organizerEvents = events.filter { ev in
+            ev.accountID == accountID
+                && !ev.isCancelled
+                && ev.responseType != .declined
+        }
+        return computeFreeSlots(
+            from: attendeeAvailability,
+            organizerAvailability: organizerAvailability,
+            organizerEvents: organizerEvents,
+            range: range,
+            durationMinutes: durationMinutes
+        )
+    }
+
+    func createMeeting(
+        title: String,
+        slot: FreeSlot,
+        attendees: [ResolvedAttendee],
+        accountID: UUID
+    ) async throws {
+        guard let provider = providers.first(where: { $0.account.id == accountID }) else { return }
+        try await provider.createMeeting(title: title, start: slot.start, end: slot.end, attendees: attendees)
+        syncNow()
+    }
+
+    private func computeFreeSlots(
+        from availability: [AttendeeAvailability],
+        organizerAvailability: AttendeeAvailability?,
+        organizerEvents: [CalendarEvent],
+        range: DateInterval,
+        durationMinutes: Int
+    ) -> [FreeSlot] {
+        let intervalSec: TimeInterval = 30 * 60
+        let slotsNeeded = max(1, Int(ceil(Double(durationMinutes) / 30.0)))
+        let cal = AppTimeZone.calendar
+        var results: [FreeSlot] = []
+
+        // Build iteration range from availability or from range directly
+        let windowStart: Date
+        let totalSlots: Int
+        if let first = availability.first {
+            windowStart = first.windowStart
+            totalSlots = availability.map { $0.mergedFreeBusy.count }.min() ?? 0
+        } else {
+            windowStart = cal.startOfDay(for: range.start)
+            let totalSeconds = range.end.timeIntervalSince(windowStart)
+            totalSlots = Int(totalSeconds / intervalSec)
+        }
+
+        #if DEBUG
+        let dbgFmt = DateFormatter()
+        dbgFmt.dateFormat = "MM-dd HH:mm"
+        dbgFmt.timeZone = AppTimeZone.zone
+        let logPath = "/tmp/owawidget_freeslots.log"
+        func flog(_ msg: String) {
+            let line = "[\(dbgFmt.string(from: Date()))] \(msg)\n"
+            if let data = line.data(using: .utf8) {
+                if let fh = FileHandle(forWritingAtPath: logPath) {
+                    fh.seekToEndOfFile(); fh.write(data); try? fh.close()
+                } else {
+                    try? data.write(to: URL(fileURLWithPath: logPath), options: .atomic)
+                }
+            }
+        }
+        let utcFmt = DateFormatter()
+        utcFmt.dateFormat = "MM-dd HH:mm"
+        utcFmt.timeZone = TimeZone(identifier: "UTC")
+        flog("=== computeFreeSlots: organizerEvents=\(organizerEvents.count) range=\(dbgFmt.string(from: range.start))–\(dbgFmt.string(from: range.end)) localTZ=\(TimeZone.current.identifier) (\(TimeZone.current.secondsFromGMT() / 3600)h)")
+        let inRange = organizerEvents.filter { $0.startDate < range.end && $0.endDate > range.start }
+        flog("  organizerEvents in range: \(inRange.count)")
+        for ev in inRange.sorted(by: { $0.startDate < $1.startDate }) {
+            flog("  • \(dbgFmt.string(from: ev.startDate))–\(dbgFmt.string(from: ev.endDate)) [UTC \(utcFmt.string(from: ev.startDate))] resp=\(ev.responseType.rawValue) '\(ev.title)'")
+        }
+        #endif
+
+        var i = 0
+        while i <= totalSlots - slotsNeeded {
+            let slotStart = windowStart.addingTimeInterval(Double(i) * intervalSec)
+            let slotEnd = slotStart.addingTimeInterval(Double(durationMinutes) * 60)
+
+            guard slotStart >= range.start, slotEnd <= range.end else { i += 1; continue }
+
+            let startMinuteOfDay = cal.component(.hour, from: slotStart) * 60 + cal.component(.minute, from: slotStart)
+            let endMinuteOfDay = cal.component(.hour, from: slotEnd) * 60 + cal.component(.minute, from: slotEnd)
+            guard startMinuteOfDay >= 9 * 60, endMinuteOfDay > 0, endMinuteOfDay <= 18 * 60 else { i += 1; continue }
+
+            let weekday = cal.component(.weekday, from: slotStart)
+            guard weekday != 1, weekday != 7 else { i += 1; continue }
+
+            // Check attendees availability via mergedFreeBusy
+            let attendeesFree = availability.allSatisfy { avail in
+                let chars = Array(avail.mergedFreeBusy)
+                return (i..<(i + slotsNeeded)).allSatisfy { idx in
+                    idx < chars.count && chars[idx] == "0"
+                }
+            }
+            guard attendeesFree else { i += 1; continue }
+
+            // Organizer's loaded calendar is authoritative — it correctly captures `.notResponded`
+            // invites (which the availability API often reports as free) and excludes declined/cancelled
+            // (filtered out upstream). The API is used only as a backup for time the user's calendar
+            // sync didn't catch (e.g. OOF blocks set externally).
+            let conflictingEvent = organizerEvents.first { event in
+                event.startDate < slotEnd && event.endDate > slotStart
+            }
+            if let conflict = conflictingEvent {
+                #if DEBUG
+                flog("  slot \(dbgFmt.string(from: slotStart)) BLOCKED by '\(conflict.title)' (\(conflict.responseType.rawValue))")
+                #endif
+                i += 1; continue
+            }
+
+            if let orgAvail = organizerAvailability {
+                let orgChars = Array(orgAvail.mergedFreeBusy)
+                let orgWindowStart = orgAvail.windowStart
+                let orgInterval: TimeInterval = Double(orgAvail.intervalMinutes) * 60
+                let orgFree = (0..<slotsNeeded).allSatisfy { offset in
+                    let t = slotStart.addingTimeInterval(Double(offset) * intervalSec)
+                    let idx = Int(t.timeIntervalSince(orgWindowStart) / orgInterval)
+                    guard idx >= 0, idx < orgChars.count else { return true }
+                    return orgChars[idx] == "0"
+                }
+                if !orgFree {
+                    #if DEBUG
+                    flog("  slot \(dbgFmt.string(from: slotStart)) BLOCKED by organizer availability API (likely OOF)")
+                    #endif
+                    i += 1; continue
+                }
+            }
+
+            #if DEBUG
+            flog("  slot \(dbgFmt.string(from: slotStart)) → FREE (attendees ok, organizer ok)")
+            #endif
+
+            results.append(FreeSlot(start: slotStart, end: slotEnd))
+            if results.count >= 10 { break }
+            i += slotsNeeded
+        }
+
+        return results
+    }
+
+    // MARK: - Meeting response
+
     func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {
         guard let provider = providers.first(where: { $0.account.id == event.accountID }) else { return }
 

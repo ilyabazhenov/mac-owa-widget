@@ -147,6 +147,7 @@ struct MeetingDetailContentView: View {
 
     private var dayLabel: String {
         let formatter = DateFormatter()
+        formatter.timeZone = AppTimeZone.zone
         formatter.dateFormat = "EEEE, d MMMM"
         return formatter.string(from: event.startDate)
     }

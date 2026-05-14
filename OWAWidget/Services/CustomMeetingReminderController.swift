@@ -55,6 +55,7 @@ final class CustomMeetingReminderController {
 
     private func dlog(_ message: String) {
         let f = DateFormatter()
+        f.timeZone = AppTimeZone.zone
         f.dateFormat = "HH:mm:ss.SSS"
         let line = "[\(f.string(from: Date()))] \(message)\n"
         guard let data = line.data(using: .utf8) else { return }

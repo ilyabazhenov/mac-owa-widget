@@ -169,4 +169,39 @@ final class OWARequestPayloadTests: XCTestCase {
             )
         )
     }
+
+    func testFindPeoplePayloadVariantsSerialize() throws {
+        for variant in FindPeoplePayloadVariant.allCases {
+            let payload = OWAFindPeoplePayload.make(
+                query: "Иванов",
+                timezoneID: "Russian Standard Time",
+                globalAddressListFolderId: "00000000-0000-0000-0000-000000000001",
+                variant: variant
+            )
+            XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: payload))
+            let body = try XCTUnwrap(payload["Body"] as? [String: Any])
+            XCTAssertNotNil(body["ParentFolderId"])
+            XCTAssertEqual(body["QueryString"] as? String, "Иванов")
+        }
+    }
+
+    func testFindPeopleComposeCalendarHARPayloadMatchesBrowserShape() throws {
+        let payload = OWAFindPeoplePayload.makeComposeCalendarHAR(
+            query: "Коваленко",
+            timezoneID: "Russian Standard Time"
+        )
+        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: payload))
+        XCTAssertEqual(payload["__type"] as? String, "FindPeopleJsonRequest:#Exchange")
+        let header = try XCTUnwrap(payload["Header"] as? [String: Any])
+        XCTAssertEqual(header["RequestServerVersion"] as? String, "Exchange2013")
+        let body = try XCTUnwrap(payload["Body"] as? [String: Any])
+        XCTAssertNil(body["ParentFolderId"])
+        XCTAssertEqual(body["QueryString"] as? String, "Коваленко")
+        XCTAssertEqual(body["SearchPeopleSuggestionIndex"] as? Bool, false)
+        XCTAssertNotNil(body["AggregationRestriction"])
+        XCTAssertNotNil(body["Context"])
+        let personaShape = try XCTUnwrap(body["PersonaShape"] as? [String: Any])
+        let addl = try XCTUnwrap(personaShape["AdditionalProperties"] as? [[String: Any]])
+        XCTAssertTrue(addl.contains { ($0["FieldURI"] as? String) == "PersonaAttributions" })
+    }
 }

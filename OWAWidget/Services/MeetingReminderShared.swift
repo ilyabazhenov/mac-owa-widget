@@ -219,6 +219,7 @@ enum MeetingReminderText {
 
     private static func shortTime(_ date: Date, locale: Locale) -> String {
         let f = DateFormatter()
+        f.timeZone = AppTimeZone.zone
         f.timeStyle = .short
         f.dateStyle = .none
         f.locale = locale

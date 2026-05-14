@@ -164,3 +164,26 @@
 "about.version" = "Версия %@";
 "about.description" = "Быстрый доступ к календарю Exchange из строки меню.";
 "about.github" = "GitHub";
+
+"window.create.meeting.title" = "Новая встреча";
+"popover.new.meeting" = "Новая встреча";
+"create.meeting.title.placeholder" = "Название встречи";
+"create.meeting.attendees.label" = "Участники";
+"create.meeting.attendees.placeholder" = "Поиск по имени или email…";
+"create.meeting.range.label" = "Диапазон дат";
+"create.meeting.duration.label" = "Длительность";
+"create.meeting.find.slots" = "Найти свободные слоты";
+"create.meeting.create" = "Создать встречу";
+"create.meeting.no.slots" = "Нет свободных слотов в выбранном диапазоне";
+"create.meeting.available.slots" = "Доступные слоты";
+"create.meeting.recent.label" = "Недавние";
+"create.meeting.slots.hint" = "Добавьте участников и нажмите\n«Найти свободные слоты»";
+"create.meeting.success" = "Встреча создана";
+"meeting.range.today" = "Сегодня";
+"meeting.range.tomorrow" = "Завтра";
+"meeting.range.this.week" = "На этой неделе";
+"meeting.range.next.week" = "На следующей неделе";
+"meeting.duration.15min" = "15 мин";
+"meeting.duration.30min" = "30 мин";
+"meeting.duration.45min" = "45 мин";
+"meeting.duration.60min" = "1 час";

@@ -47,6 +47,16 @@ struct OWAWidgetApp: App {
         }
         .menuBarExtraStyle(.window)
 
+        Window(localizationService.tr("window.create.meeting.title"), id: "create-meeting") {
+            if let account = calendarService.accounts.first {
+                CreateMeetingView(calendarService: calendarService, accountID: account.id)
+                    .environmentObject(localizationService)
+                    .environment(\.locale, localizationService.locale)
+            }
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+
         Window(localizationService.tr("window.settings.title"), id: "settings") {
             SettingsView(calendarService: calendarService)
                 .environmentObject(localizationService)

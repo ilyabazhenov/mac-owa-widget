@@ -287,6 +287,7 @@ enum OWAError: LocalizedError {
     case invalidResponse
     case httpError(Int, String)
     case encodingFailed
+    case ewsError(String)
 
     var errorDescription: String? {
         switch self {
@@ -296,6 +297,7 @@ enum OWAError: LocalizedError {
         case .invalidResponse:             "Invalid server response"
         case .httpError(let c, let m):     Self.describeHTTPError(statusCode: c, responseBody: m)
         case .encodingFailed:              "Failed to encode request"
+        case .ewsError(let code):          "Exchange error: \(code)"
         }
     }
 

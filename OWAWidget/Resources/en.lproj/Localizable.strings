@@ -164,3 +164,26 @@
 "about.version" = "Version %@";
 "about.description" = "Quick access to your Exchange calendar from the menu bar.";
 "about.github" = "GitHub";
+
+"window.create.meeting.title" = "New Meeting";
+"popover.new.meeting" = "New Meeting";
+"create.meeting.title.placeholder" = "Meeting title";
+"create.meeting.attendees.label" = "Attendees";
+"create.meeting.attendees.placeholder" = "Search by name or email…";
+"create.meeting.range.label" = "Date range";
+"create.meeting.duration.label" = "Duration";
+"create.meeting.find.slots" = "Find available slots";
+"create.meeting.create" = "Create meeting";
+"create.meeting.no.slots" = "No available slots in selected range";
+"create.meeting.available.slots" = "Available slots";
+"create.meeting.recent.label" = "Recent";
+"create.meeting.slots.hint" = "Add attendees and tap\n\"Find available slots\"";
+"create.meeting.success" = "Meeting created";
+"meeting.range.today" = "Today";
+"meeting.range.tomorrow" = "Tomorrow";
+"meeting.range.this.week" = "This week";
+"meeting.range.next.week" = "Next week";
+"meeting.duration.15min" = "15 min";
+"meeting.duration.30min" = "30 min";
+"meeting.duration.45min" = "45 min";
+"meeting.duration.60min" = "1 hour";

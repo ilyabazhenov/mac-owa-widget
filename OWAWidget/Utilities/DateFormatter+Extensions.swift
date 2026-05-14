@@ -5,6 +5,7 @@ extension DateFormatter {
         let f = DateFormatter()
         f.timeStyle = .short
         f.dateStyle = .none
+        f.timeZone = AppTimeZone.zone
         return f
     }()
 
@@ -12,6 +13,7 @@ extension DateFormatter {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .none
+        f.timeZone = AppTimeZone.zone
         return f
     }()
 }
@@ -23,8 +25,8 @@ extension Date {
         "\(shortTime)–\(end.shortTime)"
     }
 
-    var isToday: Bool { Calendar.current.isDateInToday(self) }
-    var isTomorrow: Bool { Calendar.current.isDateInTomorrow(self) }
+    var isToday: Bool { AppTimeZone.calendar.isDateInToday(self) }
+    var isTomorrow: Bool { AppTimeZone.calendar.isDateInTomorrow(self) }
 
     var sectionLabel: String {
         if isToday { return "Today" }

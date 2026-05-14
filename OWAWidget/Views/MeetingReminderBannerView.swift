@@ -108,6 +108,7 @@ struct MeetingReminderBannerView: View {
 
     private func timeRange(_ item: MeetingReminderItem) -> String {
         let formatter = DateFormatter()
+        formatter.timeZone = AppTimeZone.zone
         formatter.timeStyle = .short
         formatter.dateStyle = .none
         return "\(formatter.string(from: item.startDate))–\(formatter.string(from: item.endDate))"
