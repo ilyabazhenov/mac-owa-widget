@@ -261,19 +261,11 @@ final class CalendarService: ObservableObject {
         guard let provider = providers.first(where: { $0.account.id == accountID }) else { return [] }
 
         let cal = AppTimeZone.calendar
-        let rangeStartDay = cal.startOfDay(for: range.start)
-        let todayStart = cal.startOfDay(for: Date())
-        // Pull free-busy from at least today so long forward ranges still get a contiguous bitmap.
-        let requestStart = min(rangeStartDay, todayStart)
-        let rangeBasedExclusiveEnd: Date = {
-            let end = cal.startOfDay(for: range.end)
-            return cal.date(byAdding: .day, value: 1, to: end) ?? range.end
-        }()
-        // Always request through at least 14 calendar days after today (exclusive end = todayStart + 15d)
-        // so merged free-busy strings cover a longer horizon than the selected slot-search range.
-        let fourteenDaysForwardExclusiveEnd =
-            cal.date(byAdding: .day, value: 15, to: todayStart) ?? rangeBasedExclusiveEnd
-        let requestEnd = max(rangeBasedExclusiveEnd, fourteenDaysForwardExclusiveEnd)
+        let (requestStart, requestEnd) = UserAvailabilityRequestWindow.bounds(
+            for: range,
+            referenceNow: Date(),
+            calendar: cal
+        )
 
         // Include organizer's own availability by resolving their SMTP email from the domain login
         let organizerSMTP = try? await provider.resolveOrganizerSMTPEmail()

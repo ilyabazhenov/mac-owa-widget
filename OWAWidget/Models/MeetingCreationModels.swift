@@ -35,6 +35,12 @@ struct MeetingDraft: Sendable {
     var attendees: [ResolvedAttendee] = []
     var durationMinutes: Int = 30
     var searchRange: MeetingSearchRange = .thisWeek
+
+    /// Stable key for debounced slot auto-refresh (`CreateMeetingViewModel`): attendees, range, duration.
+    var slotAutoRefreshKey: String {
+        attendees.map(\.email).sorted().joined(separator: "\u{1e}")
+            + "|\(searchRange.rawValue)|\(durationMinutes)"
+    }
 }
 
 enum MeetingSearchRange: String, CaseIterable, Sendable {

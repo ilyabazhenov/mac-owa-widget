@@ -92,6 +92,19 @@ final class MeetingSearchRangeTests: XCTestCase {
         assertEqualDates(cols[0], mon)
     }
 
+    /// `thisWeek` search uses `max(ref, todayStart)` through today+5d, while the slot grid is the
+    /// calendar ISO week (Mon–Fri). Mid-week, search starts **after** the first grid column — same
+    /// class of skew we fixed for `nextWeek` until product aligns `thisWeek.dateInterval` with the grid.
+    func testThisWeekSearchStartsAtReferenceWhileGridAnchorsMonday() {
+        let ref = moscowDate(year: 2025, month: 5, day: 14, hour: 10, minute: 0)
+        let interval = MeetingSearchRange.thisWeek.dateInterval(referenceNow: ref)
+        let week = MeetingSearchRange.thisWeek.slotGridWeekInterval(referenceNow: ref)
+        let cols = week.weekdayColumnStartDates(calendar: AppTimeZone.calendar)
+        XCTAssertEqual(cols.count, 5)
+        XCTAssertGreaterThan(interval.start.timeIntervalSince(cols[0]), 60)
+        assertEqualDates(interval.start, ref)
+    }
+
     func testWeekendOnlyIntervalYieldsNoColumns() {
         let cal = AppTimeZone.calendar
         let sat = moscowDate(year: 2025, month: 5, day: 17, hour: 0, minute: 0)

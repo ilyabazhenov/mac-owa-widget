@@ -69,10 +69,7 @@ final class CreateMeetingViewModel: ObservableObject {
             .store(in: &cancellables)
 
         $draft
-            .map { d in
-                d.attendees.map(\.email).sorted().joined(separator: "\u{1e}")
-                    + "|\(d.searchRange.rawValue)|\(d.durationMinutes)"
-            }
+            .map(\.slotAutoRefreshKey)
             .removeDuplicates()
             .debounce(for: .milliseconds(450), scheduler: RunLoop.main)
             .sink { [weak self] _ in
