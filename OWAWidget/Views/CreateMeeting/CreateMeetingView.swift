@@ -73,12 +73,14 @@ struct CreateMeetingView: View {
                     }
                     .padding(20)
                 }
-                .frame(width: 580)
+                .frame(minWidth: 380)
+                .layoutPriority(1)
                 .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
             }
             bottomBar
         }
-        .frame(width: 900)
+        .frame(minWidth: 700, minHeight: 500)
+        .background(WindowAccessor())
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
@@ -1102,6 +1104,19 @@ struct InitialsAvatar: View {
         }
         .frame(width: size, height: size)
     }
+}
+
+// MARK: - Window accessor
+
+private struct WindowAccessor: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            view.window?.setFrameAutosaveName("CreateMeetingWindow")
+        }
+        return view
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 // MARK: - Flow layout

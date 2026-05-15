@@ -58,7 +58,8 @@ struct OWAWidgetApp: App {
             .onAppear { NSApp.setActivationPolicy(.regular) }
             .onDisappear { NSApp.setActivationPolicy(.accessory) }
         }
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 900, height: 680)
         .defaultPosition(.center)
 
         Window(localizationService.tr("window.settings.title"), id: "settings") {
