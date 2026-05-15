@@ -21,6 +21,8 @@ final class CreateMeetingViewModel: ObservableObject {
     @Published var freeSlots: [FreeSlot] = []
     @Published var attendeeAvailabilities: [AttendeeAvailability] = []
     @Published var selectedSlotID: UUID? = nil
+    /// Слот, выбранный вручную на занятом/tentative времени (не из списка свободных).
+    @Published var forcedSlot: FreeSlot? = nil
     @Published var isLoadingSlots = false
     @Published var isCreating = false
     @Published var errorMessage: String? = nil
@@ -248,6 +250,7 @@ final class CreateMeetingViewModel: ObservableObject {
             freeSlots = []
             attendeeAvailabilities = []
             selectedSlotID = nil
+            forcedSlot = nil
             slotsSearched = false
             errorMessage = nil
             return
@@ -258,6 +261,7 @@ final class CreateMeetingViewModel: ObservableObject {
         freeSlots = []
         attendeeAvailabilities = []
         selectedSlotID = nil
+        forcedSlot = nil
         slotsSearched = false
 
         let requiredEmails = draft.requiredAttendees.map(\.email)
@@ -292,9 +296,22 @@ final class CreateMeetingViewModel: ObservableObject {
 
     // MARK: - Create
 
+    func selectForcedSlot(start: Date) {
+        let end = start.addingTimeInterval(Double(draft.durationMinutes) * 60)
+        let slot = FreeSlot(start: start, end: end, score: 0)
+        forcedSlot = slot
+        selectedSlotID = slot.id
+    }
+
+    private var effectiveSelectedSlot: FreeSlot? {
+        guard let slotID = selectedSlotID else { return nil }
+        if let slot = freeSlots.first(where: { $0.id == slotID }) { return slot }
+        if let forced = forcedSlot, forced.id == slotID { return forced }
+        return nil
+    }
+
     func createMeeting() async {
-        guard let slotID = selectedSlotID,
-              let slot = freeSlots.first(where: { $0.id == slotID }),
+        guard let slot = effectiveSelectedSlot,
               !draft.title.trimmingCharacters(in: .whitespaces).isEmpty
         else { return }
 
@@ -401,6 +418,59 @@ final class CreateMeetingViewModel: ObservableObject {
                     freeSlot: slot,
                     slotPosition: pos
                 )
+            }
+        }
+
+        // Третий проход: объединяем последовательные занятые/tentative/OOF ячейки в визуальные блоки.
+        let sortedTimeKeys = Array(stride(from: 9 * 60, to: 18 * 60, by: 30))
+        for day in days {
+            guard result[day] != nil else { continue }
+
+            var runs: [(kind: Int, keys: [Int])] = []
+            var currentKind: Int? = nil
+            var currentKeys: [Int] = []
+
+            for tk in sortedTimeKeys {
+                guard let cell = result[day]?[tk], cell.freeSlot == nil else {
+                    if let k = currentKind, !currentKeys.isEmpty {
+                        runs.append((kind: k, keys: currentKeys))
+                    }
+                    currentKind = nil
+                    currentKeys = []
+                    continue
+                }
+                let kind: Int
+                switch cell.state {
+                case .busy:        kind = 1
+                case .tentative:   kind = 2
+                case .outOfOffice: kind = 3
+                case .free:        kind = 4
+                }
+                if kind == currentKind {
+                    currentKeys.append(tk)
+                } else {
+                    if let k = currentKind, !currentKeys.isEmpty {
+                        runs.append((kind: k, keys: currentKeys))
+                    }
+                    currentKind = kind
+                    currentKeys = [tk]
+                }
+            }
+            if let k = currentKind, !currentKeys.isEmpty {
+                runs.append((kind: k, keys: currentKeys))
+            }
+
+            for run in runs where run.keys.count > 1 {
+                for (i, tk) in run.keys.enumerated() {
+                    guard let existing = result[day]?[tk] else { continue }
+                    let pos: FreeSlotPosition = i == 0 ? .start : (i == run.keys.count - 1 ? .end : .middle)
+                    result[day]?[tk] = CellAvailability(
+                        state: existing.state,
+                        attendeeStatuses: existing.attendeeStatuses,
+                        freeSlot: nil,
+                        slotPosition: pos
+                    )
+                }
             }
         }
 

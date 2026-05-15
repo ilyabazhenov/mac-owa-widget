@@ -366,6 +366,8 @@ struct CreateMeetingView: View {
                 WeekGridSlotView(
                     cellMatrix: vm.cellMatrix,
                     selectedSlotID: $vm.selectedSlotID,
+                    forcedSlot: vm.forcedSlot,
+                    onForceSelect: { vm.selectForcedSlot(start: $0) },
                     gridWeekInterval: vm.draft.slotGridWeekInterval()
                 )
                 if vm.slotsSearched && !vm.attendeeAvailabilities.isEmpty {
@@ -915,6 +917,8 @@ struct WeekGridSlotView: View {
 
     let cellMatrix: [Date: [Int: CellAvailability]]
     @Binding var selectedSlotID: UUID?
+    let forcedSlot: FreeSlot?
+    let onForceSelect: (Date) -> Void
     let gridWeekInterval: DateInterval
 
     @State private var hoveredInfo: HoveredInfo? = nil
@@ -1000,19 +1004,37 @@ struct WeekGridSlotView: View {
                             let cellStart = AppTimeZone.calendar.date(
                                 bySettingHour: timeKey / 60, minute: timeKey % 60, second: 0, of: day
                             ) ?? day
-                            let pos = cell?.slotPosition ?? .single
-                            let showBottom = pos != .start && pos != .middle
+                            // Forced slot: covers cellStart..cellStart+duration when user picks a busy/tentative cell.
+                            let isForcedSelected: Bool = {
+                                guard let forced = forcedSlot, forced.id == selectedSlotID,
+                                      cell?.freeSlot == nil else { return false }
+                                return cellStart >= forced.start && cellStart < forced.end
+                            }()
+                            let forcedPos: FreeSlotPosition? = isForcedSelected ? {
+                                let n = max(1, Int((forcedSlot!.end.timeIntervalSince(forcedSlot!.start) / 1800).rounded()))
+                                if n == 1 { return .single }
+                                let i = Int((cellStart.timeIntervalSince(forcedSlot!.start) / 1800).rounded())
+                                if i == 0 { return .start }
+                                if i == n - 1 { return .end }
+                                return .middle
+                            }() : nil
+                            let effectivePos = forcedPos ?? cell?.slotPosition ?? .single
+                            let showBottom = effectivePos != .start && effectivePos != .middle
+                            let isSelected = cell?.freeSlot.map { $0.id == selectedSlotID } == true || isForcedSelected
                             AvailabilityCell(
                                 cell: cell,
-                                isSelected: cell?.freeSlot.map { $0.id == selectedSlotID } == true,
+                                isSelected: isSelected,
                                 onHoverChange: { hovered in
-                                    // Для продолжений многострочного слота — используем freeSlot.start,
-                                    // чтобы тултип показывал весь слот, а не только эту строку.
                                     let tooltipStart = cell?.freeSlot?.start ?? cellStart
                                     hoveredInfo = hovered ? HoveredInfo(cell: cell!, cellStart: tooltipStart) : nil
-                                }
+                                },
+                                slotPositionOverride: forcedPos
                             ) {
-                                if let slot = cell?.freeSlot { selectedSlotID = slot.id }
+                                if let slot = cell?.freeSlot {
+                                    selectedSlotID = slot.id
+                                } else if cell != nil {
+                                    onForceSelect(cellStart)
+                                }
                             }
                             .frame(maxWidth: .infinity, minHeight: MeetingSlotGridMetrics.rowHeight, maxHeight: MeetingSlotGridMetrics.rowHeight)
                             .meetingSlotGridLines(trailing: true, bottom: showBottom, bottomIsMajor: rowEndsOnHour && showBottom)
@@ -1051,43 +1073,39 @@ private struct AvailabilityCell: View {
     let cell: CellAvailability?
     let isSelected: Bool
     let onHoverChange: (Bool) -> Void
+    let slotPositionOverride: FreeSlotPosition?
     let onTap: () -> Void
 
     @State private var isHovered = false
 
-    private var isSelectable: Bool { cell?.freeSlot != nil }
+    private var isSelectable: Bool { cell != nil }
 
     private var bg: Color {
         guard let cell else { return .clear }
         if isSelected { return Color.accentColor }
         switch cell.state {
         case .free(let score):
-            // Зелёный только если есть реальный букуемый слот нужной длительности.
-            // Если участники свободны в этом 30-мин окне, но слот не сформирован — показываем как занятое.
             guard cell.freeSlot != nil else {
-                return Color(hue: 0.022, saturation: 0.48, brightness: 0.88)
-                    .opacity(isHovered ? 0.85 : 0.68)
+                return Color(hue: 0.022, saturation: 0.65, brightness: 1.0)
+                    .opacity(isHovered ? 0.55 : 0.35)
             }
             let sat = 0.55 + score * 0.28
             let bri = 0.70 + score * 0.10
             return Color(hue: 0.375, saturation: sat, brightness: bri)
                 .opacity(isHovered ? 1.0 : 0.90)
         case .tentative:
-            // Золотисто-янтарный
-            return Color(hue: 0.108, saturation: 0.78, brightness: 0.90)
-                .opacity(isHovered ? 0.90 : 0.75)
+            return Color(hue: 0.108, saturation: 0.82, brightness: 1.0)
+                .opacity(isHovered ? 0.65 : 0.42)
         case .busy:
-            // Тёплый кораллово-красный
-            return Color(hue: 0.022, saturation: 0.48, brightness: 0.88)
-                .opacity(isHovered ? 0.85 : 0.68)
+            return Color(hue: 0.022, saturation: 0.65, brightness: 1.0)
+                .opacity(isHovered ? 0.55 : 0.35)
         case .outOfOffice:
-            // Индиго / сиреневый
-            return Color(hue: 0.695, saturation: 0.42, brightness: 0.80)
-                .opacity(isHovered ? 0.85 : 0.68)
+            return Color(hue: 0.695, saturation: 0.55, brightness: 1.0)
+                .opacity(isHovered ? 0.55 : 0.35)
         }
     }
 
-    private var slotPosition: FreeSlotPosition { cell?.slotPosition ?? .single }
+    private var slotPosition: FreeSlotPosition { slotPositionOverride ?? cell?.slotPosition ?? .single }
 
     @ViewBuilder
     private var cellShape: some View {
@@ -1116,11 +1134,16 @@ private struct AvailabilityCell: View {
         .padding(.horizontal, 2)
         .frame(maxWidth: .infinity)
         .frame(height: MeetingSlotGridMetrics.rowHeight)
+        .scaleEffect(isSelectable && isHovered && !isSelected ? 0.96 : 1.0)
         .contentShape(Rectangle())
         .onTapGesture { if isSelectable { onTap() } }
         .onHover { hovered in
-            isHovered = hovered && cell != nil
-            onHoverChange(hovered && cell != nil)
+            let active = hovered && cell != nil
+            isHovered = active
+            onHoverChange(active)
+            if isSelectable {
+                if hovered { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+            }
         }
         .animation(.easeInOut(duration: 0.12), value: isSelected)
         .animation(.easeInOut(duration: 0.12), value: isHovered)
@@ -1223,9 +1246,9 @@ private struct AvailabilityLegendView: View {
 
     private static let items: [Item] = [
         Item(color: Color(hue: 0.375, saturation: 0.75, brightness: 0.76), key: "create.meeting.legend.free"),
-        Item(color: Color(hue: 0.108, saturation: 0.78, brightness: 0.90).opacity(0.80), key: "create.meeting.legend.tentative"),
-        Item(color: Color(hue: 0.022, saturation: 0.48, brightness: 0.88).opacity(0.75), key: "create.meeting.legend.busy"),
-        Item(color: Color(hue: 0.695, saturation: 0.42, brightness: 0.80).opacity(0.75), key: "create.meeting.legend.oof"),
+        Item(color: Color(hue: 0.108, saturation: 0.82, brightness: 1.0).opacity(0.60), key: "create.meeting.legend.tentative"),
+        Item(color: Color(hue: 0.022, saturation: 0.65, brightness: 1.0).opacity(0.50), key: "create.meeting.legend.busy"),
+        Item(color: Color(hue: 0.695, saturation: 0.55, brightness: 1.0).opacity(0.50), key: "create.meeting.legend.oof"),
     ]
 
     var body: some View {
