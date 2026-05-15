@@ -55,11 +55,20 @@ enum SlotAvailabilityState: Sendable {
     }
 }
 
+/// Позиция строки внутри многострочного свободного слота.
+enum FreeSlotPosition: Sendable {
+    case single   // 30-мин слот — одна строка, скругление со всех сторон
+    case start    // первая строка многострочного слота — скругление сверху
+    case middle   // промежуточная строка — без скруглений
+    case end      // последняя строка — скругление снизу
+}
+
 struct CellAvailability: Sendable {
     let state: SlotAvailabilityState
     let attendeeStatuses: [AttendeeSlotStatus]
     /// Non-nil → ячейка соответствует свободному слоту и кликабельна.
     let freeSlot: FreeSlot?
+    var slotPosition: FreeSlotPosition = .single
 }
 
 enum AttendeeKind: Sendable, Hashable {

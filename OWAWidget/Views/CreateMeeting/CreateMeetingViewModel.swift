@@ -381,6 +381,29 @@ final class CreateMeetingViewModel: ObservableObject {
                 result[day]?[timeKey] = cell
             }
         }
+
+        // Второй проход: маркируем позиции строк для многострочных слотов.
+        // Слот на 60 мин занимает 2 строки — первая получает .start, вторая .end.
+        for slot in freeSlots {
+            let n = max(1, Int((slot.end.timeIntervalSince(slot.start) / intervalSec).rounded()))
+            guard n > 1 else { continue }
+            let day = cal.startOfDay(for: slot.start)
+            for i in 0..<n {
+                let rowDate = slot.start.addingTimeInterval(Double(i) * intervalSec)
+                let h = cal.component(.hour, from: rowDate)
+                let m = cal.component(.minute, from: rowDate)
+                let tk = h * 60 + m
+                guard let existing = result[day]?[tk] else { continue }
+                let pos: FreeSlotPosition = i == 0 ? .start : (i == n - 1 ? .end : .middle)
+                result[day]?[tk] = CellAvailability(
+                    state: .free(score: slot.score),
+                    attendeeStatuses: existing.attendeeStatuses,
+                    freeSlot: slot,
+                    slotPosition: pos
+                )
+            }
+        }
+
         return result
     }
 }

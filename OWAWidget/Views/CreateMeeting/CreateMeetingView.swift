@@ -1000,6 +1000,8 @@ struct WeekGridSlotView: View {
                             let cellStart = AppTimeZone.calendar.date(
                                 bySettingHour: timeKey / 60, minute: timeKey % 60, second: 0, of: day
                             ) ?? day
+                            let pos = cell?.slotPosition ?? .single
+                            let showBottom = pos != .start && pos != .middle
                             AvailabilityCell(
                                 cell: cell,
                                 isSelected: cell?.freeSlot.map { $0.id == selectedSlotID } == true,
@@ -1010,7 +1012,7 @@ struct WeekGridSlotView: View {
                                 if let slot = cell?.freeSlot { selectedSlotID = slot.id }
                             }
                             .frame(maxWidth: .infinity, minHeight: MeetingSlotGridMetrics.rowHeight, maxHeight: MeetingSlotGridMetrics.rowHeight)
-                            .meetingSlotGridLines(trailing: true, bottom: true, bottomIsMajor: rowEndsOnHour)
+                            .meetingSlotGridLines(trailing: true, bottom: showBottom, bottomIsMajor: rowEndsOnHour && showBottom)
                         }
                     }
                 }
@@ -1077,9 +1079,26 @@ private struct AvailabilityCell: View {
         }
     }
 
+    private var slotPosition: FreeSlotPosition { cell?.slotPosition ?? .single }
+
+    @ViewBuilder
+    private var cellShape: some View {
+        let r: CGFloat = 5
+        switch slotPosition {
+        case .single:
+            RoundedRectangle(cornerRadius: r).fill(bg)
+        case .start:
+            UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: r).fill(bg)
+        case .middle:
+            Rectangle().fill(bg)
+        case .end:
+            UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: r, bottomTrailingRadius: r, topTrailingRadius: 0).fill(bg)
+        }
+    }
+
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 5).fill(bg)
+            cellShape
             if isSelected {
                 Image(systemName: "checkmark")
                     .font(.system(size: 9, weight: .bold))
