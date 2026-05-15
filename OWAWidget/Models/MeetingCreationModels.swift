@@ -33,6 +33,35 @@ struct FreeSlot: Identifiable, Sendable {
     }
 }
 
+struct AttendeeSlotStatus: Sendable {
+    let displayName: String
+    let rawChar: Character  // '0' free, '1' tentative, '2' busy, '3' OOF
+}
+
+enum SlotAvailabilityState: Sendable {
+    case free(score: Double)
+    case tentative
+    case busy
+    case outOfOffice
+
+    static func aggregate(from chars: [Character]) -> SlotAvailabilityState {
+        guard let worst = chars.max() else { return .free(score: 0) }
+        switch worst {
+        case "3": return .outOfOffice
+        case "2": return .busy
+        case "1": return .tentative
+        default:  return .free(score: 0)
+        }
+    }
+}
+
+struct CellAvailability: Sendable {
+    let state: SlotAvailabilityState
+    let attendeeStatuses: [AttendeeSlotStatus]
+    /// Non-nil → ячейка соответствует свободному слоту и кликабельна.
+    let freeSlot: FreeSlot?
+}
+
 enum AttendeeKind: Sendable, Hashable {
     case required
     case optional

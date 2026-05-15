@@ -363,12 +363,18 @@ struct CreateMeetingView: View {
     @ViewBuilder
     private var slotViewContainer: some View {
         switch slotViewMode {
-        case .grid:
-            WeekGridSlotView(
-                slots: vm.freeSlots,
-                selectedSlotID: $vm.selectedSlotID,
-                gridWeekInterval: vm.draft.slotGridWeekInterval()
-            )
+        case .grid, .heatmap:
+            VStack(spacing: 0) {
+                WeekGridSlotView(
+                    cellMatrix: vm.cellMatrix,
+                    selectedSlotID: $vm.selectedSlotID,
+                    gridWeekInterval: vm.draft.slotGridWeekInterval()
+                )
+                if vm.slotsSearched && !vm.attendeeAvailabilities.isEmpty {
+                    AvailabilityLegendView()
+                        .padding(.horizontal, MeetingSlotGridMetrics.timeColumnWidth + 2)
+                }
+            }
             .frame(height: MeetingSlotsLayout.slotViewHeight, alignment: .top)
         case .list:
             ScrollView {
@@ -379,14 +385,6 @@ struct CreateMeetingView: View {
                 .padding(.bottom, 8)
             }
             .frame(height: MeetingSlotsLayout.slotViewHeight)
-        case .heatmap:
-            WeekGridSlotView(
-                slots: vm.freeSlots,
-                selectedSlotID: $vm.selectedSlotID,
-                gridWeekInterval: vm.draft.slotGridWeekInterval(),
-                coloring: .heatmap
-            )
-            .frame(height: MeetingSlotsLayout.slotViewHeight, alignment: .top)
         }
     }
 
@@ -813,8 +811,8 @@ private enum MeetingSlotGridMetrics {
     static let rowHeight: CGFloat = 24
     static let timeColumnWidth: CGFloat = 44
     static let headerHeight: CGFloat = 28
-    /// 18 строк × rowHeight + шапка + вертикальные паддинги — то же, что выдаёт `WeekGridSlotView.body`.
-    static var totalHeight: CGFloat { headerHeight + rowHeight * 18 + 8 }
+    /// 18 строк × rowHeight + шапка + вертикальные паддинги + легенда занятости.
+    static var totalHeight: CGFloat { headerHeight + rowHeight * 18 + 8 + 24 }
 }
 
 /// Reserved heights for the right column: slot grid stays fixed; suggestions use intrinsic height when slots exist
@@ -912,15 +910,17 @@ struct WeekGridSlotView: View {
     private typealias TimeKey = Int
     private typealias DayKey = Date
 
-    private struct GridData {
-        let days: [DayKey]
-        let lookup: [DayKey: [TimeKey: FreeSlot]]
+    private struct HoveredInfo {
+        let cell: CellAvailability
+        let cellStart: Date
     }
 
-    let slots: [FreeSlot]
+    let cellMatrix: [Date: [Int: CellAvailability]]
     @Binding var selectedSlotID: UUID?
     let gridWeekInterval: DateInterval
-    var coloring: SlotCellColoring = .accent
+
+    @State private var hoveredInfo: HoveredInfo? = nil
+    @State private var mousePosition: CGPoint = .zero
 
     private static let timeRows: [TimeKey] = Array(stride(from: 540, to: 1080, by: 30))
 
@@ -938,35 +938,8 @@ struct WeekGridSlotView: View {
         return f
     }()
 
-    private var gridData: GridData {
-        let cal = AppTimeZone.calendar
-        let order = gridWeekInterval.weekdayColumnStartDates(calendar: cal)
-        var lookup: [DayKey: [TimeKey: FreeSlot]] = [:]
-        for day in order {
-            for timeKey in Self.timeRows {
-                if let slot = Self.slotCoveringRow(slots: slots, day: day, timeKey: timeKey, calendar: cal) {
-                    if lookup[day] == nil { lookup[day] = [:] }
-                    lookup[day]?[timeKey] = slot
-                }
-            }
-        }
-        return GridData(days: order, lookup: lookup)
-    }
-
-    /// Half-open row `[rowStart, rowEnd)` overlaps slot `[slot.start, slot.end)`.
-    private static func slotCoveringRow(
-        slots: [FreeSlot],
-        day: DayKey,
-        timeKey: TimeKey,
-        calendar cal: Calendar
-    ) -> FreeSlot? {
-        guard let rowStart = cal.date(bySettingHour: timeKey / 60, minute: timeKey % 60, second: 0, of: day),
-              cal.startOfDay(for: rowStart) == day
-        else { return nil }
-        let rowEnd = cal.date(byAdding: .minute, value: 30, to: rowStart) ?? rowStart.addingTimeInterval(30 * 60)
-        return slots.first { slot in
-            cal.startOfDay(for: slot.start) == day && slot.start < rowEnd && slot.end > rowStart
-        }
+    private var days: [DayKey] {
+        gridWeekInterval.weekdayColumnStartDates(calendar: AppTimeZone.calendar)
     }
 
     private func timeLabel(_ key: TimeKey) -> String {
@@ -984,81 +957,132 @@ struct WeekGridSlotView: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// Позиция тултипа: рядом с курсором, не выходя за границы (approx 240×100pt tooltip).
+    private func tooltipOffset(in viewSize: CGSize) -> CGSize {
+        let tooltipW: CGFloat = 244
+        let tooltipH: CGFloat = 110
+        let gap: CGFloat = 12
+        let x = mousePosition.x + gap + tooltipW > viewSize.width
+            ? mousePosition.x - tooltipW - gap
+            : mousePosition.x + gap
+        let y = mousePosition.y + tooltipH > viewSize.height
+            ? mousePosition.y - tooltipH
+            : mousePosition.y
+        return CGSize(width: x, height: y)
+    }
+
     var body: some View {
-        let data = gridData
+        let columnDays = days
         let topEdge = Color(nsColor: .separatorColor).opacity(0.62)
-        Grid(horizontalSpacing: 0, verticalSpacing: 0) {
-            GridRow {
-                Color.clear
-                    .frame(minWidth: MeetingSlotGridMetrics.timeColumnWidth, maxWidth: MeetingSlotGridMetrics.timeColumnWidth, minHeight: 28)
-                    .meetingSlotGridLines(leading: true, trailing: true, bottom: true, bottomIsMajor: true)
-                ForEach(data.days, id: \.self) { day in
-                    columnHeader(for: day)
-                        .padding(.vertical, 4)
-                        .meetingSlotGridLines(trailing: true, bottom: true, bottomIsMajor: true)
+        GeometryReader { geo in
+            Grid(horizontalSpacing: 0, verticalSpacing: 0) {
+                GridRow {
+                    Color.clear
+                        .frame(minWidth: MeetingSlotGridMetrics.timeColumnWidth, maxWidth: MeetingSlotGridMetrics.timeColumnWidth, minHeight: 28)
+                        .meetingSlotGridLines(leading: true, trailing: true, bottom: true, bottomIsMajor: true)
+                    ForEach(columnDays, id: \.self) { day in
+                        columnHeader(for: day)
+                            .padding(.vertical, 4)
+                            .meetingSlotGridLines(trailing: true, bottom: true, bottomIsMajor: true)
+                    }
                 }
-            }
-            ForEach(Self.timeRows, id: \.self) { timeKey in
-                let rowEndsOnHour = (timeKey + 30) % 60 == 0
-                GridRow(alignment: .top) {
-                    Text(timeLabel(timeKey))
-                        .font(.system(size: timeKey % 60 == 0 ? 9 : 8, weight: timeKey % 60 == 0 ? .medium : .regular))
-                        .foregroundStyle(timeKey % 60 == 0 ? Color.secondary : Color(nsColor: .tertiaryLabelColor))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                        .padding(.trailing, 4)
-                        .frame(width: MeetingSlotGridMetrics.timeColumnWidth, height: MeetingSlotGridMetrics.rowHeight)
-                        .gridColumnAlignment(.trailing)
-                        .meetingSlotGridLines(leading: true, trailing: true, bottom: true, bottomIsMajor: rowEndsOnHour)
-                    ForEach(data.days, id: \.self) { day in
-                        let slot = data.lookup[day]?[timeKey]
-                        SlotCell(
-                            slot: slot,
-                            isSelected: slot.map { $0.id == selectedSlotID } == true,
-                            coloring: coloring
-                        ) {
-                            if let slot { selectedSlotID = slot.id }
+                ForEach(Array(Self.timeRows.enumerated()), id: \.offset) { _, timeKey in
+                    let rowEndsOnHour = (timeKey + 30) % 60 == 0
+                    GridRow(alignment: .top) {
+                        Text(timeLabel(timeKey))
+                            .font(.system(size: timeKey % 60 == 0 ? 9 : 8, weight: timeKey % 60 == 0 ? .medium : .regular))
+                            .foregroundStyle(timeKey % 60 == 0 ? Color.secondary : Color(nsColor: .tertiaryLabelColor))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                            .padding(.trailing, 4)
+                            .frame(width: MeetingSlotGridMetrics.timeColumnWidth, height: MeetingSlotGridMetrics.rowHeight)
+                            .gridColumnAlignment(.trailing)
+                            .meetingSlotGridLines(leading: true, trailing: true, bottom: true, bottomIsMajor: rowEndsOnHour)
+                        ForEach(columnDays, id: \.self) { day in
+                            let cell = cellMatrix[day]?[timeKey]
+                            let cellStart = AppTimeZone.calendar.date(
+                                bySettingHour: timeKey / 60, minute: timeKey % 60, second: 0, of: day
+                            ) ?? day
+                            AvailabilityCell(
+                                cell: cell,
+                                isSelected: cell?.freeSlot.map { $0.id == selectedSlotID } == true,
+                                onHoverChange: { hovered in
+                                    hoveredInfo = hovered ? HoveredInfo(cell: cell!, cellStart: cellStart) : nil
+                                }
+                            ) {
+                                if let slot = cell?.freeSlot { selectedSlotID = slot.id }
+                            }
+                            .frame(maxWidth: .infinity, minHeight: MeetingSlotGridMetrics.rowHeight, maxHeight: MeetingSlotGridMetrics.rowHeight)
+                            .meetingSlotGridLines(trailing: true, bottom: true, bottomIsMajor: rowEndsOnHour)
                         }
-                        .frame(maxWidth: .infinity, minHeight: MeetingSlotGridMetrics.rowHeight, maxHeight: MeetingSlotGridMetrics.rowHeight)
-                        .meetingSlotGridLines(trailing: true, bottom: true, bottomIsMajor: rowEndsOnHour)
                     }
                 }
             }
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let point): mousePosition = point
+                case .ended: hoveredInfo = nil
+                }
+            }
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(topEdge)
+                    .frame(height: 1)
+                    .allowsHitTesting(false)
+            }
+            .overlay(alignment: .topLeading) {
+                if let info = hoveredInfo {
+                    let offset = tooltipOffset(in: geo.size)
+                    CellTooltipView(cell: info.cell, cellStart: info.cellStart)
+                        .offset(x: offset.width, y: offset.height)
+                        .allowsHitTesting(false)
+                        .zIndex(500)
+                }
+            }
         }
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(topEdge)
-                .frame(height: 1)
-                .allowsHitTesting(false)
-        }
+        .frame(height: MeetingSlotGridMetrics.headerHeight + MeetingSlotGridMetrics.rowHeight * 18 + 8)
         .padding(.vertical, 4)
     }
 }
 
-private struct SlotCell: View {
-    let slot: FreeSlot?
+private struct AvailabilityCell: View {
+    let cell: CellAvailability?
     let isSelected: Bool
-    let coloring: SlotCellColoring
+    let onHoverChange: (Bool) -> Void
     let onTap: () -> Void
+
     @State private var isHovered = false
 
+    private var isSelectable: Bool { cell?.freeSlot != nil }
+
     private var bg: Color {
-        guard let slot else { return .clear }
+        guard let cell else { return .clear }
         if isSelected { return Color.accentColor }
-        switch coloring {
-        case .accent:
-            return Color.accentColor.opacity(isHovered ? 0.22 : 0.12)
-        case .heatmap:
-            // hue 0.10 (warm orange) → 0.34 (green) by score
-            let hue = 0.10 + slot.score * 0.24
-            let base = Color(hue: hue, saturation: 0.65, brightness: 0.88)
-            return base.opacity(isHovered ? 1.0 : 0.85)
+        switch cell.state {
+        case .free(let score):
+            // Свежий изумрудный — score варьирует насыщенность (утро ярче, вечер мягче)
+            let sat = 0.55 + score * 0.28
+            let bri = 0.70 + score * 0.10
+            return Color(hue: 0.375, saturation: sat, brightness: bri)
+                .opacity(isHovered ? 1.0 : 0.90)
+        case .tentative:
+            // Золотисто-янтарный
+            return Color(hue: 0.108, saturation: 0.78, brightness: 0.90)
+                .opacity(isHovered ? 0.90 : 0.75)
+        case .busy:
+            // Тёплый кораллово-красный
+            return Color(hue: 0.022, saturation: 0.48, brightness: 0.88)
+                .opacity(isHovered ? 0.85 : 0.68)
+        case .outOfOffice:
+            // Индиго / сиреневый
+            return Color(hue: 0.695, saturation: 0.42, brightness: 0.80)
+                .opacity(isHovered ? 0.85 : 0.68)
         }
     }
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 5).fill(bg)
-            if isSelected, slot != nil {
+            if isSelected {
                 Image(systemName: "checkmark")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.white)
@@ -1068,12 +1092,133 @@ private struct SlotCell: View {
         .frame(maxWidth: .infinity)
         .frame(height: MeetingSlotGridMetrics.rowHeight)
         .contentShape(Rectangle())
-        .onTapGesture {
-            if slot != nil { onTap() }
+        .onTapGesture { if isSelectable { onTap() } }
+        .onHover { hovered in
+            isHovered = hovered && cell != nil
+            onHoverChange(hovered && cell != nil)
         }
-        .onHover { isHovered = $0 && slot != nil }
         .animation(.easeInOut(duration: 0.12), value: isSelected)
         .animation(.easeInOut(duration: 0.12), value: isHovered)
+    }
+}
+
+private struct CellTooltipView: View {
+    let cell: CellAvailability
+    let cellStart: Date
+
+    private static let timeFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        f.timeZone = AppTimeZone.zone
+        return f
+    }()
+
+    private static let dayTimeFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE, HH:mm"
+        f.timeZone = AppTimeZone.zone
+        return f
+    }()
+
+    private func statusColor(for ch: Character) -> Color {
+        switch ch {
+        case "0": return Color(hue: 0.375, saturation: 0.72, brightness: 0.65)
+        case "1": return Color(hue: 0.108, saturation: 0.80, brightness: 0.75)
+        case "2": return Color(hue: 0.022, saturation: 0.60, brightness: 0.72)
+        case "3": return Color(hue: 0.695, saturation: 0.52, brightness: 0.65)
+        default:  return Color.secondary
+        }
+    }
+
+    private func statusLabel(for ch: Character) -> String {
+        switch ch {
+        case "0": return "свободен"
+        case "1": return "под вопросом"
+        case "2": return "занят"
+        case "3": return "вне офиса"
+        default:  return "—"
+        }
+    }
+
+    private var slotQualityNote: String? {
+        guard case .free(let score) = cell.state, cell.freeSlot != nil else { return nil }
+        return score >= 0.55 ? "Хороший слот — утро" : "Приемлемо — вечер"
+    }
+
+    var body: some View {
+        let cellEnd = cellStart.addingTimeInterval(30 * 60)
+        VStack(alignment: .leading, spacing: 5) {
+            Text("\(Self.dayTimeFmt.string(from: cellStart)) – \(Self.timeFmt.string(from: cellEnd))")
+                .font(.system(size: 11, weight: .semibold))
+            Divider()
+            ForEach(cell.attendeeStatuses.indices, id: \.self) { idx in
+                let status = cell.attendeeStatuses[idx]
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(statusColor(for: status.rawChar))
+                        .frame(width: 8, height: 8)
+                    Text(status.displayName)
+                        .font(.system(size: 11))
+                        .lineLimit(1)
+                    Spacer()
+                    Text(statusLabel(for: status.rawChar))
+                        .font(.system(size: 10))
+                        .foregroundStyle(statusColor(for: status.rawChar).opacity(0.85))
+                }
+            }
+            if let note = slotQualityNote {
+                Divider()
+                Text(note)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(minWidth: 180, maxWidth: 240)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(nsColor: .windowBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 8, x: 0, y: 4)
+    }
+}
+
+private struct AvailabilityLegendView: View {
+    @EnvironmentObject private var localization: LocalizationService
+
+    private struct Item {
+        let color: Color
+        let key: String
+    }
+
+    private static let items: [Item] = [
+        Item(color: Color(hue: 0.375, saturation: 0.75, brightness: 0.76), key: "create.meeting.legend.free"),
+        Item(color: Color(hue: 0.108, saturation: 0.78, brightness: 0.90).opacity(0.80), key: "create.meeting.legend.tentative"),
+        Item(color: Color(hue: 0.022, saturation: 0.48, brightness: 0.88).opacity(0.75), key: "create.meeting.legend.busy"),
+        Item(color: Color(hue: 0.695, saturation: 0.42, brightness: 0.80).opacity(0.75), key: "create.meeting.legend.oof"),
+    ]
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(Self.items.indices, id: \.self) { idx in
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(Self.items[idx].color)
+                        .frame(width: 7, height: 7)
+                    Text(localization.tr(Self.items[idx].key))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+        }
+        .frame(height: 20)
+        .padding(.top, 4)
     }
 }
 
