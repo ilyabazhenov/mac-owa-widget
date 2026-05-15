@@ -1059,7 +1059,12 @@ private struct AvailabilityCell: View {
         if isSelected { return Color.accentColor }
         switch cell.state {
         case .free(let score):
-            // Свежий изумрудный — score варьирует насыщенность (утро ярче, вечер мягче)
+            // Зелёный только если есть реальный букуемый слот нужной длительности.
+            // Если участники свободны в этом 30-мин окне, но слот не сформирован — показываем как занятое.
+            guard cell.freeSlot != nil else {
+                return Color(hue: 0.022, saturation: 0.48, brightness: 0.88)
+                    .opacity(isHovered ? 0.85 : 0.68)
+            }
             let sat = 0.55 + score * 0.28
             let bri = 0.70 + score * 0.10
             return Color(hue: 0.375, saturation: sat, brightness: bri)
@@ -1099,7 +1104,7 @@ private struct AvailabilityCell: View {
     var body: some View {
         ZStack {
             cellShape
-            if isSelected {
+            if isSelected && (slotPosition == .single || slotPosition == .start) {
                 Image(systemName: "checkmark")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.white)
