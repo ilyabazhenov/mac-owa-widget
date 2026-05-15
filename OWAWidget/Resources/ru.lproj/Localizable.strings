@@ -221,6 +221,7 @@
 "meeting.duration.45min" = "45 мин";
 "meeting.duration.60min" = "1 час";
 "create.meeting.legend.free" = "Свободно";
+"create.meeting.legend.free_short" = "Короткое окно";
 "create.meeting.legend.tentative" = "Под вопросом";
 "create.meeting.legend.busy" = "Занято";
 "create.meeting.legend.oof" = "Вне офиса";

@@ -1021,14 +1021,17 @@ struct WeekGridSlotView: View {
                             let effectivePos = forcedPos ?? cell?.slotPosition ?? .single
                             let showBottom = effectivePos != .start && effectivePos != .middle
                             let isSelected = cell?.freeSlot.map { $0.id == selectedSlotID } == true || isForcedSelected
+                            let isPast = cellStart.addingTimeInterval(30 * 60) <= Date()
                             AvailabilityCell(
                                 cell: cell,
                                 isSelected: isSelected,
+                                isPast: isPast,
                                 onHoverChange: { hovered in
                                     let tooltipStart = cell?.freeSlot?.start ?? cellStart
                                     hoveredInfo = hovered ? HoveredInfo(cell: cell!, cellStart: tooltipStart) : nil
                                 },
-                                slotPositionOverride: forcedPos
+                                slotPositionOverride: forcedPos,
+                                displaySlot: cell?.freeSlot ?? (isForcedSelected ? forcedSlot : nil)
                             ) {
                                 if let slot = cell?.freeSlot {
                                     selectedSlotID = slot.id
@@ -1072,13 +1075,54 @@ struct WeekGridSlotView: View {
 private struct AvailabilityCell: View {
     let cell: CellAvailability?
     let isSelected: Bool
+    let isPast: Bool
     let onHoverChange: (Bool) -> Void
     let slotPositionOverride: FreeSlotPosition?
+    let displaySlot: FreeSlot?
     let onTap: () -> Void
 
     @State private var isHovered = false
 
-    private var isSelectable: Bool { cell != nil }
+    private var isSelectable: Bool { cell != nil && !isPast }
+
+    private static let timeFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        f.timeZone = AppTimeZone.zone
+        return f
+    }()
+
+    private static func abbreviate(_ name: String) -> String {
+        let parts = name.split(separator: " ")
+        guard parts.count >= 2 else { return String(name.prefix(12)) }
+        return "\(parts[0]) \(parts[1].prefix(1))."
+    }
+
+    private var cellLabel: String? {
+        guard let cell else { return nil }
+        guard !isSelected else { return nil }
+        switch cell.state {
+        case .free(let score):
+            guard cell.freeSlot != nil else { return "Свободно" }
+            switch score {
+            case 0.85...: return "Раннее"
+            case 0.55...: return "Утро"
+            case 0.25...: return "День"
+            default:      return "Вечер"
+            }
+        case .tentative, .busy, .outOfOffice:
+            let blocked = cell.attendeeStatuses.filter { $0.rawChar != "0" }
+            guard !blocked.isEmpty else { return nil }
+            let first = Self.abbreviate(blocked[0].displayName)
+            return blocked.count == 1 ? first : "\(first) +\(blocked.count - 1)"
+        }
+    }
+
+    private var labelColor: Color {
+        guard let cell else { return .primary }
+        if case .free = cell.state, cell.freeSlot != nil { return .white.opacity(0.9) }
+        return .primary.opacity(0.65)
+    }
 
     private var bg: Color {
         guard let cell else { return .clear }
@@ -1086,8 +1130,8 @@ private struct AvailabilityCell: View {
         switch cell.state {
         case .free(let score):
             guard cell.freeSlot != nil else {
-                return Color(hue: 0.022, saturation: 0.65, brightness: 1.0)
-                    .opacity(isHovered ? 0.55 : 0.35)
+                return Color(hue: 0.375, saturation: 0.22, brightness: 0.96)
+                    .opacity(isHovered ? 0.85 : 0.65)
             }
             let sat = 0.55 + score * 0.28
             let bri = 0.70 + score * 0.10
@@ -1125,15 +1169,33 @@ private struct AvailabilityCell: View {
     var body: some View {
         ZStack {
             cellShape
+            if let label = cellLabel {
+                HStack(spacing: 0) {
+                    Text(label)
+                        .font(.system(size: 8.5, weight: .medium))
+                        .foregroundStyle(labelColor)
+                        .lineLimit(1)
+                        .padding(.leading, 5)
+                    Spacer(minLength: 0)
+                }
+            }
             if isSelected && (slotPosition == .single || slotPosition == .start) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white)
+                if let slot = displaySlot {
+                    Text("Выбрано: \(Self.timeFmt.string(from: slot.start)) – \(Self.timeFmt.string(from: slot.end))")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                } else {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                }
             }
         }
         .padding(.horizontal, 2)
         .frame(maxWidth: .infinity)
         .frame(height: MeetingSlotGridMetrics.rowHeight)
+        .opacity(isPast ? 0.45 : 1.0)
         .scaleEffect(isSelectable && isHovered && !isSelected ? 0.96 : 1.0)
         .contentShape(Rectangle())
         .onTapGesture { if isSelectable { onTap() } }
@@ -1246,6 +1308,7 @@ private struct AvailabilityLegendView: View {
 
     private static let items: [Item] = [
         Item(color: Color(hue: 0.375, saturation: 0.75, brightness: 0.76), key: "create.meeting.legend.free"),
+        Item(color: Color(hue: 0.375, saturation: 0.22, brightness: 0.96).opacity(0.75), key: "create.meeting.legend.free_short"),
         Item(color: Color(hue: 0.108, saturation: 0.82, brightness: 1.0).opacity(0.60), key: "create.meeting.legend.tentative"),
         Item(color: Color(hue: 0.022, saturation: 0.65, brightness: 1.0).opacity(0.50), key: "create.meeting.legend.busy"),
         Item(color: Color(hue: 0.695, saturation: 0.55, brightness: 1.0).opacity(0.50), key: "create.meeting.legend.oof"),

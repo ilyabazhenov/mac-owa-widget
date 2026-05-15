@@ -255,6 +255,7 @@ final class CalendarService: ObservableObject {
         requiredEmails: [String],
         optionalEmails: [String] = [],
         range: DateInterval,
+        displayRange: DateInterval? = nil,
         durationMinutes: Int,
         accountID: UUID
     ) async throws -> (slots: [FreeSlot], attendeeAvailability: [AttendeeAvailability]) {
@@ -263,7 +264,7 @@ final class CalendarService: ObservableObject {
 
         let cal = AppTimeZone.calendar
         let (requestStart, requestEnd) = UserAvailabilityRequestWindow.bounds(
-            for: range,
+            for: displayRange ?? range,
             referenceNow: Date(),
             calendar: cal
         )

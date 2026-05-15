@@ -267,6 +267,7 @@ final class CreateMeetingViewModel: ObservableObject {
         let requiredEmails = draft.requiredAttendees.map(\.email)
         let optionalEmails = draft.optionalAttendees.map(\.email)
         let range = draft.dateInterval()
+        let displayRange = draft.slotGridWeekInterval()
         let duration = draft.durationMinutes
 
         do {
@@ -274,6 +275,7 @@ final class CreateMeetingViewModel: ObservableObject {
                 requiredEmails: requiredEmails,
                 optionalEmails: optionalEmails,
                 range: range,
+                displayRange: displayRange,
                 durationMinutes: duration,
                 accountID: accountID
             )
@@ -297,6 +299,7 @@ final class CreateMeetingViewModel: ObservableObject {
     // MARK: - Create
 
     func selectForcedSlot(start: Date) {
+        guard start.addingTimeInterval(30 * 60) > Date() else { return }
         let end = start.addingTimeInterval(Double(draft.durationMinutes) * 60)
         let slot = FreeSlot(start: start, end: end, score: 0)
         forcedSlot = slot

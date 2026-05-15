@@ -221,6 +221,7 @@
 "meeting.duration.45min" = "45 min";
 "meeting.duration.60min" = "1 hour";
 "create.meeting.legend.free" = "Free";
+"create.meeting.legend.free_short" = "Short window";
 "create.meeting.legend.tentative" = "Tentative";
 "create.meeting.legend.busy" = "Busy";
 "create.meeting.legend.oof" = "Out of office";
