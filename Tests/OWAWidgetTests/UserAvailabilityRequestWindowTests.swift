@@ -19,7 +19,10 @@ final class UserAvailabilityRequestWindowTests: XCTestCase {
 
     func testRequestStartIsMinimumOfTodayStartAndRangeStartDay() {
         let ref = moscowDate(year: 2025, month: 5, day: 14, hour: 15, minute: 0)
-        let nextWeek = MeetingSearchRange.nextWeek.dateInterval(referenceNow: ref)
+        // Next week (May 19–23) with start at Monday 00:00.
+        let nextWeekStart = moscowDate(year: 2025, month: 5, day: 19, hour: 0, minute: 0)
+        let nextWeekEnd = moscowDate(year: 2025, month: 5, day: 23, hour: 18, minute: 0)
+        let nextWeek = DateInterval(start: nextWeekStart, end: nextWeekEnd)
         let (start, _) = UserAvailabilityRequestWindow.bounds(
             for: nextWeek,
             referenceNow: ref,
@@ -31,7 +34,10 @@ final class UserAvailabilityRequestWindowTests: XCTestCase {
 
     func testExclusiveEndExtendsAtLeastFifteenDaysPastTodayWhenRangeIsShort() {
         let ref = moscowDate(year: 2025, month: 5, day: 14, hour: 10, minute: 0)
-        let tomorrow = MeetingSearchRange.tomorrow.dateInterval(referenceNow: ref)
+        // Tomorrow only (single-day range used to exercise the short-range branch).
+        let tomorrowStart = moscowDate(year: 2025, month: 5, day: 15, hour: 0, minute: 0)
+        let tomorrowEnd = moscowDate(year: 2025, month: 5, day: 15, hour: 18, minute: 0)
+        let tomorrow = DateInterval(start: tomorrowStart, end: tomorrowEnd)
         let (_, exclusiveEnd) = UserAvailabilityRequestWindow.bounds(
             for: tomorrow,
             referenceNow: ref,

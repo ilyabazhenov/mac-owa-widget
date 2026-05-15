@@ -120,7 +120,11 @@ enum MeetingFreeSlotCalculator {
             flog("  slot \(dbgFmt.string(from: slotStart)) → FREE (attendees ok, organizer ok)")
             #endif
 
-            results.append(FreeSlot(start: slotStart, end: slotEnd))
+            let hourOfDay = Double(cal.component(.hour, from: slotStart))
+                + Double(cal.component(.minute, from: slotStart)) / 60.0
+            // Business hours window [9, 18]; earlier slot → higher score.
+            let score = max(0, min(1, (18.0 - hourOfDay) / 9.0))
+            results.append(FreeSlot(start: slotStart, end: slotEnd, score: score))
             if results.count >= maxReturnedFreeSlots { break }
             i += slotsNeeded
         }

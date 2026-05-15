@@ -53,17 +53,29 @@ final class CreateMeetingViewModel: ObservableObject {
         }
     }
 
-    /// Picker binding so `searchRange` changes reassign `draft` and trigger slot auto-refresh.
-    var searchRangeBinding: Binding<MeetingSearchRange> {
-        Binding(
-            get: { self.draft.searchRange },
-            set: { newValue in
-                guard self.draft.searchRange != newValue else { return }
-                var d = self.draft
-                d.searchRange = newValue
-                self.draft = d
-            }
-        )
+    /// Шаг навигации между неделями (positive = вперёд, negative = назад).
+    /// Изменение `draft` запускает debounced auto-refresh слотов.
+    func shiftSelectedWeek(by weeks: Int) {
+        guard weeks != 0 else { return }
+        var d = draft
+        d.selectedWeekStart = d.weekStartOffset(by: weeks)
+        draft = d
+    }
+
+    /// Переход на текущую неделю.
+    func resetToCurrentWeek() {
+        let monday = MeetingDraft.mondayOfWeek(containing: Date())
+        guard MeetingDraft.weekCalendar.startOfDay(for: draft.selectedWeekStart) != monday else { return }
+        var d = draft
+        d.selectedWeekStart = monday
+        draft = d
+    }
+
+    /// True, если выбранная неделя — та, что содержит сегодня.
+    var isOnCurrentWeek: Bool {
+        let cal = MeetingDraft.weekCalendar
+        let todayMonday = MeetingDraft.mondayOfWeek(containing: Date())
+        return cal.startOfDay(for: draft.selectedWeekStart) == todayMonday
     }
 
     let calendarService: CalendarService
@@ -247,7 +259,7 @@ final class CreateMeetingViewModel: ObservableObject {
 
         let requiredEmails = draft.requiredAttendees.map(\.email)
         let optionalEmails = draft.optionalAttendees.map(\.email)
-        let range = draft.searchRange.dateInterval
+        let range = draft.dateInterval()
         let duration = draft.durationMinutes
 
         do {

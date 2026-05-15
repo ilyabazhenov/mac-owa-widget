@@ -21,11 +21,15 @@ struct FreeSlot: Identifiable, Sendable {
     let id: UUID
     let start: Date
     let end: Date
+    /// 0.0–1.0; 1.0 — слот раньше в дне (9:00), 0.0 — позже (18:00).
+    /// Используется как фактор ранжирования и для окраски в heat-map.
+    let score: Double
 
-    init(start: Date, end: Date) {
+    init(start: Date, end: Date, score: Double = 0.0) {
         self.id = UUID()
         self.start = start
         self.end = end
+        self.score = score
     }
 }
 
@@ -40,7 +44,8 @@ struct MeetingDraft: Sendable {
     var requiredAttendees: [ResolvedAttendee] = []
     var optionalAttendees: [ResolvedAttendee] = []
     var durationMinutes: Int = 30
-    var searchRange: MeetingSearchRange = .thisWeek
+    /// Понедельник (startOfDay) выбранной недели. Поиск слотов идёт по Mon–Fri этой недели.
+    var selectedWeekStart: Date = MeetingDraft.mondayOfWeek(containing: Date())
 
     var allAttendees: [ResolvedAttendee] {
         requiredAttendees + optionalAttendees
@@ -57,98 +62,59 @@ struct MeetingDraft: Sendable {
     /// to avoid useless re-fetches when only optional participants change.
     var slotAutoRefreshKey: String {
         requiredAttendees.map(\.email).sorted().joined(separator: "\u{1e}")
-            + "|\(searchRange.rawValue)|\(durationMinutes)"
-    }
-}
-
-enum MeetingSearchRange: String, CaseIterable, Sendable {
-    case today, tomorrow, thisWeek, nextWeek
-
-    var dateInterval: DateInterval {
-        dateInterval(referenceNow: Date())
+            + "|\(Int(selectedWeekStart.timeIntervalSince1970))|\(durationMinutes)"
     }
 
-    /// Same as `dateInterval` but with a fixed "now" for tests and previews.
-    func dateInterval(referenceNow: Date) -> DateInterval {
-        let cal = AppTimeZone.calendar
-        let todayStart = cal.startOfDay(for: referenceNow)
-        switch self {
-        case .today:
-            guard let dayEnd = cal.date(bySettingHour: 18, minute: 0, second: 0, of: todayStart) else {
-                return DateInterval(start: referenceNow, duration: 0)
-            }
-            let rawStart = max(referenceNow, todayStart)
-            // After end-of-workday, `rawStart > dayEnd` would make an invalid `DateInterval` (trap in Swift).
-            let start = min(rawStart, dayEnd)
-            return DateInterval(start: start, end: dayEnd)
-        case .tomorrow:
-            guard let start = cal.date(byAdding: .day, value: 1, to: todayStart),
-                  let end = cal.date(bySettingHour: 18, minute: 0, second: 0, of: start)
-            else {
-                return DateInterval(start: referenceNow, duration: 0)
-            }
-            return DateInterval(start: start, end: end)
-        case .thisWeek:
-            guard let endDay = cal.date(byAdding: .day, value: 5, to: todayStart),
-                  let endOfWeek = cal.date(bySettingHour: 18, minute: 0, second: 0, of: endDay)
-            else {
-                return DateInterval(start: referenceNow, duration: 0)
-            }
-            let rawStart = max(referenceNow, todayStart)
-            let start = min(rawStart, endOfWeek)
-            return DateInterval(start: start, end: endOfWeek)
-        case .nextWeek:
-            // Must match `slotGridWeekInterval`: the grid is the **calendar** next week (Mon-first),
-            // while a naive "+7 days from today" window starts mid-week and leaves Mon–Wed columns empty.
-            let gridCal = Self.slotGridCalendar
-            let week = slotGridWeekInterval(referenceNow: referenceNow)
-            let monday = gridCal.startOfDay(for: week.start)
-            guard let friday = gridCal.date(byAdding: .day, value: 4, to: monday),
-                  let dayEnd = gridCal.date(bySettingHour: 18, minute: 0, second: 0, of: friday)
-            else {
-                return DateInterval(start: referenceNow, duration: 0)
-            }
-            return DateInterval(start: monday, end: dayEnd)
+    /// Поиск слотов: Mon 00:00 → Fri 18:00 выбранной недели. Для **текущей** недели
+    /// (`referenceNow` лежит между Mon и Fri 18:00) старт обрезается до `referenceNow`,
+    /// чтобы не предлагать прошедшие слоты. После окончания пятницы — пустой интервал.
+    func dateInterval(referenceNow: Date = Date()) -> DateInterval {
+        let cal = MeetingDraft.weekCalendar
+        let monday = cal.startOfDay(for: selectedWeekStart)
+        guard let friday = cal.date(byAdding: .day, value: 4, to: monday),
+              let dayEnd = cal.date(bySettingHour: 18, minute: 0, second: 0, of: friday)
+        else {
+            return DateInterval(start: monday, duration: 0)
         }
-    }
-
-    var localizationKey: String {
-        switch self {
-        case .today:    return "meeting.range.today"
-        case .tomorrow: return "meeting.range.tomorrow"
-        case .thisWeek: return "meeting.range.this.week"
-        case .nextWeek: return "meeting.range.next.week"
+        // Для прошлых недель — пустой интервал (нечего искать в прошлом).
+        if dayEnd <= referenceNow {
+            return DateInterval(start: dayEnd, duration: 0)
         }
+        // Для текущей недели — стартуем не раньше referenceNow.
+        let rawStart = max(monday, referenceNow)
+        let start = min(rawStart, dayEnd)
+        return DateInterval(start: start, end: dayEnd)
     }
 
-    /// Monday-based calendar week (`AppTimeZone`) used as slot-grid columns: current week for
-    /// today / tomorrow / thisWeek, and the **following** calendar week for nextWeek.
+    /// Календарная неделя (Mon–Sun) выбранной даты — служит сеткой колонок Mon–Fri.
     func slotGridWeekInterval(referenceNow: Date = Date()) -> DateInterval {
-        let cal = Self.slotGridCalendar
-        let todayStart = cal.startOfDay(for: referenceNow)
-        let anchor: Date
-        switch self {
-        case .today, .thisWeek:
-            anchor = referenceNow
-        case .tomorrow:
-            anchor = cal.date(byAdding: .day, value: 1, to: todayStart) ?? referenceNow
-        case .nextWeek:
-            guard let currentWeek = cal.dateInterval(of: .weekOfYear, for: referenceNow),
-                  let inNextWeek = cal.date(byAdding: .day, value: 7, to: currentWeek.start),
-                  let nextWeek = cal.dateInterval(of: .weekOfYear, for: inNextWeek)
-            else {
-                return cal.dateInterval(of: .weekOfYear, for: referenceNow)
-                    ?? DateInterval(start: todayStart, duration: 86400 * 7)
-            }
-            return nextWeek
+        let cal = MeetingDraft.weekCalendar
+        let monday = cal.startOfDay(for: selectedWeekStart)
+        guard let weekEnd = cal.date(byAdding: .day, value: 7, to: monday) else {
+            return DateInterval(start: monday, duration: 86400 * 7)
         }
-        return cal.dateInterval(of: .weekOfYear, for: anchor)
-            ?? DateInterval(start: todayStart, duration: 86400 * 7)
+        return DateInterval(start: monday, end: weekEnd)
     }
 
-    private static var slotGridCalendar: Calendar {
+    /// Понедельник (startOfDay) недели, содержащей дату.
+    static func mondayOfWeek(containing date: Date) -> Date {
+        let cal = weekCalendar
+        if let week = cal.dateInterval(of: .weekOfYear, for: date) {
+            return cal.startOfDay(for: week.start)
+        }
+        return cal.startOfDay(for: date)
+    }
+
+    /// Сдвиг на N недель вперёд/назад от выбранной (отрицательно — назад).
+    func weekStartOffset(by weeks: Int) -> Date {
+        let cal = MeetingDraft.weekCalendar
+        let monday = cal.startOfDay(for: selectedWeekStart)
+        return cal.date(byAdding: .day, value: 7 * weeks, to: monday) ?? monday
+    }
+
+    static var weekCalendar: Calendar {
         var cal = AppTimeZone.calendar
-        cal.firstWeekday = 2 // Monday — match typical RU/EU “рабочая неделя”
+        cal.firstWeekday = 2 // Monday — match typical RU/EU «рабочая неделя»
         return cal
     }
 }

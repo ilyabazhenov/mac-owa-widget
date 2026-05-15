@@ -8,11 +8,32 @@ private struct SearchFieldHeightKey: PreferenceKey {
     }
 }
 
+enum SlotViewMode: String, CaseIterable {
+    case grid, list, heatmap
+
+    var iconName: String {
+        switch self {
+        case .grid:    return "square.grid.3x2"
+        case .list:    return "list.bullet"
+        case .heatmap: return "thermometer.medium"
+        }
+    }
+
+    var localizationKey: String {
+        switch self {
+        case .grid:    return "create.meeting.view.grid"
+        case .list:    return "create.meeting.view.list"
+        case .heatmap: return "create.meeting.view.heatmap"
+        }
+    }
+}
+
 struct CreateMeetingView: View {
     @EnvironmentObject private var localization: LocalizationService
     @StateObject private var vm: CreateMeetingViewModel
     @State private var requiredFieldHeight: CGFloat = 36
     @State private var optionalFieldHeight: CGFloat = 36
+    @State private var slotViewMode: SlotViewMode = .grid
 
     init(calendarService: CalendarService, accountID: UUID) {
         _vm = StateObject(wrappedValue: CreateMeetingViewModel(
@@ -30,7 +51,7 @@ struct CreateMeetingView: View {
                         titleField
                         agendaField
                         attendeesField
-                        rangeAndDuration
+                        durationField
                         findSlotsButton
                     }
                     .padding(20)
@@ -175,33 +196,19 @@ struct CreateMeetingView: View {
         }
     }
 
-    // MARK: - Range & Duration
+    // MARK: - Duration
 
-    private var rangeAndDuration: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                sectionLabel(localization.tr("create.meeting.range.label"))
-                Picker("", selection: vm.searchRangeBinding) {
-                    ForEach(MeetingSearchRange.allCases, id: \.self) { range in
-                        Text(localization.tr(range.localizationKey)).tag(range)
-                    }
+    private var durationField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel(localization.tr("create.meeting.duration.label"))
+            Picker("", selection: $vm.selectedDuration) {
+                ForEach(MeetingDurationOption.allCases, id: \.self) { opt in
+                    Text(localization.tr(opt.localizationKey)).tag(opt)
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity)
             }
-
-            VStack(alignment: .leading, spacing: 6) {
-                sectionLabel(localization.tr("create.meeting.duration.label"))
-                Picker("", selection: $vm.selectedDuration) {
-                    ForEach(MeetingDurationOption.allCases, id: \.self) { opt in
-                        Text(localization.tr(opt.localizationKey)).tag(opt)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity)
-            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -263,52 +270,256 @@ struct CreateMeetingView: View {
 
     @ViewBuilder
     private var slotsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            weekNavigator
+            slotsContent
+        }
+    }
+
+    /// Контент под навигатором: либо layout с фиксированной высотой сетки слотов и подсказками по содержимому,
+    /// либо placeholder (loading / idle).
+    @ViewBuilder
+    private var slotsContent: some View {
         if vm.isLoadingSlots {
-            VStack {
-                Spacer()
+            placeholderContainer {
                 ProgressView()
-                    .padding(.top, 60)
-                Spacer()
             }
-            .frame(maxWidth: .infinity)
-        } else if vm.slotsSearched {
-            VStack(alignment: .leading, spacing: 10) {
-                if vm.freeSlots.isEmpty {
-                    HStack(spacing: 8) {
-                        Image(systemName: "calendar.badge.exclamationmark")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.secondary)
-                        Text(localization.tr("create.meeting.no.slots"))
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
+        } else if !vm.slotsSearched {
+            placeholderContainer {
+                VStack(spacing: 10) {
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.quaternary)
+                    Text(localization.tr("create.meeting.slots.hint"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.quaternary)
+                        .multilineTextAlignment(.center)
                 }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 14) {
+                suggestionsBlock
+
                 HStack(spacing: 8) {
                     sectionLabel(localization.tr("create.meeting.available.slots"))
                     Spacer()
+                    viewModePicker
                     TimeZoneBadge()
                 }
-                WeekGridSlotView(
-                    slots: vm.freeSlots,
-                    selectedSlotID: $vm.selectedSlotID,
-                    gridWeekInterval: vm.draft.searchRange.slotGridWeekInterval()
-                )
+
+                slotViewContainer
             }
-        } else {
-            // Idle — prompt user to add attendees and search
-            VStack(spacing: 10) {
-                Image(systemName: "calendar.badge.clock")
-                    .font(.system(size: 28))
-                    .foregroundStyle(.quaternary)
-                Text(localization.tr("create.meeting.slots.hint"))
+        }
+    }
+
+    /// Высота — `suggestions + header + slotView` (плюс gap-ы) — чтобы placeholder занимал
+    /// столько же, сколько занимал бы полноценный layout.
+    private func placeholderContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        let totalHeight = MeetingSlotsLayout.suggestionsPlaceholderRegionHeight + 14 + 30 + 14 + MeetingSlotsLayout.slotViewHeight
+        return VStack {
+            Spacer()
+            content()
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: totalHeight)
+    }
+
+    /// Smart Suggestions: with slots, height follows content (no tall empty band). Empty state uses a compact fixed band.
+    @ViewBuilder
+    private var suggestionsBlock: some View {
+        if vm.freeSlots.isEmpty {
+            VStack(spacing: 8) {
+                Image(systemName: "calendar.badge.exclamationmark")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.tertiary)
+                Text(localization.tr("create.meeting.no.slots"))
                     .font(.system(size: 12))
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 50)
+            .frame(height: MeetingSlotsLayout.suggestionsPlaceholderRegionHeight, alignment: .center)
+        } else {
+            SlotSuggestionsView(
+                suggestions: SlotRanker.topPicks(from: vm.freeSlots),
+                selectedSlotID: $vm.selectedSlotID
+            )
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
     }
+
+    /// Slot view с фиксированной высотой; list прокручивается внутри.
+    @ViewBuilder
+    private var slotViewContainer: some View {
+        switch slotViewMode {
+        case .grid:
+            WeekGridSlotView(
+                slots: vm.freeSlots,
+                selectedSlotID: $vm.selectedSlotID,
+                gridWeekInterval: vm.draft.slotGridWeekInterval()
+            )
+            .frame(height: MeetingSlotsLayout.slotViewHeight, alignment: .top)
+        case .list:
+            ScrollView {
+                SlotListView(
+                    slots: vm.freeSlots,
+                    selectedSlotID: $vm.selectedSlotID
+                )
+                .padding(.bottom, 8)
+            }
+            .frame(height: MeetingSlotsLayout.slotViewHeight)
+        case .heatmap:
+            WeekGridSlotView(
+                slots: vm.freeSlots,
+                selectedSlotID: $vm.selectedSlotID,
+                gridWeekInterval: vm.draft.slotGridWeekInterval(),
+                coloring: .heatmap
+            )
+            .frame(height: MeetingSlotsLayout.slotViewHeight, alignment: .top)
+        }
+    }
+
+    private var viewModePicker: some View {
+        Picker("", selection: $slotViewMode) {
+            ForEach(SlotViewMode.allCases, id: \.self) { mode in
+                Image(systemName: mode.iconName).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(width: 120)
+        .help(localization.tr(slotViewMode.localizationKey))
+    }
+
+    // MARK: - Week navigator
+
+    private var weekNavigator: some View {
+        HStack(spacing: 10) {
+            navigatorButton(systemName: "chevron.left") {
+                vm.shiftSelectedWeek(by: -1)
+            }
+            .help(localization.tr("create.meeting.week.previous"))
+
+            VStack(spacing: 1) {
+                Text(currentWeekLabel)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                Text(vm.isOnCurrentWeek
+                     ? localization.tr("create.meeting.week.current")
+                     : weekRelativeLabel)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+
+            if !vm.isOnCurrentWeek {
+                Button {
+                    vm.resetToCurrentWeek()
+                } label: {
+                    Text(localization.tr("create.meeting.week.today"))
+                        .font(.system(size: 10, weight: .medium))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(Color.accentColor.opacity(0.12))
+                        )
+                        .foregroundStyle(Color.accentColor)
+                }
+                .buttonStyle(.plain)
+                .help(localization.tr("create.meeting.week.today.hint"))
+            }
+
+            navigatorButton(systemName: "chevron.right") {
+                vm.shiftSelectedWeek(by: 1)
+            }
+            .help(localization.tr("create.meeting.week.next"))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        )
+    }
+
+    private func navigatorButton(systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color(nsColor: .labelColor))
+                .frame(width: 24, height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color(nsColor: .controlColor))
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// «12 – 16 мая 2026» (один месяц/год) / «28 апр – 2 мая 2026» (разные месяцы)
+    /// / «30 дек 2026 – 3 янв 2027» (разные годы).
+    private var currentWeekLabel: String {
+        let cal = MeetingDraft.weekCalendar
+        let monday = cal.startOfDay(for: vm.draft.selectedWeekStart)
+        guard let friday = cal.date(byAdding: .day, value: 4, to: monday) else {
+            return Self.fullDateFmt.string(from: monday)
+        }
+        let monYear = cal.component(.year, from: monday)
+        let friYear = cal.component(.year, from: friday)
+        let monMonth = cal.component(.month, from: monday)
+        let friMonth = cal.component(.month, from: friday)
+
+        if monYear != friYear {
+            return "\(Self.fullDateFmt.string(from: monday)) – \(Self.fullDateFmt.string(from: friday))"
+        } else if monMonth != friMonth {
+            return "\(Self.dayMonthFmt.string(from: monday)) – \(Self.fullDateFmt.string(from: friday))"
+        } else {
+            return "\(Self.dayFmt.string(from: monday)) – \(Self.fullDateFmt.string(from: friday))"
+        }
+    }
+
+    /// «Через 2 недели» / «2 недели назад» — относительный лейбл, если не текущая неделя.
+    private var weekRelativeLabel: String {
+        let cal = MeetingDraft.weekCalendar
+        let todayMonday = MeetingDraft.mondayOfWeek(containing: Date())
+        let selectedMonday = cal.startOfDay(for: vm.draft.selectedWeekStart)
+        let diff = cal.dateComponents([.day], from: todayMonday, to: selectedMonday).day ?? 0
+        let weeks = diff / 7
+        if weeks == 0 { return localization.tr("create.meeting.week.current") }
+        if weeks == 1 { return localization.tr("create.meeting.week.next.relative") }
+        if weeks == -1 { return localization.tr("create.meeting.week.previous.relative") }
+        if weeks > 0 {
+            return String(format: localization.tr("create.meeting.week.in.n"), weeks)
+        }
+        return String(format: localization.tr("create.meeting.week.n.ago"), -weeks)
+    }
+
+    private static let dayFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "d"
+        f.timeZone = AppTimeZone.zone
+        return f
+    }()
+
+    private static let dayMonthFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "d MMM"
+        f.timeZone = AppTimeZone.zone
+        return f
+    }()
+
+    private static let fullDateFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "d MMM yyyy"
+        f.timeZone = AppTimeZone.zone
+        return f
+    }()
 
     // MARK: - Bottom bar
 
@@ -567,6 +778,17 @@ private struct FrequentContactCard: View {
 private enum MeetingSlotGridMetrics {
     static let rowHeight: CGFloat = 24
     static let timeColumnWidth: CGFloat = 44
+    static let headerHeight: CGFloat = 28
+    /// 18 строк × rowHeight + шапка + вертикальные паддинги — то же, что выдаёт `WeekGridSlotView.body`.
+    static var totalHeight: CGFloat { headerHeight + rowHeight * 18 + 8 }
+}
+
+/// Reserved heights for the right column: slot grid stays fixed; suggestions use intrinsic height when slots exist
+/// (week changes may slightly resize the suggestions band when the pick count changes).
+private enum MeetingSlotsLayout {
+    /// Height budget for loading/idle placeholder and for the «no slots» empty state (compact, no large blank strip).
+    static let suggestionsPlaceholderRegionHeight: CGFloat = 112
+    static var slotViewHeight: CGFloat { MeetingSlotGridMetrics.totalHeight }
 }
 
 private struct MeetingSlotGridLineOverlay: ViewModifier {
@@ -645,7 +867,14 @@ private extension View {
     }
 }
 
-private struct WeekGridSlotView: View {
+enum SlotCellColoring {
+    /// Бинарная окраска: accent для свободных, без градации.
+    case accent
+    /// Градиент по `FreeSlot.score`: чем выше score (раньше в дне) — тем насыщеннее.
+    case heatmap
+}
+
+struct WeekGridSlotView: View {
     private typealias TimeKey = Int
     private typealias DayKey = Date
 
@@ -657,6 +886,7 @@ private struct WeekGridSlotView: View {
     let slots: [FreeSlot]
     @Binding var selectedSlotID: UUID?
     let gridWeekInterval: DateInterval
+    var coloring: SlotCellColoring = .accent
 
     private static let timeRows: [TimeKey] = Array(stride(from: 540, to: 1080, by: 30))
 
@@ -749,7 +979,8 @@ private struct WeekGridSlotView: View {
                         let slot = data.lookup[day]?[timeKey]
                         SlotCell(
                             slot: slot,
-                            isSelected: slot.map { $0.id == selectedSlotID } == true
+                            isSelected: slot.map { $0.id == selectedSlotID } == true,
+                            coloring: coloring
                         ) {
                             if let slot { selectedSlotID = slot.id }
                         }
@@ -772,13 +1003,22 @@ private struct WeekGridSlotView: View {
 private struct SlotCell: View {
     let slot: FreeSlot?
     let isSelected: Bool
+    let coloring: SlotCellColoring
     let onTap: () -> Void
     @State private var isHovered = false
 
     private var bg: Color {
-        guard slot != nil else { return .clear }
+        guard let slot else { return .clear }
         if isSelected { return Color.accentColor }
-        return Color.accentColor.opacity(isHovered ? 0.22 : 0.12)
+        switch coloring {
+        case .accent:
+            return Color.accentColor.opacity(isHovered ? 0.22 : 0.12)
+        case .heatmap:
+            // hue 0.10 (warm orange) → 0.34 (green) by score
+            let hue = 0.10 + slot.score * 0.24
+            let base = Color(hue: hue, saturation: 0.65, brightness: 0.88)
+            return base.opacity(isHovered ? 1.0 : 0.85)
+        }
     }
 
     var body: some View {
