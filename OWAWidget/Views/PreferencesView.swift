@@ -1,3 +1,4 @@
+import KeyboardShortcuts
 import SwiftUI
 
 struct PreferencesView: View {
@@ -25,6 +26,14 @@ struct PreferencesView: View {
 
     var body: some View {
         Form {
+            Section(localization.tr("preferences.shortcuts.section")) {
+                HStack {
+                    Text(localization.tr("preferences.shortcuts.createMeeting"))
+                    Spacer()
+                    KeyboardShortcuts.Recorder(for: .createMeeting)
+                }
+            }
+
             Section(localization.tr("preferences.startup.section")) {
                 Toggle(
                     localization.tr("preferences.startup.launchAtLogin"),

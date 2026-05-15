@@ -1,3 +1,4 @@
+import KeyboardShortcuts
 import SwiftUI
 
 struct MenuBarLabelView: View {
@@ -34,6 +35,15 @@ struct MenuBarLabelView: View {
             }
         }
         .help(helpText)
+        .onAppear {
+            KeyboardShortcuts.onKeyUp(for: .createMeeting) {
+                NotificationCenter.default.post(name: .openCreateMeetingShortcut, object: nil)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openCreateMeetingShortcut)) { _ in
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "create-meeting")
+        }
     }
 
     private func buildContextMenu() -> NSMenu {

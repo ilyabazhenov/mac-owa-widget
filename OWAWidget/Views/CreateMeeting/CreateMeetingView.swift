@@ -48,11 +48,10 @@ struct CreateMeetingView: View {
                 // Left column: meeting details + frequent contacts
                 VStack(alignment: .leading, spacing: 0) {
                     VStack(alignment: .leading, spacing: 16) {
-                        titleField
-                        agendaField
                         attendeesField
                         durationField
-                        findSlotsButton
+                        titleField
+                        agendaField
                     }
                     .padding(20)
 
@@ -242,30 +241,6 @@ struct CreateMeetingView: View {
         .padding(.top, 14)
     }
 
-    // MARK: - Find slots button
-
-    private var findSlotsButton: some View {
-        Button {
-            Task { await vm.findSlots() }
-        } label: {
-            HStack(spacing: 6) {
-                if vm.isLoadingSlots {
-                    ProgressView().scaleEffect(0.7).frame(width: 14, height: 14)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12))
-                }
-                Text(localization.tr("create.meeting.refresh.slots"))
-                    .font(.system(size: 13, weight: .medium))
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-        }
-        .buttonStyle(.bordered)
-        .disabled(vm.draft.requiredAttendees.isEmpty || vm.isLoadingSlots)
-        .controlSize(.regular)
-    }
-
     // MARK: - Slots (right column)
 
     @ViewBuilder
@@ -329,17 +304,7 @@ struct CreateMeetingView: View {
     @ViewBuilder
     private var suggestionsBlock: some View {
         if vm.freeSlots.isEmpty {
-            VStack(spacing: 8) {
-                Image(systemName: "calendar.badge.exclamationmark")
-                    .font(.system(size: 24))
-                    .foregroundStyle(.tertiary)
-                Text(localization.tr("create.meeting.no.slots"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: MeetingSlotsLayout.suggestionsPlaceholderRegionHeight, alignment: .center)
+            noSlotsEmptyState
         } else {
             SlotSuggestionsView(
                 suggestions: SlotRanker.topPicks(from: vm.freeSlots),
@@ -347,6 +312,50 @@ struct CreateMeetingView: View {
             )
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+    }
+
+    private var noSlotsEmptyState: some View {
+        VStack(spacing: 12) {
+            VStack(spacing: 6) {
+                Image(systemName: "calendar.badge.exclamationmark")
+                    .font(.system(size: 22))
+                    .foregroundStyle(.tertiary)
+                Text(localization.tr("create.meeting.no.slots"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    vm.shiftSelectedWeek(by: 1)
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(localization.tr("create.meeting.no.slots.next.week"))
+                        Image(systemName: "chevron.right")
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                if vm.draft.durationMinutes > 30 {
+                    Button {
+                        vm.selectedDuration = .min30
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                            Text(localization.tr("create.meeting.no.slots.shorter"))
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: MeetingSlotsLayout.suggestionsPlaceholderRegionHeight, alignment: .center)
     }
 
     /// Slot view с фиксированной высотой; list прокручивается внутри.
@@ -435,6 +444,30 @@ struct CreateMeetingView: View {
                 vm.shiftSelectedWeek(by: 1)
             }
             .help(localization.tr("create.meeting.week.next"))
+
+            if !vm.draft.requiredAttendees.isEmpty {
+                Button {
+                    Task { await vm.findSlots() }
+                } label: {
+                    Group {
+                        if vm.isLoadingSlots {
+                            ProgressView().scaleEffect(0.65)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Color(nsColor: .labelColor))
+                        }
+                    }
+                    .frame(width: 24, height: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Color(nsColor: .controlColor))
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(vm.isLoadingSlots)
+                .help(localization.tr("create.meeting.refresh.slots"))
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)

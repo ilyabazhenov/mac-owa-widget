@@ -34,6 +34,9 @@
 "settings.account.save.failed" = "Save failed: %@";
 "settings.account.connection.auth.failed" = "Could not connect to OWA. Check the server address, login, and password.";
 
+"preferences.shortcuts.section" = "Shortcuts";
+"preferences.shortcuts.createMeeting" = "New Meeting";
+
 "preferences.startup.section" = "Startup";
 "preferences.startup.launchAtLogin" = "Launch at login";
 "preferences.startup.requiresApproval" = "Approval needed in System Settings → Login Items.";
@@ -185,6 +188,8 @@
 "create.meeting.refresh.slots" = "Refresh slots";
 "create.meeting.create" = "Create meeting";
 "create.meeting.no.slots" = "No available slots in selected range";
+"create.meeting.no.slots.next.week" = "Next week";
+"create.meeting.no.slots.shorter" = "Shorten to 30 min";
 "create.meeting.available.slots" = "Available slots";
 "create.meeting.suggestions.title" = "Top picks";
 "create.meeting.suggestions.reason.early" = "Early morning";

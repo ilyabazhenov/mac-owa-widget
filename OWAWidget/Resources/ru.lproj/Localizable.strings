@@ -34,6 +34,9 @@
 "settings.account.save.failed" = "Не удалось сохранить: %@";
 "settings.account.connection.auth.failed" = "Не удалось подключиться к OWA. Проверьте адрес сервера, логин и пароль.";
 
+"preferences.shortcuts.section" = "Горячие клавиши";
+"preferences.shortcuts.createMeeting" = "Новая встреча";
+
 "preferences.startup.section" = "Запуск";
 "preferences.startup.launchAtLogin" = "Запускать при входе в систему";
 "preferences.startup.requiresApproval" = "Требуется разрешение в Системных настройках → Объекты входа.";
@@ -185,6 +188,8 @@
 "create.meeting.refresh.slots" = "Обновить слоты";
 "create.meeting.create" = "Создать встречу";
 "create.meeting.no.slots" = "Нет свободных слотов в выбранном диапазоне";
+"create.meeting.no.slots.next.week" = "Следующая неделя";
+"create.meeting.no.slots.shorter" = "Сократить до 30 мин";
 "create.meeting.available.slots" = "Доступные слоты";
 "create.meeting.suggestions.title" = "Лучшие варианты";
 "create.meeting.suggestions.reason.early" = "Раннее утро";

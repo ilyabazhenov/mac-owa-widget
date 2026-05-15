@@ -202,6 +202,36 @@ final class MeetingFreeSlotCalculatorTests: XCTestCase {
         XCTAssertEqual(slots.count, MeetingFreeSlotCalculator.maxReturnedFreeSlots)
     }
 
+    /// Regression: business-hours filter must use start + duration, not slot end clock time alone.
+    func testBusinessHoursEndBoundaryUsesStartPlusDuration() {
+        let avail = attendee(allFreeSlotCount: 48)
+        let range = DateInterval(
+            start: moscowDate(year: 2025, month: 5, day: 12, hour: 17, minute: 0),
+            end: moscowDate(year: 2025, month: 5, day: 12, hour: 18, minute: 35)
+        )
+
+        let thirty = MeetingFreeSlotCalculator.compute(
+            from: [avail],
+            organizerAvailability: nil,
+            organizerEvents: [],
+            range: range,
+            durationMinutes: 30
+        )
+        let last30 = moscowDate(year: 2025, month: 5, day: 12, hour: 17, minute: 30)
+        XCTAssertTrue(thirty.contains { abs($0.start.timeIntervalSince(last30)) < 2 })
+
+        let sixty = MeetingFreeSlotCalculator.compute(
+            from: [avail],
+            organizerAvailability: nil,
+            organizerEvents: [],
+            range: range,
+            durationMinutes: 60
+        )
+        let last60 = moscowDate(year: 2025, month: 5, day: 12, hour: 17, minute: 0)
+        XCTAssertTrue(sixty.contains { abs($0.start.timeIntervalSince(last60)) < 2 })
+        XCTAssertFalse(sixty.contains { abs($0.start.timeIntervalSince(last30)) < 2 })
+    }
+
     /// Regression: old hard cap (10) hid Thu–Fri when Mon–Wed had enough free half-hours.
     func testFullMonFriWorkWeekIncludesFridayAfternoon() {
         let avail = attendee(allFreeSlotCount: 500)

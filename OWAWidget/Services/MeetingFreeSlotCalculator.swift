@@ -72,8 +72,7 @@ enum MeetingFreeSlotCalculator {
             guard slotStart >= range.start, slotEnd <= range.end else { i += 1; continue }
 
             let startMinuteOfDay = cal.component(.hour, from: slotStart) * 60 + cal.component(.minute, from: slotStart)
-            let endMinuteOfDay = cal.component(.hour, from: slotEnd) * 60 + cal.component(.minute, from: slotEnd)
-            guard startMinuteOfDay >= 9 * 60, endMinuteOfDay > 0, endMinuteOfDay <= 18 * 60 else { i += 1; continue }
+            guard startMinuteOfDay >= 9 * 60, startMinuteOfDay + durationMinutes <= 18 * 60 else { i += 1; continue }
 
             let weekday = cal.component(.weekday, from: slotStart)
             guard weekday != 1, weekday != 7 else { i += 1; continue }
