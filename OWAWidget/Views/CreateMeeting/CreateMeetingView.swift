@@ -1006,7 +1006,10 @@ struct WeekGridSlotView: View {
                                 cell: cell,
                                 isSelected: cell?.freeSlot.map { $0.id == selectedSlotID } == true,
                                 onHoverChange: { hovered in
-                                    hoveredInfo = hovered ? HoveredInfo(cell: cell!, cellStart: cellStart) : nil
+                                    // Для продолжений многострочного слота — используем freeSlot.start,
+                                    // чтобы тултип показывал весь слот, а не только эту строку.
+                                    let tooltipStart = cell?.freeSlot?.start ?? cellStart
+                                    hoveredInfo = hovered ? HoveredInfo(cell: cell!, cellStart: tooltipStart) : nil
                                 }
                             ) {
                                 if let slot = cell?.freeSlot { selectedSlotID = slot.id }
@@ -1168,7 +1171,7 @@ private struct CellTooltipView: View {
     }
 
     var body: some View {
-        let cellEnd = cellStart.addingTimeInterval(30 * 60)
+        let cellEnd = cell.freeSlot?.end ?? cellStart.addingTimeInterval(30 * 60)
         VStack(alignment: .leading, spacing: 5) {
             Text("\(Self.dayTimeFmt.string(from: cellStart)) – \(Self.timeFmt.string(from: cellEnd))")
                 .font(.system(size: 11, weight: .semibold))
