@@ -67,11 +67,17 @@ struct CreateMeetingView: View {
                 Divider()
 
                 // Right column: slot selection
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        slotsSection
+                VStack(spacing: 0) {
+                    weekNavigator
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 14)
+                    Divider()
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            slotsContent
+                        }
+                        .padding(20)
                     }
-                    .padding(20)
                 }
                 .frame(minWidth: 380)
                 .layoutPriority(1)
@@ -243,14 +249,6 @@ struct CreateMeetingView: View {
     }
 
     // MARK: - Slots (right column)
-
-    @ViewBuilder
-    private var slotsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            weekNavigator
-            slotsContent
-        }
-    }
 
     /// Контент под навигатором: либо layout с фиксированной высотой сетки слотов и подсказками по содержимому,
     /// либо placeholder (loading / idle).
