@@ -80,7 +80,6 @@ struct CreateMeetingView: View {
         }
         .frame(width: 900)
         .background(Color(nsColor: .windowBackgroundColor))
-        .background(FloatingWindowSetter())
     }
 
     // MARK: - Title & agenda
@@ -1143,16 +1142,3 @@ struct FlowLayout: Layout {
     }
 }
 
-// MARK: - Floating window helper
-
-private struct FloatingWindowSetter: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            view.window?.level = .floating
-            view.window?.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        }
-        return view
-    }
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}

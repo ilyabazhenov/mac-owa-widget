@@ -48,11 +48,15 @@ struct OWAWidgetApp: App {
         .menuBarExtraStyle(.window)
 
         Window(localizationService.tr("window.create.meeting.title"), id: "create-meeting") {
-            if let account = calendarService.accounts.first {
-                CreateMeetingView(calendarService: calendarService, accountID: account.id)
-                    .environmentObject(localizationService)
-                    .environment(\.locale, localizationService.locale)
+            Group {
+                if let account = calendarService.accounts.first {
+                    CreateMeetingView(calendarService: calendarService, accountID: account.id)
+                        .environmentObject(localizationService)
+                        .environment(\.locale, localizationService.locale)
+                }
             }
+            .onAppear { NSApp.setActivationPolicy(.regular) }
+            .onDisappear { NSApp.setActivationPolicy(.accessory) }
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
@@ -73,6 +77,7 @@ struct OWAWidgetApp: App {
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
+
     }
 
     /// Wires the notification delegate to the live CalendarService owned by SwiftUI.

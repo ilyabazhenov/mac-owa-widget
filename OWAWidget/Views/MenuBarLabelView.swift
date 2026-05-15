@@ -49,6 +49,13 @@ struct MenuBarLabelView: View {
     private func buildContextMenu() -> NSMenu {
         let menu = NSMenu()
 
+        menu.addItem(ClosureMenuItem(title: localization.tr("menu.new.meeting")) {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "create-meeting")
+        })
+
+        menu.addItem(.separator())
+
         menu.addItem(ClosureMenuItem(title: localization.tr("popover.sync.now")) {
             service.syncNow()
         })

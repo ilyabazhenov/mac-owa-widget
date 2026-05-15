@@ -92,6 +92,7 @@
 "preferences.debug.reminder.delay" = "Test reminder delay";
 "preferences.debug.reminder.trigger" = "Trigger test reminder";
 
+"menu.new.meeting" = "New Meeting";
 "popover.sync.now" = "Sync now";
 "popover.settings" = "Settings";
 "popover.quit" = "Quit";

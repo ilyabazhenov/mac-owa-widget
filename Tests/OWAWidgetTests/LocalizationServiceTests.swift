@@ -149,6 +149,24 @@ final class LocalizationServiceTests: XCTestCase {
         XCTAssertEqual(text, "Starting soon: 2 meetings")
     }
 
+    func testNewMeetingMenuKeyInEnglish() {
+        let service = LocalizationService(
+            selectedLanguage: .english,
+            preferredLanguages: ["ru-RU"]
+        )
+
+        XCTAssertEqual(service.tr("menu.new.meeting"), "New Meeting")
+    }
+
+    func testNewMeetingMenuKeyInRussian() {
+        let service = LocalizationService(
+            selectedLanguage: .russian,
+            preferredLanguages: ["en-US"]
+        )
+
+        XCTAssertEqual(service.tr("menu.new.meeting"), "Новая встреча")
+    }
+
     func testNotificationClusterTitleFormatInRussian() {
         let service = LocalizationService(
             selectedLanguage: .russian,
