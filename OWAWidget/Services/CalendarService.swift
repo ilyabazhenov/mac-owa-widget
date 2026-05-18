@@ -470,8 +470,8 @@ final class CalendarService: ObservableObject {
         syncStatus = .syncing
 
         let now = Date()
-        // Fetch from today's start to include already finished meetings from today.
-        let start = Calendar.current.startOfDay(for: now)
+        let todayStart = Calendar.current.startOfDay(for: now)
+        let start = Calendar.current.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart
         let end = Calendar.current.date(byAdding: .day, value: 30, to: now) ?? now
 
         do {

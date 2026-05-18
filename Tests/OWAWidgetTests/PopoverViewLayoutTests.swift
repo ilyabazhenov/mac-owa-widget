@@ -10,15 +10,19 @@ final class PopoverViewLayoutTests: XCTestCase {
         XCTAssertEqual(popover.contentHorizontalPadding, list.contentHorizontalPadding)
     }
 
-    func testDateNavBarPolicyShowsJumpToTodayOnlyForFutureOffsets() {
+    func testDateNavBarPolicyShowsJumpToTodayForPastAndFutureOffsets() {
         XCTAssertFalse(PopoverView.DateNavBarPolicy.shouldShowJumpToToday(selectedDayOffset: 0))
         XCTAssertTrue(PopoverView.DateNavBarPolicy.shouldShowJumpToToday(selectedDayOffset: 1))
         XCTAssertTrue(PopoverView.DateNavBarPolicy.shouldShowJumpToToday(selectedDayOffset: 6))
+        XCTAssertTrue(PopoverView.DateNavBarPolicy.shouldShowJumpToToday(selectedDayOffset: -1))
+        XCTAssertTrue(PopoverView.DateNavBarPolicy.shouldShowJumpToToday(selectedDayOffset: -7))
     }
 
     func testDateNavBarPolicyRespectsPreviousAndNextBounds() {
-        XCTAssertFalse(PopoverView.DateNavBarPolicy.canGoToPreviousDay(selectedDayOffset: 0))
-        XCTAssertTrue(PopoverView.DateNavBarPolicy.canGoToPreviousDay(selectedDayOffset: 2))
+        XCTAssertTrue(PopoverView.DateNavBarPolicy.canGoToPreviousDay(selectedDayOffset: 0, minDayOffset: -7))
+        XCTAssertTrue(PopoverView.DateNavBarPolicy.canGoToPreviousDay(selectedDayOffset: -6, minDayOffset: -7))
+        XCTAssertFalse(PopoverView.DateNavBarPolicy.canGoToPreviousDay(selectedDayOffset: -7, minDayOffset: -7))
+        XCTAssertTrue(PopoverView.DateNavBarPolicy.canGoToPreviousDay(selectedDayOffset: 2, minDayOffset: -7))
 
         XCTAssertTrue(PopoverView.DateNavBarPolicy.canGoToNextDay(selectedDayOffset: 5, maxDayOffset: 6))
         XCTAssertFalse(PopoverView.DateNavBarPolicy.canGoToNextDay(selectedDayOffset: 6, maxDayOffset: 6))
