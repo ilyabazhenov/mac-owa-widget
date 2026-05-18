@@ -70,6 +70,12 @@ final class CreateMeetingViewModel: ObservableObject {
     /// Изменение `draft` запускает debounced auto-refresh слотов.
     func shiftSelectedWeek(by weeks: Int) {
         guard weeks != 0 else { return }
+        if !draft.requiredAttendees.isEmpty {
+            isLoadingSlots = true
+            freeSlots = []
+            attendeeAvailabilities = []
+            selectedSlot = nil
+        }
         var d = draft
         d.selectedWeekStart = d.weekStartOffset(by: weeks)
         draft = d
@@ -79,6 +85,12 @@ final class CreateMeetingViewModel: ObservableObject {
     func resetToCurrentWeek() {
         let monday = MeetingDraft.mondayOfWeek(containing: Date())
         guard MeetingDraft.weekCalendar.startOfDay(for: draft.selectedWeekStart) != monday else { return }
+        if !draft.requiredAttendees.isEmpty {
+            isLoadingSlots = true
+            freeSlots = []
+            attendeeAvailabilities = []
+            selectedSlot = nil
+        }
         var d = draft
         d.selectedWeekStart = monday
         draft = d
