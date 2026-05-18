@@ -918,12 +918,23 @@ actor OWAClient {
         addCommonHeaders(&request)
         request.httpBody = Data(soap.utf8)
 
-        log.info("EWS CreateItem subject=\(title, privacy: .private) required=\(requiredAttendees.count, privacy: .public) optional=\(optionalAttendees.count, privacy: .public)")
+        log.info("EWS CreateItem → \(ewsURL.absoluteString, privacy: .public) subject=\(title, privacy: .private) required=\(requiredAttendees.count, privacy: .public) optional=\(optionalAttendees.count, privacy: .public) bodyBytes=\(soap.utf8.count, privacy: .public)")
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlErr as URLError {
+            log.error("EWS CreateItem URLError code=\(urlErr.code.rawValue, privacy: .public) (\(urlErr.localizedDescription, privacy: .public))")
+            throw urlErr
+        } catch {
+            log.error("EWS CreateItem network error: \(error, privacy: .public)")
+            throw error
+        }
+
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
 
         if http.statusCode == 401 {
+            log.info("EWS CreateItem HTTP 401 — re-authenticating")
             try await authenticate()
             try await createCalendarEvent(
                 title: title,
@@ -939,6 +950,11 @@ actor OWAClient {
         }
 
         let body = String(data: data, encoding: .utf8) ?? ""
+        if (200..<300).contains(http.statusCode) {
+            log.info("EWS CreateItem HTTP \(http.statusCode, privacy: .public)")
+        } else {
+            log.error("EWS CreateItem HTTP \(http.statusCode, privacy: .public) body=\(body.prefix(1000), privacy: .private)")
+        }
         #if DEBUG
         dlog("createCalendarEvent: HTTP \(http.statusCode) response:\n\(body.prefix(800))")
         #endif
@@ -947,6 +963,7 @@ actor OWAClient {
             throw OWAError.httpError(http.statusCode, body)
         }
         let code = extractEWSResponseCode(from: body)
+        log.info("EWS CreateItem responseCode=\(code ?? "nil", privacy: .public)")
         guard code == "NoError" else {
             throw OWAError.ewsError(code ?? "UnknownError")
         }

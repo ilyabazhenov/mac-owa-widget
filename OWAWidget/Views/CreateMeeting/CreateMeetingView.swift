@@ -29,6 +29,7 @@ enum SlotViewMode: String, CaseIterable {
 }
 
 struct CreateMeetingView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var localization: LocalizationService
     @StateObject private var vm: CreateMeetingViewModel
     @State private var requiredFieldHeight: CGFloat = 36
@@ -91,6 +92,11 @@ struct CreateMeetingView: View {
         .frame(minWidth: 700, minHeight: 500)
         .background(WindowAccessor())
         .background(Color(nsColor: .windowBackgroundColor))
+        .overlay {
+            if vm.successMessage != nil {
+                MeetingCreatedOverlay(title: vm.draft.title, onDismiss: { dismiss() })
+            }
+        }
     }
 
     // MARK: - Title & agenda
@@ -690,6 +696,51 @@ struct CreateMeetingView: View {
             .foregroundStyle(.secondary)
             .textCase(.uppercase)
             .tracking(0.3)
+    }
+}
+
+// MARK: - Meeting created overlay
+
+private struct MeetingCreatedOverlay: View {
+    let title: String
+    let onDismiss: () -> Void
+    @State private var countdown = 5
+
+    var body: some View {
+        ZStack {
+            Color(nsColor: .windowBackgroundColor)
+                .opacity(0.85)
+
+            VStack(spacing: 16) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 56))
+                    .foregroundStyle(.green)
+                Text(title)
+                    .font(.system(size: 18, weight: .semibold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                Text("Закроется через \(countdown) сек")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                Button("Закрыть") { onDismiss() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
+            .padding(40)
+        }
+        .ignoresSafeArea()
+        .transition(.opacity.animation(.easeIn(duration: 0.15)))
+        .onAppear {
+            Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
+                if countdown > 1 {
+                    countdown -= 1
+                } else {
+                    timer.invalidate()
+                    onDismiss()
+                }
+            }
+        }
     }
 }
 

@@ -1,9 +1,12 @@
 import Foundation
 import Combine
 import SwiftUI
+import os.log
 
 @MainActor
 final class CreateMeetingViewModel: ObservableObject {
+    private let log = Logger(subsystem: "com.owawidget", category: "CreateMeetingViewModel")
+
     @Published var draft = MeetingDraft()
 
     // Two fully independent search states — one per attendee group.
@@ -370,6 +373,7 @@ final class CreateMeetingViewModel: ObservableObject {
             )
             successMessage = "create.meeting.success"
         } catch {
+            log.error("createMeeting UI error: \(error, privacy: .public)")
             errorMessage = error.localizedDescription
         }
     }

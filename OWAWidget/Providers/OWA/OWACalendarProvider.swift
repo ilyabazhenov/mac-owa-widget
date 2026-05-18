@@ -64,16 +64,21 @@ actor OWACalendarProvider: CalendarProvider {
         optionalAttendees: [ResolvedAttendee]
     ) async throws {
         let folderIdentifier = await client.resolvedFolderIdentifier
-        try await client.createCalendarEvent(
-            title: title,
-            agenda: agenda,
-            location: location,
-            start: start,
-            end: end,
-            requiredAttendees: requiredAttendees,
-            optionalAttendees: optionalAttendees,
-            folderIdentifier: folderIdentifier
-        )
+        do {
+            try await client.createCalendarEvent(
+                title: title,
+                agenda: agenda,
+                location: location,
+                start: start,
+                end: end,
+                requiredAttendees: requiredAttendees,
+                optionalAttendees: optionalAttendees,
+                folderIdentifier: folderIdentifier
+            )
+        } catch {
+            log.error("createMeeting failed: \(error, privacy: .public)")
+            throw error
+        }
     }
 
     // MARK: - Mapping
