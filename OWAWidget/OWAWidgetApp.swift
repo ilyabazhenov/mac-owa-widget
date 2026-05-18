@@ -4,6 +4,8 @@ import AppKit
 
 @main
 struct OWAWidgetApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     // Using property-initializer syntax so SwiftUI evaluates each expression exactly once,
     // regardless of how many times the App struct is re-instantiated during startup.
     // With the old pattern (_foo = StateObject(wrappedValue: Foo()) inside an explicit init()),
@@ -103,6 +105,19 @@ struct OWAWidgetApp: App {
         if let icon = NSImage(named: "AppIcon") ?? NSImage(named: "AppIcon.icns") {
             NSApplication.shared.applicationIconImage = icon
         }
+    }
+}
+
+// MARK: - App delegate
+
+/// Brings user-facing windows (create-meeting, settings) to the front when the app is
+/// activated via Cmd+Tab. Needed because dynamic setActivationPolicy(.regular) from
+/// LSUIElement doesn't automatically raise windows on activation.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidBecomeActive(_ notification: Notification) {
+        NSApp.windows
+            .filter { $0.canBecomeMain && !($0 is NSPanel) && $0.isVisible }
+            .forEach { $0.makeKeyAndOrderFront(nil) }
     }
 }
 
