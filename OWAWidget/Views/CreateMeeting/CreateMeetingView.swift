@@ -457,6 +457,7 @@ struct CreateMeetingView: View {
                     onSelectSlot: { vm.selectSlot(start: $0, end: $1) },
                     gridWeekInterval: vm.draft.slotGridWeekInterval()
                 )
+                .frame(height: MeetingSlotGridMetrics.gridHeight)
                 if vm.slotsSearched && !vm.attendeeAvailabilities.isEmpty {
                     AvailabilityLegendView()
                         .padding(.horizontal, MeetingSlotGridMetrics.timeColumnWidth + 2)
@@ -1095,8 +1096,10 @@ private enum MeetingSlotGridMetrics {
     static let rowHeight: CGFloat = 24
     static let timeColumnWidth: CGFloat = 44
     static let headerHeight: CGFloat = 28
-    /// 18 строк × rowHeight + шапка + вертикальные паддинги + легенда занятости.
-    static var totalHeight: CGFloat { headerHeight + rowHeight * 18 + 8 + 24 }
+    /// Высота WeekGridSlotView: шапка + 18 строк + 18 промежутков verticalSpacing:2 + padding(.vertical, 4) × 2.
+    static var gridHeight: CGFloat { headerHeight + rowHeight * 18 + 18 * 2 + 8 }
+    /// Полная высота блока: грид + легенда занятости (24pt).
+    static var totalHeight: CGFloat { gridHeight + 24 }
 }
 
 /// Reserved heights for the right column: slot grid stays fixed; suggestions use intrinsic height when slots exist
@@ -1387,7 +1390,7 @@ struct WeekGridSlotView: View {
                 }
             }
         }
-        .frame(height: MeetingSlotGridMetrics.headerHeight + MeetingSlotGridMetrics.rowHeight * 18 + 8)
+        .frame(height: MeetingSlotGridMetrics.headerHeight + MeetingSlotGridMetrics.rowHeight * 18 + 18 * 2)
         .padding(.vertical, 4)
     }
 }
