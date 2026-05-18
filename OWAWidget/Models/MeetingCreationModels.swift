@@ -36,6 +36,13 @@ struct FreeSlot: Identifiable, Sendable {
 struct AttendeeSlotStatus: Sendable {
     let displayName: String
     let rawChar: Character  // '0' free, '1' tentative, '2' busy, '3' OOF
+    let eventTitle: String?
+
+    init(displayName: String, rawChar: Character, eventTitle: String? = nil) {
+        self.displayName = displayName
+        self.rawChar = rawChar
+        self.eventTitle = eventTitle
+    }
 }
 
 enum SlotAvailabilityState: Sendable {

@@ -258,9 +258,9 @@ final class CalendarService: ObservableObject {
         displayRange: DateInterval? = nil,
         durationMinutes: Int,
         accountID: UUID
-    ) async throws -> (slots: [FreeSlot], attendeeAvailability: [AttendeeAvailability]) {
-        guard !requiredEmails.isEmpty else { return ([], []) }
-        guard let provider = providers.first(where: { $0.account.id == accountID }) else { return ([], []) }
+    ) async throws -> (slots: [FreeSlot], attendeeAvailability: [AttendeeAvailability], organizerAvailability: AttendeeAvailability?, organizerEvents: [CalendarEvent]) {
+        guard !requiredEmails.isEmpty else { return ([], [], nil, []) }
+        guard let provider = providers.first(where: { $0.account.id == accountID }) else { return ([], [], nil, []) }
 
         let cal = AppTimeZone.calendar
         let (requestStart, requestEnd) = UserAvailabilityRequestWindow.bounds(
@@ -301,7 +301,7 @@ final class CalendarService: ObservableObject {
             range: range,
             durationMinutes: durationMinutes
         )
-        return (slots: slots, attendeeAvailability: attendeeAvailability)
+        return (slots: slots, attendeeAvailability: attendeeAvailability, organizerAvailability: organizerAvailability, organizerEvents: organizerEvents)
     }
 
     func createMeeting(

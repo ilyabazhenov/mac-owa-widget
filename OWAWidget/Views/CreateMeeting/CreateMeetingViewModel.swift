@@ -23,6 +23,8 @@ final class CreateMeetingViewModel: ObservableObject {
 
     @Published var freeSlots: [FreeSlot] = []
     @Published var attendeeAvailabilities: [AttendeeAvailability] = []
+    @Published var organizerAvailability: AttendeeAvailability? = nil
+    @Published var organizerEvents: [CalendarEvent] = []
     @Published var selectedSlot: FreeSlot? = nil
     @Published var isLoadingSlots = false
     @Published var isCreating = false
@@ -74,6 +76,8 @@ final class CreateMeetingViewModel: ObservableObject {
             isLoadingSlots = true
             freeSlots = []
             attendeeAvailabilities = []
+            organizerAvailability = nil
+            organizerEvents = []
             selectedSlot = nil
         }
         var d = draft
@@ -89,6 +93,8 @@ final class CreateMeetingViewModel: ObservableObject {
             isLoadingSlots = true
             freeSlots = []
             attendeeAvailabilities = []
+            organizerAvailability = nil
+            organizerEvents = []
             selectedSlot = nil
         }
         var d = draft
@@ -277,6 +283,8 @@ final class CreateMeetingViewModel: ObservableObject {
             isLoadingSlots = false
             freeSlots = []
             attendeeAvailabilities = []
+            organizerAvailability = nil
+            organizerEvents = []
             selectedSlot = nil
             slotsSearched = false
             errorMessage = nil
@@ -287,6 +295,8 @@ final class CreateMeetingViewModel: ObservableObject {
         errorMessage = nil
         freeSlots = []
         attendeeAvailabilities = []
+        organizerAvailability = nil
+        organizerEvents = []
         selectedSlot = nil
         slotsSearched = false
 
@@ -307,10 +317,14 @@ final class CreateMeetingViewModel: ObservableObject {
             guard gen == findSlotsGeneration else { return }
             freeSlots = result.slots
             attendeeAvailabilities = result.attendeeAvailability
+            organizerAvailability = result.organizerAvailability
+            organizerEvents = result.organizerEvents
             slotsSearched = true
         } catch {
             guard gen == findSlotsGeneration else { return }
             attendeeAvailabilities = []
+            organizerAvailability = nil
+            organizerEvents = []
             errorMessage = error.localizedDescription
             slotsSearched = true
         }
@@ -377,6 +391,8 @@ final class CreateMeetingViewModel: ObservableObject {
         focusedSearchKind = nil
         freeSlots = []
         attendeeAvailabilities = []
+        organizerAvailability = nil
+        organizerEvents = []
         selectedSlot = nil
         isLoadingSlots = false
         isCreating = false
@@ -461,6 +477,18 @@ final class CreateMeetingViewModel: ObservableObject {
                         displayName = avail.email
                     }
                     statusList.append(AttendeeSlotStatus(displayName: displayName, rawChar: ch))
+                }
+
+                if let orgAvail = organizerAvailability {
+                    let idx = Int(cellStart.timeIntervalSince(orgAvail.windowStart) / intervalSec)
+                    let orgChars = Array(orgAvail.mergedFreeBusy)
+                    let ch: Character = (idx >= 0 && idx < orgChars.count) ? orgChars[idx] : "0"
+                    chars.append(ch)
+                    let cellEnd = cellStart.addingTimeInterval(intervalSec)
+                    let conflictTitle = organizerEvents.first { ev in
+                        ev.startDate < cellEnd && ev.endDate > cellStart
+                    }?.title
+                    statusList.insert(AttendeeSlotStatus(displayName: "Вы", rawChar: ch, eventTitle: conflictTitle), at: 0)
                 }
 
                 var state = SlotAvailabilityState.aggregate(from: chars)

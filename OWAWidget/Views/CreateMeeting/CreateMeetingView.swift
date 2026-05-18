@@ -52,7 +52,7 @@ struct CreateMeetingView: View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 0) {
                 // Left column: meeting details + frequent contacts
-                VStack(alignment: .leading, spacing: 0) {
+                ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 16) {
                         attendeesField
                         if !vm.suggestedAttendees.isEmpty {
@@ -64,7 +64,6 @@ struct CreateMeetingView: View {
                         agendaField
                     }
                     .padding(20)
-                    Spacer()
                 }
                 .frame(width: leftColumnWidth)
 
@@ -1579,17 +1578,26 @@ private struct CellTooltipView: View {
             Divider()
             ForEach(cell.attendeeStatuses.indices, id: \.self) { idx in
                 let status = cell.attendeeStatuses[idx]
-                HStack(spacing: 7) {
-                    Circle()
-                        .fill(statusColor(for: status.rawChar))
-                        .frame(width: 8, height: 8)
-                    Text(status.displayName)
-                        .font(.system(size: 11))
-                        .lineLimit(1)
-                    Spacer()
-                    Text(statusLabel(for: status.rawChar))
-                        .font(.system(size: 10))
-                        .foregroundStyle(statusColor(for: status.rawChar).opacity(0.85))
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 7) {
+                        Circle()
+                            .fill(statusColor(for: status.rawChar))
+                            .frame(width: 8, height: 8)
+                        Text(status.displayName)
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                        Spacer()
+                        Text(statusLabel(for: status.rawChar))
+                            .font(.system(size: 10))
+                            .foregroundStyle(statusColor(for: status.rawChar).opacity(0.85))
+                    }
+                    if let title = status.eventTitle {
+                        Text(title)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .padding(.leading, 15)
+                    }
                 }
             }
             if let note = slotQualityNote {
