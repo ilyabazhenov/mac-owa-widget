@@ -352,6 +352,28 @@ final class CreateMeetingViewModel: ObservableObject {
 
     private var effectiveSelectedSlot: FreeSlot? { selectedSlot }
 
+    func reset() {
+        requiredSearchTask?.cancel()
+        optionalSearchTask?.cancel()
+        draft = MeetingDraft()
+        requiredQuery = ""
+        requiredResults = []
+        isRequiredSearching = false
+        optionalQuery = ""
+        optionalResults = []
+        isOptionalSearching = false
+        focusedSearchKind = nil
+        freeSlots = []
+        attendeeAvailabilities = []
+        selectedSlot = nil
+        isLoadingSlots = false
+        isCreating = false
+        errorMessage = nil
+        successMessage = nil
+        slotsSearched = false
+        locationFocused = false
+    }
+
     func createMeeting() async {
         guard let slot = effectiveSelectedSlot,
               !draft.title.trimmingCharacters(in: .whitespaces).isEmpty

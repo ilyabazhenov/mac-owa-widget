@@ -61,7 +61,10 @@ struct OWAWidgetApp: App {
                         .environment(\.locale, localizationService.locale)
                 }
             }
-            .onAppear { NSApp.setActivationPolicy(.regular) }
+            .onAppear {
+                NSApp.setActivationPolicy(.regular)
+                NSApp.activate(ignoringOtherApps: true)
+            }
             .onDisappear { NSApp.setActivationPolicy(.accessory) }
         }
         .windowResizability(.contentMinSize)

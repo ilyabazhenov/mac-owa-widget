@@ -97,6 +97,9 @@ struct CreateMeetingView: View {
                 MeetingCreatedOverlay(title: vm.draft.title, onDismiss: { dismiss() })
             }
         }
+        .onDisappear {
+            vm.reset()
+        }
     }
 
     // MARK: - Title & agenda
@@ -705,6 +708,7 @@ private struct MeetingCreatedOverlay: View {
     let title: String
     let onDismiss: () -> Void
     @State private var countdown = 5
+    @State private var timer: Timer?
 
     var body: some View {
         ZStack {
@@ -732,14 +736,18 @@ private struct MeetingCreatedOverlay: View {
         .ignoresSafeArea()
         .transition(.opacity.animation(.easeIn(duration: 0.15)))
         .onAppear {
-            Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
+            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { t in
                 if countdown > 1 {
                     countdown -= 1
                 } else {
-                    timer.invalidate()
+                    t.invalidate()
                     onDismiss()
                 }
             }
+        }
+        .onDisappear {
+            timer?.invalidate()
+            timer = nil
         }
     }
 }
@@ -1676,6 +1684,7 @@ private struct WindowAccessor: NSViewRepresentable {
         let view = NSView()
         DispatchQueue.main.async {
             view.window?.setFrameAutosaveName("CreateMeetingWindow")
+            view.window?.makeKeyAndOrderFront(nil)
         }
         return view
     }
