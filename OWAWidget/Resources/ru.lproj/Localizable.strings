@@ -178,7 +178,7 @@
 
 "window.create.meeting.title" = "Новая встреча";
 "popover.new.meeting" = "Новая встреча";
-"create.meeting.title.label" = "Название встречи";
+"create.meeting.title.label" = "Название";
 "create.meeting.title.placeholder" = "Название встречи";
 "create.meeting.agenda.label" = "Повестка";
 "create.meeting.agenda.placeholder" = "Необязательно — темы и заметки для участников";

@@ -178,7 +178,7 @@
 
 "window.create.meeting.title" = "New Meeting";
 "popover.new.meeting" = "New Meeting";
-"create.meeting.title.label" = "Meeting title";
+"create.meeting.title.label" = "Title";
 "create.meeting.title.placeholder" = "Meeting title";
 "create.meeting.agenda.label" = "Agenda";
 "create.meeting.agenda.placeholder" = "Optional notes for attendees…";

@@ -52,13 +52,13 @@ struct CreateMeetingView: View {
                 // Left column: meeting details + frequent contacts
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 16) {
+                        titleField
+                        timePickersField
                         attendeesField
                         if !vm.suggestedAttendees.isEmpty {
                             frequentContactsGrid
                         }
-                        timePickersField
                         locationField
-                        titleField
                         agendaField
                     }
                     .padding(20)
@@ -102,15 +102,14 @@ struct CreateMeetingView: View {
     // MARK: - Title & agenda
 
     private var titleField: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel(localization.tr("create.meeting.title.label"))
+        formRow(localization.tr("create.meeting.title.label"), alignment: .top) {
             TextField(localization.tr("create.meeting.title.placeholder"), text: $vm.draft.title, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .lineLimit(1...3)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 10)
-                .frame(minHeight: 64, alignment: .topLeading)
+                .frame(minHeight: 36, alignment: .topLeading)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color(nsColor: .controlBackgroundColor))
@@ -123,8 +122,7 @@ struct CreateMeetingView: View {
     }
 
     private var agendaField: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel(localization.tr("create.meeting.agenda.label"))
+        formRow(localization.tr("create.meeting.agenda.label"), alignment: .top) {
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color(nsColor: .controlBackgroundColor))
@@ -148,8 +146,7 @@ struct CreateMeetingView: View {
     @FocusState private var locationFieldFocused: Bool
 
     private var locationField: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel(localization.tr("create.meeting.location.label"))
+        formRow(localization.tr("create.meeting.location.label")) {
             HStack(spacing: 8) {
                 Image(systemName: "link")
                     .font(.system(size: 12))
@@ -217,7 +214,7 @@ struct CreateMeetingView: View {
     // MARK: - Attendees
 
     private var attendeesField: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             attendeeGroup(
                 title: localization.tr("create.meeting.attendees.required"),
                 placeholder: localization.tr("create.meeting.attendees.required.placeholder"),
@@ -238,37 +235,42 @@ struct CreateMeetingView: View {
     }
 
     private func attendeeGroup(title: String, placeholder: String, kind: AttendeeKind, list: [ResolvedAttendee]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel(title)
-            AttendeeSearchField(vm: vm, kind: kind, placeholder: placeholder)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(key: SearchFieldHeightKey.self, value: geo.size.height)
+        VStack(alignment: .leading, spacing: 4) {
+            formRow(title, alignment: .top) {
+                AttendeeSearchField(vm: vm, kind: kind, placeholder: placeholder)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: SearchFieldHeightKey.self, value: geo.size.height)
+                        }
+                    )
+                    .onPreferenceChange(SearchFieldHeightKey.self) { newHeight in
+                        if kind == .required { requiredFieldHeight = newHeight }
+                        else { optionalFieldHeight = newHeight }
                     }
-                )
-                .onPreferenceChange(SearchFieldHeightKey.self) { newHeight in
-                    if kind == .required { requiredFieldHeight = newHeight }
-                    else { optionalFieldHeight = newHeight }
-                }
-                .overlay(alignment: .topLeading) {
-                    if vm.showDropdown(for: kind) {
-                        AttendeeDropdown(vm: vm, kind: kind)
-                            .offset(y: (kind == .required ? requiredFieldHeight : optionalFieldHeight) + 4)
+                    .overlay(alignment: .topLeading) {
+                        if vm.showDropdown(for: kind) {
+                            AttendeeDropdown(vm: vm, kind: kind)
+                                .offset(y: (kind == .required ? requiredFieldHeight : optionalFieldHeight) + 4)
+                        }
                     }
-                }
+            }
             if !list.isEmpty {
-                FlowLayout(spacing: 6) {
-                    ForEach(list) { attendee in
-                        AttendeeChipView(
-                            attendee: attendee,
-                            kind: kind,
-                            toggleHint: localization.tr(kind == .required
-                                ? "create.meeting.attendees.make.optional"
-                                : "create.meeting.attendees.make.required"),
-                            onToggleKind: { vm.toggleAttendeeKind(attendee) },
-                            onRemove: { vm.removeAttendee(attendee) }
-                        )
+                HStack(alignment: .top, spacing: 10) {
+                    Color.clear.frame(width: Self.labelColumnWidth)
+                    FlowLayout(spacing: 6) {
+                        ForEach(list) { attendee in
+                            AttendeeChipView(
+                                attendee: attendee,
+                                kind: kind,
+                                toggleHint: localization.tr(kind == .required
+                                    ? "create.meeting.attendees.make.optional"
+                                    : "create.meeting.attendees.make.required"),
+                                onToggleKind: { vm.toggleAttendeeKind(attendee) },
+                                onRemove: { vm.removeAttendee(attendee) }
+                            )
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.top, 2)
             }
@@ -278,49 +280,32 @@ struct CreateMeetingView: View {
     // MARK: - Time pickers
 
     private var timePickersField: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionLabel(localization.tr("create.meeting.time.label"))
-            VStack(spacing: 6) {
-                timePickerRow(
-                    label: localization.tr("create.meeting.time.start"),
-                    dateBinding: vm.slotStartBinding,
-                    timeBinding: vm.slotStartBinding,
-                    range: nil
-                )
-                timePickerRow(
-                    label: localization.tr("create.meeting.time.end"),
-                    dateBinding: vm.slotEndBinding,
-                    timeBinding: vm.slotEndBinding,
-                    range: vm.slotStartBinding.wrappedValue...
-                )
+        VStack(spacing: 8) {
+            formRow(localization.tr("create.meeting.time.start")) {
+                timePickerControls(dateBinding: vm.slotStartBinding, range: nil)
+            }
+            formRow(localization.tr("create.meeting.time.end")) {
+                timePickerControls(dateBinding: vm.slotEndBinding, range: vm.slotStartBinding.wrappedValue...)
             }
         }
     }
 
-    private func timePickerRow(label: String, dateBinding: Binding<Date>, timeBinding: Binding<Date>, range: PartialRangeFrom<Date>?) -> some View {
+    private func timePickerControls(dateBinding: Binding<Date>, range: PartialRangeFrom<Date>?) -> some View {
         HStack(spacing: 6) {
-            Text(label)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
             if let range {
                 DatePicker("", selection: dateBinding, in: range, displayedComponents: .date)
                     .labelsHidden()
                     .datePickerStyle(.stepperField)
-                    .frame(maxWidth: .infinity)
-                DatePicker("", selection: timeBinding, in: range, displayedComponents: .hourAndMinute)
+                DatePicker("", selection: dateBinding, in: range, displayedComponents: .hourAndMinute)
                     .labelsHidden()
                     .datePickerStyle(.stepperField)
-                    .frame(maxWidth: .infinity)
             } else {
                 DatePicker("", selection: dateBinding, displayedComponents: .date)
                     .labelsHidden()
                     .datePickerStyle(.stepperField)
-                    .frame(maxWidth: .infinity)
-                DatePicker("", selection: timeBinding, displayedComponents: .hourAndMinute)
+                DatePicker("", selection: dateBinding, displayedComponents: .hourAndMinute)
                     .labelsHidden()
                     .datePickerStyle(.stepperField)
-                    .frame(maxWidth: .infinity)
             }
         }
     }
@@ -328,22 +313,29 @@ struct CreateMeetingView: View {
     // MARK: - Frequent contacts grid
 
     private var frequentContactsGrid: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionLabel(localization.tr("create.meeting.recent.label"))
-            LazyVGrid(
-                columns: [GridItem(.flexible()), GridItem(.flexible())],
-                spacing: 4
-            ) {
-                ForEach(vm.suggestedAttendees.prefix(12)) { record in
-                    let isAdded = vm.draft.allAttendees.contains(record.attendee)
-                    FrequentContactCard(attendee: record.attendee, count: record.useCount, isAdded: isAdded) {
-                        if isAdded {
-                            vm.removeAttendee(record.attendee)
-                        } else {
-                            vm.addAttendee(record.attendee)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Color.clear.frame(width: Self.labelColumnWidth)
+                sectionLabel(localization.tr("create.meeting.recent.label"))
+            }
+            HStack(spacing: 10) {
+                Color.clear.frame(width: Self.labelColumnWidth)
+                LazyVGrid(
+                    columns: [GridItem(.flexible()), GridItem(.flexible())],
+                    spacing: 4
+                ) {
+                    ForEach(vm.suggestedAttendees.prefix(12)) { record in
+                        let isAdded = vm.draft.allAttendees.contains(record.attendee)
+                        FrequentContactCard(attendee: record.attendee, count: record.useCount, isAdded: isAdded) {
+                            if isAdded {
+                                vm.removeAttendee(record.attendee)
+                            } else {
+                                vm.addAttendee(record.attendee)
+                            }
                         }
                     }
                 }
+                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -697,6 +689,25 @@ struct CreateMeetingView: View {
             .foregroundStyle(.secondary)
             .textCase(.uppercase)
             .tracking(0.3)
+    }
+
+    private static let labelColumnWidth: CGFloat = 96
+
+    private func formRow<Content: View>(
+        _ label: String,
+        alignment: VerticalAlignment = .firstTextBaseline,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(alignment: alignment, spacing: 10) {
+            Text(label)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+                .frame(width: Self.labelColumnWidth, alignment: .trailing)
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
