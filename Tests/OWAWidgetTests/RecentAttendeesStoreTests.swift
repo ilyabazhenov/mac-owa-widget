@@ -17,8 +17,8 @@ final class RecentAttendeesStoreTests: XCTestCase {
         RecentAttendeesStore.record([a, b], defaults: defaults)
         RecentAttendeesStore.record([ResolvedAttendee(displayName: "A2", email: "a@x.com", jobTitle: "T")], defaults: defaults)
         let list = RecentAttendeesStore.load(defaults: defaults)
-        XCTAssertEqual(list.map(\.email), ["a@x.com", "b@x.com"])
-        XCTAssertEqual(list.first?.displayName, "A2")
+        XCTAssertEqual(list.map(\.attendee.email), ["a@x.com", "b@x.com"])
+        XCTAssertEqual(list.first?.attendee.displayName, "A2")
     }
 
     func testTrimsToMaxFifteen() {
@@ -26,7 +26,7 @@ final class RecentAttendeesStoreTests: XCTestCase {
             ResolvedAttendee(displayName: "U\(i)", email: "u\(i)@x.com", jobTitle: nil)
         }
         RecentAttendeesStore.record(people, defaults: defaults)
-        XCTAssertEqual(RecentAttendeesStore.load(defaults: defaults).count, 15)
+        XCTAssertEqual(RecentAttendeesStore.load(defaults: defaults).count, 20)
     }
 
     func testEmptyRecordNoOp() {

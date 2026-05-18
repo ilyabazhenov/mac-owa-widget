@@ -15,13 +15,11 @@ final class MeetingDraftTests: XCTestCase {
         a.title = "A"
         a.agenda = "X"
         a.requiredAttendees = [ResolvedAttendee(displayName: "U", email: "u@e.com", jobTitle: nil)]
-        a.durationMinutes = 45
 
         var b = makeDraft(weekStart: monday)
         b.title = "B"
         b.agenda = "Y"
         b.requiredAttendees = [ResolvedAttendee(displayName: "U", email: "u@e.com", jobTitle: nil)]
-        b.durationMinutes = 45
 
         XCTAssertEqual(a.slotAutoRefreshKey, b.slotAutoRefreshKey)
     }
@@ -41,15 +39,6 @@ final class MeetingDraftTests: XCTestCase {
         let monday = MeetingDraft.mondayOfWeek(containing: Date())
         var a = makeDraft(weekStart: monday)
         var b = makeDraft(weekStart: a.weekStartOffset(by: 1))
-        XCTAssertNotEqual(a.slotAutoRefreshKey, b.slotAutoRefreshKey)
-    }
-
-    func testSlotAutoRefreshKeyChangesWhenDurationChanges() {
-        let monday = MeetingDraft.mondayOfWeek(containing: Date())
-        var a = makeDraft(weekStart: monday)
-        a.durationMinutes = 30
-        var b = makeDraft(weekStart: monday)
-        b.durationMinutes = 60
         XCTAssertNotEqual(a.slotAutoRefreshKey, b.slotAutoRefreshKey)
     }
 

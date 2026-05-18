@@ -30,6 +30,7 @@ enum RecentAttendeesStore {
         let now = Date()
         for attendee in attendees {
             if let idx = current.firstIndex(where: { $0.attendee == attendee }) {
+                current[idx].attendee = attendee
                 current[idx].useCount += 1
                 current[idx].lastUsed = now
             } else {
