@@ -191,6 +191,9 @@
 "create.meeting.attendees.make.required" = "Make required";
 "create.meeting.range.label" = "Date range";
 "create.meeting.duration.label" = "Duration";
+"create.meeting.time.label" = "Time";
+"create.meeting.time.start" = "Start";
+"create.meeting.time.end" = "End";
 "create.meeting.find.slots" = "Find available slots";
 "create.meeting.refresh.slots" = "Refresh slots";
 "create.meeting.create" = "Create meeting";

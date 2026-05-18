@@ -191,6 +191,9 @@
 "create.meeting.attendees.make.required" = "Сделать обязательным";
 "create.meeting.range.label" = "Диапазон дат";
 "create.meeting.duration.label" = "Длительность";
+"create.meeting.time.label" = "Время";
+"create.meeting.time.start" = "Начало";
+"create.meeting.time.end" = "Конец";
 "create.meeting.find.slots" = "Найти свободные слоты";
 "create.meeting.refresh.slots" = "Обновить слоты";
 "create.meeting.create" = "Создать встречу";

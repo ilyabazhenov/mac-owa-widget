@@ -34,6 +34,11 @@ struct CreateMeetingView: View {
     @State private var requiredFieldHeight: CGFloat = 36
     @State private var optionalFieldHeight: CGFloat = 36
     @State private var slotViewMode: SlotViewMode = .grid
+    @AppStorage("createMeeting.leftColumnWidth") private var leftColumnWidthRaw: Double = 320
+    private var leftColumnWidth: CGFloat { CGFloat(leftColumnWidthRaw) }
+    private var leftColumnWidthBinding: Binding<CGFloat> {
+        Binding(get: { CGFloat(leftColumnWidthRaw) }, set: { leftColumnWidthRaw = Double($0) })
+    }
 
     init(calendarService: CalendarService, accountID: UUID) {
         _vm = StateObject(wrappedValue: CreateMeetingViewModel(
@@ -52,16 +57,16 @@ struct CreateMeetingView: View {
                         if !vm.suggestedAttendees.isEmpty {
                             frequentContactsGrid
                         }
-                        durationField
+                        timePickersField
                         titleField
                         agendaField
                     }
                     .padding(20)
                     Spacer()
                 }
-                .frame(width: 320)
+                .frame(width: leftColumnWidth)
 
-                Divider()
+                ColumnResizeDivider(columnWidth: leftColumnWidthBinding)
 
                 // Right column: slot selection
                 VStack(spacing: 0) {
@@ -199,19 +204,53 @@ struct CreateMeetingView: View {
         }
     }
 
-    // MARK: - Duration
+    // MARK: - Time pickers
 
-    private var durationField: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel(localization.tr("create.meeting.duration.label"))
-            Picker("", selection: $vm.selectedDuration) {
-                ForEach(MeetingDurationOption.allCases, id: \.self) { opt in
-                    Text(localization.tr(opt.localizationKey)).tag(opt)
-                }
+    private var timePickersField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionLabel(localization.tr("create.meeting.time.label"))
+            VStack(spacing: 6) {
+                timePickerRow(
+                    label: localization.tr("create.meeting.time.start"),
+                    dateBinding: vm.slotStartBinding,
+                    timeBinding: vm.slotStartBinding,
+                    range: nil
+                )
+                timePickerRow(
+                    label: localization.tr("create.meeting.time.end"),
+                    dateBinding: vm.slotEndBinding,
+                    timeBinding: vm.slotEndBinding,
+                    range: vm.slotStartBinding.wrappedValue...
+                )
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func timePickerRow(label: String, dateBinding: Binding<Date>, timeBinding: Binding<Date>, range: PartialRangeFrom<Date>?) -> some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let range {
+                DatePicker("", selection: dateBinding, in: range, displayedComponents: .date)
+                    .labelsHidden()
+                    .datePickerStyle(.stepperField)
+                    .frame(maxWidth: .infinity)
+                DatePicker("", selection: timeBinding, in: range, displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+                    .datePickerStyle(.stepperField)
+                    .frame(maxWidth: .infinity)
+            } else {
+                DatePicker("", selection: dateBinding, displayedComponents: .date)
+                    .labelsHidden()
+                    .datePickerStyle(.stepperField)
+                    .frame(maxWidth: .infinity)
+                DatePicker("", selection: timeBinding, displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+                    .datePickerStyle(.stepperField)
+                    .frame(maxWidth: .infinity)
+            }
         }
     }
 
@@ -297,7 +336,8 @@ struct CreateMeetingView: View {
         } else {
             SlotSuggestionsView(
                 suggestions: SlotRanker.topPicks(from: vm.freeSlots),
-                selectedSlotID: $vm.selectedSlotID
+                selectedSlot: vm.selectedSlot,
+                onSelect: { vm.selectSlot(start: $0.start, end: $0.end) }
             )
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
@@ -328,19 +368,6 @@ struct CreateMeetingView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
 
-                if vm.draft.durationMinutes > 30 {
-                    Button {
-                        vm.selectedDuration = .min30
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock")
-                            Text(localization.tr("create.meeting.no.slots.shorter"))
-                        }
-                        .font(.system(size: 11, weight: .medium))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -355,9 +382,8 @@ struct CreateMeetingView: View {
             VStack(spacing: 0) {
                 WeekGridSlotView(
                     cellMatrix: vm.cellMatrix,
-                    selectedSlotID: $vm.selectedSlotID,
-                    forcedSlot: vm.forcedSlot,
-                    onForceSelect: { vm.selectForcedSlot(start: $0) },
+                    selectedSlot: vm.selectedSlot,
+                    onSelectSlot: { vm.selectSlot(start: $0, end: $1) },
                     gridWeekInterval: vm.draft.slotGridWeekInterval()
                 )
                 if vm.slotsSearched && !vm.attendeeAvailabilities.isEmpty {
@@ -370,7 +396,8 @@ struct CreateMeetingView: View {
             ScrollView {
                 SlotListView(
                     slots: vm.freeSlots,
-                    selectedSlotID: $vm.selectedSlotID
+                    selectedSlot: vm.selectedSlot,
+                    onSelect: { vm.selectSlot(start: $0.start, end: $0.end) }
                 )
                 .padding(.bottom, 8)
             }
@@ -734,6 +761,39 @@ private struct AttendeeChipView: View {
     }
 }
 
+// MARK: - Column resize divider
+
+private struct ColumnResizeDivider: View {
+    @Binding var columnWidth: CGFloat
+    @State private var dragStartWidth: CGFloat? = nil
+    private let minWidth: CGFloat = 240
+    private let maxWidth: CGFloat = 520
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(width: 1)
+            Color.clear
+                .frame(width: 8)
+                .contentShape(Rectangle())
+                .onHover { hovered in
+                    if hovered { NSCursor.resizeLeftRight.push() }
+                    else { NSCursor.pop() }
+                }
+                .gesture(
+                    DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                        .onChanged { value in
+                            if dragStartWidth == nil { dragStartWidth = columnWidth }
+                            let proposed = (dragStartWidth ?? columnWidth) + value.translation.width
+                            columnWidth = max(minWidth, min(maxWidth, proposed))
+                        }
+                        .onEnded { _ in dragStartWidth = nil }
+                )
+        }
+    }
+}
+
 // MARK: - Frequent contact card
 
 private struct FrequentContactCard: View {
@@ -743,21 +803,33 @@ private struct FrequentContactCard: View {
     let onTap: () -> Void
     @State private var isHovered = false
 
+    private var nameParts: [String] {
+        attendee.displayName.components(separatedBy: " ").filter { !$0.isEmpty }
+    }
+
     var body: some View {
         HStack(spacing: 6) {
             ZStack(alignment: .bottomTrailing) {
-                InitialsAvatar(name: attendee.displayName, size: 22)
+                InitialsAvatar(name: attendee.displayName, size: 26)
                 if isAdded {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 9))
+                        .font(.system(size: 10))
                         .foregroundStyle(.white, Color.accentColor)
                         .offset(x: 3, y: 3)
                 }
             }
-            Text(attendee.displayName)
-                .font(.system(size: 11))
-                .foregroundStyle(isAdded ? Color.accentColor : Color(nsColor: .labelColor))
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(nameParts.first ?? attendee.displayName)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isAdded ? Color.accentColor : Color(nsColor: .labelColor))
+                    .lineLimit(1)
+                if nameParts.count > 1 {
+                    Text(nameParts.dropFirst().joined(separator: " "))
+                        .font(.system(size: 10))
+                        .foregroundStyle(isAdded ? Color.accentColor.opacity(0.8) : .secondary)
+                        .lineLimit(1)
+                }
+            }
             Spacer(minLength: 0)
             if count > 1 {
                 Text("×\(count)")
@@ -897,14 +969,20 @@ struct WeekGridSlotView: View {
         let cellStart: Date
     }
 
+    private struct DragPreview {
+        let day: Date
+        let startMinute: Int
+        let endMinute: Int
+    }
+
     let cellMatrix: [Date: [Int: CellAvailability]]
-    @Binding var selectedSlotID: UUID?
-    let forcedSlot: FreeSlot?
-    let onForceSelect: (Date) -> Void
+    let selectedSlot: FreeSlot?
+    let onSelectSlot: (Date, Date) -> Void
     let gridWeekInterval: DateInterval
 
     @State private var hoveredInfo: HoveredInfo? = nil
     @State private var mousePosition: CGPoint = .zero
+    @State private var dragPreview: DragPreview? = nil
 
     private static let timeRows: [TimeKey] = Array(stride(from: 540, to: 1080, by: 30))
 
@@ -986,41 +1064,45 @@ struct WeekGridSlotView: View {
                             let cellStart = AppTimeZone.calendar.date(
                                 bySettingHour: timeKey / 60, minute: timeKey % 60, second: 0, of: day
                             ) ?? day
-                            // Forced slot: covers cellStart..cellStart+duration when user picks a busy/tentative cell.
-                            let isForcedSelected: Bool = {
-                                guard let forced = forcedSlot, forced.id == selectedSlotID,
-                                      cell?.freeSlot == nil else { return false }
-                                return cellStart >= forced.start && cellStart < forced.end
+                            // Determine selection range: confirmed slot or active drag preview.
+                            let activeSlot: FreeSlot? = {
+                                if let p = dragPreview, AppTimeZone.calendar.isDate(day, inSameDayAs: p.day) {
+                                    let cal = AppTimeZone.calendar
+                                    guard let s = cal.date(bySettingHour: p.startMinute / 60, minute: p.startMinute % 60, second: 0, of: p.day),
+                                          let e = cal.date(bySettingHour: p.endMinute   / 60, minute: p.endMinute   % 60, second: 0, of: p.day)
+                                    else { return nil }
+                                    return FreeSlot(start: s, end: e)
+                                }
+                                if let slot = selectedSlot, AppTimeZone.calendar.isDate(cellStart, inSameDayAs: slot.start) {
+                                    return slot
+                                }
+                                return nil
                             }()
-                            let forcedPos: FreeSlotPosition? = isForcedSelected ? {
-                                let n = max(1, Int((forcedSlot!.end.timeIntervalSince(forcedSlot!.start) / 1800).rounded()))
+                            let isSelected = activeSlot.map { cellStart >= $0.start && cellStart < $0.end } == true
+                            let slotPos: FreeSlotPosition? = isSelected ? {
+                                guard let r = activeSlot else { return .single }
+                                let n = max(1, Int((r.end.timeIntervalSince(r.start) / 1800).rounded()))
                                 if n == 1 { return .single }
-                                let i = Int((cellStart.timeIntervalSince(forcedSlot!.start) / 1800).rounded())
+                                let i = max(0, Int((cellStart.timeIntervalSince(r.start) / 1800).rounded()))
                                 if i == 0 { return .start }
                                 if i == n - 1 { return .end }
                                 return .middle
                             }() : nil
-                            let effectivePos = forcedPos ?? cell?.slotPosition ?? .single
+                            let effectivePos = slotPos ?? cell?.slotPosition ?? .single
                             let showBottom = effectivePos != .start && effectivePos != .middle
-                            let isSelected = cell?.freeSlot.map { $0.id == selectedSlotID } == true || isForcedSelected
                             let isPast = cellStart.addingTimeInterval(30 * 60) <= Date()
                             AvailabilityCell(
                                 cell: cell,
                                 isSelected: isSelected,
                                 isPast: isPast,
                                 onHoverChange: { hovered in
+                                    guard dragPreview == nil else { return }
                                     let tooltipStart = cell?.freeSlot?.start ?? cellStart
                                     hoveredInfo = hovered ? HoveredInfo(cell: cell!, cellStart: tooltipStart) : nil
                                 },
-                                slotPositionOverride: forcedPos,
-                                displaySlot: cell?.freeSlot ?? (isForcedSelected ? forcedSlot : nil)
-                            ) {
-                                if let slot = cell?.freeSlot {
-                                    selectedSlotID = slot.id
-                                } else if cell != nil {
-                                    onForceSelect(cellStart)
-                                }
-                            }
+                                slotPositionOverride: slotPos,
+                                displaySlot: isSelected ? activeSlot : cell?.freeSlot
+                            )
                             .frame(maxWidth: .infinity, minHeight: MeetingSlotGridMetrics.rowHeight, maxHeight: MeetingSlotGridMetrics.rowHeight)
                             .meetingSlotGridLines(trailing: true, bottom: showBottom, bottomIsMajor: rowEndsOnHour && showBottom)
                         }
@@ -1033,6 +1115,38 @@ struct WeekGridSlotView: View {
                 case .ended: hoveredInfo = nil
                 }
             }
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .onChanged { value in
+                        hoveredInfo = nil
+                        let colCount = CGFloat(columnDays.count)
+                        let colW = (geo.size.width - MeetingSlotGridMetrics.timeColumnWidth) / colCount
+                        let colIdx = max(0, min(Int(colCount) - 1,
+                            Int((value.startLocation.x - MeetingSlotGridMetrics.timeColumnWidth) / colW)))
+                        let rowOf: (CGPoint) -> Int = { pt in
+                            max(0, min(17, Int((pt.y - MeetingSlotGridMetrics.headerHeight - 4) / MeetingSlotGridMetrics.rowHeight)))
+                        }
+                        let startRow = rowOf(value.startLocation)
+                        let endRow   = rowOf(value.location)
+                        let minRow = min(startRow, endRow)
+                        let maxRow = max(startRow, endRow)
+                        dragPreview = DragPreview(
+                            day: columnDays[colIdx],
+                            startMinute: 9 * 60 + minRow * 30,
+                            endMinute:   9 * 60 + (maxRow + 1) * 30
+                        )
+                    }
+                    .onEnded { _ in
+                        if let p = dragPreview {
+                            let cal = AppTimeZone.calendar
+                            if let s = cal.date(bySettingHour: p.startMinute / 60, minute: p.startMinute % 60, second: 0, of: p.day),
+                               let e = cal.date(bySettingHour: p.endMinute   / 60, minute: p.endMinute   % 60, second: 0, of: p.day) {
+                                onSelectSlot(s, e)
+                            }
+                        }
+                        dragPreview = nil
+                    }
+            )
             .overlay(alignment: .top) {
                 Rectangle()
                     .fill(topEdge)
@@ -1061,7 +1175,6 @@ private struct AvailabilityCell: View {
     let onHoverChange: (Bool) -> Void
     let slotPositionOverride: FreeSlotPosition?
     let displaySlot: FreeSlot?
-    let onTap: () -> Void
 
     @State private var isHovered = false
 
@@ -1084,14 +1197,8 @@ private struct AvailabilityCell: View {
         guard let cell else { return nil }
         guard !isSelected else { return nil }
         switch cell.state {
-        case .free(let score):
-            guard cell.freeSlot != nil else { return "Свободно" }
-            switch score {
-            case 0.85...: return "Раннее"
-            case 0.55...: return "Утро"
-            case 0.25...: return "День"
-            default:      return "Вечер"
-            }
+        case .free:
+            return "Свободно"
         case .tentative, .busy, .outOfOffice:
             let blocked = cell.attendeeStatuses.filter { $0.rawChar != "0" }
             guard !blocked.isEmpty else { return nil }
@@ -1102,7 +1209,11 @@ private struct AvailabilityCell: View {
 
     private var labelColor: Color {
         guard let cell else { return .primary }
-        if case .free = cell.state, cell.freeSlot != nil { return .white.opacity(0.9) }
+        if case .free = cell.state {
+            return isPast
+                ? Color(hue: 0.375, saturation: 0.65, brightness: 0.28)
+                : .white.opacity(0.9)
+        }
         return .primary.opacity(0.65)
     }
 
@@ -1110,15 +1221,9 @@ private struct AvailabilityCell: View {
         guard let cell else { return .clear }
         if isSelected { return Color.accentColor }
         switch cell.state {
-        case .free(let score):
-            guard cell.freeSlot != nil else {
-                return Color(hue: 0.375, saturation: 0.22, brightness: 0.96)
-                    .opacity(isHovered ? 0.85 : 0.65)
-            }
-            let sat = 0.55 + score * 0.28
-            let bri = 0.70 + score * 0.10
-            return Color(hue: 0.375, saturation: sat, brightness: bri)
-                .opacity(isHovered ? 1.0 : 0.90)
+        case .free:
+            return Color(hue: 0.375, saturation: 0.60, brightness: 0.78)
+                .opacity(isHovered ? 1.0 : 0.88)
         case .tentative:
             return Color(hue: 0.108, saturation: 0.82, brightness: 1.0)
                 .opacity(isHovered ? 0.65 : 0.42)
@@ -1180,14 +1285,10 @@ private struct AvailabilityCell: View {
         .opacity(isPast ? 0.45 : 1.0)
         .scaleEffect(isSelectable && isHovered && !isSelected ? 0.96 : 1.0)
         .contentShape(Rectangle())
-        .onTapGesture { if isSelectable { onTap() } }
         .onHover { hovered in
             let active = hovered && cell != nil
             isHovered = active
             onHoverChange(active)
-            if isSelectable {
-                if hovered { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-            }
         }
         .animation(.easeInOut(duration: 0.12), value: isSelected)
         .animation(.easeInOut(duration: 0.12), value: isHovered)
@@ -1289,8 +1390,7 @@ private struct AvailabilityLegendView: View {
     }
 
     private static let items: [Item] = [
-        Item(color: Color(hue: 0.375, saturation: 0.75, brightness: 0.76), key: "create.meeting.legend.free"),
-        Item(color: Color(hue: 0.375, saturation: 0.22, brightness: 0.96).opacity(0.75), key: "create.meeting.legend.free_short"),
+        Item(color: Color(hue: 0.375, saturation: 0.60, brightness: 0.78), key: "create.meeting.legend.free"),
         Item(color: Color(hue: 0.108, saturation: 0.82, brightness: 1.0).opacity(0.60), key: "create.meeting.legend.tentative"),
         Item(color: Color(hue: 0.022, saturation: 0.65, brightness: 1.0).opacity(0.50), key: "create.meeting.legend.busy"),
         Item(color: Color(hue: 0.695, saturation: 0.55, brightness: 1.0).opacity(0.50), key: "create.meeting.legend.oof"),

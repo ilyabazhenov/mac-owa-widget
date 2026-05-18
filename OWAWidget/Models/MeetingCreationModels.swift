@@ -81,7 +81,6 @@ struct MeetingDraft: Sendable {
     var agenda: String = ""
     var requiredAttendees: [ResolvedAttendee] = []
     var optionalAttendees: [ResolvedAttendee] = []
-    var durationMinutes: Int = 30
     /// Понедельник (startOfDay) выбранной недели. Поиск слотов идёт по Mon–Fri этой недели.
     var selectedWeekStart: Date = MeetingDraft.mondayOfWeek(containing: Date())
 
@@ -100,7 +99,7 @@ struct MeetingDraft: Sendable {
     /// to avoid useless re-fetches when only optional participants change.
     var slotAutoRefreshKey: String {
         requiredAttendees.map(\.email).sorted().joined(separator: "\u{1e}")
-            + "|\(Int(selectedWeekStart.timeIntervalSince1970))|\(durationMinutes)"
+            + "|\(Int(selectedWeekStart.timeIntervalSince1970))"
     }
 
     /// Поиск слотов: Mon 00:00 → Fri 18:00 выбранной недели. Для **текущей** недели
@@ -157,21 +156,6 @@ struct MeetingDraft: Sendable {
     }
 }
 
-enum MeetingDurationOption: Int, CaseIterable, Sendable {
-    case min15 = 15
-    case min30 = 30
-    case min45 = 45
-    case min60 = 60
-
-    var localizationKey: String {
-        switch self {
-        case .min15: return "meeting.duration.15min"
-        case .min30: return "meeting.duration.30min"
-        case .min45: return "meeting.duration.45min"
-        case .min60: return "meeting.duration.60min"
-        }
-    }
-}
 
 extension DateInterval {
     /// Each Monday–Friday `startOfDay` in `cal` that lies in `[start, end)` (half-open by `end`).

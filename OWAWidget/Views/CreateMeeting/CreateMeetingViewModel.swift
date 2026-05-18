@@ -20,9 +20,7 @@ final class CreateMeetingViewModel: ObservableObject {
 
     @Published var freeSlots: [FreeSlot] = []
     @Published var attendeeAvailabilities: [AttendeeAvailability] = []
-    @Published var selectedSlotID: UUID? = nil
-    /// Слот, выбранный вручную на занятом/tentative времени (не из списка свободных).
-    @Published var forcedSlot: FreeSlot? = nil
+    @Published var selectedSlot: FreeSlot? = nil
     @Published var isLoadingSlots = false
     @Published var isCreating = false
     @Published var errorMessage: String? = nil
@@ -43,17 +41,6 @@ final class CreateMeetingViewModel: ObservableObject {
     /// Only the focused field's dropdown is shown — typing in one field never overlays the other.
     func showDropdown(for kind: AttendeeKind) -> Bool {
         focusedSearchKind == kind && !results(for: kind).isEmpty
-    }
-
-    var selectedDuration: MeetingDurationOption {
-        get { MeetingDurationOption(rawValue: draft.durationMinutes) ?? .min30 }
-        set {
-            let newVal = newValue.rawValue
-            guard draft.durationMinutes != newVal else { return }
-            var d = draft
-            d.durationMinutes = newVal
-            draft = d
-        }
     }
 
     /// Шаг навигации между неделями (positive = вперёд, negative = назад).
@@ -251,8 +238,7 @@ final class CreateMeetingViewModel: ObservableObject {
             isLoadingSlots = false
             freeSlots = []
             attendeeAvailabilities = []
-            selectedSlotID = nil
-            forcedSlot = nil
+            selectedSlot = nil
             slotsSearched = false
             errorMessage = nil
             return
@@ -262,15 +248,13 @@ final class CreateMeetingViewModel: ObservableObject {
         errorMessage = nil
         freeSlots = []
         attendeeAvailabilities = []
-        selectedSlotID = nil
-        forcedSlot = nil
+        selectedSlot = nil
         slotsSearched = false
 
         let requiredEmails = draft.requiredAttendees.map(\.email)
         let optionalEmails = draft.optionalAttendees.map(\.email)
         let range = draft.dateInterval()
         let displayRange = draft.slotGridWeekInterval()
-        let duration = draft.durationMinutes
 
         do {
             let result = try await calendarService.findFreeSlots(
@@ -278,13 +262,12 @@ final class CreateMeetingViewModel: ObservableObject {
                 optionalEmails: optionalEmails,
                 range: range,
                 displayRange: displayRange,
-                durationMinutes: duration,
+                durationMinutes: 30,
                 accountID: accountID
             )
             guard gen == findSlotsGeneration else { return }
             freeSlots = result.slots
             attendeeAvailabilities = result.attendeeAvailability
-            selectedSlotID = result.slots.first?.id
             slotsSearched = true
         } catch {
             guard gen == findSlotsGeneration else { return }
@@ -300,20 +283,47 @@ final class CreateMeetingViewModel: ObservableObject {
 
     // MARK: - Create
 
-    func selectForcedSlot(start: Date) {
-        guard start.addingTimeInterval(30 * 60) > Date() else { return }
-        let end = start.addingTimeInterval(Double(draft.durationMinutes) * 60)
-        let slot = FreeSlot(start: start, end: end, score: 0)
-        forcedSlot = slot
-        selectedSlotID = slot.id
+    func selectSlot(start: Date, end: Date) {
+        guard end > Date() else { return }
+        selectedSlot = FreeSlot(start: start, end: end, score: 0)
     }
 
-    private var effectiveSelectedSlot: FreeSlot? {
-        guard let slotID = selectedSlotID else { return nil }
-        if let slot = freeSlots.first(where: { $0.id == slotID }) { return slot }
-        if let forced = forcedSlot, forced.id == slotID { return forced }
-        return nil
+    // MARK: - Time picker bindings
+
+    private func nextRoundedSlotStart() -> Date {
+        let now = Date()
+        let cal = AppTimeZone.calendar
+        let minute = cal.component(.minute, from: now)
+        let addMinutes = minute < 30 ? (30 - minute) : (60 - minute)
+        return cal.date(byAdding: .minute, value: addMinutes, to: now) ?? now
     }
+
+    var slotStartBinding: Binding<Date> {
+        Binding(
+            get: { self.selectedSlot?.start ?? self.nextRoundedSlotStart() },
+            set: { newStart in
+                let duration = self.selectedSlot.map { $0.end.timeIntervalSince($0.start) } ?? 1800
+                let newEnd = newStart.addingTimeInterval(max(1800, duration))
+                self.selectedSlot = FreeSlot(start: newStart, end: newEnd, score: 0)
+                var d = self.draft
+                d.selectedWeekStart = MeetingDraft.mondayOfWeek(containing: newStart)
+                self.draft = d
+            }
+        )
+    }
+
+    var slotEndBinding: Binding<Date> {
+        Binding(
+            get: { self.selectedSlot?.end ?? self.nextRoundedSlotStart().addingTimeInterval(1800) },
+            set: { newEnd in
+                let start = self.selectedSlot?.start ?? self.nextRoundedSlotStart()
+                guard newEnd > start else { return }
+                self.selectedSlot = FreeSlot(start: start, end: newEnd, score: 0)
+            }
+        )
+    }
+
+    private var effectiveSelectedSlot: FreeSlot? { selectedSlot }
 
     func createMeeting() async {
         guard let slot = effectiveSelectedSlot,
@@ -341,7 +351,7 @@ final class CreateMeetingViewModel: ObservableObject {
 
     var canCreate: Bool {
         !draft.title.trimmingCharacters(in: .whitespaces).isEmpty &&
-        selectedSlotID != nil &&
+        selectedSlot != nil &&
         !isCreating
     }
 

@@ -25,7 +25,8 @@ enum SlotRanker {
 struct SlotSuggestionsView: View {
     @EnvironmentObject private var localization: LocalizationService
     let suggestions: [FreeSlot]
-    @Binding var selectedSlotID: UUID?
+    let selectedSlot: FreeSlot?
+    let onSelect: (FreeSlot) -> Void
 
     private static let dayFmt: DateFormatter = {
         let f = DateFormatter()
@@ -66,13 +67,13 @@ struct SlotSuggestionsView: View {
     }
 
     private func suggestionRow(_ slot: FreeSlot) -> some View {
-        let isSelected = slot.id == selectedSlotID
+        let isSelected = slot.id == selectedSlot?.id
         let day = Self.dayFmt.string(from: slot.start).capitalized
         let timeRange = "\(Self.timeFmt.string(from: slot.start)) – \(Self.timeFmt.string(from: slot.end))"
         let reason = localization.tr(SlotRanker.reasonKey(for: slot))
 
         return Button {
-            selectedSlotID = slot.id
+            onSelect(slot)
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")

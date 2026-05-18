@@ -2,7 +2,8 @@ import SwiftUI
 
 struct SlotListView: View {
     let slots: [FreeSlot]
-    @Binding var selectedSlotID: UUID?
+    let selectedSlot: FreeSlot?
+    let onSelect: (FreeSlot) -> Void
 
     private static let dayHeaderFmt: DateFormatter = {
         let f = DateFormatter()
@@ -53,11 +54,11 @@ struct SlotListView: View {
     }
 
     private func slotRow(_ slot: FreeSlot) -> some View {
-        let isSelected = slot.id == selectedSlotID
+        let isSelected = slot.id == selectedSlot?.id
         let timeRange = "\(Self.timeFmt.string(from: slot.start)) – \(Self.timeFmt.string(from: slot.end))"
 
         return Button {
-            selectedSlotID = slot.id
+            onSelect(slot)
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
