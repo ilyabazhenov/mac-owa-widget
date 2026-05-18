@@ -295,17 +295,21 @@ struct CreateMeetingView: View {
             if let range {
                 DatePicker("", selection: dateBinding, in: range, displayedComponents: .date)
                     .labelsHidden()
-                    .datePickerStyle(.stepperField)
+                    .datePickerStyle(.compact)
+                    .frame(minWidth: 116)
                 DatePicker("", selection: dateBinding, in: range, displayedComponents: .hourAndMinute)
                     .labelsHidden()
-                    .datePickerStyle(.stepperField)
+                    .datePickerStyle(.compact)
+                    .frame(minWidth: 70)
             } else {
                 DatePicker("", selection: dateBinding, displayedComponents: .date)
                     .labelsHidden()
-                    .datePickerStyle(.stepperField)
+                    .datePickerStyle(.compact)
+                    .frame(minWidth: 116)
                 DatePicker("", selection: dateBinding, displayedComponents: .hourAndMinute)
                     .labelsHidden()
-                    .datePickerStyle(.stepperField)
+                    .datePickerStyle(.compact)
+                    .frame(minWidth: 70)
             }
         }
     }
@@ -1105,10 +1109,11 @@ private struct FrequentContactCard: View {
 /// One grid row = one 30-minute free-busy step (matches `MeetingFreeSlotCalculator` interval).
 private enum MeetingSlotGridMetrics {
     static let rowHeight: CGFloat = 24
+    static let verticalSpacing: CGFloat = 2
     static let timeColumnWidth: CGFloat = 44
     static let headerHeight: CGFloat = 28
-    /// Высота WeekGridSlotView: шапка + 18 строк + 18 промежутков verticalSpacing:2 + padding(.vertical, 4) × 2.
-    static var gridHeight: CGFloat { headerHeight + rowHeight * 18 + 18 * 2 + 8 }
+    /// Высота WeekGridSlotView: шапка + 18 строк + 18 промежутков verticalSpacing + padding(.vertical, 4) × 2.
+    static var gridHeight: CGFloat { headerHeight + rowHeight * 18 + 18 * verticalSpacing + 8 }
     /// Полная высота блока: грид + легенда занятости (24pt).
     static var totalHeight: CGFloat { gridHeight + 24 }
 }
@@ -1275,7 +1280,7 @@ struct WeekGridSlotView: View {
         let columnDays = days
         let topEdge = Color(nsColor: .separatorColor).opacity(0.62)
         GeometryReader { geo in
-            Grid(horizontalSpacing: 0, verticalSpacing: 2) {
+            Grid(horizontalSpacing: 0, verticalSpacing: MeetingSlotGridMetrics.verticalSpacing) {
                 GridRow {
                     Color.clear
                         .frame(minWidth: MeetingSlotGridMetrics.timeColumnWidth, maxWidth: MeetingSlotGridMetrics.timeColumnWidth, minHeight: 28)
@@ -1362,7 +1367,7 @@ struct WeekGridSlotView: View {
                         let colIdx = max(0, min(Int(colCount) - 1,
                             Int((value.startLocation.x - MeetingSlotGridMetrics.timeColumnWidth) / colW)))
                         let rowOf: (CGPoint) -> Int = { pt in
-                            max(0, min(17, Int((pt.y - MeetingSlotGridMetrics.headerHeight - 4) / MeetingSlotGridMetrics.rowHeight)))
+                            max(0, min(17, Int((pt.y - MeetingSlotGridMetrics.headerHeight - 4) / (MeetingSlotGridMetrics.rowHeight + MeetingSlotGridMetrics.verticalSpacing))))
                         }
                         let startRow = rowOf(value.startLocation)
                         let endRow   = rowOf(value.location)
@@ -1401,7 +1406,7 @@ struct WeekGridSlotView: View {
                 }
             }
         }
-        .frame(height: MeetingSlotGridMetrics.headerHeight + MeetingSlotGridMetrics.rowHeight * 18 + 18 * 2)
+        .frame(height: MeetingSlotGridMetrics.headerHeight + MeetingSlotGridMetrics.rowHeight * 18 + 18 * MeetingSlotGridMetrics.verticalSpacing)
         .padding(.vertical, 4)
     }
 }
