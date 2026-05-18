@@ -13,6 +13,7 @@ APP_BUNDLE_ID ?= $(APP_BUNDLE_ID_BASE)
 VERSION_FILE := VERSION
 RELEASE_NOTES_FILE := RELEASE_NOTES.md
 DIST_DIR := dist
+WATCH_DEBOUNCE ?= 2
 
 # Sparkle artifacts produced by `swift package resolve` for the SPM binaryTarget.
 SPARKLE_ARTIFACTS_DIR := .build/artifacts/sparkle/Sparkle
@@ -110,7 +111,8 @@ watch: run
 	        -e ".*\.o$$" \
 	        -e ".*\.d$$" \
 	        -e ".*\.swp$$" \
-	        $(SRC_DIR)/ | while read -r _; do \
+	        $(SRC_DIR)/ | while IFS= read -r _; do \
+	    while IFS= read -r -t $(WATCH_DEBOUNCE) _; do :; done; \
 	    echo "\n──── change detected → rebuilding ────"; \
 	    if $(MAKE) --no-print-directory run APP_BUNDLE_ID="$(APP_BUNDLE_ID_DEV)"; then \
 	        echo "✓ Rebuild succeeded. Watching for next change..."; \
