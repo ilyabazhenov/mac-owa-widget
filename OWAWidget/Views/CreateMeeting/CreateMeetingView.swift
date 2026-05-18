@@ -1409,6 +1409,7 @@ private struct AvailabilityCell: View {
     let displaySlot: FreeSlot?
 
     @State private var isHovered = false
+    @Environment(\.colorScheme) private var colorScheme
 
     private var isSelectable: Bool { cell != nil && !isPast }
 
@@ -1442,9 +1443,14 @@ private struct AvailabilityCell: View {
     private var labelColor: Color {
         guard let cell else { return .primary }
         if case .free = cell.state {
-            return isPast
-                ? Color(hue: 0.375, saturation: 0.65, brightness: 0.28)
-                : .white.opacity(0.9)
+            if isPast {
+                return colorScheme == .dark
+                    ? Color(hue: 0.385, saturation: 0.55, brightness: 0.30)
+                    : Color(hue: 0.385, saturation: 0.60, brightness: 0.38)
+            }
+            return colorScheme == .dark
+                ? .white.opacity(0.88)
+                : Color(hue: 0.385, saturation: 0.70, brightness: 0.35).opacity(0.85)
         }
         return .primary.opacity(0.65)
     }
@@ -1452,19 +1458,38 @@ private struct AvailabilityCell: View {
     private var bg: Color {
         guard let cell else { return .clear }
         if isSelected { return Color.accentColor }
-        switch cell.state {
-        case .free:
-            return Color(hue: 0.375, saturation: 0.60, brightness: 0.78)
-                .opacity(isHovered ? 1.0 : 0.88)
-        case .tentative:
-            return Color(hue: 0.108, saturation: 0.82, brightness: 1.0)
-                .opacity(isHovered ? 0.65 : 0.42)
-        case .busy:
-            return Color(hue: 0.022, saturation: 0.65, brightness: 1.0)
-                .opacity(isHovered ? 0.55 : 0.35)
-        case .outOfOffice:
-            return Color(hue: 0.695, saturation: 0.55, brightness: 1.0)
-                .opacity(isHovered ? 0.55 : 0.35)
+        if colorScheme == .dark {
+            // Насыщенные jewel-тона под тёмный фон
+            switch cell.state {
+            case .free:
+                return Color(hue: 0.420, saturation: 0.60, brightness: 0.78)
+                    .opacity(isHovered ? 1.00 : 0.90)
+            case .tentative:
+                return Color(hue: 0.117, saturation: 0.75, brightness: 0.88)
+                    .opacity(isHovered ? 0.95 : 0.85)
+            case .busy:
+                return Color(hue: 0.970, saturation: 0.72, brightness: 0.65)
+                    .opacity(isHovered ? 0.95 : 0.88)
+            case .outOfOffice:
+                return Color(hue: 0.700, saturation: 0.65, brightness: 0.76)
+                    .opacity(isHovered ? 0.92 : 0.80)
+            }
+        } else {
+            // Настоящие пастели под светлый фон
+            switch cell.state {
+            case .free:
+                return Color(hue: 0.385, saturation: 0.32, brightness: 0.88)
+                    .opacity(isHovered ? 1.00 : 0.90)
+            case .tentative:
+                return Color(hue: 0.075, saturation: 0.40, brightness: 0.97)
+                    .opacity(isHovered ? 1.00 : 0.90)
+            case .busy:
+                return Color(hue: 0.975, saturation: 0.35, brightness: 0.90)
+                    .opacity(isHovered ? 1.00 : 0.90)
+            case .outOfOffice:
+                return Color(hue: 0.700, saturation: 0.28, brightness: 0.90)
+                    .opacity(isHovered ? 1.00 : 0.90)
+            }
         }
     }
 
@@ -1514,7 +1539,7 @@ private struct AvailabilityCell: View {
         .padding(.horizontal, 2)
         .frame(maxWidth: .infinity)
         .frame(height: MeetingSlotGridMetrics.rowHeight)
-        .opacity(isPast ? 0.45 : 1.0)
+        .opacity(isPast ? 0.55 : 1.0)
         .scaleEffect(isSelectable && isHovered && !isSelected ? 0.96 : 1.0)
         .contentShape(Rectangle())
         .onHover { hovered in
@@ -1547,10 +1572,10 @@ private struct CellTooltipView: View {
 
     private func statusColor(for ch: Character) -> Color {
         switch ch {
-        case "0": return Color(hue: 0.375, saturation: 0.72, brightness: 0.65)
-        case "1": return Color(hue: 0.108, saturation: 0.80, brightness: 0.75)
-        case "2": return Color(hue: 0.022, saturation: 0.60, brightness: 0.72)
-        case "3": return Color(hue: 0.695, saturation: 0.52, brightness: 0.65)
+        case "0": return Color(hue: 0.420, saturation: 0.72, brightness: 0.65)
+        case "1": return Color(hue: 0.125, saturation: 0.72, brightness: 0.70)
+        case "2": return Color(hue: 0.970, saturation: 0.68, brightness: 0.58)
+        case "3": return Color(hue: 0.700, saturation: 0.60, brightness: 0.68)
         default:  return Color.secondary
         }
     }
@@ -1631,10 +1656,10 @@ private struct AvailabilityLegendView: View {
     }
 
     private static let items: [Item] = [
-        Item(color: Color(hue: 0.375, saturation: 0.60, brightness: 0.78), key: "create.meeting.legend.free"),
-        Item(color: Color(hue: 0.108, saturation: 0.82, brightness: 1.0).opacity(0.60), key: "create.meeting.legend.tentative"),
-        Item(color: Color(hue: 0.022, saturation: 0.65, brightness: 1.0).opacity(0.50), key: "create.meeting.legend.busy"),
-        Item(color: Color(hue: 0.695, saturation: 0.55, brightness: 1.0).opacity(0.50), key: "create.meeting.legend.oof"),
+        Item(color: Color(hue: 0.385, saturation: 0.42, brightness: 0.78), key: "create.meeting.legend.free"),
+        Item(color: Color(hue: 0.075, saturation: 0.48, brightness: 0.90), key: "create.meeting.legend.tentative"),
+        Item(color: Color(hue: 0.975, saturation: 0.42, brightness: 0.80), key: "create.meeting.legend.busy"),
+        Item(color: Color(hue: 0.700, saturation: 0.35, brightness: 0.80), key: "create.meeting.legend.oof"),
     ]
 
     var body: some View {
