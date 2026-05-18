@@ -312,6 +312,8 @@ struct CreateMeetingView: View {
                     .frame(minWidth: 70)
             }
         }
+        .environment(\.calendar, AppTimeZone.calendar)
+        .environment(\.timeZone, AppTimeZone.zone)
     }
 
     // MARK: - Frequent contacts grid
@@ -1203,6 +1205,14 @@ private extension View {
 }
 
 
+private struct FirstDataRowOriginYKey: PreferenceKey {
+    static let defaultValue: CGFloat = -1
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let n = nextValue()
+        if n >= 0 { value = n }
+    }
+}
+
 struct WeekGridSlotView: View {
     private typealias TimeKey = Int
     private typealias DayKey = Date
@@ -1226,6 +1236,7 @@ struct WeekGridSlotView: View {
     @State private var hoveredInfo: HoveredInfo? = nil
     @State private var mousePosition: CGPoint = .zero
     @State private var dragPreview: DragPreview? = nil
+    @State private var firstDataRowOriginY: CGFloat = 32
 
     private static let timeRows: [TimeKey] = Array(stride(from: 540, to: 1080, by: 30))
 
@@ -1239,6 +1250,13 @@ struct WeekGridSlotView: View {
     private static let dayNumFmt: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "d"
+        f.timeZone = AppTimeZone.zone
+        return f
+    }()
+
+    private static let selFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
         f.timeZone = AppTimeZone.zone
         return f
     }()
@@ -1302,6 +1320,16 @@ struct WeekGridSlotView: View {
                             .frame(width: MeetingSlotGridMetrics.timeColumnWidth, height: MeetingSlotGridMetrics.rowHeight)
                             .gridColumnAlignment(.trailing)
                             .meetingSlotGridLines(leading: true, trailing: true, bottom: true, bottomIsMajor: rowEndsOnHour)
+                            .background {
+                                if timeKey == 540 {
+                                    GeometryReader { cellGeo in
+                                        Color.clear.preference(
+                                            key: FirstDataRowOriginYKey.self,
+                                            value: cellGeo.frame(in: .named("weekGrid")).minY
+                                        )
+                                    }
+                                }
+                            }
                         ForEach(columnDays, id: \.self) { day in
                             let cell = cellMatrix[day]?[timeKey]
                             let cellStart = AppTimeZone.calendar.date(
@@ -1352,6 +1380,8 @@ struct WeekGridSlotView: View {
                     }
                 }
             }
+            .coordinateSpace(name: "weekGrid")
+            .onPreferenceChange(FirstDataRowOriginYKey.self) { firstDataRowOriginY = $0 }
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let point): mousePosition = point
@@ -1395,6 +1425,53 @@ struct WeekGridSlotView: View {
                     .fill(topEdge)
                     .frame(height: 1)
                     .allowsHitTesting(false)
+            }
+            .overlay(alignment: .topLeading) {
+                let colCount = CGFloat(columnDays.count)
+                let colW = (geo.size.width - MeetingSlotGridMetrics.timeColumnWidth) / colCount
+                let overlayData: (colIdx: Int, startMin: Int, endMin: Int, confirmedSlot: FreeSlot?)? = {
+                    if let p = dragPreview,
+                       let idx = columnDays.firstIndex(where: { AppTimeZone.calendar.isDate($0, inSameDayAs: p.day) }) {
+                        return (idx, p.startMinute, p.endMinute, nil)
+                    }
+                    if let slot = selectedSlot,
+                       let idx = columnDays.firstIndex(where: { AppTimeZone.calendar.isDate($0, inSameDayAs: slot.start) }) {
+                        let cal = AppTimeZone.calendar
+                        let sc = cal.dateComponents([.hour, .minute], from: slot.start)
+                        let ec = cal.dateComponents([.hour, .minute], from: slot.end)
+                        let sm = (sc.hour ?? 0) * 60 + (sc.minute ?? 0)
+                        let em = (ec.hour ?? 0) * 60 + (ec.minute ?? 0)
+                        return (idx, sm, em, slot)
+                    }
+                    return nil
+                }()
+                if let od = overlayData {
+                    let startRow = (od.startMin - 540) / 30
+                    let nRows    = max(1, (od.endMin - od.startMin) / 30)
+                    let rH = MeetingSlotGridMetrics.rowHeight
+                    let vS = MeetingSlotGridMetrics.verticalSpacing
+                    let topY   = firstDataRowOriginY
+                               + CGFloat(startRow) * (rH + vS)
+                    let height = CGFloat(nRows) * rH + CGFloat(nRows - 1) * vS
+                    let x      = MeetingSlotGridMetrics.timeColumnWidth + CGFloat(od.colIdx) * colW + 2
+                    let width  = colW - 4
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Color.accentColor)
+                        if let slot = od.confirmedSlot {
+                            Text("Выбрано: \(WeekGridSlotView.selFmt.string(from: slot.start)) – \(WeekGridSlotView.selFmt.string(from: slot.end))")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 4)
+                        }
+                    }
+                    .frame(width: width, height: height)
+                    .offset(x: x, y: topY)
+                    .allowsHitTesting(false)
+                    .animation(.easeInOut(duration: 0.12), value: od.startMin)
+                    .animation(.easeInOut(duration: 0.12), value: od.endMin)
+                }
             }
             .overlay(alignment: .topLeading) {
                 if let info = hoveredInfo {
@@ -1468,7 +1545,7 @@ private struct AvailabilityCell: View {
 
     private var bg: Color {
         guard let cell else { return .clear }
-        if isSelected { return Color.accentColor }
+        // selected cells show through from overlay; no separate fill here
         if colorScheme == .dark {
             // Насыщенные jewel-тона под тёмный фон
             switch cell.state {
@@ -1524,18 +1601,7 @@ private struct AvailabilityCell: View {
                     Spacer(minLength: 0)
                 }
             }
-            if isSelected && (slotPosition == .single || slotPosition == .start) {
-                if let slot = displaySlot {
-                    Text("Выбрано: \(Self.timeFmt.string(from: slot.start)) – \(Self.timeFmt.string(from: slot.end))")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                } else {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-            }
+            // "Выбрано" label is rendered by WeekGridSlotView overlay instead
         }
         .padding(.horizontal, 2)
         .frame(maxWidth: .infinity)
