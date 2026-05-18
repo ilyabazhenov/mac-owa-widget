@@ -9,21 +9,19 @@ private struct SearchFieldHeightKey: PreferenceKey {
 }
 
 enum SlotViewMode: String, CaseIterable {
-    case grid, list, heatmap
+    case grid, list
 
     var iconName: String {
         switch self {
-        case .grid:    return "square.grid.3x2"
-        case .list:    return "list.bullet"
-        case .heatmap: return "thermometer.medium"
+        case .grid: return "square.grid.3x2"
+        case .list: return "list.bullet"
         }
     }
 
     var localizationKey: String {
         switch self {
-        case .grid:    return "create.meeting.view.grid"
-        case .list:    return "create.meeting.view.list"
-        case .heatmap: return "create.meeting.view.heatmap"
+        case .grid: return "create.meeting.view.grid"
+        case .list: return "create.meeting.view.list"
         }
     }
 }
@@ -451,7 +449,7 @@ struct CreateMeetingView: View {
     @ViewBuilder
     private var slotViewContainer: some View {
         switch slotViewMode {
-        case .grid, .heatmap:
+        case .grid:
             VStack(spacing: 0) {
                 WeekGridSlotView(
                     cellMatrix: vm.cellMatrix,
@@ -1185,12 +1183,6 @@ private extension View {
     }
 }
 
-enum SlotCellColoring {
-    /// Бинарная окраска: accent для свободных, без градации.
-    case accent
-    /// Градиент по `FreeSlot.score`: чем выше score (раньше в дне) — тем насыщеннее.
-    case heatmap
-}
 
 struct WeekGridSlotView: View {
     private typealias TimeKey = Int
@@ -1269,7 +1261,7 @@ struct WeekGridSlotView: View {
         let columnDays = days
         let topEdge = Color(nsColor: .separatorColor).opacity(0.62)
         GeometryReader { geo in
-            Grid(horizontalSpacing: 0, verticalSpacing: 0) {
+            Grid(horizontalSpacing: 0, verticalSpacing: 2) {
                 GridRow {
                     Color.clear
                         .frame(minWidth: MeetingSlotGridMetrics.timeColumnWidth, maxWidth: MeetingSlotGridMetrics.timeColumnWidth, minHeight: 28)
@@ -1497,17 +1489,7 @@ private struct AvailabilityCell: View {
 
     @ViewBuilder
     private var cellShape: some View {
-        let r: CGFloat = 5
-        switch slotPosition {
-        case .single:
-            RoundedRectangle(cornerRadius: r).fill(bg)
-        case .start:
-            UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: r).fill(bg)
-        case .middle:
-            Rectangle().fill(bg)
-        case .end:
-            UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: r, bottomTrailingRadius: r, topTrailingRadius: 0).fill(bg)
-        }
+        RoundedRectangle(cornerRadius: 5).fill(bg)
     }
 
     var body: some View {
@@ -1540,7 +1522,8 @@ private struct AvailabilityCell: View {
         .frame(maxWidth: .infinity)
         .frame(height: MeetingSlotGridMetrics.rowHeight)
         .opacity(isPast ? 0.55 : 1.0)
-        .scaleEffect(isSelectable && isHovered && !isSelected ? 0.96 : 1.0)
+        .scaleEffect(isSelectable && isHovered && !isSelected ? 1.04 : 1.0)
+        .zIndex(isHovered ? 1 : 0)
         .contentShape(Rectangle())
         .onHover { hovered in
             let active = hovered && cell != nil
