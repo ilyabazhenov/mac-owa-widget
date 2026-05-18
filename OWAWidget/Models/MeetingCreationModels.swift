@@ -79,6 +79,7 @@ enum AttendeeKind: Sendable, Hashable {
 struct MeetingDraft: Sendable {
     var title: String = ""
     var agenda: String = ""
+    var location: String = ""
     var requiredAttendees: [ResolvedAttendee] = []
     var optionalAttendees: [ResolvedAttendee] = []
     /// Понедельник (startOfDay) выбранной недели. Поиск слотов идёт по Mon–Fri этой недели.

@@ -194,6 +194,8 @@
 "create.meeting.time.label" = "Время";
 "create.meeting.time.start" = "Начало";
 "create.meeting.time.end" = "Конец";
+"create.meeting.location.label" = "Расположение";
+"create.meeting.location.placeholder" = "Ссылка на комнату (необязательно)";
 "create.meeting.find.slots" = "Найти свободные слоты";
 "create.meeting.refresh.slots" = "Обновить слоты";
 "create.meeting.create" = "Создать встречу";

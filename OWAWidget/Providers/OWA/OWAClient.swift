@@ -842,6 +842,7 @@ actor OWAClient {
     func createCalendarEvent(
         title: String,
         agenda: String,
+        location: String = "",
         start: Date,
         end: Date,
         requiredAttendees: [ResolvedAttendee],
@@ -890,6 +891,7 @@ actor OWAClient {
                 <t:CalendarItem>
                   <t:Subject>\(escapeXML(title))</t:Subject>
                   \(bodyXML)
+                  \(location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "<t:Location>\(escapeXML(location.trimmingCharacters(in: .whitespacesAndNewlines)))</t:Location>")
                   <t:Start>\(fmt.string(from: start))</t:Start>
                   <t:End>\(fmt.string(from: end))</t:End>
                   <t:IsReminderSet>true</t:IsReminderSet>
@@ -926,6 +928,7 @@ actor OWAClient {
             try await createCalendarEvent(
                 title: title,
                 agenda: agenda,
+                location: location,
                 start: start,
                 end: end,
                 requiredAttendees: requiredAttendees,

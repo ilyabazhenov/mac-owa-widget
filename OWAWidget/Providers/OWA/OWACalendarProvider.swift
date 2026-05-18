@@ -57,6 +57,7 @@ actor OWACalendarProvider: CalendarProvider {
     func createMeeting(
         title: String,
         agenda: String,
+        location: String,
         start: Date,
         end: Date,
         requiredAttendees: [ResolvedAttendee],
@@ -66,6 +67,7 @@ actor OWACalendarProvider: CalendarProvider {
         try await client.createCalendarEvent(
             title: title,
             agenda: agenda,
+            location: location,
             start: start,
             end: end,
             requiredAttendees: requiredAttendees,

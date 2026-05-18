@@ -307,6 +307,7 @@ final class CalendarService: ObservableObject {
     func createMeeting(
         title: String,
         agenda: String,
+        location: String = "",
         slot: FreeSlot,
         requiredAttendees: [ResolvedAttendee],
         optionalAttendees: [ResolvedAttendee] = [],
@@ -316,6 +317,7 @@ final class CalendarService: ObservableObject {
         try await provider.createMeeting(
             title: title,
             agenda: agenda,
+            location: location,
             start: slot.start,
             end: slot.end,
             requiredAttendees: requiredAttendees,

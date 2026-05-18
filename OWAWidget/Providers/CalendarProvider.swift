@@ -13,6 +13,7 @@ protocol CalendarProvider: Actor {
     func createMeeting(
         title: String,
         agenda: String,
+        location: String,
         start: Date,
         end: Date,
         requiredAttendees: [ResolvedAttendee],
@@ -40,6 +41,7 @@ extension CalendarProvider {
     func createMeeting(
         title: String,
         agenda: String,
+        location: String,
         start: Date,
         end: Date,
         requiredAttendees: [ResolvedAttendee],

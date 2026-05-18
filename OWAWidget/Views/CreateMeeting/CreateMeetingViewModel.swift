@@ -27,8 +27,28 @@ final class CreateMeetingViewModel: ObservableObject {
     @Published var successMessage: String? = nil
     @Published var slotsSearched = false
     @Published var recentAttendees: [AttendeeRecord] = []
+    @Published var recentLocations: [LocationRecord] = []
+    @Published var locationFocused = false
 
     var suggestedAttendees: [AttendeeRecord] { recentAttendees }
+
+    var locationSuggestions: [LocationRecord] {
+        guard !recentLocations.isEmpty else { return [] }
+        let q = draft.location.trimmingCharacters(in: .whitespaces)
+        if q.isEmpty { return Array(recentLocations.prefix(5)) }
+        return Array(recentLocations.filter { $0.url.localizedCaseInsensitiveContains(q) }.prefix(5))
+    }
+
+    var showLocationDropdown: Bool {
+        locationFocused && !locationSuggestions.isEmpty
+    }
+
+    func recordLocationIfNeeded() {
+        let loc = draft.location.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !loc.isEmpty else { return }
+        RecentLocationsStore.record(loc)
+        recentLocations = RecentLocationsStore.load()
+    }
 
     func results(for kind: AttendeeKind) -> [ResolvedAttendee] {
         kind == .required ? requiredResults : optionalResults
@@ -111,6 +131,10 @@ final class CreateMeetingViewModel: ObservableObject {
             .store(in: &cancellables)
 
         recentAttendees = RecentAttendeesStore.load()
+        recentLocations = RecentLocationsStore.load()
+        if draft.location.isEmpty, let last = recentLocations.first {
+            draft.location = last.url
+        }
     }
 
     // MARK: - Search
@@ -338,6 +362,7 @@ final class CreateMeetingViewModel: ObservableObject {
             try await calendarService.createMeeting(
                 title: draft.title,
                 agenda: draft.agenda,
+                location: draft.location,
                 slot: slot,
                 requiredAttendees: draft.requiredAttendees,
                 optionalAttendees: draft.optionalAttendees,

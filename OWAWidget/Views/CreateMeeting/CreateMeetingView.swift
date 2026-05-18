@@ -58,6 +58,7 @@ struct CreateMeetingView: View {
                             frequentContactsGrid
                         }
                         timePickersField
+                        locationField
                         titleField
                         agendaField
                     }
@@ -121,14 +122,6 @@ struct CreateMeetingView: View {
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color(nsColor: .controlBackgroundColor))
-                if vm.draft.agenda.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(localization.tr("create.meeting.agenda.placeholder"))
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color(nsColor: .placeholderTextColor))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 12)
-                        .allowsHitTesting(false)
-                }
                 TextEditor(text: $vm.draft.agenda)
                     .font(.system(size: 13))
                     .scrollContentBackground(.hidden)
@@ -141,6 +134,78 @@ struct CreateMeetingView: View {
                     .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
             )
         }
+    }
+
+    // MARK: - Location
+
+    @State private var locationFieldHeight: CGFloat = 36
+    @FocusState private var locationFieldFocused: Bool
+
+    private var locationField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel(localization.tr("create.meeting.location.label"))
+            HStack(spacing: 8) {
+                Image(systemName: "link")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                TextField(localization.tr("create.meeting.location.placeholder"), text: $vm.draft.location)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .focused($locationFieldFocused)
+                    .onSubmit {
+                        vm.recordLocationIfNeeded()
+                        locationFieldFocused = false
+                    }
+                    .onChange(of: locationFieldFocused) { focused in
+                        vm.locationFocused = focused
+                        if !focused { vm.recordLocationIfNeeded() }
+                    }
+                if !vm.draft.location.isEmpty {
+                    Button {
+                        vm.draft.location = ""
+                        locationFieldFocused = true
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            )
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: SearchFieldHeightKey.self, value: geo.size.height)
+                }
+            )
+            .onPreferenceChange(SearchFieldHeightKey.self) { locationFieldHeight = $0 }
+            .overlay(alignment: .topLeading) {
+                if vm.showLocationDropdown {
+                    LocationDropdown(vm: vm, onSelect: {
+                        vm.recordLocationIfNeeded()
+                        locationFieldFocused = false
+                    })
+                    .offset(y: locationFieldHeight + 4)
+                    .zIndex(10)
+                    .background(
+                        MouseDownDismissMonitor {
+                            if vm.locationFocused { locationFieldFocused = false }
+                        }
+                        .frame(width: 0, height: 0)
+                    )
+                }
+            }
+        }
+        .zIndex(vm.locationFocused ? 2 : 0)
     }
 
     // MARK: - Attendees
@@ -625,6 +690,115 @@ struct CreateMeetingView: View {
             .foregroundStyle(.secondary)
             .textCase(.uppercase)
             .tracking(0.3)
+    }
+}
+
+// MARK: - Mouse-down dismiss helper
+
+/// Installs an NSEvent local monitor while active.
+/// On any left mouse down, fires `onDismiss` after one run-loop tick so that
+/// SwiftUI button actions inside the dropdown can execute before the view disappears.
+private struct MouseDownDismissMonitor: NSViewRepresentable {
+    let onDismiss: () -> Void
+
+    func makeNSView(context: Context) -> _MonitorView { _MonitorView() }
+
+    func updateNSView(_ nsView: _MonitorView, context: Context) {
+        nsView.onDismiss = onDismiss
+    }
+
+    class _MonitorView: NSView {
+        var onDismiss: (() -> Void)?
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil {
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self?.onDismiss?() }
+                    return event
+                }
+            } else {
+                removeMonitor()
+            }
+        }
+
+        private func removeMonitor() {
+            if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+        }
+
+        deinit { removeMonitor() }
+    }
+}
+
+// MARK: - Location dropdown
+
+private struct LocationDropdown: View {
+    @ObservedObject var vm: CreateMeetingViewModel
+    let onSelect: () -> Void
+
+    private static let rowHeight: CGFloat = 36
+    private static let maxRows = 5
+
+    private var suggestions: [LocationRecord] { vm.locationSuggestions }
+
+    private var computedHeight: CGFloat {
+        CGFloat(min(suggestions.count, Self.maxRows)) * Self.rowHeight
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(suggestions) { record in
+                    LocationDropdownRow(url: record.url) {
+                        vm.draft.location = record.url
+                        onSelect()
+                    }
+                    if record.id != suggestions.last?.id {
+                        Divider().padding(.horizontal, 10)
+                    }
+                }
+            }
+        }
+        .frame(height: computedHeight)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+    }
+}
+
+private struct LocationDropdownRow: View {
+    let url: String
+    let onSelect: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 8) {
+                Image(systemName: "link")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                Text(url)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(isHovered ? Color(nsColor: .selectedControlColor).opacity(0.5) : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
     }
 }
 

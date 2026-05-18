@@ -194,6 +194,8 @@
 "create.meeting.time.label" = "Time";
 "create.meeting.time.start" = "Start";
 "create.meeting.time.end" = "End";
+"create.meeting.location.label" = "Location";
+"create.meeting.location.placeholder" = "Room link (optional)";
 "create.meeting.find.slots" = "Find available slots";
 "create.meeting.refresh.slots" = "Refresh slots";
 "create.meeting.create" = "Create meeting";
