@@ -41,6 +41,10 @@ OWAWidget - macOS menu bar приложение на Swift 6 и SwiftUI для �
 - `OWAWidget/Views/MeetingListView.swift` - таймлайн-список встреч в popover (тайм-сетка + overlay карточек).
 - `OWAWidget/Views/TimelineMeetingLayout.swift` - алгоритмы раскладки пересекающихся встреч (slotting, clusters, lanes, frame math).
 - `OWAWidget/Views/TimelineMeetingBlockView.swift` - визуальная карточка встречи в таймлайне, включая compact-режим.
+- `OWAWidget/Views/CreateMeeting/` - окно создания встречи: поиск участников через FindPeople, занятость через GetUserAvailabilityInternal, создание через CreateCalendarEvent (OWA JSON API). Ключевые файлы: `CreateMeetingView.swift`, `CreateMeetingViewModel.swift`, `AttendeeSearchField.swift`, `SlotSuggestionsView.swift`.
+- `OWAWidget/Services/MeetingFreeSlotCalculator.swift` - алгоритм поиска свободных 30-мин слотов по MergedFreeBusy строке OWA.
+- `OWAWidget/Services/AppearanceService.swift` - тема приложения (light/dark/system).
+- `OWAWidget/Services/RecentAttendeesStore.swift` / `RecentLocationsStore.swift` - история участников и локаций для быстрого ввода в форме создания встречи.
 
 ## Сборка и запуск
 
@@ -80,6 +84,7 @@ swift build
 - `CustomMeetingReminderController` использует архитектуру **live-update single panel**: в любой момент времени отображается не более одного `NSPanel`. Если при срабатывании нового напоминания панель уже открыта, вызывается `updateCurrentPanel(merging:)`, который мёрджит новые встречи в `currentDisplayedItems`, пересчитывает title/subtitle и заменяет `currentHostingView.rootView` (SwiftUI делает diff in-place). Очереди (`queue: [Payload]`) не существует — не добавляй её. `finishPresentation()` очищает `currentPanel`, `currentHostingView`, `currentDisplayedItems`, `currentAnchorStartDate`, `currentDismissDeadline` без вызова какого-либо «следующего» элемента. Автозакрытие по таймеру и ручное закрытие оба вызывают `finishPresentation()` / `closeCurrentPanelAndFinish()` без дополнительных флагов.
 - Reminder-панель показывается через `panel.orderFrontRegardless()` + `panel.makeKey()`. `orderFrontRegardless()` обязателен, потому что OWA Widget — фоновое menu-bar приложение: `makeKeyAndOrderFront(nil)` в таком случае молча не работает. `makeKey()` после `orderFrontRegardless()` даёт панели статус key window, и SwiftUI-кнопки срабатывают с первого клика. Без `makeKey()` первый клик «активирует» окно, а второй уже нажимает кнопку.
 - Не обновляй версию вручную в `OWAWidget/Info.plist`: `make bundle`/`make release-package` автоматически ставят `CFBundleShortVersionString` из `VERSION` и `CFBundleVersion` из git-счётчика коммитов.
+- RSVP (Accept/Decline/Tentative) реализован через **EWS SOAP** (`OWAClient.respondToMeeting`, строка ~511), а не через OWA JSON API. При расширении RSVP-функциональности сохраняй это разделение: EWS SOAP для мутирующих операций с письмами/ответами на встречи.
 
 ## Debug-логирование в файл
 
