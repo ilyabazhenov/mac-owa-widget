@@ -109,6 +109,8 @@ final class LocalizationService: ObservableObject {
             return tr("sync.status.offline.cached", message)
         case .error(let message):
             return tr("sync.status.error", message)
+        case .authenticationRequired:
+            return tr("sync.status.auth.required")
         }
     }
 

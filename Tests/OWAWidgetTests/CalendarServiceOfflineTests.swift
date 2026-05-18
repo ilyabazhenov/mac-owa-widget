@@ -132,6 +132,107 @@ final class CalendarServiceOfflineTests: XCTestCase {
         XCTAssertEqual(reminderController.cancelCalls, [true])
     }
 
+    func testFailedSyncReschedulesRemindersFromMemoryEvents() async {
+        let memoryEvent = makeEvent(id: "memory-event")
+        let reminderController = RecordingMeetingReminderController()
+        let service = CalendarService(
+            providers: [FailingProvider()],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: reminderController,
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+        service.replaceEventsForTests([memoryEvent])
+
+        await service.performSyncForTests()
+
+        XCTAssertEqual(reminderController.rescheduledEvents, [[memoryEvent]])
+    }
+
+    func testFailedSyncReschedulesRemindersFromDiskCacheWhenMemoryEmpty() async {
+        let cachedEvent = makeEvent(id: "disk-cached-event")
+        let cache = InMemoryEventCacheStore(
+            snapshot: EventCacheSnapshot(
+                version: 1,
+                savedAt: Date(timeIntervalSince1970: 100),
+                rangeStart: Date(timeIntervalSince1970: 50),
+                rangeEnd: Date(timeIntervalSince1970: 150),
+                events: [cachedEvent]
+            )
+        )
+        let reminderController = RecordingMeetingReminderController()
+        let service = CalendarService(
+            providers: [FailingProvider()],
+            eventCacheStore: cache,
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: reminderController,
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+        service.replaceEventsForTests([])
+
+        await service.performSyncForTests()
+
+        XCTAssertEqual(reminderController.rescheduledEvents, [[cachedEvent]])
+    }
+
+    func testAuthFailureSetsAuthenticationRequiredStatus() async {
+        let service = CalendarService(
+            providers: [AuthFailingProvider()],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: NoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+
+        await service.performSyncForTests()
+
+        XCTAssertTrue(service.syncStatus.isAuthenticationRequired)
+    }
+
+    func testAuthCircuitBreakerStopsSubsequentSyncs() async {
+        let provider = AuthFailingProvider()
+        let service = CalendarService(
+            providers: [provider],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: NoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+
+        // First sync triggers the auth error and sets the circuit breaker.
+        await service.performSyncForTests()
+        XCTAssertTrue(service.syncStatus.isAuthenticationRequired)
+        let callsAfterFirst = await provider.fetchCallCount
+        XCTAssertEqual(callsAfterFirst, 1)
+
+        // Subsequent syncs must be skipped — provider must not be called again.
+        await service.performSyncForTests()
+        await service.performSyncForTests()
+        let callsAfterSubsequent = await provider.fetchCallCount
+        XCTAssertEqual(callsAfterSubsequent, 1, "Provider must not be called after circuit breaker trips")
+    }
+
+    func testFailedSyncReschedulesRemindersEvenWithNoEvents() async {
+        let reminderController = RecordingMeetingReminderController()
+        let service = CalendarService(
+            providers: [FailingProvider()],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: reminderController,
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+        service.replaceEventsForTests([])
+
+        await service.performSyncForTests()
+
+        XCTAssertEqual(reminderController.rescheduledEvents, [[]])
+    }
+
     func testMenuBarDisplayModeDefaultsToCountdown() {
         UserDefaults.standard.removeObject(forKey: "menuBarDisplayMode")
         let service = CalendarService(
@@ -213,6 +314,18 @@ private actor FailingProvider: CalendarProvider {
     func validateCredentials() async throws {}
 }
 
+private actor AuthFailingProvider: CalendarProvider {
+    let account = CalendarAccount(displayName: "Test", serverURL: "example.com", email: "a@b.c")
+    private(set) var fetchCallCount = 0
+
+    func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] {
+        fetchCallCount += 1
+        throw OWAError.authenticationFailed("wrong password")
+    }
+
+    func validateCredentials() async throws {}
+}
+
 private final class InMemoryEventCacheStore: EventCacheStoring {
     var snapshot: EventCacheSnapshot?
 
@@ -260,6 +373,7 @@ private final class NoOpMeetingReminderController: CustomMeetingReminderControll
 @MainActor
 private final class RecordingMeetingReminderController: CustomMeetingReminderControlling {
     private(set) var cancelCalls: [Bool] = []
+    private(set) var rescheduledEvents: [[CalendarEvent]] = []
 
     func cancelAll(closeActiveReminder: Bool) {
         cancelCalls.append(closeActiveReminder)
@@ -270,5 +384,7 @@ private final class RecordingMeetingReminderController: CustomMeetingReminderCon
         leadMinutes: Int,
         localization: NotificationLocalization,
         sound: MeetingReminderSound
-    ) {}
+    ) {
+        rescheduledEvents.append(events)
+    }
 }

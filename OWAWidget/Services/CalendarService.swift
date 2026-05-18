@@ -421,6 +421,10 @@ final class CalendarService: ObservableObject {
             }
         }
         providers = built
+        // A provider rebuild means the user explicitly updated credentials — lift any auth block.
+        if syncStatus.isAuthenticationRequired {
+            syncStatus = .idle
+        }
         await performSync(trigger: "rebuildProviders")
     }
 
@@ -452,6 +456,14 @@ final class CalendarService: ObservableObject {
             log.info("Sync \(syncID, privacy: .public) skipped: no providers")
             customMeetingReminders.cancelAll(closeActiveReminder: true)
             await notificationService.removeAllPendingMeetingNotifications()
+            return
+        }
+
+        // Circuit breaker: do not retry with credentials that were already rejected.
+        // This prevents Exchange account lockout from repeated failed auth attempts.
+        // Sync resumes when rebuildProviders() is called after a credential update.
+        guard !syncStatus.isAuthenticationRequired else {
+            log.info("Sync \(syncID, privacy: .public) skipped: authentication required")
             return
         }
 
@@ -490,20 +502,28 @@ final class CalendarService: ObservableObject {
             await rescheduleMeetingRemindersForCurrentEvents()
 
         } catch {
-            if OWAError.isAbstractClassHTTPError(error) {
-                syncRequestGate.recordTransientFailure(at: Date())
-                log.warning("Sync \(syncID, privacy: .public) entered transient OWA cooldown")
-            }
-            if events.isEmpty, let snapshot = eventCacheStore.load(), !snapshot.events.isEmpty {
-                events = snapshot.events.sorted { $0.startDate < $1.startDate }
-            }
-
-            if events.isEmpty {
-                syncStatus = .error(error.localizedDescription)
+            if OWAError.isAuthError(error) {
+                // Credentials definitively rejected — suspend sync to prevent account lockout.
+                // Sync resumes only after an explicit credential update (rebuildProviders).
+                syncStatus = .authenticationRequired
+                log.error("Sync \(syncID, privacy: .public) suspended: auth error — \(error.localizedDescription, privacy: .public)")
             } else {
-                syncStatus = .offlineCached(error.localizedDescription)
+                if OWAError.isAbstractClassHTTPError(error) {
+                    syncRequestGate.recordTransientFailure(at: Date())
+                    log.warning("Sync \(syncID, privacy: .public) entered transient OWA cooldown")
+                }
+                if events.isEmpty, let snapshot = eventCacheStore.load(), !snapshot.events.isEmpty {
+                    events = snapshot.events.sorted { $0.startDate < $1.startDate }
+                }
+
+                if events.isEmpty {
+                    syncStatus = .error(error.localizedDescription)
+                } else {
+                    syncStatus = .offlineCached(error.localizedDescription)
+                }
+                log.error("Sync \(syncID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             }
-            log.error("Sync \(syncID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            await rescheduleMeetingRemindersForCurrentEvents()
         }
     }
 

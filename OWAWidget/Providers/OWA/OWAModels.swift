@@ -364,4 +364,17 @@ enum OWAError: LocalizedError {
 
         return statusCode == 500 && diagnosticResponseKind(from: responseBody) == "fault.abstractClass"
     }
+
+    /// Returns `true` when the error indicates the stored credentials are definitively wrong.
+    /// Used by the sync circuit breaker to stop retrying and prevent account lockout.
+    static func isAuthError(_ error: Error) -> Bool {
+        switch error as? OWAError {
+        case .authenticationFailed:
+            return true
+        case .httpError(let code, _) where code == 401 || code == 440:
+            return true
+        default:
+            return false
+        }
+    }
 }

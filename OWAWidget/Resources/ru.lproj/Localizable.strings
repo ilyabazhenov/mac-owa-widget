@@ -161,6 +161,7 @@
 "sync.elapsed.seconds" = "%d с назад";
 "sync.status.offline.cached" = "Офлайн: показываю кэшированные встречи (%@)";
 "sync.status.error" = "Ошибка: %@";
+"sync.status.auth.required" = "Неверный пароль — обновите в Настройках";
 
 "date.today" = "Сегодня";
 "date.tomorrow" = "Завтра";

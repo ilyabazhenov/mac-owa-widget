@@ -161,6 +161,7 @@
 "sync.elapsed.seconds" = "%d s ago";
 "sync.status.offline.cached" = "Offline, showing cached meetings (%@)";
 "sync.status.error" = "Error: %@";
+"sync.status.auth.required" = "Invalid password — update in Settings";
 
 "date.today" = "Today";
 "date.tomorrow" = "Tomorrow";
