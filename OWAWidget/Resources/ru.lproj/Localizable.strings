@@ -7,6 +7,12 @@
 "language.option.english" = "English";
 "language.option.russian" = "Русский";
 
+"appearance.section.title" = "Оформление";
+"appearance.picker.title" = "Тема приложения";
+"appearance.option.system" = "Системная";
+"appearance.option.light" = "Светлая";
+"appearance.option.dark" = "Тёмная";
+
 "settings.tab.accounts" = "Аккаунты";
 "settings.tab.preferences" = "Настройки";
 "settings.tab.about" = "О приложении";

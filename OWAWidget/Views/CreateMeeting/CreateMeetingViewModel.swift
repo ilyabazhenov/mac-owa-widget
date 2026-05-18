@@ -28,9 +28,9 @@ final class CreateMeetingViewModel: ObservableObject {
     @Published var errorMessage: String? = nil
     @Published var successMessage: String? = nil
     @Published var slotsSearched = false
-    @Published var recentAttendees: [ResolvedAttendee] = []
+    @Published var recentAttendees: [AttendeeRecord] = []
 
-    var suggestedAttendees: [ResolvedAttendee] { recentAttendees }
+    var suggestedAttendees: [AttendeeRecord] { recentAttendees }
 
     func results(for kind: AttendeeKind) -> [ResolvedAttendee] {
         kind == .required ? requiredResults : optionalResults
@@ -201,6 +201,8 @@ final class CreateMeetingViewModel: ObservableObject {
         }
         draft = d
         clearSearch(kind: kind)
+        RecentAttendeesStore.record([attendee])
+        recentAttendees = RecentAttendeesStore.load()
     }
 
     func clearSearch(kind: AttendeeKind) {
@@ -331,8 +333,6 @@ final class CreateMeetingViewModel: ObservableObject {
                 optionalAttendees: draft.optionalAttendees,
                 accountID: accountID
             )
-            RecentAttendeesStore.record(draft.allAttendees)
-            recentAttendees = RecentAttendeesStore.load()
             successMessage = "create.meeting.success"
         } catch {
             errorMessage = error.localizedDescription

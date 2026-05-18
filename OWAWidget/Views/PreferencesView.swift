@@ -5,6 +5,7 @@ struct PreferencesView: View {
     @ObservedObject var vm: SettingsViewModel
     @EnvironmentObject private var localization: LocalizationService
     @EnvironmentObject private var updateCheck: UpdateCheckService
+    @EnvironmentObject private var appearance: AppearanceService
 
     private let syncOptions: [(minutes: Int, value: TimeInterval)] = [
         (1, 60),
@@ -58,6 +59,15 @@ struct PreferencesView: View {
                 Picker(localization.tr("language.picker.title"), selection: $localization.selectedLanguage) {
                     ForEach(AppLanguage.allCases) { language in
                         Text(localization.tr(language.localizationKey)).tag(language)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
+            Section(localization.tr("appearance.section.title")) {
+                Picker(localization.tr("appearance.picker.title"), selection: $appearance.selectedTheme) {
+                    ForEach(AppTheme.allCases) { theme in
+                        Text(localization.tr(theme.localizationKey)).tag(theme)
                     }
                 }
                 .pickerStyle(.menu)

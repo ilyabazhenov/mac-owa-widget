@@ -7,6 +7,12 @@
 "language.option.english" = "English";
 "language.option.russian" = "Russian";
 
+"appearance.section.title" = "Appearance";
+"appearance.picker.title" = "App theme";
+"appearance.option.system" = "System";
+"appearance.option.light" = "Light";
+"appearance.option.dark" = "Dark";
+
 "settings.tab.accounts" = "Accounts";
 "settings.tab.preferences" = "Preferences";
 "settings.tab.about" = "About";

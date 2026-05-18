@@ -49,18 +49,15 @@ struct CreateMeetingView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     VStack(alignment: .leading, spacing: 16) {
                         attendeesField
+                        if !vm.suggestedAttendees.isEmpty {
+                            frequentContactsGrid
+                        }
                         durationField
                         titleField
                         agendaField
                     }
                     .padding(20)
-
-                    if !vm.suggestedAttendees.isEmpty {
-                        Divider()
-                        frequentContactsGrid
-                    } else {
-                        Spacer()
-                    }
+                    Spacer()
                 }
                 .frame(width: 320)
 
@@ -221,31 +218,24 @@ struct CreateMeetingView: View {
     // MARK: - Frequent contacts grid
 
     private var frequentContactsGrid: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             sectionLabel(localization.tr("create.meeting.recent.label"))
-                .padding(.horizontal, 20)
-
-            ScrollView {
-                LazyVGrid(
-                    columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
-                    spacing: 8
-                ) {
-                    ForEach(vm.suggestedAttendees) { attendee in
-                        let isAdded = vm.draft.allAttendees.contains(attendee)
-                        FrequentContactCard(attendee: attendee, isAdded: isAdded) {
-                            if isAdded {
-                                vm.removeAttendee(attendee)
-                            } else {
-                                vm.addAttendee(attendee)
-                            }
+            LazyVGrid(
+                columns: [GridItem(.flexible()), GridItem(.flexible())],
+                spacing: 4
+            ) {
+                ForEach(vm.suggestedAttendees.prefix(12)) { record in
+                    let isAdded = vm.draft.allAttendees.contains(record.attendee)
+                    FrequentContactCard(attendee: record.attendee, count: record.useCount, isAdded: isAdded) {
+                        if isAdded {
+                            vm.removeAttendee(record.attendee)
+                        } else {
+                            vm.addAttendee(record.attendee)
                         }
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 16)
             }
         }
-        .padding(.top, 14)
     }
 
     // MARK: - Slots (right column)
@@ -748,55 +738,47 @@ private struct AttendeeChipView: View {
 
 private struct FrequentContactCard: View {
     let attendee: ResolvedAttendee
+    let count: Int
     let isAdded: Bool
     let onTap: () -> Void
     @State private var isHovered = false
 
-    private var firstName: String {
-        attendee.displayName.components(separatedBy: " ").first ?? attendee.displayName
-    }
-    private var lastName: String {
-        let parts = attendee.displayName.components(separatedBy: " ")
-        return parts.dropFirst().first ?? ""
-    }
-
     var body: some View {
-        VStack(spacing: 6) {
+        HStack(spacing: 6) {
             ZStack(alignment: .bottomTrailing) {
-                InitialsAvatar(name: attendee.displayName, size: 40)
+                InitialsAvatar(name: attendee.displayName, size: 22)
                 if isAdded {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 14))
+                        .font(.system(size: 9))
                         .foregroundStyle(.white, Color.accentColor)
-                        .background(Circle().fill(Color.accentColor).frame(width: 12, height: 12))
-                        .offset(x: 4, y: 4)
+                        .offset(x: 3, y: 3)
                 }
             }
-            VStack(spacing: 1) {
-                Text(lastName.isEmpty ? firstName : lastName)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color(nsColor: .labelColor))
-                    .lineLimit(1)
-                Text(firstName)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            Text(attendee.displayName)
+                .font(.system(size: 11))
+                .foregroundStyle(isAdded ? Color.accentColor : Color(nsColor: .labelColor))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if count > 1 {
+                Text("×\(count)")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(isAdded
                     ? Color.accentColor.opacity(0.08)
                     : (isHovered ? Color(nsColor: .controlColor) : Color.clear)
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 8)
                 .stroke(isAdded ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 1)
         )
-        .contentShape(RoundedRectangle(cornerRadius: 10))
+        .contentShape(RoundedRectangle(cornerRadius: 8))
         .onTapGesture { onTap() }
         .onHover { isHovered = $0 }
         .animation(.easeInOut(duration: 0.15), value: isHovered)

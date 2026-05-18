@@ -12,6 +12,7 @@ struct OWAWidgetApp: App {
     @StateObject private var localizationService = LocalizationService(resourceBundle: .main)
     @StateObject private var calendarService = CalendarService()
     @StateObject private var updateCheckService = UpdateCheckService()
+    @StateObject private var appearanceService = AppearanceService()
 
     // Static: one delegate instance survives across App struct re-evaluations.
     private static let notificationDelegate = AppNotificationDelegate()
@@ -27,6 +28,7 @@ struct OWAWidgetApp: App {
                 .environmentObject(calendarService)
                 .environmentObject(localizationService)
                 .environmentObject(updateCheckService)
+                .environmentObject(appearanceService)
                 .environment(\.locale, localizationService.locale)
                 .onAppear {
                     setupNotificationDelegate()
@@ -43,6 +45,7 @@ struct OWAWidgetApp: App {
                 .onAppear {
                     syncLocalization()
                     updateCheckService.start()
+                    appearanceService.applyOnLaunch()
                 }
         }
         .menuBarExtraStyle(.window)
@@ -52,6 +55,7 @@ struct OWAWidgetApp: App {
                 if let account = calendarService.accounts.first {
                     CreateMeetingView(calendarService: calendarService, accountID: account.id)
                         .environmentObject(localizationService)
+                        .environmentObject(appearanceService)
                         .environment(\.locale, localizationService.locale)
                 }
             }
@@ -66,6 +70,7 @@ struct OWAWidgetApp: App {
             SettingsView(calendarService: calendarService)
                 .environmentObject(localizationService)
                 .environmentObject(updateCheckService)
+                .environmentObject(appearanceService)
                 .environment(\.locale, localizationService.locale)
                 .frame(minWidth: 480, minHeight: 360)
                 .onAppear {
