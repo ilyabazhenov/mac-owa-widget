@@ -63,24 +63,28 @@ actor OWAClient {
     private let getCalendarViewDebugFlagKey = "debugDumpGetCalendarViewResponse"
 
     #if DEBUG
-    private static let debugLogURL = URL(fileURLWithPath: "/tmp/owawidget_owaclient.log")
+    private static let debugLogURL: URL? = DebugLogLocation.url(for: "owaclient.log")
 
     private nonisolated func setupDebugLog() {
+        guard let url = Self.debugLogURL else { return }
         let header = "=== OWAClient Log started \(Date()) ===\n"
-        try? header.write(to: Self.debugLogURL, atomically: true, encoding: .utf8)
+        try? header.write(to: url, atomically: true, encoding: .utf8)
+        DebugLogLocation.tightenPermissions(at: url)
     }
 
     private nonisolated func dlog(_ message: String) {
+        guard let url = Self.debugLogURL else { return }
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss.SSS"
         let line = "[\(f.string(from: Date()))] \(message)\n"
         guard let data = line.data(using: .utf8) else { return }
-        if let handle = try? FileHandle(forWritingTo: Self.debugLogURL) {
+        if let handle = try? FileHandle(forWritingTo: url) {
             handle.seekToEndOfFile()
             handle.write(data)
             try? handle.close()
         } else {
-            try? data.write(to: Self.debugLogURL, options: .atomic)
+            try? data.write(to: url, options: .atomic)
+            DebugLogLocation.tightenPermissions(at: url)
         }
     }
     #endif
@@ -530,19 +534,21 @@ actor OWAClient {
     // MARK: - FindPeople (OWA JSON ComposeHAR)
 
     #if DEBUG
-    private static let findPeopleTraceURL = URL(fileURLWithPath: "/tmp/owawidget_findpeople_trace.log")
+    private static let findPeopleTraceURL: URL? = DebugLogLocation.url(for: "findpeople_trace.log")
 
     private nonisolated func ftrace(_ message: String) {
+        guard let url = Self.findPeopleTraceURL else { return }
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss.SSS"
         let line = "[\(f.string(from: Date()))] \(message)\n"
         guard let data = line.data(using: .utf8) else { return }
-        if let handle = try? FileHandle(forWritingTo: Self.findPeopleTraceURL) {
+        if let handle = try? FileHandle(forWritingTo: url) {
             handle.seekToEndOfFile()
             handle.write(data)
             try? handle.close()
         } else {
-            try? data.write(to: Self.findPeopleTraceURL, options: .atomic)
+            try? data.write(to: url, options: .atomic)
+            DebugLogLocation.tightenPermissions(at: url)
         }
     }
     #endif

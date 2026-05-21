@@ -37,16 +37,18 @@ enum MeetingFreeSlotCalculator {
         let dbgFmt = DateFormatter()
         dbgFmt.dateFormat = "MM-dd HH:mm"
         dbgFmt.timeZone = AppTimeZone.zone
-        let logPath = "/tmp/owawidget_freeslots.log"
+        let logURL = DebugLogLocation.url(for: "freeslots.log")
         func flog(_ msg: String) {
+            guard let logURL else { return }
             let line = "[\(dbgFmt.string(from: Date()))] \(msg)\n"
             if let data = line.data(using: .utf8) {
-                if let fh = FileHandle(forWritingAtPath: logPath) {
+                if let fh = try? FileHandle(forWritingTo: logURL) {
                     fh.seekToEndOfFile()
                     fh.write(data)
                     try? fh.close()
                 } else {
-                    try? data.write(to: URL(fileURLWithPath: logPath), options: .atomic)
+                    try? data.write(to: logURL, options: .atomic)
+                    DebugLogLocation.tightenPermissions(at: logURL)
                 }
             }
         }
