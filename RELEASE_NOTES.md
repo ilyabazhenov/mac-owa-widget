@@ -1,3 +1,53 @@
+## v1.0.37 - 2026-05-21
+
+### RU
+
+#### Что изменилось
+
+- Создание встреч: новое окно с поиском участников (FindPeople), сеткой занятости, подсказками свободных слотов и созданием через OWA/EWS.
+- Форма встречи: обязательные и необязательные участники, поле «Расположение» с историей, выбор даты/времени, изменяемый размер окна, overlay после успешного создания.
+- Сетка занятости: цветовая легенда, объединение многочасовых свободных слотов, занятость организатора, навигация по неделям.
+- Popover: просмотр календаря до 7 дней назад.
+- Настройки: выбор темы приложения (светлая/тёмная/системная), позиция баннера уведомлений на экране.
+- OWA: защита от рекурсии при 401, обработка блокировки AD, фильтрация прошедших слотов; RSVP и синхронизация стабильнее при смене пароля.
+- Исправления UI: смещение выбора слота на +30 мин, таймзона overlay, наезд легенды на грид, поднятие окон на передний план при Cmd+Tab.
+- DEBUG-логи перенесены из `/tmp` в Application Support.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Create meeting: new window with attendee search (FindPeople), availability grid, free-slot suggestions, and meeting creation via OWA/EWS.
+- Meeting form: required/optional attendees, location field with history, date/time pickers, resizable window, success overlay with countdown.
+- Availability grid: color legend, merged multi-hour free slots, organizer busy state, week navigation.
+- Popover: browse calendar up to 7 days in the past.
+- Settings: app theme (light/dark/system), on-screen notification banner position.
+- OWA: 401 recursion guard, AD lockout handling, past-slot filtering; more stable sync and notifications after password changes.
+- UI fixes: +30 min slot selection offset, timezone overlay, legend/grid overlap, bring windows to front on Cmd+Tab activation.
+- DEBUG logs moved from `/tmp` to Application Support.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.36 - 2026-05-13
 
 ### RU
