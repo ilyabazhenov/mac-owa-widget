@@ -67,6 +67,12 @@
 "preferences.notifications.screen" = "Показывать баннеры на";
 "preferences.notifications.screen.main" = "Главном экране";
 "preferences.notifications.screen.active" = "Активном экране (где курсор)";
+"preferences.notifications.position" = "Позиция";
+"preferences.notifications.position.group.top" = "Сверху";
+"preferences.notifications.position.group.bottom" = "Снизу";
+"preferences.notifications.position.short.left" = "Слева";
+"preferences.notifications.position.short.center" = "По центру";
+"preferences.notifications.position.short.right" = "Справа";
 "preferences.notifications.sound" = "Звук";
 "preferences.notifications.sound.preview" = "Прослушать";
 "preferences.notifications.sound.glass" = "Glass — звонкий и чистый";

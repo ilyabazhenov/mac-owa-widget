@@ -67,6 +67,12 @@
 "preferences.notifications.screen" = "Show banners on";
 "preferences.notifications.screen.main" = "Main screen";
 "preferences.notifications.screen.active" = "Active screen (where cursor is)";
+"preferences.notifications.position" = "Position";
+"preferences.notifications.position.group.top" = "Top";
+"preferences.notifications.position.group.bottom" = "Bottom";
+"preferences.notifications.position.short.left" = "Left";
+"preferences.notifications.position.short.center" = "Center";
+"preferences.notifications.position.short.right" = "Right";
 "preferences.notifications.sound" = "Sound";
 "preferences.notifications.sound.preview" = "Preview";
 "preferences.notifications.sound.glass" = "Glass — bright and clean";

@@ -112,6 +112,20 @@ struct PreferencesView: View {
                 }
                 .pickerStyle(.menu)
 
+                Picker(localization.tr("preferences.notifications.position"), selection: $vm.notificationPosition) {
+                    Section(localization.tr("preferences.notifications.position.group.top")) {
+                        ForEach(NotificationPosition.topCases) { position in
+                            Text(localization.tr(position.shortLocalizationKey)).tag(position)
+                        }
+                    }
+                    Section(localization.tr("preferences.notifications.position.group.bottom")) {
+                        ForEach(NotificationPosition.bottomCases) { position in
+                            Text(localization.tr(position.shortLocalizationKey)).tag(position)
+                        }
+                    }
+                }
+                .pickerStyle(.menu)
+
                 HStack {
                     Picker(localization.tr("preferences.notifications.sound"), selection: $vm.meetingReminderSound) {
                         ForEach(MeetingReminderSound.allCases) { sound in
