@@ -50,6 +50,7 @@ final class CalendarService: ObservableObject {
     private let meetingReminderStyleKey = "meetingReminderStyle"
     private let meetingReminderSoundKey = "meetingReminderSound"
     private let notificationScreenPolicyKey = NotificationScreenPolicy.defaultsKey
+    private let notificationPositionKey = NotificationPosition.defaultsKey
     private let menuBarDisplayModeKey = "menuBarDisplayMode"
     private let dimPastMeetingsOnTimelineKey = "dimPastMeetingsOnTimeline"
 
@@ -84,6 +85,11 @@ final class CalendarService: ObservableObject {
     var notificationScreenPolicy: NotificationScreenPolicy {
         get { NotificationScreenPolicy.current }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: notificationScreenPolicyKey) }
+    }
+
+    var notificationPosition: NotificationPosition {
+        get { NotificationPosition.current }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: notificationPositionKey) }
     }
 
     var meetingReminderSound: MeetingReminderSound {
@@ -231,6 +237,118 @@ final class CalendarService: ObservableObject {
         recalculateEngagementSnapshot()
     }
 
+    // MARK: - Meeting creation
+
+    private struct FindPeopleTimeoutError: Error {}
+
+    func findPeople(query: String, accountID: UUID) async throws -> [ResolvedAttendee] {
+        guard let provider = providers.first(where: { $0.account.id == accountID }) else { return [] }
+        return try await withThrowingTaskGroup(of: [ResolvedAttendee].self) { group in
+            group.addTask {
+                try await provider.findPeople(query: query)
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(40))
+                throw FindPeopleTimeoutError()
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next() else { return [] }
+            return first
+        }
+    }
+
+    func findFreeSlots(
+        requiredEmails: [String],
+        optionalEmails: [String] = [],
+        range: DateInterval,
+        displayRange: DateInterval? = nil,
+        durationMinutes: Int,
+        accountID: UUID
+    ) async throws -> (slots: [FreeSlot], attendeeAvailability: [AttendeeAvailability], organizerAvailability: AttendeeAvailability?, organizerEvents: [CalendarEvent]) {
+        guard !requiredEmails.isEmpty else { return ([], [], nil, []) }
+        guard let provider = providers.first(where: { $0.account.id == accountID }) else { return ([], [], nil, []) }
+
+        let cal = AppTimeZone.calendar
+        let (requestStart, requestEnd) = UserAvailabilityRequestWindow.bounds(
+            for: displayRange ?? range,
+            referenceNow: Date(),
+            calendar: cal
+        )
+
+        // Include organizer's own availability by resolving their SMTP email from the domain login.
+        // v1: optionalEmails do not affect slot selection — we don't even fetch their availability.
+        let organizerSMTP = try? await provider.resolveOrganizerSMTPEmail()
+        var allEmails = requiredEmails
+        if let smtp = organizerSMTP, !allEmails.contains(smtp) {
+            allEmails.insert(smtp, at: 0)
+        }
+
+        let availability = try await provider.getUserAvailability(emails: allEmails, from: requestStart, to: requestEnd)
+
+        // Remove organizer's row before returning — we only need to block on it, not confuse zip
+        let organizerIdx = organizerSMTP.flatMap { smtp in allEmails.firstIndex(of: smtp) }
+        let organizerAvailability = organizerIdx.flatMap { availability.count > $0 ? availability[$0] : nil }
+        let attendeeAvailability = availability.filter { $0.email != organizerSMTP }
+
+        // Treat as a real conflict on the organizer's calendar: anything that's on the calendar AND
+        // the organizer hasn't declined / wasn't cancelled. Crucially, this keeps `.notResponded` —
+        // those are invites pending the organizer's reply that the availability API often reports
+        // as "free" (since the user hasn't accepted yet), but the organizer is realistically blocked.
+        let organizerEvents = events.filter { ev in
+            ev.accountID == accountID
+                && !ev.isCancelled
+                && ev.responseType != .declined
+        }
+        _ = optionalEmails  // reserved for v2 ranking
+        let slots = MeetingFreeSlotCalculator.compute(
+            from: attendeeAvailability,
+            organizerAvailability: organizerAvailability,
+            organizerEvents: organizerEvents,
+            range: range,
+            durationMinutes: durationMinutes,
+            referenceNow: Date()
+        )
+        return (slots: slots, attendeeAvailability: attendeeAvailability, organizerAvailability: organizerAvailability, organizerEvents: organizerEvents)
+    }
+
+    func createMeeting(
+        title: String,
+        agenda: String,
+        location: String = "",
+        slot: FreeSlot,
+        requiredAttendees: [ResolvedAttendee],
+        optionalAttendees: [ResolvedAttendee] = [],
+        accountID: UUID
+    ) async throws {
+        guard let provider = providers.first(where: { $0.account.id == accountID }) else {
+            throw OWAError.authenticationFailed("Account not found")
+        }
+        // Не пытаемся создать встречу, если creds уже отвергнуты — иначе риск lockout AD.
+        if syncStatus.isAuthenticationRequired {
+            throw OWAError.httpError(401, "Authentication required")
+        }
+        do {
+            try await provider.createMeeting(
+                title: title,
+                agenda: agenda,
+                location: location,
+                start: slot.start,
+                end: slot.end,
+                requiredAttendees: requiredAttendees,
+                optionalAttendees: optionalAttendees
+            )
+        } catch {
+            if OWAError.isAuthError(error) {
+                syncStatus = .authenticationRequired
+                log.error("createMeeting suspended sync: auth error — \(error.localizedDescription, privacy: .public)")
+            }
+            throw error
+        }
+        syncNow()
+    }
+
+    // MARK: - Meeting response
+
     func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {
         guard let provider = providers.first(where: { $0.account.id == event.accountID }) else { return }
 
@@ -324,6 +442,10 @@ final class CalendarService: ObservableObject {
             }
         }
         providers = built
+        // A provider rebuild means the user explicitly updated credentials — lift any auth block.
+        if syncStatus.isAuthenticationRequired {
+            syncStatus = .idle
+        }
         await performSync(trigger: "rebuildProviders")
     }
 
@@ -358,11 +480,19 @@ final class CalendarService: ObservableObject {
             return
         }
 
+        // Circuit breaker: do not retry with credentials that were already rejected.
+        // This prevents Exchange account lockout from repeated failed auth attempts.
+        // Sync resumes when rebuildProviders() is called after a credential update.
+        guard !syncStatus.isAuthenticationRequired else {
+            log.info("Sync \(syncID, privacy: .public) skipped: authentication required")
+            return
+        }
+
         syncStatus = .syncing
 
         let now = Date()
-        // Fetch from today's start to include already finished meetings from today.
-        let start = Calendar.current.startOfDay(for: now)
+        let todayStart = Calendar.current.startOfDay(for: now)
+        let start = Calendar.current.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart
         let end = Calendar.current.date(byAdding: .day, value: 30, to: now) ?? now
 
         do {
@@ -393,20 +523,28 @@ final class CalendarService: ObservableObject {
             await rescheduleMeetingRemindersForCurrentEvents()
 
         } catch {
-            if OWAError.isAbstractClassHTTPError(error) {
-                syncRequestGate.recordTransientFailure(at: Date())
-                log.warning("Sync \(syncID, privacy: .public) entered transient OWA cooldown")
-            }
-            if events.isEmpty, let snapshot = eventCacheStore.load(), !snapshot.events.isEmpty {
-                events = snapshot.events.sorted { $0.startDate < $1.startDate }
-            }
-
-            if events.isEmpty {
-                syncStatus = .error(error.localizedDescription)
+            if OWAError.isAuthError(error) {
+                // Credentials definitively rejected — suspend sync to prevent account lockout.
+                // Sync resumes only after an explicit credential update (rebuildProviders).
+                syncStatus = .authenticationRequired
+                log.error("Sync \(syncID, privacy: .public) suspended: auth error — \(error.localizedDescription, privacy: .public)")
             } else {
-                syncStatus = .offlineCached(error.localizedDescription)
+                if OWAError.isAbstractClassHTTPError(error) {
+                    syncRequestGate.recordTransientFailure(at: Date())
+                    log.warning("Sync \(syncID, privacy: .public) entered transient OWA cooldown")
+                }
+                if events.isEmpty, let snapshot = eventCacheStore.load(), !snapshot.events.isEmpty {
+                    events = snapshot.events.sorted { $0.startDate < $1.startDate }
+                }
+
+                if events.isEmpty {
+                    syncStatus = .error(error.localizedDescription)
+                } else {
+                    syncStatus = .offlineCached(error.localizedDescription)
+                }
+                log.error("Sync \(syncID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             }
-            log.error("Sync \(syncID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            await rescheduleMeetingRemindersForCurrentEvents()
         }
     }
 

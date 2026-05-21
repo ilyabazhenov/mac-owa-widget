@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import QuartzCore
 import SwiftUI
 import os.log
 
@@ -55,6 +56,7 @@ final class CustomMeetingReminderController {
 
     private func dlog(_ message: String) {
         let f = DateFormatter()
+        f.timeZone = AppTimeZone.zone
         f.dateFormat = "HH:mm:ss.SSS"
         let line = "[\(f.string(from: Date()))] \(message)\n"
         guard let data = line.data(using: .utf8) else { return }
@@ -245,7 +247,7 @@ final class CustomMeetingReminderController {
         let size = NSSize(width: max(320, fit.width), height: max(80, fit.height))
         panel.setContentSize(size)
 
-        positionPanel(panel, contentSize: size)
+        positionPanel(panel, contentSize: size, animated: true)
 
         currentPanel = panel
         // orderFrontRegardless ensures the panel appears even when the app is not active
@@ -316,7 +318,7 @@ final class CustomMeetingReminderController {
         let fit = hosting.fittingSize
         let size = NSSize(width: max(320, fit.width), height: max(80, fit.height))
         panel.setContentSize(size)
-        positionPanel(panel, contentSize: size)
+        positionPanel(panel, contentSize: size, animated: false)
 
         // 7. Extend auto-dismiss to cover the latest meeting in the merged set
         let latestStart = currentDisplayedItems.map(\.startDate).max() ?? currentAnchorStartDate
@@ -337,13 +339,26 @@ final class CustomMeetingReminderController {
         DispatchQueue.main.asyncAfter(deadline: .now() + deadline.timeIntervalSinceNow, execute: dismiss)
     }
 
-    private func positionPanel(_ panel: NSPanel, contentSize: NSSize) {
+    private func positionPanel(_ panel: NSPanel, contentSize: NSSize, animated: Bool) {
         guard let screen = NotificationScreenPolicy.current.resolve() else { return }
         let vf = screen.visibleFrame
         let margin: CGFloat = 16
-        let x = vf.maxX - contentSize.width - margin
-        let y = vf.maxY - contentSize.height - margin
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        let position = NotificationPosition.current
+        let target = position.origin(in: vf, contentSize: contentSize, margin: margin)
+
+        guard animated else {
+            panel.setFrameOrigin(target)
+            return
+        }
+
+        let start = position.offScreenOrigin(in: vf, contentSize: contentSize, margin: margin)
+        panel.setFrameOrigin(start)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            ctx.allowsImplicitAnimation = true
+            panel.animator().setFrameOrigin(target)
+        }
     }
 
     private func finishPresentation() {

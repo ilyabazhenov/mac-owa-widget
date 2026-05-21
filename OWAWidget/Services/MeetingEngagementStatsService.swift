@@ -72,8 +72,8 @@ final class MeetingEngagementStatsService {
     }
 
     func snapshot(events: [CalendarEvent], period: MeetingEngagementPeriod, now: Date = Date()) -> MeetingEngagementSnapshot {
-        let periodStart = Calendar.current.startOfDay(for: now)
-        let periodEnd = Calendar.current.date(byAdding: .day, value: period.dayCount, to: periodStart) ?? now
+        let periodStart = AppTimeZone.calendar.startOfDay(for: now)
+        let periodEnd = AppTimeZone.calendar.date(byAdding: .day, value: period.dayCount, to: periodStart) ?? now
 
         let eligibleEvents = events.filter { event in
             guard event.startDate >= periodStart, event.startDate < periodEnd, !event.isEffectivelyCancelled else {
@@ -105,11 +105,11 @@ final class MeetingEngagementStatsService {
     private func currentStreakDays(now: Date) -> Int {
         let joinedDays = Set(payload.joins.map(\.dayKey))
         var streak = 0
-        var cursor = Calendar.current.startOfDay(for: now)
+        var cursor = AppTimeZone.calendar.startOfDay(for: now)
 
         while joinedDays.contains(dayKey(for: cursor)) {
             streak += 1
-            guard let prev = Calendar.current.date(byAdding: .day, value: -1, to: cursor) else { break }
+            guard let prev = AppTimeZone.calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
             cursor = prev
         }
         return streak
@@ -130,7 +130,8 @@ final class MeetingEngagementStatsService {
 
     private func dayKey(for date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.calendar = Calendar.current
+        formatter.timeZone = AppTimeZone.zone
+        formatter.calendar = AppTimeZone.calendar
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)

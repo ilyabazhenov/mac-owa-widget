@@ -129,7 +129,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
 
     /// Past for today only: ended meetings are dimmed on the timeline; other days are unchanged.
     var isPast: Bool {
-        endDate < Date() && Calendar.current.isDateInToday(startDate)
+        endDate < Date() && AppTimeZone.calendar.isDateInToday(startDate)
     }
 
     var minutesUntilStart: Int {

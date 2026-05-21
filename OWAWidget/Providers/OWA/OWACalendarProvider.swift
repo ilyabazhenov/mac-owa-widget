@@ -42,6 +42,45 @@ actor OWACalendarProvider: CalendarProvider {
         try await client.respondToMeeting(itemId: event.id, changeKey: changeKey, action: action)
     }
 
+    func findPeople(query: String) async throws -> [ResolvedAttendee] {
+        try await client.findPeople(query: query)
+    }
+
+    func resolveOrganizerSMTPEmail() async throws -> String? {
+        try await client.resolveOrganizerSMTPEmail()
+    }
+
+    func getUserAvailability(emails: [String], from start: Date, to end: Date) async throws -> [AttendeeAvailability] {
+        try await client.getUserAvailabilityInternal(emails: emails, from: start, to: end)
+    }
+
+    func createMeeting(
+        title: String,
+        agenda: String,
+        location: String,
+        start: Date,
+        end: Date,
+        requiredAttendees: [ResolvedAttendee],
+        optionalAttendees: [ResolvedAttendee]
+    ) async throws {
+        let folderIdentifier = await client.resolvedFolderIdentifier
+        do {
+            try await client.createCalendarEvent(
+                title: title,
+                agenda: agenda,
+                location: location,
+                start: start,
+                end: end,
+                requiredAttendees: requiredAttendees,
+                optionalAttendees: optionalAttendees,
+                folderIdentifier: folderIdentifier
+            )
+        } catch {
+            log.error("createMeeting failed: \(error, privacy: .public)")
+            throw error
+        }
+    }
+
     // MARK: - Mapping
 
     private func mapItem(_ item: OWACalendarItem) -> CalendarEvent? {
@@ -51,7 +90,32 @@ actor OWACalendarProvider: CalendarProvider {
             let endStr = item.End,
             let startDate = parseDate(startStr),
             let endDate = parseDate(endStr)
-        else { return nil }
+        else {
+            #if DEBUG
+            if let subject = item.Subject {
+                let line = "[mapItem] dropped: subject='\(subject)' startStr=\(item.Start ?? "nil") endStr=\(item.End ?? "nil")\n"
+                if let data = line.data(using: .utf8) {
+                    let logURL = URL(fileURLWithPath: "/tmp/owawidget_freeslots.log")
+                    if let fh = try? FileHandle(forWritingTo: logURL) {
+                        fh.seekToEndOfFile(); fh.write(data); try? fh.close()
+                    }
+                }
+            }
+            #endif
+            return nil
+        }
+        #if DEBUG
+        // One-shot dump of the raw start string so we can see what timezone format OWA returns.
+        if subject.contains("9:00") || subject.contains("9 утр") {
+            let line = "[mapItem RAW] subject='\(subject)' startStr='\(startStr)' parsedAsLocal=\(startDate)\n"
+            if let data = line.data(using: .utf8) {
+                let logURL = URL(fileURLWithPath: "/tmp/owawidget_freeslots.log")
+                if let fh = try? FileHandle(forWritingTo: logURL) {
+                    fh.seekToEndOfFile(); fh.write(data); try? fh.close()
+                }
+            }
+        }
+        #endif
 
         let id = item.ItemId?.Id ?? UUID().uuidString
         let (joinURL, platform) = resolveJoinURL(from: item)

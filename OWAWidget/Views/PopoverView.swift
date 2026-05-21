@@ -13,15 +13,16 @@ struct PopoverView: View {
     let contentHorizontalPadding: CGFloat = 12
     @State private var selectedDayOffset: Int = 0
     @State private var selectedEvent: CalendarEvent? = nil
+    private let minDayOffset = -7
     private let maxDayOffset = 6
 
     enum DateNavBarPolicy {
         static func shouldShowJumpToToday(selectedDayOffset: Int) -> Bool {
-            selectedDayOffset > 0
+            selectedDayOffset != 0
         }
 
-        static func canGoToPreviousDay(selectedDayOffset: Int) -> Bool {
-            selectedDayOffset > 0
+        static func canGoToPreviousDay(selectedDayOffset: Int, minDayOffset: Int) -> Bool {
+            selectedDayOffset > minDayOffset
         }
 
         static func canGoToNextDay(selectedDayOffset: Int, maxDayOffset: Int) -> Bool {
@@ -82,6 +83,14 @@ struct PopoverView: View {
                 .help(localization.tr("popover.sync.now"))
                 .accessibilityLabel(localization.tr("popover.sync.now"))
             }
+
+            Button { openCreateMeeting() } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 13))
+            }
+            .buttonStyle(.plain)
+            .help(localization.tr("popover.new.meeting"))
+            .accessibilityLabel(localization.tr("popover.new.meeting"))
 
             Button { openSettings() } label: {
                 Image(systemName: "gearshape")
@@ -196,7 +205,7 @@ struct PopoverView: View {
     private var dateNavBar: some View {
         HStack {
             Button {
-                if DateNavBarPolicy.canGoToPreviousDay(selectedDayOffset: selectedDayOffset) {
+                if DateNavBarPolicy.canGoToPreviousDay(selectedDayOffset: selectedDayOffset, minDayOffset: minDayOffset) {
                     selectedDayOffset -= 1
                     resetMeetingDetailState()
                 }
@@ -205,13 +214,16 @@ struct PopoverView: View {
                     .font(.system(size: 11, weight: .medium))
             }
             .buttonStyle(.plain)
-            .disabled(!DateNavBarPolicy.canGoToPreviousDay(selectedDayOffset: selectedDayOffset))
+            .disabled(!DateNavBarPolicy.canGoToPreviousDay(selectedDayOffset: selectedDayOffset, minDayOffset: minDayOffset))
             .accessibilityLabel(localization.tr("a11y.nav.previous.day"))
 
             Spacer()
 
-            Text(localization.daySectionLabel(for: selectedDate, calendar: .current))
-                .font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 6) {
+                Text(localization.daySectionLabel(for: selectedDate, calendar: AppTimeZone.calendar))
+                    .font(.system(size: 12, weight: .semibold))
+                TimeZoneBadge()
+            }
 
             Spacer()
 
@@ -220,7 +232,8 @@ struct PopoverView: View {
                     selectedDayOffset = 0
                     resetMeetingDetailState()
                 } label: {
-                    Label(localization.tr("popover.nav.today"), systemImage: "arrow.uturn.backward.circle")
+                    let icon = selectedDayOffset < 0 ? "arrow.uturn.forward.circle" : "arrow.uturn.backward.circle"
+                    Label(localization.tr("popover.nav.today"), systemImage: icon)
                         .labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(.plain)
@@ -273,6 +286,11 @@ struct PopoverView: View {
                 .padding(.horizontal, contentHorizontalPadding)
                 .padding(.vertical, 7)
         }
+    }
+
+    private func openCreateMeeting() {
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow(id: "create-meeting")
     }
 
     private func openSettings() {
@@ -343,8 +361,8 @@ struct PopoverView: View {
     private var now: Date { Date() }
 
     private var selectedDate: Date {
-        Calendar.current.date(byAdding: .day, value: selectedDayOffset,
-            to: Calendar.current.startOfDay(for: Date()))!
+        AppTimeZone.calendar.date(byAdding: .day, value: selectedDayOffset,
+            to: AppTimeZone.calendar.startOfDay(for: Date()))!
     }
 
     /// Meetings starting within 5 minutes of the earliest upcoming, sorted: with URL first
@@ -381,7 +399,7 @@ struct PopoverView: View {
     }
 
     private var eventSections: [(label: String, date: Date, events: [CalendarEvent])] {
-        let calendar = Calendar.current
+        let calendar = AppTimeZone.calendar
         let dayStart = calendar.startOfDay(for: selectedDate)
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
 

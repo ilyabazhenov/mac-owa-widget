@@ -7,6 +7,12 @@
 "language.option.english" = "English";
 "language.option.russian" = "Русский";
 
+"appearance.section.title" = "Оформление";
+"appearance.picker.title" = "Тема приложения";
+"appearance.option.system" = "Системная";
+"appearance.option.light" = "Светлая";
+"appearance.option.dark" = "Тёмная";
+
 "settings.tab.accounts" = "Аккаунты";
 "settings.tab.preferences" = "Настройки";
 "settings.tab.about" = "О приложении";
@@ -34,6 +40,9 @@
 "settings.account.save.failed" = "Не удалось сохранить: %@";
 "settings.account.connection.auth.failed" = "Не удалось подключиться к OWA. Проверьте адрес сервера, логин и пароль.";
 
+"preferences.shortcuts.section" = "Горячие клавиши";
+"preferences.shortcuts.createMeeting" = "Новая встреча";
+
 "preferences.startup.section" = "Запуск";
 "preferences.startup.launchAtLogin" = "Запускать при входе в систему";
 "preferences.startup.requiresApproval" = "Требуется разрешение в Системных настройках → Объекты входа.";
@@ -58,6 +67,12 @@
 "preferences.notifications.screen" = "Показывать баннеры на";
 "preferences.notifications.screen.main" = "Главном экране";
 "preferences.notifications.screen.active" = "Активном экране (где курсор)";
+"preferences.notifications.position" = "Позиция";
+"preferences.notifications.position.group.top" = "Сверху";
+"preferences.notifications.position.group.bottom" = "Снизу";
+"preferences.notifications.position.short.left" = "Слева";
+"preferences.notifications.position.short.center" = "По центру";
+"preferences.notifications.position.short.right" = "Справа";
 "preferences.notifications.sound" = "Звук";
 "preferences.notifications.sound.preview" = "Прослушать";
 "preferences.notifications.sound.glass" = "Glass — звонкий и чистый";
@@ -89,6 +104,7 @@
 "preferences.debug.reminder.delay" = "Задержка тестового напоминания";
 "preferences.debug.reminder.trigger" = "Показать тестовое напоминание";
 
+"menu.new.meeting" = "Новая встреча";
 "popover.sync.now" = "Синхронизировать";
 "popover.settings" = "Настройки";
 "popover.quit" = "Выйти";
@@ -151,6 +167,7 @@
 "sync.elapsed.seconds" = "%d с назад";
 "sync.status.offline.cached" = "Офлайн: показываю кэшированные встречи (%@)";
 "sync.status.error" = "Ошибка: %@";
+"sync.status.auth.required" = "Неверный пароль — обновите в Настройках";
 
 "date.today" = "Сегодня";
 "date.tomorrow" = "Завтра";
@@ -164,3 +181,64 @@
 "about.version" = "Версия %@";
 "about.description" = "Быстрый доступ к календарю Exchange из строки меню.";
 "about.github" = "GitHub";
+
+"window.create.meeting.title" = "Новая встреча";
+"popover.new.meeting" = "Новая встреча";
+"create.meeting.title.label" = "Название";
+"create.meeting.title.placeholder" = "Название встречи";
+"create.meeting.agenda.label" = "Повестка";
+"create.meeting.agenda.placeholder" = "Необязательно — темы и заметки для участников";
+"create.meeting.attendees.label" = "Участники";
+"create.meeting.attendees.placeholder" = "Поиск по имени или email…";
+"create.meeting.attendees.required" = "Обязательные";
+"create.meeting.attendees.optional" = "Опциональные";
+"create.meeting.attendees.required.placeholder" = "Добавить обязательного…";
+"create.meeting.attendees.optional.placeholder" = "Добавить опционального…";
+"create.meeting.attendees.make.optional" = "Сделать опциональным";
+"create.meeting.attendees.make.required" = "Сделать обязательным";
+"create.meeting.range.label" = "Диапазон дат";
+"create.meeting.duration.label" = "Длительность";
+"create.meeting.time.label" = "Время";
+"create.meeting.time.start" = "Начало";
+"create.meeting.time.end" = "Конец";
+"create.meeting.location.label" = "Расположение";
+"create.meeting.location.placeholder" = "Ссылка на комнату (необязательно)";
+"create.meeting.find.slots" = "Найти свободные слоты";
+"create.meeting.refresh.slots" = "Обновить слоты";
+"create.meeting.create" = "Создать встречу";
+"create.meeting.no.slots" = "Нет свободных слотов в выбранном диапазоне";
+"create.meeting.no.slots.next.week" = "Следующая неделя";
+"create.meeting.no.slots.shorter" = "Сократить до 30 мин";
+"create.meeting.available.slots" = "Доступные слоты";
+"create.meeting.suggestions.title" = "Лучшие варианты";
+"create.meeting.suggestions.reason.early" = "Раннее утро";
+"create.meeting.suggestions.reason.morning" = "Утро";
+"create.meeting.suggestions.reason.afternoon" = "После обеда";
+"create.meeting.suggestions.reason.lateday" = "Конец дня";
+"create.meeting.view.grid" = "Сетка";
+"create.meeting.view.list" = "Список";
+"create.meeting.week.previous" = "Предыдущая неделя";
+"create.meeting.week.next" = "Следующая неделя";
+"create.meeting.week.current" = "Текущая неделя";
+"create.meeting.week.next.relative" = "Следующая неделя";
+"create.meeting.week.previous.relative" = "Прошлая неделя";
+"create.meeting.week.in.n" = "Через %d нед.";
+"create.meeting.week.n.ago" = "%d нед. назад";
+"create.meeting.week.today" = "Сегодня";
+"create.meeting.week.today.hint" = "Перейти на текущую неделю";
+"create.meeting.recent.label" = "Недавние";
+"create.meeting.slots.hint" = "Добавьте хотя бы одного участника — свободные слоты подгрузятся сами.";
+"create.meeting.success" = "Встреча создана";
+"meeting.range.today" = "Сегодня";
+"meeting.range.tomorrow" = "Завтра";
+"meeting.range.this.week" = "На этой неделе";
+"meeting.range.next.week" = "На следующей неделе";
+"meeting.duration.15min" = "15 мин";
+"meeting.duration.30min" = "30 мин";
+"meeting.duration.45min" = "45 мин";
+"meeting.duration.60min" = "1 час";
+"create.meeting.legend.free" = "Свободно";
+"create.meeting.legend.free_short" = "Короткое окно";
+"create.meeting.legend.tentative" = "Под вопросом";
+"create.meeting.legend.busy" = "Занято";
+"create.meeting.legend.oof" = "Вне офиса";

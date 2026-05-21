@@ -7,6 +7,12 @@
 "language.option.english" = "English";
 "language.option.russian" = "Russian";
 
+"appearance.section.title" = "Appearance";
+"appearance.picker.title" = "App theme";
+"appearance.option.system" = "System";
+"appearance.option.light" = "Light";
+"appearance.option.dark" = "Dark";
+
 "settings.tab.accounts" = "Accounts";
 "settings.tab.preferences" = "Preferences";
 "settings.tab.about" = "About";
@@ -34,6 +40,9 @@
 "settings.account.save.failed" = "Save failed: %@";
 "settings.account.connection.auth.failed" = "Could not connect to OWA. Check the server address, login, and password.";
 
+"preferences.shortcuts.section" = "Shortcuts";
+"preferences.shortcuts.createMeeting" = "New Meeting";
+
 "preferences.startup.section" = "Startup";
 "preferences.startup.launchAtLogin" = "Launch at login";
 "preferences.startup.requiresApproval" = "Approval needed in System Settings → Login Items.";
@@ -58,6 +67,12 @@
 "preferences.notifications.screen" = "Show banners on";
 "preferences.notifications.screen.main" = "Main screen";
 "preferences.notifications.screen.active" = "Active screen (where cursor is)";
+"preferences.notifications.position" = "Position";
+"preferences.notifications.position.group.top" = "Top";
+"preferences.notifications.position.group.bottom" = "Bottom";
+"preferences.notifications.position.short.left" = "Left";
+"preferences.notifications.position.short.center" = "Center";
+"preferences.notifications.position.short.right" = "Right";
 "preferences.notifications.sound" = "Sound";
 "preferences.notifications.sound.preview" = "Preview";
 "preferences.notifications.sound.glass" = "Glass — bright and clean";
@@ -89,6 +104,7 @@
 "preferences.debug.reminder.delay" = "Test reminder delay";
 "preferences.debug.reminder.trigger" = "Trigger test reminder";
 
+"menu.new.meeting" = "New Meeting";
 "popover.sync.now" = "Sync now";
 "popover.settings" = "Settings";
 "popover.quit" = "Quit";
@@ -151,6 +167,7 @@
 "sync.elapsed.seconds" = "%d s ago";
 "sync.status.offline.cached" = "Offline, showing cached meetings (%@)";
 "sync.status.error" = "Error: %@";
+"sync.status.auth.required" = "Invalid password — update in Settings";
 
 "date.today" = "Today";
 "date.tomorrow" = "Tomorrow";
@@ -164,3 +181,64 @@
 "about.version" = "Version %@";
 "about.description" = "Quick access to your Exchange calendar from the menu bar.";
 "about.github" = "GitHub";
+
+"window.create.meeting.title" = "New Meeting";
+"popover.new.meeting" = "New Meeting";
+"create.meeting.title.label" = "Title";
+"create.meeting.title.placeholder" = "Meeting title";
+"create.meeting.agenda.label" = "Agenda";
+"create.meeting.agenda.placeholder" = "Optional notes for attendees…";
+"create.meeting.attendees.label" = "Attendees";
+"create.meeting.attendees.placeholder" = "Search by name or email…";
+"create.meeting.attendees.required" = "Required";
+"create.meeting.attendees.optional" = "Optional";
+"create.meeting.attendees.required.placeholder" = "Add required attendee…";
+"create.meeting.attendees.optional.placeholder" = "Add optional attendee…";
+"create.meeting.attendees.make.optional" = "Make optional";
+"create.meeting.attendees.make.required" = "Make required";
+"create.meeting.range.label" = "Date range";
+"create.meeting.duration.label" = "Duration";
+"create.meeting.time.label" = "Time";
+"create.meeting.time.start" = "Start";
+"create.meeting.time.end" = "End";
+"create.meeting.location.label" = "Location";
+"create.meeting.location.placeholder" = "Room link (optional)";
+"create.meeting.find.slots" = "Find available slots";
+"create.meeting.refresh.slots" = "Refresh slots";
+"create.meeting.create" = "Create meeting";
+"create.meeting.no.slots" = "No available slots in selected range";
+"create.meeting.no.slots.next.week" = "Next week";
+"create.meeting.no.slots.shorter" = "Shorten to 30 min";
+"create.meeting.available.slots" = "Available slots";
+"create.meeting.suggestions.title" = "Top picks";
+"create.meeting.suggestions.reason.early" = "Early morning";
+"create.meeting.suggestions.reason.morning" = "Morning";
+"create.meeting.suggestions.reason.afternoon" = "Afternoon";
+"create.meeting.suggestions.reason.lateday" = "Late day";
+"create.meeting.view.grid" = "Grid";
+"create.meeting.view.list" = "List";
+"create.meeting.week.previous" = "Previous week";
+"create.meeting.week.next" = "Next week";
+"create.meeting.week.current" = "Current week";
+"create.meeting.week.next.relative" = "Next week";
+"create.meeting.week.previous.relative" = "Last week";
+"create.meeting.week.in.n" = "In %d weeks";
+"create.meeting.week.n.ago" = "%d weeks ago";
+"create.meeting.week.today" = "Today";
+"create.meeting.week.today.hint" = "Jump to current week";
+"create.meeting.recent.label" = "Recent";
+"create.meeting.slots.hint" = "Add at least one attendee — available slots load automatically.";
+"create.meeting.success" = "Meeting created";
+"meeting.range.today" = "Today";
+"meeting.range.tomorrow" = "Tomorrow";
+"meeting.range.this.week" = "This week";
+"meeting.range.next.week" = "Next week";
+"meeting.duration.15min" = "15 min";
+"meeting.duration.30min" = "30 min";
+"meeting.duration.45min" = "45 min";
+"meeting.duration.60min" = "1 hour";
+"create.meeting.legend.free" = "Free";
+"create.meeting.legend.free_short" = "Short window";
+"create.meeting.legend.tentative" = "Tentative";
+"create.meeting.legend.busy" = "Busy";
+"create.meeting.legend.oof" = "Out of office";

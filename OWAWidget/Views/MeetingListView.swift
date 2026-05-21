@@ -141,7 +141,7 @@ struct MeetingListView: View {
 
     private func timeGridRow(_ slot: DayHourSlot, fixedHeight: CGFloat) -> some View {
         let isCurrentSlot = isCurrentTimeSlot(slot)
-        let isHalfHourSlot = Calendar.current.component(.minute, from: slot.startDate) == 30
+        let isHalfHourSlot = AppTimeZone.calendar.component(.minute, from: slot.startDate) == 30
 
         return HStack(alignment: .top, spacing: 10) {
             Text(!isHalfHourSlot ? localization.shortTime(slot.startDate) : "")
@@ -237,7 +237,7 @@ struct MeetingListView: View {
     // the current moment appears lower on the timeline with more context above.
     private func scrollAnchorSlotID() -> String? {
         let now = Date()
-        let calendar = Calendar.current
+        let calendar = AppTimeZone.calendar
         guard let section = sections.first(where: { calendar.isDate($0.date, inSameDayAs: now) }) else {
             return nil
         }

@@ -1,0 +1,514 @@
+import XCTest
+@testable import OWAWidget
+
+/// Regression-тесты на текущую логику `CreateMeetingViewModel.cellMatrix`.
+///
+/// `cellMatrix` — горячий computed property, который пересчитывается на каждый рендер
+/// грида. Перед перф-оптимизацией (мемоизацией) фиксируем визуальный output:
+///   • три прохода (заполнение, multi-row free slot, run-merge для занятых) выдают одни
+///     и те же позиции и состояния;
+///   • organizer events продлеваются в attendeeStatuses первым элементом «Вы»;
+///   • displayName fall-back на префикс email, если участник не в draft;
+///   • прошедшая неделя и пустой ввод корректно дают пустую/полную матрицу.
+@MainActor
+final class CreateMeetingCellMatrixTests: XCTestCase {
+
+    /// 2025-05-12 — понедельник по календарю Europe/Moscow. Все тесты якорятся к нему.
+    private let mondayMSK: Date = {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Europe/Moscow")!
+        return cal.date(from: DateComponents(year: 2025, month: 5, day: 12, hour: 0, minute: 0))!
+    }()
+
+    // MARK: - Helpers
+
+    private func makeVM(
+        attendees: [ResolvedAttendee] = [
+            ResolvedAttendee(displayName: "Alice", email: "alice@x.com", jobTitle: nil)
+        ],
+        attendeeAvailabilities: [AttendeeAvailability] = [],
+        organizerAvailability: AttendeeAvailability? = nil,
+        organizerEvents: [CalendarEvent] = [],
+        freeSlots: [FreeSlot] = []
+    ) -> CreateMeetingViewModel {
+        let svc = CalendarService(
+            providers: [],
+            eventCacheStore: TestInMemoryEventCacheStore(snapshot: nil),
+            notificationService: TestNoOpNotificationService(),
+            customMeetingReminders: TestNoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+        let vm = CreateMeetingViewModel(calendarService: svc, accountID: UUID())
+        var draft = MeetingDraft()
+        draft.selectedWeekStart = mondayMSK
+        draft.requiredAttendees = attendees
+        vm.draft = draft
+        vm.attendeeAvailabilities = attendeeAvailabilities
+        vm.organizerAvailability = organizerAvailability
+        vm.organizerEvents = organizerEvents
+        vm.freeSlots = freeSlots
+        return vm
+    }
+
+    /// Строка занятости длиной 5 дней × 48 получасовиков (с Mon 00:00 MSK). Все free по умолчанию.
+    /// `overrides` позволяет точечно подменить символы: 0=free, 1=tentative, 2=busy, 3=OOF.
+    private func availabilityChars(overrides: [Int: Character] = [:]) -> String {
+        var arr = Array(repeating: Character("0"), count: 5 * 48)
+        for (idx, ch) in overrides { arr[idx] = ch }
+        return String(arr)
+    }
+
+    /// Индекс получасовика от Mon 00:00 MSK в строке занятости.
+    private func slotIndex(dayOffset: Int, hour: Int, minute: Int = 0) -> Int {
+        dayOffset * 48 + hour * 2 + minute / 30
+    }
+
+    /// timeKey, по которому индексируется вторая dimension в `cellMatrix`.
+    private func timeKey(hour: Int, minute: Int = 0) -> Int { hour * 60 + minute }
+
+    /// Достаёт ячейку из матрицы по dayOffset (0=Mon … 4=Fri) и часу/минуте.
+    private func cell(
+        in matrix: [Date: [Int: CellAvailability]],
+        dayOffset: Int,
+        hour: Int,
+        minute: Int = 0
+    ) -> CellAvailability? {
+        let sortedDays = matrix.keys.sorted()
+        guard dayOffset < sortedDays.count else { return nil }
+        return matrix[sortedDays[dayOffset]]?[timeKey(hour: hour, minute: minute)]
+    }
+
+    private func availability(email: String, chars: String) -> AttendeeAvailability {
+        AttendeeAvailability(email: email, mergedFreeBusy: chars, windowStart: mondayMSK, intervalMinutes: 30)
+    }
+
+    private func makeFreeSlot(
+        dayOffset: Int,
+        hour: Int,
+        minute: Int = 0,
+        durationMinutes: Int = 30,
+        score: Double = 0.5
+    ) -> FreeSlot {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Europe/Moscow")!
+        let dayStart = cal.date(byAdding: .day, value: dayOffset, to: mondayMSK)!
+        let start = dayStart.addingTimeInterval(TimeInterval(hour * 3600 + minute * 60))
+        let end = start.addingTimeInterval(TimeInterval(durationMinutes * 60))
+        return FreeSlot(start: start, end: end, score: score)
+    }
+
+    private func makeCalendarEvent(
+        dayOffset: Int,
+        startHour: Int,
+        endHour: Int,
+        title: String
+    ) -> CalendarEvent {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Europe/Moscow")!
+        let dayStart = cal.date(byAdding: .day, value: dayOffset, to: mondayMSK)!
+        return CalendarEvent(
+            id: UUID().uuidString,
+            title: title,
+            startDate: dayStart.addingTimeInterval(TimeInterval(startHour * 3600)),
+            endDate: dayStart.addingTimeInterval(TimeInterval(endHour * 3600)),
+            location: nil,
+            bodyPreview: nil,
+            joinURL: nil,
+            platform: .teams,
+            isAllDay: false,
+            organizer: nil,
+            accountID: UUID()
+        )
+    }
+
+    // MARK: - Пустой ввод / структура матрицы
+
+    func testEmptyAttendeeAvailabilitiesReturnsEmptyMatrix() {
+        let vm = makeVM(attendeeAvailabilities: [])
+        XCTAssertTrue(vm.cellMatrix.isEmpty, "матрица должна быть пустой, пока нет данных от сервера")
+    }
+
+    func testMatrixCoversMondayThroughFridayOnly() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "a@x.com", chars: availabilityChars())])
+        XCTAssertEqual(vm.cellMatrix.count, 5, "Mon–Fri = 5 колонок, без Sat/Sun")
+    }
+
+    func testMatrixUsesNineToSixGridStep30Minutes() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "a@x.com", chars: availabilityChars())])
+        let monday = vm.cellMatrix.keys.sorted().first!
+        let timeKeys = vm.cellMatrix[monday]!.keys.sorted()
+        XCTAssertEqual(timeKeys.first, 9 * 60)
+        XCTAssertEqual(timeKeys.last, 17 * 60 + 30, "последний слот 17:30 (старт), кончается в 18:00")
+        XCTAssertEqual(timeKeys.count, 18)
+    }
+
+    // MARK: - Состояния ячейки из чисел занятости
+
+    func testAllZeroCharsProduceFreeState() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else {
+            XCTFail("expected Mon 10:00 cell"); return
+        }
+        if case .free = cell.state {} else { XCTFail("expected .free for all-zero chars") }
+        XCTAssertEqual(cell.attendeeStatuses.count, 1)
+    }
+
+    func testBusyCharProducesBusyState() {
+        let idx = slotIndex(dayOffset: 0, hour: 10)
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars(overrides: [idx: "2"]))]
+        )
+        guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
+        if case .busy = cell.state {} else { XCTFail("expected .busy for char '2'") }
+    }
+
+    func testTentativeCharProducesTentativeState() {
+        let idx = slotIndex(dayOffset: 0, hour: 11)
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars(overrides: [idx: "1"]))]
+        )
+        guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 11) else { XCTFail(); return }
+        if case .tentative = cell.state {} else { XCTFail("expected .tentative for char '1'") }
+    }
+
+    func testOOFCharProducesOutOfOfficeState() {
+        let idx = slotIndex(dayOffset: 0, hour: 12)
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars(overrides: [idx: "3"]))]
+        )
+        guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 12) else { XCTFail(); return }
+        if case .outOfOffice = cell.state {} else { XCTFail("expected .outOfOffice for char '3'") }
+    }
+
+    // MARK: - Конфликт у организатора
+
+    func testOrganizerEventSurfacesAsFirstAttendeeStatusWithTitle() {
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())],
+            organizerAvailability: availability(email: "me@x.com", chars: availabilityChars()),
+            organizerEvents: [makeCalendarEvent(dayOffset: 0, startHour: 10, endHour: 11, title: "Standup")]
+        )
+        guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
+        XCTAssertEqual(cell.attendeeStatuses.first?.displayName, "Вы", "organizer row должен идти первым")
+        XCTAssertEqual(cell.attendeeStatuses.first?.eventTitle, "Standup")
+    }
+
+    func testOrganizerEventTitleAbsentOutsideEventWindow() {
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())],
+            organizerAvailability: availability(email: "me@x.com", chars: availabilityChars()),
+            organizerEvents: [makeCalendarEvent(dayOffset: 0, startHour: 10, endHour: 11, title: "Standup")]
+        )
+        guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 14) else { XCTFail(); return }
+        XCTAssertEqual(cell.attendeeStatuses.first?.displayName, "Вы")
+        XCTAssertNil(cell.attendeeStatuses.first?.eventTitle)
+    }
+
+    // MARK: - DisplayName fall-back
+
+    func testAttendeeDisplayNameFallsBackToEmailLocalPartWhenNotInDraft() {
+        // В draft пусто, но availability приходит на «незнакомый» email — берём префикс до `@`.
+        let vm = makeVM(
+            attendees: [],
+            attendeeAvailabilities: [availability(email: "unknown@x.com", chars: availabilityChars())]
+        )
+        guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
+        XCTAssertEqual(cell.attendeeStatuses.first?.displayName, "unknown")
+    }
+
+    func testAttendeeDisplayNameUsesDraftEntryWhenPresent() {
+        let alice = ResolvedAttendee(displayName: "Alice Doe", email: "alice@x.com", jobTitle: nil)
+        let vm = makeVM(
+            attendees: [alice],
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())]
+        )
+        guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
+        XCTAssertEqual(cell.attendeeStatuses.first?.displayName, "Alice Doe")
+    }
+
+    // MARK: - FreeSlot: позиция и score
+
+    func test30MinuteFreeSlotHasSinglePositionAndCarriesScore() {
+        let slot = makeFreeSlot(dayOffset: 0, hour: 10, durationMinutes: 30, score: 0.42)
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())],
+            freeSlots: [slot]
+        )
+        guard let c = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
+        XCTAssertEqual(c.slotPosition, .single)
+        XCTAssertNotNil(c.freeSlot)
+        guard case let .free(score) = c.state else { XCTFail("expected .free state"); return }
+        XCTAssertEqual(score, 0.42, accuracy: 0.001)
+    }
+
+    func test60MinuteFreeSlotSpansTwoRowsAsStartAndEnd() {
+        let slot = makeFreeSlot(dayOffset: 0, hour: 10, durationMinutes: 60, score: 0.7)
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())],
+            freeSlots: [slot]
+        )
+        guard let start = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10),
+              let end   = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10, minute: 30) else {
+            XCTFail("expected both rows of 60-min slot"); return
+        }
+        XCTAssertEqual(start.slotPosition, .start)
+        XCTAssertEqual(end.slotPosition, .end)
+        XCTAssertNotNil(start.freeSlot)
+        XCTAssertNotNil(end.freeSlot)
+    }
+
+    func test90MinuteFreeSlotSpansThreeRowsAsStartMiddleEnd() {
+        let slot = makeFreeSlot(dayOffset: 0, hour: 10, durationMinutes: 90)
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())],
+            freeSlots: [slot]
+        )
+        XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 10)?.slotPosition, .start)
+        XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 10, minute: 30)?.slotPosition, .middle)
+        XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 11)?.slotPosition, .end)
+    }
+
+    // MARK: - Третий проход: объединение последовательных занятых ячеек
+
+    func testConsecutiveBusyCellsMergeIntoStartAndEndBlock() {
+        // Два соседних busy получасовика 10:00–11:00 без FreeSlot.
+        let idx1 = slotIndex(dayOffset: 0, hour: 10)
+        let idx2 = slotIndex(dayOffset: 0, hour: 10, minute: 30)
+        let chars = availabilityChars(overrides: [idx1: "2", idx2: "2"])
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: chars)])
+        XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 10)?.slotPosition, .start)
+        XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 10, minute: 30)?.slotPosition, .end)
+    }
+
+    func testThreeBusyCellsMergeIntoStartMiddleEndBlock() {
+        let idxs = [
+            slotIndex(dayOffset: 0, hour: 10),
+            slotIndex(dayOffset: 0, hour: 10, minute: 30),
+            slotIndex(dayOffset: 0, hour: 11),
+        ]
+        var overrides: [Int: Character] = [:]
+        for i in idxs { overrides[i] = "2" }
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars(overrides: overrides))]
+        )
+        XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 10)?.slotPosition, .start)
+        XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 10, minute: 30)?.slotPosition, .middle)
+        XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 11)?.slotPosition, .end)
+    }
+
+    func testIsolatedBusyCellRemainsSinglePosition() {
+        let idx = slotIndex(dayOffset: 0, hour: 10)
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars(overrides: [idx: "2"]))]
+        )
+        XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 10)?.slotPosition, .single)
+    }
+
+    func testBusyOfDifferentKindsDoNotMerge() {
+        // Busy + tentative подряд — два разных kind, не сливаются в один блок.
+        let idxBusy = slotIndex(dayOffset: 0, hour: 10)
+        let idxTentative = slotIndex(dayOffset: 0, hour: 10, minute: 30)
+        let overrides: [Int: Character] = [idxBusy: "2", idxTentative: "1"]
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars(overrides: overrides))]
+        )
+        XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 10)?.slotPosition, .single, "busy один")
+        XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 10, minute: 30)?.slotPosition, .single, "tentative один")
+    }
+
+    // MARK: - Мемоизация: cellMatrixComputeCount
+
+    func testRepeatedReadsHitCacheWithoutRecomputing() {
+        // Главная цель мемоизации: SwiftUI body может читать cellMatrix десятки раз
+        // за рендер, и каждый hover вызывает новый рендер. Должен быть один пересчёт.
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        _ = vm.cellMatrix
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1, "повторные чтения должны брать из кэша")
+    }
+
+    func testTitleMutationDoesNotInvalidateCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        var d = vm.draft
+        d.title = "New title"
+        vm.draft = d
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1, "печать в title не должна дёргать пересчёт")
+    }
+
+    func testAgendaAndLocationMutationsDoNotInvalidateCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        var d = vm.draft
+        d.agenda = "Discuss roadmap"
+        d.location = "Room A"
+        vm.draft = d
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+    }
+
+    func testSelectedSlotMutationDoesNotInvalidateCache() {
+        let slot = makeFreeSlot(dayOffset: 0, hour: 10)
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())],
+            freeSlots: [slot]
+        )
+        _ = vm.cellMatrix
+        let before = vm.cellMatrixComputeCount
+
+        vm.selectedSlot = slot
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, before, "выбор слота не должен дёргать пересчёт")
+    }
+
+    func testIsLoadingAndErrorMessageDoNotInvalidateCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        let before = vm.cellMatrixComputeCount
+
+        vm.isLoadingSlots = true
+        vm.errorMessage = "x"
+        vm.successMessage = "y"
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, before)
+    }
+
+    func testAddingRequiredAttendeeInvalidatesCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        var d = vm.draft
+        d.requiredAttendees.append(ResolvedAttendee(displayName: "Bob", email: "bob@x.com", jobTitle: nil))
+        vm.draft = d
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 2, "новый required участник должен инвалидировать кэш")
+    }
+
+    func testAddingOptionalAttendeeInvalidatesCache() {
+        // Optional участники не влияют на закраску, но влияют на tooltip displayName — должны
+        // инвалидировать кэш.
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        var d = vm.draft
+        d.optionalAttendees.append(ResolvedAttendee(displayName: "Carol", email: "carol@x.com", jobTitle: nil))
+        vm.draft = d
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 2)
+    }
+
+    func testChangingSelectedWeekInvalidatesCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+
+        var d = vm.draft
+        d.selectedWeekStart = vm.draft.weekStartOffset(by: 1)
+        vm.draft = d
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 2, "смена недели должна инвалидировать кэш")
+    }
+
+    func testNewAvailabilityDataInvalidatesCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+
+        let idx = slotIndex(dayOffset: 0, hour: 10)
+        vm.attendeeAvailabilities = [availability(email: "alice@x.com", chars: availabilityChars(overrides: [idx: "2"]))]
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 2)
+        if case .busy = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10)?.state {} else {
+            XCTFail("cell должна перейти в .busy после обновления availability")
+        }
+    }
+
+    func testNewFreeSlotsInvalidateCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        vm.freeSlots = [makeFreeSlot(dayOffset: 0, hour: 10, durationMinutes: 60)]
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 2)
+    }
+
+    func testNewOrganizerEventsInvalidateCache() {
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())],
+            organizerAvailability: availability(email: "me@x.com", chars: availabilityChars())
+        )
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        vm.organizerEvents = [makeCalendarEvent(dayOffset: 0, startHour: 10, endHour: 11, title: "Standup")]
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 2)
+    }
+
+    func testAttendeeReorderDoesNotInvalidateCache() {
+        // cellMatrixSignature нормализует email-список (сортировка) — перестановка участников
+        // не должна вызывать пересчёт.
+        let alice = ResolvedAttendee(displayName: "Alice", email: "alice@x.com", jobTitle: nil)
+        let bob = ResolvedAttendee(displayName: "Bob", email: "bob@x.com", jobTitle: nil)
+        let vm = makeVM(
+            attendees: [alice, bob],
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())]
+        )
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        var d = vm.draft
+        d.requiredAttendees = [bob, alice]
+        vm.draft = d
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1, "перестановка не должна инвалидировать")
+    }
+}
+
+// MARK: - Test doubles
+
+private final class TestInMemoryEventCacheStore: EventCacheStoring {
+    var snapshot: EventCacheSnapshot?
+    init(snapshot: EventCacheSnapshot?) { self.snapshot = snapshot }
+    func load() -> EventCacheSnapshot? { snapshot }
+    func save(events: [CalendarEvent], rangeStart: Date, rangeEnd: Date) {
+        snapshot = EventCacheSnapshot(
+            version: 1,
+            savedAt: Date(),
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+            events: events
+        )
+    }
+    func clear() { snapshot = nil }
+}
+
+private actor TestNoOpNotificationService: NotificationServicing {
+    func setup(localization: NotificationLocalization) {}
+    func requestAuthorization() async {}
+    func removeAllPendingMeetingNotifications() async {}
+    func scheduleNotifications(
+        for events: [CalendarEvent],
+        leadMinutes: Int,
+        localization: NotificationLocalization
+    ) async {}
+}
+
+@MainActor
+private final class TestNoOpMeetingReminderController: CustomMeetingReminderControlling {
+    func cancelAll(closeActiveReminder: Bool) {}
+    func reschedule(
+        events: [CalendarEvent],
+        leadMinutes: Int,
+        localization: NotificationLocalization,
+        sound: MeetingReminderSound
+    ) {}
+}

@@ -109,10 +109,12 @@ final class LocalizationService: ObservableObject {
             return tr("sync.status.offline.cached", message)
         case .error(let message):
             return tr("sync.status.error", message)
+        case .authenticationRequired:
+            return tr("sync.status.auth.required")
         }
     }
 
-    func daySectionLabel(for date: Date, calendar: Calendar = .current, relativeTo referenceNow: Date = Date()) -> String {
+    func daySectionLabel(for date: Date, calendar: Calendar = AppTimeZone.calendar, relativeTo referenceNow: Date = Date()) -> String {
         if calendar.isDate(date, inSameDayAs: referenceNow) {
             return "\(tr("date.today")), \(dayAndMonthLabel(for: date, calendar: calendar))"
         }
@@ -127,6 +129,7 @@ final class LocalizationService: ObservableObject {
         formatter.timeStyle = .none
         formatter.locale = locale
         formatter.calendar = calendar
+        formatter.timeZone = AppTimeZone.zone
         return formatter.string(from: date)
     }
 
@@ -135,6 +138,7 @@ final class LocalizationService: ObservableObject {
         formatter.timeStyle = .short
         formatter.dateStyle = .none
         formatter.locale = locale
+        formatter.timeZone = AppTimeZone.zone
         return formatter.string(from: date)
     }
 
@@ -147,6 +151,7 @@ final class LocalizationService: ObservableObject {
         let formatter = DateFormatter()
         formatter.locale = locale
         formatter.calendar = calendar
+        formatter.timeZone = AppTimeZone.zone
         formatter.setLocalizedDateFormatFromTemplate("d MMMM")
         return formatter.string(from: date)
     }

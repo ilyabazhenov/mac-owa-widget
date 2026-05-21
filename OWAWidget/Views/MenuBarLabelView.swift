@@ -1,3 +1,4 @@
+import KeyboardShortcuts
 import SwiftUI
 
 struct MenuBarLabelView: View {
@@ -34,10 +35,26 @@ struct MenuBarLabelView: View {
             }
         }
         .help(helpText)
+        .onAppear {
+            KeyboardShortcuts.onKeyUp(for: .createMeeting) {
+                NotificationCenter.default.post(name: .openCreateMeetingShortcut, object: nil)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openCreateMeetingShortcut)) { _ in
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "create-meeting")
+        }
     }
 
     private func buildContextMenu() -> NSMenu {
         let menu = NSMenu()
+
+        menu.addItem(ClosureMenuItem(title: localization.tr("menu.new.meeting")) {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "create-meeting")
+        })
+
+        menu.addItem(.separator())
 
         menu.addItem(ClosureMenuItem(title: localization.tr("popover.sync.now")) {
             service.syncNow()

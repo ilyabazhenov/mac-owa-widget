@@ -287,6 +287,7 @@ enum OWAError: LocalizedError {
     case invalidResponse
     case httpError(Int, String)
     case encodingFailed
+    case ewsError(String)
 
     var errorDescription: String? {
         switch self {
@@ -296,6 +297,7 @@ enum OWAError: LocalizedError {
         case .invalidResponse:             "Invalid server response"
         case .httpError(let c, let m):     Self.describeHTTPError(statusCode: c, responseBody: m)
         case .encodingFailed:              "Failed to encode request"
+        case .ewsError(let code):          "Exchange error: \(code)"
         }
     }
 
@@ -361,5 +363,18 @@ enum OWAError: LocalizedError {
         }
 
         return statusCode == 500 && diagnosticResponseKind(from: responseBody) == "fault.abstractClass"
+    }
+
+    /// Returns `true` when the error indicates the stored credentials are definitively wrong.
+    /// Used by the sync circuit breaker to stop retrying and prevent account lockout.
+    static func isAuthError(_ error: Error) -> Bool {
+        switch error as? OWAError {
+        case .authenticationFailed:
+            return true
+        case .httpError(let code, _) where code == 401 || code == 440:
+            return true
+        default:
+            return false
+        }
     }
 }

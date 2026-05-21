@@ -16,7 +16,6 @@ struct PopoverWindowAligner: NSViewRepresentable {
 
     func updateNSView(_ nsView: PopoverWindowAlignmentView, context: Context) {
         nsView.coordinator = context.coordinator
-        nsView.requestAlignment()
     }
 
     final class Coordinator {
@@ -29,13 +28,7 @@ final class PopoverWindowAlignmentView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        requestAlignment()
-    }
-
-    func requestAlignment() {
-        DispatchQueue.main.async { [weak self] in
-            self?.alignWindowLeft()
-        }
+        alignWindowLeft()
     }
 
     private func alignWindowLeft() {

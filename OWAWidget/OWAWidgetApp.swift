@@ -4,6 +4,8 @@ import AppKit
 
 @main
 struct OWAWidgetApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     // Using property-initializer syntax so SwiftUI evaluates each expression exactly once,
     // regardless of how many times the App struct is re-instantiated during startup.
     // With the old pattern (_foo = StateObject(wrappedValue: Foo()) inside an explicit init()),
@@ -12,6 +14,7 @@ struct OWAWidgetApp: App {
     @StateObject private var localizationService = LocalizationService(resourceBundle: .main)
     @StateObject private var calendarService = CalendarService()
     @StateObject private var updateCheckService = UpdateCheckService()
+    @StateObject private var appearanceService = AppearanceService()
 
     // Static: one delegate instance survives across App struct re-evaluations.
     private static let notificationDelegate = AppNotificationDelegate()
@@ -27,6 +30,7 @@ struct OWAWidgetApp: App {
                 .environmentObject(calendarService)
                 .environmentObject(localizationService)
                 .environmentObject(updateCheckService)
+                .environmentObject(appearanceService)
                 .environment(\.locale, localizationService.locale)
                 .onAppear {
                     setupNotificationDelegate()
@@ -43,14 +47,35 @@ struct OWAWidgetApp: App {
                 .onAppear {
                     syncLocalization()
                     updateCheckService.start()
+                    appearanceService.applyOnLaunch()
                 }
         }
         .menuBarExtraStyle(.window)
+
+        Window(localizationService.tr("window.create.meeting.title"), id: "create-meeting") {
+            Group {
+                if let account = calendarService.accounts.first {
+                    CreateMeetingView(calendarService: calendarService, accountID: account.id)
+                        .environmentObject(localizationService)
+                        .environmentObject(appearanceService)
+                        .environment(\.locale, localizationService.locale)
+                }
+            }
+            .onAppear {
+                NSApp.setActivationPolicy(.regular)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            .onDisappear { NSApp.setActivationPolicy(.accessory) }
+        }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 900, height: 680)
+        .defaultPosition(.center)
 
         Window(localizationService.tr("window.settings.title"), id: "settings") {
             SettingsView(calendarService: calendarService)
                 .environmentObject(localizationService)
                 .environmentObject(updateCheckService)
+                .environmentObject(appearanceService)
                 .environment(\.locale, localizationService.locale)
                 .frame(minWidth: 480, minHeight: 360)
                 .onAppear {
@@ -63,6 +88,7 @@ struct OWAWidgetApp: App {
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
+
     }
 
     /// Wires the notification delegate to the live CalendarService owned by SwiftUI.
@@ -82,6 +108,19 @@ struct OWAWidgetApp: App {
         if let icon = NSImage(named: "AppIcon") ?? NSImage(named: "AppIcon.icns") {
             NSApplication.shared.applicationIconImage = icon
         }
+    }
+}
+
+// MARK: - App delegate
+
+/// Brings user-facing windows (create-meeting, settings) to the front when the app is
+/// activated via Cmd+Tab. Needed because dynamic setActivationPolicy(.regular) from
+/// LSUIElement doesn't automatically raise windows on activation.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidBecomeActive(_ notification: Notification) {
+        NSApp.windows
+            .filter { $0.canBecomeMain && !($0 is NSPanel) && $0.isVisible }
+            .forEach { $0.makeKeyAndOrderFront(nil) }
     }
 }
 

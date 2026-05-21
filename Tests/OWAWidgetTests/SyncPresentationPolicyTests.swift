@@ -25,4 +25,22 @@ final class SyncPresentationPolicyTests: XCTestCase {
             )
         )
     }
+
+    func testShowsErrorWhenAuthRequiredAndNoEvents() {
+        XCTAssertTrue(
+            SyncPresentationPolicy.shouldShowErrorState(
+                syncStatus: .authenticationRequired,
+                eventsCount: 0
+            )
+        )
+    }
+
+    func testDoesNotShowErrorWhenAuthRequiredButCachedEventsExist() {
+        XCTAssertFalse(
+            SyncPresentationPolicy.shouldShowErrorState(
+                syncStatus: .authenticationRequired,
+                eventsCount: 3
+            )
+        )
+    }
 }

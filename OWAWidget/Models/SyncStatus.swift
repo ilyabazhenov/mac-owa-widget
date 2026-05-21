@@ -6,6 +6,9 @@ enum SyncStatus: Sendable {
     case lastSynced(Date)
     case offlineCached(String)
     case error(String)
+    /// Sync is suspended because the stored credentials were rejected by the server.
+    /// Resumes automatically when the user updates their password.
+    case authenticationRequired
 
     var displayText: String {
         switch self {
@@ -21,6 +24,8 @@ enum SyncStatus: Sendable {
             return "Offline: \(msg)"
         case .error(let msg):
             return "Error: \(msg)"
+        case .authenticationRequired:
+            return NSLocalizedString("sync.status.auth.required", comment: "")
         }
     }
 
@@ -36,6 +41,11 @@ enum SyncStatus: Sendable {
 
     var isOfflineCached: Bool {
         if case .offlineCached = self { return true }
+        return false
+    }
+
+    var isAuthenticationRequired: Bool {
+        if case .authenticationRequired = self { return true }
         return false
     }
 }

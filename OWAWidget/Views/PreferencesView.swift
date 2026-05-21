@@ -1,9 +1,11 @@
+import KeyboardShortcuts
 import SwiftUI
 
 struct PreferencesView: View {
     @ObservedObject var vm: SettingsViewModel
     @EnvironmentObject private var localization: LocalizationService
     @EnvironmentObject private var updateCheck: UpdateCheckService
+    @EnvironmentObject private var appearance: AppearanceService
 
     private let syncOptions: [(minutes: Int, value: TimeInterval)] = [
         (1, 60),
@@ -25,6 +27,14 @@ struct PreferencesView: View {
 
     var body: some View {
         Form {
+            Section(localization.tr("preferences.shortcuts.section")) {
+                HStack {
+                    Text(localization.tr("preferences.shortcuts.createMeeting"))
+                    Spacer()
+                    KeyboardShortcuts.Recorder(for: .createMeeting)
+                }
+            }
+
             Section(localization.tr("preferences.startup.section")) {
                 Toggle(
                     localization.tr("preferences.startup.launchAtLogin"),
@@ -49,6 +59,15 @@ struct PreferencesView: View {
                 Picker(localization.tr("language.picker.title"), selection: $localization.selectedLanguage) {
                     ForEach(AppLanguage.allCases) { language in
                         Text(localization.tr(language.localizationKey)).tag(language)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
+            Section(localization.tr("appearance.section.title")) {
+                Picker(localization.tr("appearance.picker.title"), selection: $appearance.selectedTheme) {
+                    ForEach(AppTheme.allCases) { theme in
+                        Text(localization.tr(theme.localizationKey)).tag(theme)
                     }
                 }
                 .pickerStyle(.menu)
@@ -89,6 +108,20 @@ struct PreferencesView: View {
                 Picker(localization.tr("preferences.notifications.screen"), selection: $vm.notificationScreenPolicy) {
                     ForEach(NotificationScreenPolicy.allCases) { policy in
                         Text(localization.tr(policy.localizationKey)).tag(policy)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Picker(localization.tr("preferences.notifications.position"), selection: $vm.notificationPosition) {
+                    Section(localization.tr("preferences.notifications.position.group.top")) {
+                        ForEach(NotificationPosition.topCases) { position in
+                            Text(localization.tr(position.shortLocalizationKey)).tag(position)
+                        }
+                    }
+                    Section(localization.tr("preferences.notifications.position.group.bottom")) {
+                        ForEach(NotificationPosition.bottomCases) { position in
+                            Text(localization.tr(position.shortLocalizationKey)).tag(position)
+                        }
                     }
                 }
                 .pickerStyle(.menu)

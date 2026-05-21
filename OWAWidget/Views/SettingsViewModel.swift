@@ -10,6 +10,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var meetingEngagementScope: MeetingEngagementScope { didSet { updateUnsavedChanges() } }
     @Published var meetingEngagementDefaultPeriod: MeetingEngagementPeriod { didSet { updateUnsavedChanges() } }
     @Published var notificationScreenPolicy: NotificationScreenPolicy { didSet { updateUnsavedChanges() } }
+    @Published var notificationPosition: NotificationPosition { didSet { updateUnsavedChanges() } }
     @Published var menuBarDisplayMode: MenuBarDisplayMode { didSet { updateUnsavedChanges() } }
     @Published var dimPastMeetingsOnTimeline: Bool { didSet { updateUnsavedChanges() } }
     @Published var launchAtLogin: Bool
@@ -40,6 +41,7 @@ final class SettingsViewModel: ObservableObject {
         self.meetingEngagementScope = calendarService.meetingEngagementScope
         self.meetingEngagementDefaultPeriod = calendarService.engagementPeriod
         self.notificationScreenPolicy = calendarService.notificationScreenPolicy
+        self.notificationPosition = calendarService.notificationPosition
         self.menuBarDisplayMode = calendarService.menuBarDisplayMode
         self.dimPastMeetingsOnTimeline = calendarService.dimPastMeetingsOnTimeline
         self.launchAtLogin = launchAtLoginManager.isEnabled
@@ -51,6 +53,7 @@ final class SettingsViewModel: ObservableObject {
             meetingEngagementScope: calendarService.meetingEngagementScope,
             meetingEngagementDefaultPeriod: calendarService.engagementPeriod,
             notificationScreenPolicy: calendarService.notificationScreenPolicy,
+            notificationPosition: calendarService.notificationPosition,
             menuBarDisplayMode: calendarService.menuBarDisplayMode,
             dimPastMeetingsOnTimeline: calendarService.dimPastMeetingsOnTimeline
         )
@@ -125,6 +128,7 @@ final class SettingsViewModel: ObservableObject {
         service.notificationLeadMinutes = notificationLeadMinutes
         service.meetingReminderSound = meetingReminderSound
         service.notificationScreenPolicy = notificationScreenPolicy
+        service.notificationPosition = notificationPosition
         service.menuBarDisplayMode = menuBarDisplayMode
         service.dimPastMeetingsOnTimeline = dimPastMeetingsOnTimeline
         service.setMeetingEngagementScope(meetingEngagementScope)
@@ -170,6 +174,7 @@ final class SettingsViewModel: ObservableObject {
         let meetingEngagementScope: MeetingEngagementScope
         let meetingEngagementDefaultPeriod: MeetingEngagementPeriod
         let notificationScreenPolicy: NotificationScreenPolicy
+        let notificationPosition: NotificationPosition
         let menuBarDisplayMode: MenuBarDisplayMode
         let dimPastMeetingsOnTimeline: Bool
     }
@@ -182,6 +187,7 @@ final class SettingsViewModel: ObservableObject {
             meetingEngagementScope: meetingEngagementScope,
             meetingEngagementDefaultPeriod: meetingEngagementDefaultPeriod,
             notificationScreenPolicy: notificationScreenPolicy,
+            notificationPosition: notificationPosition,
             menuBarDisplayMode: menuBarDisplayMode,
             dimPastMeetingsOnTimeline: dimPastMeetingsOnTimeline
         )
