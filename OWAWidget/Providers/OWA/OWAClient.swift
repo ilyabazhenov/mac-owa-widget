@@ -877,61 +877,15 @@ actor OWAClient {
         folderIdentifier: OWAFolderIdentifier?,
         attempt: Int
     ) async throws {
-        let fmt = DateFormatter()
-        fmt.locale = Locale(identifier: "en_US_POSIX")
-        fmt.timeZone = TimeZone(identifier: "UTC")
-        fmt.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
-
-        func attendeesXML(_ list: [ResolvedAttendee]) -> String {
-            list.map { a in
-                "<t:Attendee><t:Mailbox><t:EmailAddress>\(escapeXML(a.email))</t:EmailAddress></t:Mailbox></t:Attendee>"
-            }.joined()
-        }
-
-        let requiredXML = attendeesXML(requiredAttendees)
-        // EWS schema order: RequiredAttendees must precede OptionalAttendees in CalendarItem.
-        let optionalXML = optionalAttendees.isEmpty
-            ? ""
-            : "<t:OptionalAttendees>\(attendeesXML(optionalAttendees))</t:OptionalAttendees>"
-
-        let agendaTrimmed = agenda.trimmingCharacters(in: .whitespacesAndNewlines)
-        let bodyXML: String
-        if agendaTrimmed.isEmpty {
-            bodyXML = ""
-        } else {
-            let html = OWACreateCalendarEventPayload.calendarBodyHTML(plainAgenda: agenda)
-            bodyXML = "<t:Body BodyType=\"HTML\"><![CDATA[\(html)]]></t:Body>"
-        }
-
-        let soap = """
-        <?xml version="1.0" encoding="utf-8"?>
-        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" \
-        xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" \
-        xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">
-          <soap:Header>
-            <t:RequestServerVersion Version="Exchange2013_SP1"/>
-            <t:TimeZoneContext><t:TimeZoneDefinition Id="UTC"/></t:TimeZoneContext>
-          </soap:Header>
-          <soap:Body>
-            <m:CreateItem SendMeetingInvitations="SendToAllAndSaveCopy">
-              <m:SavedItemFolderId><t:DistinguishedFolderId Id="calendar"/></m:SavedItemFolderId>
-              <m:Items>
-                <t:CalendarItem>
-                  <t:Subject>\(escapeXML(title))</t:Subject>
-                  \(bodyXML)
-                  \(location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "<t:Location>\(escapeXML(location.trimmingCharacters(in: .whitespacesAndNewlines)))</t:Location>")
-                  <t:Start>\(fmt.string(from: start))</t:Start>
-                  <t:End>\(fmt.string(from: end))</t:End>
-                  <t:IsReminderSet>true</t:IsReminderSet>
-                  <t:ReminderMinutesBeforeStart>15</t:ReminderMinutesBeforeStart>
-                  <t:RequiredAttendees>\(requiredXML)</t:RequiredAttendees>
-                  \(optionalXML)
-                </t:CalendarItem>
-              </m:Items>
-            </m:CreateItem>
-          </soap:Body>
-        </soap:Envelope>
-        """
+        let soap = OWACreateCalendarEventPayload.createItemSOAP(
+            title: title,
+            agenda: agenda,
+            location: location,
+            start: start,
+            end: end,
+            requiredAttendees: requiredAttendees,
+            optionalAttendees: optionalAttendees
+        )
 
         let ewsURL = try url("/EWS/Exchange.asmx")
         var request = URLRequest(url: ewsURL, timeoutInterval: 20)
@@ -1082,13 +1036,6 @@ actor OWAClient {
         if let soapError = extractEWSResponseCode(from: responseBody), soapError != "NoError" {
             throw OWAError.httpError(200, soapError)
         }
-    }
-
-    private func escapeXML(_ s: String) -> String {
-        s.replacingOccurrences(of: "&", with: "&amp;")
-         .replacingOccurrences(of: "<", with: "&lt;")
-         .replacingOccurrences(of: ">", with: "&gt;")
-         .replacingOccurrences(of: "\"", with: "&quot;")
     }
 
     private func extractEWSResponseCode(from body: String) -> String? {

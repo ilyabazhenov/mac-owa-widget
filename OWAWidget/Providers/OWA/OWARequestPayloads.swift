@@ -223,6 +223,96 @@ enum OWACreateCalendarEventPayload {
         "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">" +
         "</head><body dir=\"ltr\"><div><br></div></body></html>"
     }
+
+    /// Стандартный EWS-форматтер для дат в UTC: `yyyy-MM-dd'T'HH:mm:ss'Z'`.
+    static func ewsDateFormatter() -> DateFormatter {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.timeZone = TimeZone(identifier: "UTC")
+        fmt.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        return fmt
+    }
+
+    /// Чистый XML-эскейп для значений в EWS SOAP-payload.
+    static func escapeXML(_ s: String) -> String {
+        s.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+
+    /// Собирает SOAP-envelope для EWS `CreateItem` (приглашение на встречу).
+    ///
+    /// Чистая функция — без сети и без actor-зависимостей, чтобы покрывать
+    /// тестами экранирование XML, порядок Required → Optional и защиту CDATA.
+    static func createItemSOAP(
+        title: String,
+        agenda: String,
+        location: String,
+        start: Date,
+        end: Date,
+        requiredAttendees: [ResolvedAttendee],
+        optionalAttendees: [ResolvedAttendee] = [],
+        dateFormatter: DateFormatter? = nil
+    ) -> String {
+        let fmt = dateFormatter ?? ewsDateFormatter()
+
+        func attendeesXML(_ list: [ResolvedAttendee]) -> String {
+            list.map { a in
+                "<t:Attendee><t:Mailbox><t:EmailAddress>\(escapeXML(a.email))</t:EmailAddress></t:Mailbox></t:Attendee>"
+            }.joined()
+        }
+
+        let requiredXML = attendeesXML(requiredAttendees)
+        // EWS schema order: RequiredAttendees must precede OptionalAttendees in CalendarItem.
+        let optionalXML = optionalAttendees.isEmpty
+            ? ""
+            : "<t:OptionalAttendees>\(attendeesXML(optionalAttendees))</t:OptionalAttendees>"
+
+        let agendaTrimmed = agenda.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bodyXML: String
+        if agendaTrimmed.isEmpty {
+            bodyXML = ""
+        } else {
+            let html = calendarBodyHTML(plainAgenda: agenda)
+            bodyXML = "<t:Body BodyType=\"HTML\"><![CDATA[\(html)]]></t:Body>"
+        }
+
+        let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        let locationXML = trimmedLocation.isEmpty
+            ? ""
+            : "<t:Location>\(escapeXML(trimmedLocation))</t:Location>"
+
+        return """
+        <?xml version="1.0" encoding="utf-8"?>
+        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" \
+        xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" \
+        xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">
+          <soap:Header>
+            <t:RequestServerVersion Version="Exchange2013_SP1"/>
+            <t:TimeZoneContext><t:TimeZoneDefinition Id="UTC"/></t:TimeZoneContext>
+          </soap:Header>
+          <soap:Body>
+            <m:CreateItem SendMeetingInvitations="SendToAllAndSaveCopy">
+              <m:SavedItemFolderId><t:DistinguishedFolderId Id="calendar"/></m:SavedItemFolderId>
+              <m:Items>
+                <t:CalendarItem>
+                  <t:Subject>\(escapeXML(title))</t:Subject>
+                  \(bodyXML)
+                  \(locationXML)
+                  <t:Start>\(fmt.string(from: start))</t:Start>
+                  <t:End>\(fmt.string(from: end))</t:End>
+                  <t:IsReminderSet>true</t:IsReminderSet>
+                  <t:ReminderMinutesBeforeStart>15</t:ReminderMinutesBeforeStart>
+                  <t:RequiredAttendees>\(requiredXML)</t:RequiredAttendees>
+                  \(optionalXML)
+                </t:CalendarItem>
+              </m:Items>
+            </m:CreateItem>
+          </soap:Body>
+        </soap:Envelope>
+        """
+    }
 }
 
 // MARK: - CalendarFolders parser
