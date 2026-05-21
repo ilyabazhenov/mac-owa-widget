@@ -110,6 +110,15 @@ struct MeetingDraft: Sendable {
             + "|\(Int(selectedWeekStart.timeIntervalSince1970))"
     }
 
+    /// Stable key для инвалидации `CreateMeetingViewModel.cellMatrix`.
+    /// Включает обе группы участников (optional влияет на tooltip в гриде) и выбранную неделю.
+    /// title / agenda / location НЕ входят — они не влияют на содержимое матрицы.
+    var cellMatrixSignature: String {
+        let req = requiredAttendees.map(\.email).sorted().joined(separator: ",")
+        let opt = optionalAttendees.map(\.email).sorted().joined(separator: ",")
+        return "\(req)|\(opt)|\(Int(selectedWeekStart.timeIntervalSince1970))"
+    }
+
     /// Поиск слотов: Mon 00:00 → Fri 18:00 выбранной недели. Для **текущей** недели
     /// (`referenceNow` лежит между Mon и Fri 18:00) старт обрезается до `referenceNow`,
     /// чтобы не предлагать прошедшие слоты. После окончания пятницы — пустой интервал.

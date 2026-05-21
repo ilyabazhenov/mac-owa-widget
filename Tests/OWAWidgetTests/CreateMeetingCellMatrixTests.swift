@@ -316,6 +316,161 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
         XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 10)?.slotPosition, .single, "busy один")
         XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 10, minute: 30)?.slotPosition, .single, "tentative один")
     }
+
+    // MARK: - Мемоизация: cellMatrixComputeCount
+
+    func testRepeatedReadsHitCacheWithoutRecomputing() {
+        // Главная цель мемоизации: SwiftUI body может читать cellMatrix десятки раз
+        // за рендер, и каждый hover вызывает новый рендер. Должен быть один пересчёт.
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        _ = vm.cellMatrix
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1, "повторные чтения должны брать из кэша")
+    }
+
+    func testTitleMutationDoesNotInvalidateCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        var d = vm.draft
+        d.title = "New title"
+        vm.draft = d
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1, "печать в title не должна дёргать пересчёт")
+    }
+
+    func testAgendaAndLocationMutationsDoNotInvalidateCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        var d = vm.draft
+        d.agenda = "Discuss roadmap"
+        d.location = "Room A"
+        vm.draft = d
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+    }
+
+    func testSelectedSlotMutationDoesNotInvalidateCache() {
+        let slot = makeFreeSlot(dayOffset: 0, hour: 10)
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())],
+            freeSlots: [slot]
+        )
+        _ = vm.cellMatrix
+        let before = vm.cellMatrixComputeCount
+
+        vm.selectedSlot = slot
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, before, "выбор слота не должен дёргать пересчёт")
+    }
+
+    func testIsLoadingAndErrorMessageDoNotInvalidateCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        let before = vm.cellMatrixComputeCount
+
+        vm.isLoadingSlots = true
+        vm.errorMessage = "x"
+        vm.successMessage = "y"
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, before)
+    }
+
+    func testAddingRequiredAttendeeInvalidatesCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        var d = vm.draft
+        d.requiredAttendees.append(ResolvedAttendee(displayName: "Bob", email: "bob@x.com", jobTitle: nil))
+        vm.draft = d
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 2, "новый required участник должен инвалидировать кэш")
+    }
+
+    func testAddingOptionalAttendeeInvalidatesCache() {
+        // Optional участники не влияют на закраску, но влияют на tooltip displayName — должны
+        // инвалидировать кэш.
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        var d = vm.draft
+        d.optionalAttendees.append(ResolvedAttendee(displayName: "Carol", email: "carol@x.com", jobTitle: nil))
+        vm.draft = d
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 2)
+    }
+
+    func testChangingSelectedWeekInvalidatesCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+
+        var d = vm.draft
+        d.selectedWeekStart = vm.draft.weekStartOffset(by: 1)
+        vm.draft = d
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 2, "смена недели должна инвалидировать кэш")
+    }
+
+    func testNewAvailabilityDataInvalidatesCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+
+        let idx = slotIndex(dayOffset: 0, hour: 10)
+        vm.attendeeAvailabilities = [availability(email: "alice@x.com", chars: availabilityChars(overrides: [idx: "2"]))]
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 2)
+        if case .busy = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10)?.state {} else {
+            XCTFail("cell должна перейти в .busy после обновления availability")
+        }
+    }
+
+    func testNewFreeSlotsInvalidateCache() {
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        vm.freeSlots = [makeFreeSlot(dayOffset: 0, hour: 10, durationMinutes: 60)]
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 2)
+    }
+
+    func testNewOrganizerEventsInvalidateCache() {
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())],
+            organizerAvailability: availability(email: "me@x.com", chars: availabilityChars())
+        )
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        vm.organizerEvents = [makeCalendarEvent(dayOffset: 0, startHour: 10, endHour: 11, title: "Standup")]
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 2)
+    }
+
+    func testAttendeeReorderDoesNotInvalidateCache() {
+        // cellMatrixSignature нормализует email-список (сортировка) — перестановка участников
+        // не должна вызывать пересчёт.
+        let alice = ResolvedAttendee(displayName: "Alice", email: "alice@x.com", jobTitle: nil)
+        let bob = ResolvedAttendee(displayName: "Bob", email: "bob@x.com", jobTitle: nil)
+        let vm = makeVM(
+            attendees: [alice, bob],
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())]
+        )
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        var d = vm.draft
+        d.requiredAttendees = [bob, alice]
+        vm.draft = d
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1, "перестановка не должна инвалидировать")
+    }
 }
 
 // MARK: - Test doubles

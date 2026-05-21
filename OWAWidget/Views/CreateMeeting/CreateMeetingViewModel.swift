@@ -7,7 +7,15 @@ import os.log
 final class CreateMeetingViewModel: ObservableObject {
     private let log = Logger(subsystem: "com.owawidget", category: "CreateMeetingViewModel")
 
-    @Published var draft = MeetingDraft()
+    @Published var draft = MeetingDraft() {
+        didSet {
+            // cellMatrix зависит только от подмножества draft (участники + неделя).
+            // Печать в title/agenda/location не должна инвалидировать тяжёлый пересчёт.
+            if oldValue.cellMatrixSignature != draft.cellMatrixSignature {
+                cellMatrixDirty = true
+            }
+        }
+    }
 
     // Two fully independent search states — one per attendee group.
     @Published var requiredQuery = ""
@@ -21,10 +29,18 @@ final class CreateMeetingViewModel: ObservableObject {
     /// Which search field currently has keyboard focus — controls which dropdown is visible.
     @Published var focusedSearchKind: AttendeeKind? = nil
 
-    @Published var freeSlots: [FreeSlot] = []
-    @Published var attendeeAvailabilities: [AttendeeAvailability] = []
-    @Published var organizerAvailability: AttendeeAvailability? = nil
-    @Published var organizerEvents: [CalendarEvent] = []
+    @Published var freeSlots: [FreeSlot] = [] {
+        didSet { cellMatrixDirty = true }
+    }
+    @Published var attendeeAvailabilities: [AttendeeAvailability] = [] {
+        didSet { cellMatrixDirty = true }
+    }
+    @Published var organizerAvailability: AttendeeAvailability? = nil {
+        didSet { cellMatrixDirty = true }
+    }
+    @Published var organizerEvents: [CalendarEvent] = [] {
+        didSet { cellMatrixDirty = true }
+    }
     @Published var selectedSlot: FreeSlot? = nil
     @Published var isLoadingSlots = false
     @Published var isCreating = false
@@ -434,9 +450,34 @@ final class CreateMeetingViewModel: ObservableObject {
         !isCreating
     }
 
+    // MARK: - cellMatrix: ленивая мемоизация
+
+    /// Кэш матрицы. Невалиден, пока `cellMatrixDirty == true`.
+    /// SwiftUI body читает `cellMatrix` много раз за рендер — без кэша каждый hover
+    /// триггерил полный пересчёт (5 дней × 18 строк × N attendees × 3 прохода).
+    private var cachedCellMatrix: [Date: [Int: CellAvailability]] = [:]
+    private var cellMatrixDirty: Bool = true
+
+    #if DEBUG
+    /// Видимый только в тестах счётчик реальных пересчётов матрицы — нужен, чтобы
+    /// доказать, что hover / selectedSlot / печать в title не дёргают пересчёт.
+    private(set) var cellMatrixComputeCount = 0
+    #endif
+
     /// Полная матрица занятости: день → minuteKey (от полуночи) → ячейка.
-    /// Рассчитывается из сырых данных attendeeAvailabilities + freeSlots.
+    /// O(1) при чистом кэше; пересчитывается только при изменении входов.
     var cellMatrix: [Date: [Int: CellAvailability]] {
+        if cellMatrixDirty {
+            cachedCellMatrix = computeCellMatrix()
+            cellMatrixDirty = false
+        }
+        return cachedCellMatrix
+    }
+
+    private func computeCellMatrix() -> [Date: [Int: CellAvailability]] {
+        #if DEBUG
+        cellMatrixComputeCount += 1
+        #endif
         guard !attendeeAvailabilities.isEmpty else { return [:] }
         let cal = AppTimeZone.calendar
         let intervalSec: TimeInterval = 30 * 60
