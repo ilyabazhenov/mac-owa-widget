@@ -83,9 +83,9 @@ private func owaSharedHeader(timezoneID: String, version: String = "V2017_08_18"
     ]
 }
 
-private func owaLocalDateFormatter(withMilliseconds: Bool = false) -> DateFormatter {
+private func owaLocalDateFormatter() -> DateFormatter {
     let f = DateFormatter()
-    f.dateFormat = withMilliseconds ? "yyyy-MM-dd'T'HH:mm:ss.SSS" : "yyyy-MM-dd'T'HH:mm:ss"
+    f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
     f.locale = Locale(identifier: "en_US_POSIX")
     f.timeZone = TimeZone.current
     return f
@@ -93,123 +93,7 @@ private func owaLocalDateFormatter(withMilliseconds: Bool = false) -> DateFormat
 
 // MARK: - FindPeople
 
-/// Different JSON shapes for `FindPeople`; some Exchange builds return HTTP 500 / `MemberAccessException` / abstract class for one variant but accept another (even with the same GAL `AddressListId`).
-enum FindPeoplePayloadVariant: Int, CaseIterable {
-    /// Public GAL tooling style: `Exchange2013` + `PersonaShape` + `ShouldResolveOneOffEmailAddress` true.
-    case exchange2013WithPersonaResolveSMTP = 0
-    /// Same as calendar reads on the tenant (`GetCalendarView` uses `V2017_08_18`).
-    case v2017WithPersonaResolveSMTP = 1
-    /// Drops `PersonaShape` (some servers fail deserializing `PersonaResponseShape` for directory search).
-    case exchange2013NoPersonaShape = 2
-    /// OWA GAL dump script style: `V2017_08_18`, no `PersonaShape`, `ShouldResolveOneOffEmailAddress` false.
-    case v2017NoPersonaResolveOff = 3
-    /// OWA compose HAR style: keep `PersonaShape` but set `SearchPeopleSuggestionIndex` explicitly to false.
-    case v2017WithPersonaSuggestionIndexFalse = 4
-    /// Some tenants return a generic `FolderId` from filters; deserializer expects `FolderId` instead of `AddressListId` in `ParentFolderId`.
-    case v2017WithPersonaParentAsFolderId = 5
-}
-
 enum OWAFindPeoplePayload {
-    /// `ParentFolderId` / `AddressListId` (from `GetPeopleFilters`) is required on many servers. Pick `variant` via `FindPeoplePayloadVariant` until OWA returns HTTP 2xx.
-    static func make(
-        query: String,
-        timezoneID: String,
-        globalAddressListFolderId: String,
-        variant: FindPeoplePayloadVariant
-    ) -> [String: Any] {
-        let headerVersion: String
-        let includePersonaShape: Bool
-        let resolveOneOff: Bool
-        let maxEntriesReturned: Int?
-        let searchPeopleSuggestionIndexFalse: Bool
-        let parentBaseFolderUsesFolderIdType: Bool
-        switch variant {
-        case .exchange2013WithPersonaResolveSMTP:
-            headerVersion = "Exchange2013"
-            includePersonaShape = true
-            resolveOneOff = true
-            maxEntriesReturned = 50
-            searchPeopleSuggestionIndexFalse = false
-            parentBaseFolderUsesFolderIdType = false
-        case .v2017WithPersonaResolveSMTP:
-            headerVersion = "V2017_08_18"
-            includePersonaShape = true
-            resolveOneOff = true
-            maxEntriesReturned = 50
-            searchPeopleSuggestionIndexFalse = false
-            parentBaseFolderUsesFolderIdType = false
-        case .exchange2013NoPersonaShape:
-            headerVersion = "Exchange2013"
-            includePersonaShape = false
-            resolveOneOff = true
-            maxEntriesReturned = 50
-            searchPeopleSuggestionIndexFalse = false
-            parentBaseFolderUsesFolderIdType = false
-        case .v2017NoPersonaResolveOff:
-            headerVersion = "V2017_08_18"
-            includePersonaShape = false
-            resolveOneOff = false
-            maxEntriesReturned = 100
-            searchPeopleSuggestionIndexFalse = false
-            parentBaseFolderUsesFolderIdType = false
-        case .v2017WithPersonaSuggestionIndexFalse:
-            headerVersion = "V2017_08_18"
-            includePersonaShape = true
-            resolveOneOff = true
-            maxEntriesReturned = 50
-            searchPeopleSuggestionIndexFalse = true
-            parentBaseFolderUsesFolderIdType = false
-        case .v2017WithPersonaParentAsFolderId:
-            headerVersion = "V2017_08_18"
-            includePersonaShape = true
-            resolveOneOff = true
-            maxEntriesReturned = 50
-            searchPeopleSuggestionIndexFalse = false
-            parentBaseFolderUsesFolderIdType = true
-        }
-
-        var indexedPage: [String: Any] = [
-            "__type": "IndexedPageView:#Exchange",
-            "BasePoint": "Beginning",
-            "Offset": 0,
-        ]
-        if let maxEntriesReturned {
-            indexedPage["MaxEntriesReturned"] = maxEntriesReturned
-        }
-
-        let baseFolderType = parentBaseFolderUsesFolderIdType ? "FolderId:#Exchange" : "AddressListId:#Exchange"
-        let parentFolder: [String: Any] = [
-            "__type": "TargetFolderId:#Exchange",
-            "BaseFolderId": [
-                "__type": baseFolderType,
-                "Id": globalAddressListFolderId,
-            ] as [String: Any],
-        ]
-
-        var body: [String: Any] = [
-            "__type": "FindPeopleRequest:#Exchange",
-            "IndexedPageItemView": indexedPage,
-            "QueryString": query,
-            "ParentFolderId": parentFolder,
-        ]
-        if includePersonaShape {
-            body["PersonaShape"] = [
-                "__type": "PersonaResponseShape:#Exchange",
-                "BaseShape": "Default",
-            ] as [String: Any]
-        }
-        body["ShouldResolveOneOffEmailAddress"] = resolveOneOff
-        if searchPeopleSuggestionIndexFalse {
-            body["SearchPeopleSuggestionIndex"] = false
-        }
-
-        return [
-            "__type": "FindPeopleJsonRequest:#Exchange",
-            "Header": owaSharedHeader(timezoneID: timezoneID, version: headerVersion),
-            "Body": body,
-        ]
-    }
-
     /// Calendar compose attendee search from browser HAR (`tmp/owa-debug/FinePeopleRequestHARExample.txt`).
     /// **No `ParentFolderId`** — differs from GAL-bulk scripts; includes `AggregationRestriction`, `Context`, and
     /// `PersonaShape.AdditionalProperties`. Requires URL `…FindPeople&ID=-199&AC=1` and headers `X-OWA-ActionId` / `X-OWA-ActionName`.
@@ -333,93 +217,6 @@ enum OWACreateCalendarEventPayload {
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
-    }
-
-    static func make(
-        title: String,
-        agenda: String,
-        start: Date,
-        end: Date,
-        requiredAttendees: [ResolvedAttendee],
-        optionalAttendees: [ResolvedAttendee] = [],
-        timezoneID: String,
-        folderIdentifier: OWAFolderIdentifier?
-    ) -> [String: Any] {
-        let fmt = owaLocalDateFormatter(withMilliseconds: true)
-        func attendeeItems(_ list: [ResolvedAttendee]) -> [[String: Any]] {
-            list.map { attendee in
-                [
-                    "__type": "AttendeeType:#Exchange",
-                    "Mailbox": [
-                        "Name": attendee.displayName,
-                        "EmailAddress": attendee.email,
-                        "RoutingType": "SMTP",
-                        "MailboxType": "Mailbox",
-                        "OriginalDisplayName": attendee.email,
-                    ] as [String: Any],
-                ]
-            }
-        }
-        let requiredItems = attendeeItems(requiredAttendees)
-        let optionalItems = attendeeItems(optionalAttendees)
-
-        var calendarItem: [String: Any] = [
-            "__type": "CalendarItem:#Exchange",
-            "ClientSeriesId": UUID().uuidString.lowercased(),
-            "Subject": title,
-            "Body": [
-                "__type": "BodyContentType:#Exchange",
-                "BodyType": "HTML",
-                "Value": Self.calendarBodyHTML(plainAgenda: agenda),
-            ] as [String: Any],
-            "Sensitivity": "Normal",
-            "ReminderIsSet": true,
-            "ReminderMinutesBeforeStart": 15,
-            "IsResponseRequested": true,
-            "DoNotForwardMeeting": false,
-            "IsAllDayEvent": false,
-            "Start": fmt.string(from: start),
-            "End": fmt.string(from: end),
-            "FreeBusyType": "Busy",
-            "RequiredAttendees": requiredItems,
-            "Location": [
-                "__type": "EnhancedLocation:#Exchange",
-                "Annotation": "",
-                "DisplayName": "",
-                "PostalAddress": [
-                    "__type": "PersonaPostalAddress:#Exchange",
-                    "Type": "Business",
-                    "LocationSource": "None",
-                ] as [String: Any],
-            ] as [String: Any],
-            "unfoldedIndex": 0,
-        ]
-        if !optionalItems.isEmpty {
-            calendarItem["OptionalAttendees"] = optionalItems
-        }
-
-        let savedFolderID: [String: Any]
-        if let folderIdentifier {
-            var folder: [String: Any] = ["__type": "FolderId:#Exchange", "Id": folderIdentifier.id]
-            if let changeKey = folderIdentifier.changeKey { folder["ChangeKey"] = changeKey }
-            savedFolderID = ["__type": "TargetFolderId:#Exchange", "BaseFolderId": folder]
-        } else {
-            savedFolderID = [
-                "__type": "TargetFolderId:#Exchange",
-                "BaseFolderId": ["__type": "DistinguishedFolderId:#Exchange", "Id": "calendar"] as [String: Any],
-            ]
-        }
-
-        return [
-            "__type": "CreateItemJsonRequest:#Exchange",
-            "Header": owaSharedHeader(timezoneID: timezoneID),
-            "Body": [
-                "__type": "CreateItemRequest:#Exchange",
-                "Items": [calendarItem],
-                "ClientSupportsIrm": true,
-                "SavedItemFolderId": savedFolderID,
-            ] as [String: Any],
-        ]
     }
 
     private static func emptyHTMLBody() -> String {

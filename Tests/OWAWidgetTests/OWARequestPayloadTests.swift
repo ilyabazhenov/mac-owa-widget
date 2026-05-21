@@ -170,21 +170,6 @@ final class OWARequestPayloadTests: XCTestCase {
         )
     }
 
-    func testFindPeoplePayloadVariantsSerialize() throws {
-        for variant in FindPeoplePayloadVariant.allCases {
-            let payload = OWAFindPeoplePayload.make(
-                query: "Иванов",
-                timezoneID: "Russian Standard Time",
-                globalAddressListFolderId: "00000000-0000-0000-0000-000000000001",
-                variant: variant
-            )
-            XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: payload))
-            let body = try XCTUnwrap(payload["Body"] as? [String: Any])
-            XCTAssertNotNil(body["ParentFolderId"])
-            XCTAssertEqual(body["QueryString"] as? String, "Иванов")
-        }
-    }
-
     func testFindPeopleComposeCalendarHARPayloadMatchesBrowserShape() throws {
         let payload = OWAFindPeoplePayload.makeComposeCalendarHAR(
             query: "Коваленко",
@@ -231,108 +216,25 @@ final class OWARequestPayloadTests: XCTestCase {
         XCTAssertNotNil(tw["EndTime"] as? String)
     }
 
-    func testCreateCalendarEventPayloadShape() throws {
-        let start = Date(timeIntervalSince1970: 1_700_000_000)
-        let end = start.addingTimeInterval(3600)
-        let attendees = [
-            ResolvedAttendee(displayName: "Ada", email: "ada@example.com", jobTitle: nil),
-        ]
-        let payload = OWACreateCalendarEventPayload.make(
-            title: "Sync",
-            agenda: "",
-            start: start,
-            end: end,
-            requiredAttendees: attendees,
-            timezoneID: "Russian Standard Time",
-            folderIdentifier: OWAFolderIdentifier(id: "fid-1", changeKey: "ck-1")
-        )
-        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: payload))
-        XCTAssertEqual(payload["__type"] as? String, "CreateItemJsonRequest:#Exchange")
-        let body = try XCTUnwrap(payload["Body"] as? [String: Any])
-        XCTAssertEqual(body["__type"] as? String, "CreateItemRequest:#Exchange")
-        let saved = try XCTUnwrap(body["SavedItemFolderId"] as? [String: Any])
-        let base = try XCTUnwrap(saved["BaseFolderId"] as? [String: Any])
-        XCTAssertEqual(base["Id"] as? String, "fid-1")
-        XCTAssertEqual(base["ChangeKey"] as? String, "ck-1")
-        let items = try XCTUnwrap(body["Items"] as? [[String: Any]])
-        let item = try XCTUnwrap(items.first)
-        XCTAssertEqual(item["Subject"] as? String, "Sync")
-        XCTAssertEqual(item["__type"] as? String, "CalendarItem:#Exchange")
-        XCTAssertNotNil(item["ClientSeriesId"] as? String)
-        let req = try XCTUnwrap(item["RequiredAttendees"] as? [[String: Any]])
-        XCTAssertEqual(req.count, 1)
-        let mb = try XCTUnwrap(req[0]["Mailbox"] as? [String: Any])
-        XCTAssertEqual(mb["EmailAddress"] as? String, "ada@example.com")
-        XCTAssertNil(item["OptionalAttendees"], "OptionalAttendees must be absent when no optional attendees provided")
+    func testCalendarBodyHTMLEscapesUserInputAndPreservesLineBreaks() throws {
+        let html = OWACreateCalendarEventPayload.calendarBodyHTML(plainAgenda: "Goals\nDiscuss <budget> & \"plans\"")
+        XCTAssertTrue(html.contains("Goals"))
+        XCTAssertTrue(html.contains("<br/>"))
+        XCTAssertTrue(html.contains("&lt;budget&gt;"))
+        XCTAssertTrue(html.contains("&amp;"))
+        XCTAssertTrue(html.contains("&quot;plans&quot;"))
     }
 
-    func testCreateCalendarEventPayloadIncludesOptionalAttendees() throws {
-        let start = Date(timeIntervalSince1970: 1_700_000_000)
-        let required = [
-            ResolvedAttendee(displayName: "Ada", email: "ada@example.com", jobTitle: nil),
-        ]
-        let optional = [
-            ResolvedAttendee(displayName: "Bob", email: "bob@example.com", jobTitle: nil),
-            ResolvedAttendee(displayName: "Cara", email: "cara@example.com", jobTitle: nil),
-        ]
-        let payload = OWACreateCalendarEventPayload.make(
-            title: "Sync",
-            agenda: "",
-            start: start,
-            end: start.addingTimeInterval(1800),
-            requiredAttendees: required,
-            optionalAttendees: optional,
-            timezoneID: "Russian Standard Time",
-            folderIdentifier: nil
-        )
-        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: payload))
-        let body = try XCTUnwrap(payload["Body"] as? [String: Any])
-        let items = try XCTUnwrap(body["Items"] as? [[String: Any]])
-        let item = try XCTUnwrap(items.first)
-        let req = try XCTUnwrap(item["RequiredAttendees"] as? [[String: Any]])
-        XCTAssertEqual(req.count, 1)
-        let opt = try XCTUnwrap(item["OptionalAttendees"] as? [[String: Any]])
-        XCTAssertEqual(opt.count, 2)
-        let mb = try XCTUnwrap(opt[0]["Mailbox"] as? [String: Any])
-        XCTAssertEqual(mb["EmailAddress"] as? String, "bob@example.com")
+    func testCalendarBodyHTMLNeutralizesCDATAEndDelimiter() throws {
+        // SOAP помещает HTML внутрь CDATA — ]]> в пользовательском вводе сломал бы парсинг.
+        let html = OWACreateCalendarEventPayload.calendarBodyHTML(plainAgenda: "before ]]> after")
+        XCTAssertFalse(html.contains("]]>"), "raw ]]> must not survive into CDATA section")
+        // После защиты подставляется пробел, дальше `>` экранируется HTML-эскейпом.
+        XCTAssertTrue(html.contains("]] &gt;"))
     }
 
-    func testCreateCalendarEventPayloadEmbedsAgendaInBody() throws {
-        let start = Date(timeIntervalSince1970: 1_700_000_000)
-        let payload = OWACreateCalendarEventPayload.make(
-            title: "T",
-            agenda: "Goals\nDiscuss <budget>",
-            start: start,
-            end: start.addingTimeInterval(1800),
-            requiredAttendees: [],
-            timezoneID: "Russian Standard Time",
-            folderIdentifier: nil
-        )
-        let body = try XCTUnwrap(payload["Body"] as? [String: Any])
-        let items = try XCTUnwrap(body["Items"] as? [[String: Any]])
-        let item = try XCTUnwrap(items.first)
-        let bodyContent = try XCTUnwrap(item["Body"] as? [String: Any])
-        let value = try XCTUnwrap(bodyContent["Value"] as? String)
-        XCTAssertTrue(value.contains("Goals"))
-        XCTAssertTrue(value.contains("Discuss"))
-        XCTAssertTrue(value.contains("&lt;budget&gt;"))
-    }
-
-    func testCreateCalendarEventPayloadUsesDistinguishedCalendarWhenFolderNil() throws {
-        let start = Date(timeIntervalSince1970: 1_700_000_000)
-        let payload = OWACreateCalendarEventPayload.make(
-            title: "T",
-            agenda: "",
-            start: start,
-            end: start.addingTimeInterval(1800),
-            requiredAttendees: [],
-            timezoneID: "Russian Standard Time",
-            folderIdentifier: nil
-        )
-        let body = try XCTUnwrap(payload["Body"] as? [String: Any])
-        let saved = try XCTUnwrap(body["SavedItemFolderId"] as? [String: Any])
-        let base = try XCTUnwrap(saved["BaseFolderId"] as? [String: Any])
-        XCTAssertEqual(base["__type"] as? String, "DistinguishedFolderId:#Exchange")
-        XCTAssertEqual(base["Id"] as? String, "calendar")
+    func testCalendarBodyHTMLReturnsEmptyBodyForBlankAgenda() throws {
+        let html = OWACreateCalendarEventPayload.calendarBodyHTML(plainAgenda: "   \n  ")
+        XCTAssertTrue(html.contains("<br>"), "blank agenda yields an empty-body placeholder")
     }
 }

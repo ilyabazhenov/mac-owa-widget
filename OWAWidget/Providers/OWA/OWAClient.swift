@@ -57,11 +57,6 @@ actor OWAClient {
     private var forceDistinguishedCalendarFolder = false
     private var requestSequence = 0
     private var cachedOrganizerSMTPEmail: String?
-    /// Default GAL address list id from `GetPeopleFilters`, required for `FindPeople` on many Exchange builds.
-    private var cachedGalAddressListFolderId: String?
-    private var galFolderIdFetchCompleted = false
-    /// After a successful `FindPeople`, retry that payload shape first (fewer round-trips per keystroke).
-    private var preferredFindPeoplePayloadVariant: FindPeoplePayloadVariant?
     private let sessionDelegate: OWASessionDelegate
     private let session: URLSession
     private let log = Logger(subsystem: "com.owawidget", category: "OWAClient")
@@ -114,9 +109,6 @@ actor OWAClient {
         let syncID = SyncDiagnostics.syncIDText
         log.info("OWA auth started sync=\(syncID, privacy: .public)")
         sessionDelegate.reset()
-        cachedGalAddressListFolderId = nil
-        galFolderIdFetchCompleted = false
-        preferredFindPeoplePayloadVariant = nil
 
         // 1. Скачиваем страницу логина, получаем action и скрытые поля формы
         let loginForm = try await fetchLoginForm()
