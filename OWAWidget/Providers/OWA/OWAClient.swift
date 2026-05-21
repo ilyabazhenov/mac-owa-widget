@@ -119,7 +119,7 @@ actor OWAClient {
         preferredFindPeoplePayloadVariant = nil
 
         // 1. Скачиваем страницу логина, получаем action и скрытые поля формы
-        let loginForm = await fetchLoginForm()
+        let loginForm = try await fetchLoginForm()
         log.debug("Login form action: \(loginForm.action), fields: \(loginForm.hiddenFields.map(\.0))")
 
         // 2. POST — отправляем ровно то, что в форме + логин/пароль
@@ -177,19 +177,19 @@ actor OWAClient {
 
     /// Скачивает страницу /owa/, следует редиректу на logon.aspx,
     /// парсит форму и возвращает все нужные для POST данные.
-    private func fetchLoginForm() async -> LoginForm {
-        var req = URLRequest(url: url("/owa/"))
+    private func fetchLoginForm() async throws -> LoginForm {
+        var req = URLRequest(url: try url("/owa/"))
         addCommonHeaders(&req)
 
         let fallback = LoginForm(
-            action: url("/owa/auth.owa").absoluteString,
+            action: try url("/owa/auth.owa").absoluteString,
             hiddenFields: [
-                ("destination",    url("/owa/?bFS=1").absoluteString),
+                ("destination",    try url("/owa/?bFS=1").absoluteString),
                 ("flags",          "4"),
                 ("forcedownlevel", "0"),
                 ("isUtf8",         "1"),
             ],
-            referer: url("/owa/auth/logon.aspx").absoluteString
+            referer: try url("/owa/auth/logon.aspx").absoluteString
         )
 
         guard let (data, resp) = try? await session.data(for: req),
@@ -202,7 +202,7 @@ actor OWAClient {
         let referer = pageURL.absoluteString
 
         // Извлекаем action из <form … action="…">
-        var actionURL = url("/owa/auth.owa").absoluteString
+        var actionURL = try url("/owa/auth.owa").absoluteString
         if let re = try? NSRegularExpression(pattern: #"<form[^>]+action="([^"]+)""#, options: .caseInsensitive) {
             let ns = html as NSString
             if let m = re.firstMatch(in: html, range: NSRange(location: 0, length: ns.length)),
@@ -282,7 +282,7 @@ actor OWAClient {
     }
 
     private func fetchCanaryFromOWAPage() async throws {
-        var req = URLRequest(url: url("/owa/"))
+        var req = URLRequest(url: try url("/owa/"))
         addCommonHeaders(&req)
         let (data, _) = try await session.data(for: req)
         if let html = String(data: data, encoding: .utf8) {
@@ -588,7 +588,7 @@ actor OWAClient {
         return []
     }
 
-    private func findPeopleComposeHAR(query: String) async throws -> [ResolvedAttendee] {
+    private func findPeopleComposeHAR(query: String, attempt: Int = 0) async throws -> [ResolvedAttendee] {
         let canary = try await ensureCanary()
         try Task.checkCancellation()
 
@@ -599,7 +599,9 @@ actor OWAClient {
         let jsonString = Self.serializeJSONTypeFirst(payload)
         let jsonBody = Data(jsonString.utf8)
 
-        var components = URLComponents(url: url("/owa/service.svc"), resolvingAgainstBaseURL: false)!
+        guard var components = URLComponents(url: try url("/owa/service.svc"), resolvingAgainstBaseURL: false) else {
+            throw OWAError.invalidURL("/owa/service.svc")
+        }
         components.queryItems = [
             URLQueryItem(name: "action", value: "FindPeople"),
             URLQueryItem(name: "ID", value: "-199"),
@@ -669,8 +671,11 @@ actor OWAClient {
 
         if http.statusCode == 440 || http.statusCode == 401 {
             canaryToken = nil
+            guard attempt < 1 else {
+                throw OWAError.httpError(http.statusCode, "FindPeople auth retry exhausted")
+            }
             try await authenticate()
-            return try await findPeopleComposeHAR(query: query)
+            return try await findPeopleComposeHAR(query: query, attempt: attempt + 1)
         }
 
         guard (200..<300).contains(http.statusCode) else { return [] }
@@ -689,7 +694,7 @@ actor OWAClient {
                 return a < b
             }
             let parts = keys.map { key -> String in
-                let value = dict[key]!
+                let value = dict[key] ?? NSNull()
                 return "\(escapeJSONString(key)):\(serializeJSONTypeFirst(value))"
             }
             return "{" + parts.joined(separator: ",") + "}"
@@ -769,6 +774,10 @@ actor OWAClient {
     // MARK: - GetUserAvailabilityInternal
 
     func getUserAvailabilityInternal(emails: [String], from start: Date, to end: Date) async throws -> [AttendeeAvailability] {
+        try await getUserAvailabilityInternal(emails: emails, from: start, to: end, attempt: 0)
+    }
+
+    private func getUserAvailabilityInternal(emails: [String], from start: Date, to end: Date, attempt: Int) async throws -> [AttendeeAvailability] {
         let canary = try await ensureCanary()
         let payload = OWAUserAvailabilityPayload.make(emails: emails, start: start, end: end, timezoneID: windowsTimezoneID())
         let jsonData = try JSONSerialization.data(withJSONObject: payload)
@@ -780,8 +789,11 @@ actor OWAClient {
         let (data, response) = try await session.data(for: req)
         if let http = response as? HTTPURLResponse, http.statusCode == 440 || http.statusCode == 401 {
             canaryToken = nil
+            guard attempt < 1 else {
+                throw OWAError.httpError(http.statusCode, "GetUserAvailabilityInternal auth retry exhausted")
+            }
             try await authenticate()
-            return try await getUserAvailabilityInternal(emails: emails, from: start, to: end)
+            return try await getUserAvailabilityInternal(emails: emails, from: start, to: end, attempt: attempt + 1)
         }
         #if DEBUG
         dlog("getUserAvailability: windowStart=\(start) emails=\(emails)")
@@ -849,6 +861,30 @@ actor OWAClient {
         optionalAttendees: [ResolvedAttendee] = [],
         folderIdentifier: OWAFolderIdentifier?
     ) async throws {
+        try await createCalendarEvent(
+            title: title,
+            agenda: agenda,
+            location: location,
+            start: start,
+            end: end,
+            requiredAttendees: requiredAttendees,
+            optionalAttendees: optionalAttendees,
+            folderIdentifier: folderIdentifier,
+            attempt: 0
+        )
+    }
+
+    private func createCalendarEvent(
+        title: String,
+        agenda: String,
+        location: String,
+        start: Date,
+        end: Date,
+        requiredAttendees: [ResolvedAttendee],
+        optionalAttendees: [ResolvedAttendee],
+        folderIdentifier: OWAFolderIdentifier?,
+        attempt: Int
+    ) async throws {
         let fmt = DateFormatter()
         fmt.locale = Locale(identifier: "en_US_POSIX")
         fmt.timeZone = TimeZone(identifier: "UTC")
@@ -905,7 +941,7 @@ actor OWAClient {
         </soap:Envelope>
         """
 
-        let ewsURL = url("/EWS/Exchange.asmx")
+        let ewsURL = try url("/EWS/Exchange.asmx")
         var request = URLRequest(url: ewsURL, timeoutInterval: 20)
         request.httpMethod = "POST"
         request.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
@@ -934,6 +970,13 @@ actor OWAClient {
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
 
         if http.statusCode == 401 {
+            guard attempt < 1 else {
+                // Стойкий 401 — пароль протух. Бросаем httpError, чтобы CalendarService
+                // через isAuthError перевёл аккаунт в .authenticationRequired и остановил
+                // дальнейшие попытки до явного обновления пароля (защита от lockout AD).
+                log.error("EWS CreateItem HTTP 401 — auth retry exhausted, surfacing auth error")
+                throw OWAError.httpError(401, "EWS CreateItem auth retry exhausted")
+            }
             log.info("EWS CreateItem HTTP 401 — re-authenticating")
             try await authenticate()
             try await createCalendarEvent(
@@ -944,7 +987,8 @@ actor OWAClient {
                 end: end,
                 requiredAttendees: requiredAttendees,
                 optionalAttendees: optionalAttendees,
-                folderIdentifier: folderIdentifier
+                folderIdentifier: folderIdentifier,
+                attempt: attempt + 1
             )
             return
         }
@@ -1012,7 +1056,7 @@ actor OWAClient {
         </soap:Envelope>
         """
 
-        let ewsURL = url("/EWS/Exchange.asmx")
+        let ewsURL = try url("/EWS/Exchange.asmx")
         var request = URLRequest(url: ewsURL, timeoutInterval: 15)
         request.httpMethod = "POST"
         request.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
@@ -1096,12 +1140,17 @@ actor OWAClient {
 
     // MARK: - Helpers
 
-    private func url(_ path: String) -> URL {
-        URL(string: baseURL.absoluteString + path)!
+    private func url(_ path: String) throws -> URL {
+        guard let url = URL(string: baseURL.absoluteString + path) else {
+            throw OWAError.invalidURL(path)
+        }
+        return url
     }
 
     private func serviceURL(action: String) throws -> URL {
-        var components = URLComponents(url: url("/owa/service.svc"), resolvingAgainstBaseURL: false)!
+        guard var components = URLComponents(url: try url("/owa/service.svc"), resolvingAgainstBaseURL: false) else {
+            throw OWAError.invalidURL("/owa/service.svc")
+        }
         components.queryItems = [
             URLQueryItem(name: "action", value: action),
             URLQueryItem(name: "EP", value: "1"),

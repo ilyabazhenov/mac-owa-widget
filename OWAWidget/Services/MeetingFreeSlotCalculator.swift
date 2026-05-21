@@ -12,7 +12,8 @@ enum MeetingFreeSlotCalculator {
         organizerAvailability: AttendeeAvailability?,
         organizerEvents: [CalendarEvent],
         range: DateInterval,
-        durationMinutes: Int
+        durationMinutes: Int,
+        referenceNow: Date = .distantPast
     ) -> [FreeSlot] {
         _ = optionalAvailability  // v1: optional attendees do not affect slot selection; param reserved for v2 ranking
         guard range.end > range.start else { return [] }
@@ -70,6 +71,8 @@ enum MeetingFreeSlotCalculator {
             let slotEnd = slotStart.addingTimeInterval(Double(durationMinutes) * 60)
 
             guard slotStart >= range.start, slotEnd <= range.end else { i += 1; continue }
+            // Окно доступности часто начинается с полуночи сегодня — отсекаем уже прошедшие слоты.
+            guard slotEnd > referenceNow else { i += 1; continue }
 
             let startMinuteOfDay = cal.component(.hour, from: slotStart) * 60 + cal.component(.minute, from: slotStart)
             guard startMinuteOfDay >= 9 * 60, startMinuteOfDay + durationMinutes <= 18 * 60 else { i += 1; continue }

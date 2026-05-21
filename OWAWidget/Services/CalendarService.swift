@@ -305,7 +305,8 @@ final class CalendarService: ObservableObject {
             organizerAvailability: organizerAvailability,
             organizerEvents: organizerEvents,
             range: range,
-            durationMinutes: durationMinutes
+            durationMinutes: durationMinutes,
+            referenceNow: Date()
         )
         return (slots: slots, attendeeAvailability: attendeeAvailability, organizerAvailability: organizerAvailability, organizerEvents: organizerEvents)
     }
@@ -319,16 +320,30 @@ final class CalendarService: ObservableObject {
         optionalAttendees: [ResolvedAttendee] = [],
         accountID: UUID
     ) async throws {
-        guard let provider = providers.first(where: { $0.account.id == accountID }) else { return }
-        try await provider.createMeeting(
-            title: title,
-            agenda: agenda,
-            location: location,
-            start: slot.start,
-            end: slot.end,
-            requiredAttendees: requiredAttendees,
-            optionalAttendees: optionalAttendees
-        )
+        guard let provider = providers.first(where: { $0.account.id == accountID }) else {
+            throw OWAError.authenticationFailed("Account not found")
+        }
+        // Не пытаемся создать встречу, если creds уже отвергнуты — иначе риск lockout AD.
+        if syncStatus.isAuthenticationRequired {
+            throw OWAError.httpError(401, "Authentication required")
+        }
+        do {
+            try await provider.createMeeting(
+                title: title,
+                agenda: agenda,
+                location: location,
+                start: slot.start,
+                end: slot.end,
+                requiredAttendees: requiredAttendees,
+                optionalAttendees: optionalAttendees
+            )
+        } catch {
+            if OWAError.isAuthError(error) {
+                syncStatus = .authenticationRequired
+                log.error("createMeeting suspended sync: auth error — \(error.localizedDescription, privacy: .public)")
+            }
+            throw error
+        }
         syncNow()
     }
 

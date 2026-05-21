@@ -250,4 +250,25 @@ final class MeetingFreeSlotCalculatorTests: XCTestCase {
         let fri1730 = moscowDate(year: 2025, month: 5, day: 16, hour: 17, minute: 30)
         XCTAssertTrue(slots.contains { abs($0.start.timeIntervalSince(fri1730)) < 2 })
     }
+
+    /// referenceNow отсекает уже прошедшие слоты, даже если окно начинается с прошедшей полуночи.
+    func testReferenceNowFiltersPastSlots() {
+        let avail = attendee(allFreeSlotCount: 48)
+        let range = DateInterval(
+            start: moscowDate(year: 2025, month: 5, day: 12, hour: 9, minute: 0),
+            end: moscowDate(year: 2025, month: 5, day: 12, hour: 18, minute: 0)
+        )
+        // «Сейчас» — полдень понедельника. Все слоты до 12:00 должны исчезнуть.
+        let now = moscowDate(year: 2025, month: 5, day: 12, hour: 12, minute: 0)
+        let slots = MeetingFreeSlotCalculator.compute(
+            from: [avail],
+            organizerAvailability: nil,
+            organizerEvents: [],
+            range: range,
+            durationMinutes: 30,
+            referenceNow: now
+        )
+        XCTAssertFalse(slots.contains { $0.end <= now }, "slots earlier than referenceNow must be filtered out")
+        XCTAssertTrue(slots.contains { abs($0.start.timeIntervalSince(moscowDate(year: 2025, month: 5, day: 12, hour: 12, minute: 0))) < 2 })
+    }
 }
