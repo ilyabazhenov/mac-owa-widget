@@ -1,4 +1,3 @@
-import KeyboardShortcuts
 import SwiftUI
 
 struct PreferencesView: View {
@@ -27,13 +26,13 @@ struct PreferencesView: View {
 
     var body: some View {
         Form {
-            Section(localization.tr("preferences.shortcuts.section")) {
-                HStack {
-                    Text(localization.tr("preferences.shortcuts.createMeeting"))
-                    Spacer()
-                    KeyboardShortcuts.Recorder(for: .createMeeting)
-                }
-            }
+            // NOTE: keyboard-shortcut customization UI (KeyboardShortcuts.Recorder)
+            // is temporarily disabled — it is the prime suspect for the v1.0.37 crash
+            // when opening Settings on macOS Sequoia. The shortcut itself is still
+            // registered via KeyboardShortcuts.onKeyUp in MenuBarLabelView with the
+            // default Ctrl+Opt+N; users just can't rebind it through the UI right now.
+            // Localization keys preferences.shortcuts.section / .createMeeting kept
+            // so we can restore the UI once the root cause is confirmed.
 
             Section(localization.tr("preferences.startup.section")) {
                 Toggle(
@@ -190,6 +189,9 @@ struct PreferencesView: View {
         }
         .formStyle(.grouped)
         .frame(minWidth: 320)
+        .onAppear {
+            DiagnosticLog.event("PreferencesView Form appeared")
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             Divider()
             HStack {

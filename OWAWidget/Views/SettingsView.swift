@@ -12,14 +12,18 @@ struct SettingsView: View {
         TabView {
             accountsTab
                 .tabItem { Label(localization.tr("settings.tab.accounts"), systemImage: "person.2") }
+                .onAppear { DiagnosticLog.event("SettingsView accounts tab appeared") }
 
             PreferencesView(vm: vm)
                 .tabItem { Label(localization.tr("settings.tab.preferences"), systemImage: "slider.horizontal.3") }
+                .onAppear { DiagnosticLog.event("SettingsView preferences tab appeared") }
 
             AboutView()
                 .tabItem { Label(localization.tr("settings.tab.about"), systemImage: "info.circle") }
+                .onAppear { DiagnosticLog.event("SettingsView about tab appeared") }
         }
         .frame(width: 480)
+        .onAppear { DiagnosticLog.event("SettingsView TabView appeared") }
         .sheet(item: $vm.editingAccount) { _ in
             accountSheet
         }

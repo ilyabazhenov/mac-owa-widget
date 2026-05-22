@@ -64,10 +64,14 @@ struct OWAWidgetApp: App {
             }
             .onAppear {
                 DiagnosticLog.event("Window create-meeting appeared")
+                AppDelegate.createMeetingWindowVisible = true
                 NSApp.setActivationPolicy(.regular)
                 NSApp.activate(ignoringOtherApps: true)
             }
-            .onDisappear { NSApp.setActivationPolicy(.accessory) }
+            .onDisappear {
+                AppDelegate.createMeetingWindowVisible = false
+                NSApp.setActivationPolicy(.accessory)
+            }
         }
         .windowResizability(.contentMinSize)
         .defaultSize(width: 900, height: 680)
@@ -116,14 +120,68 @@ struct OWAWidgetApp: App {
 
 // MARK: - App delegate
 
-/// Brings user-facing windows (create-meeting, settings) to the front when the app is
-/// activated via Cmd+Tab. Needed because dynamic setActivationPolicy(.regular) from
-/// LSUIElement doesn't automatically raise windows on activation.
+/// Brings the create-meeting window to the front when the app is activated via Cmd+Tab.
+/// Needed because dynamic setActivationPolicy(.regular) from LSUIElement doesn't
+/// automatically raise windows on activation.
+///
+/// IMPORTANT: this must NOT touch any other window (e.g. the settings window).
+/// applicationDidBecomeActive fires during SwiftUI's window-construction phase when a
+/// new Window scene mounts; calling makeKeyAndOrderFront on a half-constructed window
+/// reliably crashes on macOS Sequoia (15.x). The settings window stays in `.accessory`
+/// mode, isn't reachable via Cmd+Tab, and doesn't need the raise — so we scope this
+/// strictly to create-meeting via a flag set in its onAppear/onDisappear plus an
+/// identifier check as a belt-and-suspenders guard.
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Flipped to `true` while the create-meeting window is on screen.
+    /// Mutated from SwiftUI onAppear/onDisappear (main thread). Read from
+    /// applicationDidBecomeActive (main thread). Single-thread access only.
+    nonisolated(unsafe) static var createMeetingWindowVisible = false
+
     func applicationDidBecomeActive(_ notification: Notification) {
+        let createMeetingVisible = AppDelegate.createMeetingWindowVisible
+        DiagnosticLog.event(
+            "AppDelegate.applicationDidBecomeActive createMeetingVisible=\(createMeetingVisible)"
+        )
+        guard createMeetingVisible else { return }
         NSApp.windows
-            .filter { $0.canBecomeMain && !($0 is NSPanel) && $0.isVisible }
+            .filter {
+                AppDelegate.shouldRaiseWindow(
+                    createMeetingVisible: createMeetingVisible,
+                    identifier: $0.identifier?.rawValue,
+                    canBecomeMain: $0.canBecomeMain,
+                    isPanel: $0 is NSPanel,
+                    isVisible: $0.isVisible
+                )
+            }
             .forEach { $0.makeKeyAndOrderFront(nil) }
+    }
+
+    /// Pure predicate deciding whether a given AppKit window should be raised on
+    /// `applicationDidBecomeActive`. Extracted from the inline filter so the branching
+    /// can be unit-tested without instantiating real `NSWindow` objects.
+    ///
+    /// The rules, in order:
+    ///   1. If the create-meeting window is not currently on screen — never raise anything.
+    ///      Settings and any other window stay where they are.
+    ///   2. The candidate window must be a normal main window (not a panel, popover or
+    ///      utility window) and currently visible. Raising a half-constructed or hidden
+    ///      window is what crashed v1.0.37 on Sequoia.
+    ///   3. The candidate window must be the create-meeting window specifically,
+    ///      identified by `Window(id:)` matching `"create-meeting"`. We match by
+    ///      `contains` because SwiftUI may decorate the raw identifier with suffixes
+    ///      (e.g. `"create-meeting-AppWindow-1"`) and the exact format isn't a stable
+    ///      contract across macOS versions.
+    static func shouldRaiseWindow(
+        createMeetingVisible: Bool,
+        identifier: String?,
+        canBecomeMain: Bool,
+        isPanel: Bool,
+        isVisible: Bool
+    ) -> Bool {
+        guard createMeetingVisible else { return false }
+        guard canBecomeMain, !isPanel, isVisible else { return false }
+        guard let identifier, identifier.contains("create-meeting") else { return false }
+        return true
     }
 }
 

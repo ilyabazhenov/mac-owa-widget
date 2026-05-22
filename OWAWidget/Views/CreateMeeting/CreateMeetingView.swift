@@ -247,12 +247,6 @@ struct CreateMeetingView: View {
                         if kind == .required { requiredFieldHeight = newHeight }
                         else { optionalFieldHeight = newHeight }
                     }
-                    .overlay(alignment: .topLeading) {
-                        if vm.showDropdown(for: kind) {
-                            AttendeeDropdown(vm: vm, kind: kind)
-                                .offset(y: (kind == .required ? requiredFieldHeight : optionalFieldHeight) + 4)
-                        }
-                    }
             }
             if !list.isEmpty {
                 HStack(alignment: .top, spacing: 10) {
@@ -273,6 +267,17 @@ struct CreateMeetingView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.top, 2)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if vm.showDropdown(for: kind) {
+                HStack(alignment: .top, spacing: 10) {
+                    Color.clear.frame(width: Self.labelColumnWidth)
+                    AttendeeDropdown(vm: vm, kind: kind)
+                    Spacer(minLength: 0)
+                }
+                .offset(y: (kind == .required ? requiredFieldHeight : optionalFieldHeight) + 4)
+                .allowsHitTesting(true)
             }
         }
     }
