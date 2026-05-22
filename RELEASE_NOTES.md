@@ -1,3 +1,45 @@
+## v1.0.39 - 2026-05-22
+
+### RU
+
+#### Что изменилось
+
+- Popover: навигация по дням расширена до 30 дней вперёд — доступны все дни, которые уже синхронизированы (-7…+30), а не только ближайшая неделя.
+- Создание встреч: можно забронировать своё время без участников (self-only); грид занятости и кликабельные слоты работают только по вашему календарю.
+- Создание встреч: исправлен тултип с устаревшей занятостью необязательных участников при переключении недели; hover показывает все перекрывающиеся события в ячейке.
+- Тесты: регрессии для self-only грида, навигации по неделям и SOAP CreateItem (SendToNone, без пустого RequiredAttendees).
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Popover: day navigation extended to 30 days ahead — all days already synced (-7…+30) are browsable, not just the nearest week.
+- Create meeting: book your own time without attendees (self-only); availability grid and clickable slots use only your calendar.
+- Create meeting: fixed tooltip showing stale optional-attendee busy state after week navigation; hover lists all overlapping events in a cell.
+- Tests: regressions for self-only grid, week navigation, and SOAP CreateItem (SendToNone, omit empty RequiredAttendees).
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.38 - 2026-05-22
 
 ### RU
