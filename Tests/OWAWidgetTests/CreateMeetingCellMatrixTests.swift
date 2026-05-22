@@ -195,7 +195,7 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
         )
         guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
         XCTAssertEqual(cell.attendeeStatuses.first?.displayName, "Вы", "organizer row должен идти первым")
-        XCTAssertEqual(cell.attendeeStatuses.first?.eventTitle, "Standup")
+        XCTAssertEqual(cell.attendeeStatuses.first?.eventTitles, ["Standup"])
     }
 
     func testOrganizerEventTitleAbsentOutsideEventWindow() {
@@ -206,7 +206,130 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
         )
         guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 14) else { XCTFail(); return }
         XCTAssertEqual(cell.attendeeStatuses.first?.displayName, "Вы")
-        XCTAssertNil(cell.attendeeStatuses.first?.eventTitle)
+        XCTAssertEqual(cell.attendeeStatuses.first?.eventTitles, [])
+    }
+
+    func testOrganizerMultipleOverlappingEventsAllSurfaceInCell() {
+        let vm = makeVM(
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())],
+            organizerAvailability: availability(email: "me@x.com", chars: availabilityChars()),
+            organizerEvents: [
+                makeCalendarEvent(dayOffset: 0, startHour: 10, endHour: 11, title: "Standup"),
+                makeCalendarEvent(dayOffset: 0, startHour: 10, endHour: 11, title: "1:1 with Bob")
+            ]
+        )
+        guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
+        XCTAssertEqual(cell.attendeeStatuses.first?.displayName, "Вы")
+        XCTAssertEqual(cell.attendeeStatuses.first?.eventTitles, ["Standup", "1:1 with Bob"])
+    }
+
+    // MARK: - Self-only бронирование (без required attendees)
+
+    /// Контракт новой фичи: пользователь может бронировать своё собственное время без
+    /// добавления участников. Грид должен показывать его freebusy и подсвечивать FreeSlot'ы.
+    /// Если кто-то снова поставит guard `attendeeAvailabilities.isEmpty -> return [:]`, тест упадёт.
+    func testSelfOnlyMatrixRendersOrganizerBusyWithoutAttendees() {
+        let idx = slotIndex(dayOffset: 0, hour: 10)
+        let vm = makeVM(
+            attendees: [],
+            attendeeAvailabilities: [],
+            organizerAvailability: availability(email: "me@x.com", chars: availabilityChars(overrides: [idx: "2"]))
+        )
+        XCTAssertEqual(vm.cellMatrix.count, 5, "self-only режим всё ещё должен покрывать Mon–Fri")
+        guard let busy = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
+        if case .busy = busy.state {} else { XCTFail("ячейка с busy организатора должна быть .busy, got \(busy.state)") }
+        XCTAssertEqual(busy.attendeeStatuses.first?.displayName, "Вы", "в self-only единственная строка — организатор")
+        XCTAssertEqual(busy.attendeeStatuses.count, 1, "никаких посторонних строк в self-only")
+    }
+
+    func testSelfOnlyMatrixSurfacesOrganizerEventTitlesWithoutAttendees() {
+        let vm = makeVM(
+            attendees: [],
+            attendeeAvailabilities: [],
+            organizerAvailability: availability(email: "me@x.com", chars: availabilityChars()),
+            organizerEvents: [makeCalendarEvent(dayOffset: 1, startHour: 14, endHour: 15, title: "Design review")]
+        )
+        guard let conflict = cell(in: vm.cellMatrix, dayOffset: 1, hour: 14) else { XCTFail(); return }
+        XCTAssertEqual(conflict.attendeeStatuses.first?.displayName, "Вы")
+        XCTAssertEqual(conflict.attendeeStatuses.first?.eventTitles, ["Design review"])
+    }
+
+    /// `!freeSlots.isEmpty` — четвёртая ветка нового guard. Если её удалят, FreeSlot'ы перестанут
+    /// рендериться в self-only сценарии, когда сервер ещё не отдал organizer freebusy, но calculator
+    /// уже отработал по событиям из кэша. Кейс редкий, но без guard матрица будет пустой.
+    func testMatrixBuildsFromFreeSlotsAloneWhenNoAvailability() {
+        let slot = makeFreeSlot(dayOffset: 0, hour: 10, durationMinutes: 60, score: 0.5)
+        let vm = makeVM(
+            attendees: [],
+            attendeeAvailabilities: [],
+            organizerAvailability: nil,
+            organizerEvents: [],
+            freeSlots: [slot]
+        )
+        XCTAssertEqual(vm.cellMatrix.count, 5)
+        XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 10)?.slotPosition, .start)
+        XCTAssertEqual(cell(in: vm.cellMatrix, dayOffset: 0, hour: 10, minute: 30)?.slotPosition, .end)
+    }
+
+    // MARK: - Жизненный цикл isLoadingSlots
+
+    /// При первом открытии CreateMeetingView дебаунс на `$draft` подгружает слоты через 450 мс.
+    /// До этого спиннер должен уже крутиться, иначе пользователь видит «пустую» подсказку
+    /// и думает, что приложение ничего не делает.
+    func testInitSetsIsLoadingSlotsToTrueToAvoidPlaceholderFlash() {
+        let svc = CalendarService(
+            providers: [],
+            eventCacheStore: TestInMemoryEventCacheStore(snapshot: nil),
+            notificationService: TestNoOpNotificationService(),
+            customMeetingReminders: TestNoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+        let vm = CreateMeetingViewModel(calendarService: svc, accountID: UUID())
+        XCTAssertTrue(vm.isLoadingSlots, "спиннер должен включаться сразу в init, до debounce findSlots")
+    }
+
+    func testShiftSelectedWeekResetsStateEvenWithoutRequiredAttendees() {
+        // VM без участников, с заранее загруженными данными (например, остатки от прошлого поиска
+        // через optional). Старая логика гейтила сброс на `!requiredAttendees.isEmpty` — переход
+        // на новую неделю оставлял устаревшие freeSlots и спиннер не загорался.
+        let vm = makeVM(
+            attendees: [],
+            attendeeAvailabilities: [availability(email: "stale@x.com", chars: availabilityChars())],
+            organizerAvailability: availability(email: "me@x.com", chars: availabilityChars()),
+            organizerEvents: [makeCalendarEvent(dayOffset: 0, startHour: 10, endHour: 11, title: "Stale")],
+            freeSlots: [makeFreeSlot(dayOffset: 0, hour: 10)]
+        )
+        vm.isLoadingSlots = false
+
+        vm.shiftSelectedWeek(by: 1)
+
+        XCTAssertTrue(vm.isLoadingSlots, "переход на след. неделю всегда поднимает спиннер")
+        XCTAssertTrue(vm.freeSlots.isEmpty, "устаревшие слоты должны быть очищены")
+        XCTAssertTrue(vm.attendeeAvailabilities.isEmpty)
+        XCTAssertNil(vm.organizerAvailability)
+        XCTAssertTrue(vm.organizerEvents.isEmpty)
+        XCTAssertNil(vm.selectedSlot)
+    }
+
+    func testResetToCurrentWeekResetsStateEvenWithoutRequiredAttendees() {
+        let vm = makeVM(
+            attendees: [],
+            attendeeAvailabilities: [availability(email: "stale@x.com", chars: availabilityChars())],
+            freeSlots: [makeFreeSlot(dayOffset: 0, hour: 10)]
+        )
+        // Уводим неделю в будущее, чтобы reset реально сработал (guard на ту же неделю).
+        var d = vm.draft
+        d.selectedWeekStart = d.weekStartOffset(by: 2)
+        vm.draft = d
+        vm.isLoadingSlots = false
+
+        vm.resetToCurrentWeek()
+
+        XCTAssertTrue(vm.isLoadingSlots)
+        XCTAssertTrue(vm.freeSlots.isEmpty)
+        XCTAssertTrue(vm.attendeeAvailabilities.isEmpty)
+        XCTAssertNil(vm.selectedSlot)
     }
 
     // MARK: - DisplayName fall-back

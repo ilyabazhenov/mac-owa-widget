@@ -228,7 +228,7 @@
 "create.meeting.week.today" = "Today";
 "create.meeting.week.today.hint" = "Jump to current week";
 "create.meeting.recent.label" = "Recent";
-"create.meeting.slots.hint" = "Add at least one attendee — available slots load automatically.";
+"create.meeting.slots.hint" = "Loading available slots…";
 "create.meeting.success" = "Meeting created";
 "meeting.range.today" = "Today";
 "meeting.range.tomorrow" = "Tomorrow";

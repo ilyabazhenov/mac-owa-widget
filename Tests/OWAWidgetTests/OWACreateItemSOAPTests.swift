@@ -211,6 +211,56 @@ final class OWACreateItemSOAPTests: XCTestCase {
         XCTAssertTrue(soap.contains("<t:ReminderMinutesBeforeStart>15</t:ReminderMinutesBeforeStart>"))
     }
 
+    // MARK: - Self-only appointment (без участников)
+
+    func testEmitsSendToNoneWhenNoAttendees() {
+        // Self-only бронирование своего времени: SendMeetingInvitations="SendToAllAndSaveCopy"
+        // с пустым списком ломает Exchange — должен быть SendToNone.
+        let soap = OWACreateCalendarEventPayload.createItemSOAP(
+            title: "Block",
+            agenda: "",
+            location: "",
+            start: referenceStart,
+            end: referenceEnd,
+            requiredAttendees: [],
+            optionalAttendees: []
+        )
+        XCTAssertTrue(soap.contains("<m:CreateItem SendMeetingInvitations=\"SendToNone\">"))
+        XCTAssertFalse(soap.contains("SendToAllAndSaveCopy"))
+    }
+
+    func testOmitsRequiredAttendeesElementWhenEmpty() {
+        // Пустой `<t:RequiredAttendees/>` Exchange отвергает на схеме — секцию надо опустить целиком.
+        let soap = OWACreateCalendarEventPayload.createItemSOAP(
+            title: "Block",
+            agenda: "",
+            location: "",
+            start: referenceStart,
+            end: referenceEnd,
+            requiredAttendees: [],
+            optionalAttendees: []
+        )
+        XCTAssertFalse(soap.contains("<t:RequiredAttendees>"))
+        XCTAssertFalse(soap.contains("<t:RequiredAttendees/>"))
+        XCTAssertFalse(soap.contains("<t:OptionalAttendees>"))
+    }
+
+    func testKeepsSendToAllWhenOnlyOptionalAttendees() {
+        // Один optional участник — всё ещё meeting, инвайты должны разойтись.
+        let soap = OWACreateCalendarEventPayload.createItemSOAP(
+            title: "Sync",
+            agenda: "",
+            location: "",
+            start: referenceStart,
+            end: referenceEnd,
+            requiredAttendees: [],
+            optionalAttendees: [attendee("opt@x.com")]
+        )
+        XCTAssertTrue(soap.contains("<m:CreateItem SendMeetingInvitations=\"SendToAllAndSaveCopy\">"))
+        XCTAssertFalse(soap.contains("<t:RequiredAttendees>"))
+        XCTAssertTrue(soap.contains("<t:OptionalAttendees>"))
+    }
+
     // MARK: - Низкоуровневый escapeXML
 
     func testEscapeXMLHandlesAllSpecialCharacters() {

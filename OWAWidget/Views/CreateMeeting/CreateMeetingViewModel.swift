@@ -91,14 +91,12 @@ final class CreateMeetingViewModel: ObservableObject {
     /// Изменение `draft` запускает debounced auto-refresh слотов.
     func shiftSelectedWeek(by weeks: Int) {
         guard weeks != 0 else { return }
-        if !draft.requiredAttendees.isEmpty {
-            isLoadingSlots = true
-            freeSlots = []
-            attendeeAvailabilities = []
-            organizerAvailability = nil
-            organizerEvents = []
-            selectedSlot = nil
-        }
+        isLoadingSlots = true
+        freeSlots = []
+        attendeeAvailabilities = []
+        organizerAvailability = nil
+        organizerEvents = []
+        selectedSlot = nil
         var d = draft
         d.selectedWeekStart = d.weekStartOffset(by: weeks)
         draft = d
@@ -108,14 +106,12 @@ final class CreateMeetingViewModel: ObservableObject {
     func resetToCurrentWeek() {
         let monday = MeetingDraft.mondayOfWeek(containing: Date())
         guard MeetingDraft.weekCalendar.startOfDay(for: draft.selectedWeekStart) != monday else { return }
-        if !draft.requiredAttendees.isEmpty {
-            isLoadingSlots = true
-            freeSlots = []
-            attendeeAvailabilities = []
-            organizerAvailability = nil
-            organizerEvents = []
-            selectedSlot = nil
-        }
+        isLoadingSlots = true
+        freeSlots = []
+        attendeeAvailabilities = []
+        organizerAvailability = nil
+        organizerEvents = []
+        selectedSlot = nil
         var d = draft
         d.selectedWeekStart = monday
         draft = d
@@ -175,6 +171,10 @@ final class CreateMeetingViewModel: ObservableObject {
         if draft.location.isEmpty, let last = recentLocations.first {
             draft.location = last.url
         }
+
+        // Дебаунс на $draft подгрузит слоты через 450 мс — на это время placeholder
+        // показывал бы пустую подсказку. Сразу включаем спиннер, чтобы UI не флешил.
+        isLoadingSlots = true
     }
 
     // MARK: - Search
@@ -297,19 +297,6 @@ final class CreateMeetingViewModel: ObservableObject {
     func findSlots() async {
         findSlotsGeneration += 1
         let gen = findSlotsGeneration
-
-        guard !draft.requiredAttendees.isEmpty else {
-            isLoadingSlots = false
-            freeSlots = []
-            attendeeAvailabilities = []
-            optionalAvailabilities = []
-            organizerAvailability = nil
-            organizerEvents = []
-            selectedSlot = nil
-            slotsSearched = false
-            errorMessage = nil
-            return
-        }
 
         isLoadingSlots = true
         errorMessage = nil
@@ -486,7 +473,14 @@ final class CreateMeetingViewModel: ObservableObject {
         #if DEBUG
         cellMatrixComputeCount += 1
         #endif
-        guard !attendeeAvailabilities.isEmpty else { return [:] }
+        // Self-only бронирование: required может быть пуст, но если есть availability
+        // организатора или его события — грид всё равно должен отрисовать свою занятость
+        // и подсветить freeSlots, иначе пользователь не видит, какие окна свободны.
+        guard !attendeeAvailabilities.isEmpty
+            || organizerAvailability != nil
+            || !organizerEvents.isEmpty
+            || !freeSlots.isEmpty
+        else { return [:] }
         let cal = AppTimeZone.calendar
         let intervalSec: TimeInterval = 30 * 60
 
@@ -546,10 +540,10 @@ final class CreateMeetingViewModel: ObservableObject {
                     let ch: Character = (idx >= 0 && idx < orgChars.count) ? orgChars[idx] : "0"
                     chars.append(ch)
                     let cellEnd = cellStart.addingTimeInterval(intervalSec)
-                    let conflictTitle = organizerEvents.first { ev in
-                        ev.startDate < cellEnd && ev.endDate > cellStart
-                    }?.title
-                    statusList.insert(AttendeeSlotStatus(displayName: "Вы", rawChar: ch, eventTitle: conflictTitle), at: 0)
+                    let conflictTitles = organizerEvents
+                        .filter { ev in ev.startDate < cellEnd && ev.endDate > cellStart }
+                        .map(\.title)
+                    statusList.insert(AttendeeSlotStatus(displayName: "Вы", rawChar: ch, eventTitles: conflictTitles), at: 0)
                 }
 
                 // Optional attendees feed ONLY the tooltip — their chars are intentionally

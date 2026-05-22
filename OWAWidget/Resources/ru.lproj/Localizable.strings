@@ -228,7 +228,7 @@
 "create.meeting.week.today" = "Сегодня";
 "create.meeting.week.today.hint" = "Перейти на текущую неделю";
 "create.meeting.recent.label" = "Недавние";
-"create.meeting.slots.hint" = "Добавьте хотя бы одного участника — свободные слоты подгрузятся сами.";
+"create.meeting.slots.hint" = "Подбираем свободные слоты…";
 "create.meeting.success" = "Встреча создана";
 "meeting.range.today" = "Сегодня";
 "meeting.range.tomorrow" = "Завтра";

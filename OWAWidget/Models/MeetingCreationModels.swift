@@ -36,12 +36,14 @@ struct FreeSlot: Identifiable, Sendable {
 struct AttendeeSlotStatus: Sendable {
     let displayName: String
     let rawChar: Character  // '0' free, '1' tentative, '2' busy, '3' OOF
-    let eventTitle: String?
+    /// Titles of all overlapping events. Multiple meetings can land in the same 30-min
+    /// cell — keep them all so the tooltip can list every conflict, not just the first.
+    let eventTitles: [String]
 
-    init(displayName: String, rawChar: Character, eventTitle: String? = nil) {
+    init(displayName: String, rawChar: Character, eventTitles: [String] = []) {
         self.displayName = displayName
         self.rawChar = rawChar
-        self.eventTitle = eventTitle
+        self.eventTitles = eventTitles
     }
 }
 

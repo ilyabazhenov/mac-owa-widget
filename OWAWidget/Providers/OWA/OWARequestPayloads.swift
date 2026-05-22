@@ -263,11 +263,21 @@ enum OWACreateCalendarEventPayload {
             }.joined()
         }
 
-        let requiredXML = attendeesXML(requiredAttendees)
         // EWS schema order: RequiredAttendees must precede OptionalAttendees in CalendarItem.
+        // Пустой `<t:RequiredAttendees/>` Exchange отвергает на схеме — поэтому при отсутствии
+        // участников опускаем элемент полностью и превращаем CreateItem в обычный appointment.
+        let requiredXML = requiredAttendees.isEmpty
+            ? ""
+            : "<t:RequiredAttendees>\(attendeesXML(requiredAttendees))</t:RequiredAttendees>"
         let optionalXML = optionalAttendees.isEmpty
             ? ""
             : "<t:OptionalAttendees>\(attendeesXML(optionalAttendees))</t:OptionalAttendees>"
+
+        // SendToNone превращает запрос в self-only appointment без рассылки приглашений;
+        // если есть хотя бы один участник — копируем приглашение всем и сохраняем в календарь.
+        let sendDisposition = requiredAttendees.isEmpty && optionalAttendees.isEmpty
+            ? "SendToNone"
+            : "SendToAllAndSaveCopy"
 
         let agendaTrimmed = agenda.trimmingCharacters(in: .whitespacesAndNewlines)
         let bodyXML: String
@@ -293,7 +303,7 @@ enum OWACreateCalendarEventPayload {
             <t:TimeZoneContext><t:TimeZoneDefinition Id="UTC"/></t:TimeZoneContext>
           </soap:Header>
           <soap:Body>
-            <m:CreateItem SendMeetingInvitations="SendToAllAndSaveCopy">
+            <m:CreateItem SendMeetingInvitations="\(sendDisposition)">
               <m:SavedItemFolderId><t:DistinguishedFolderId Id="calendar"/></m:SavedItemFolderId>
               <m:Items>
                 <t:CalendarItem>
@@ -304,7 +314,7 @@ enum OWACreateCalendarEventPayload {
                   <t:End>\(fmt.string(from: end))</t:End>
                   <t:IsReminderSet>true</t:IsReminderSet>
                   <t:ReminderMinutesBeforeStart>15</t:ReminderMinutesBeforeStart>
-                  <t:RequiredAttendees>\(requiredXML)</t:RequiredAttendees>
+                  \(requiredXML)
                   \(optionalXML)
                 </t:CalendarItem>
               </m:Items>

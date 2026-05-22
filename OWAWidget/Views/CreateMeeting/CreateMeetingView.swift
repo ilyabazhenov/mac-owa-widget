@@ -324,30 +324,23 @@ struct CreateMeetingView: View {
     // MARK: - Frequent contacts grid
 
     private var frequentContactsGrid: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
-                Color.clear.frame(width: Self.labelColumnWidth)
-                sectionLabel(localization.tr("create.meeting.recent.label"))
-            }
-            HStack(spacing: 10) {
-                Color.clear.frame(width: Self.labelColumnWidth)
-                LazyVGrid(
-                    columns: [GridItem(.flexible()), GridItem(.flexible())],
-                    spacing: 4
-                ) {
-                    ForEach(vm.suggestedAttendees.prefix(12)) { record in
-                        let isAdded = vm.draft.allAttendees.contains(record.attendee)
-                        FrequentContactCard(attendee: record.attendee, count: record.useCount, isAdded: isAdded) {
-                            if isAdded {
-                                vm.removeAttendee(record.attendee)
-                            } else {
-                                vm.addAttendee(record.attendee)
-                            }
+        formRow(localization.tr("create.meeting.recent.label"), alignment: .top) {
+            LazyVGrid(
+                columns: [GridItem(.flexible()), GridItem(.flexible())],
+                spacing: 4
+            ) {
+                ForEach(vm.suggestedAttendees.prefix(12)) { record in
+                    let isAdded = vm.draft.allAttendees.contains(record.attendee)
+                    FrequentContactCard(attendee: record.attendee, count: record.useCount, isAdded: isAdded) {
+                        if isAdded {
+                            vm.removeAttendee(record.attendee)
+                        } else {
+                            vm.addAttendee(record.attendee)
                         }
                     }
                 }
-                .frame(maxWidth: .infinity)
             }
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -536,29 +529,27 @@ struct CreateMeetingView: View {
             }
             .help(localization.tr("create.meeting.week.next"))
 
-            if !vm.draft.requiredAttendees.isEmpty {
-                Button {
-                    Task { await vm.findSlots() }
-                } label: {
-                    Group {
-                        if vm.isLoadingSlots {
-                            ProgressView().scaleEffect(0.65)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(Color(nsColor: .labelColor))
-                        }
+            Button {
+                Task { await vm.findSlots() }
+            } label: {
+                Group {
+                    if vm.isLoadingSlots {
+                        ProgressView().scaleEffect(0.65)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Color(nsColor: .labelColor))
                     }
-                    .frame(width: 24, height: 24)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(Color(nsColor: .controlColor))
-                    )
                 }
-                .buttonStyle(.plain)
-                .disabled(vm.isLoadingSlots)
-                .help(localization.tr("create.meeting.refresh.slots"))
+                .frame(width: 24, height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color(nsColor: .controlColor))
+                )
             }
+            .buttonStyle(.plain)
+            .disabled(vm.isLoadingSlots)
+            .help(localization.tr("create.meeting.refresh.slots"))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -1535,15 +1526,14 @@ private struct AvailabilityCell: View {
 
     private var labelColor: Color {
         guard let cell else { return .primary }
+        if colorScheme == .dark {
+            return .white.opacity(0.92)
+        }
         if case .free = cell.state {
             if isPast {
-                return colorScheme == .dark
-                    ? Color(hue: 0.385, saturation: 0.55, brightness: 0.30)
-                    : Color(hue: 0.385, saturation: 0.60, brightness: 0.38)
+                return Color(hue: 0.385, saturation: 0.60, brightness: 0.38)
             }
-            return colorScheme == .dark
-                ? .white.opacity(0.88)
-                : Color(hue: 0.385, saturation: 0.70, brightness: 0.35).opacity(0.85)
+            return Color(hue: 0.385, saturation: 0.70, brightness: 0.35).opacity(0.85)
         }
         return .primary.opacity(0.65)
     }
@@ -1684,8 +1674,9 @@ private struct CellTooltipView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(statusColor(for: status.rawChar).opacity(0.85))
             }
-            if let title = status.eventTitle {
-                Text(title)
+            let titles = status.eventTitles
+            ForEach(titles.indices, id: \.self) { idx in
+                Text(titles.count > 1 ? "\(idx + 1). \(titles[idx])" : titles[idx])
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

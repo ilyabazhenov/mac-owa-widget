@@ -269,7 +269,6 @@ final class CalendarService: ObservableObject {
         durationMinutes: Int,
         accountID: UUID
     ) async throws -> (slots: [FreeSlot], attendeeAvailability: [AttendeeAvailability], optionalAvailability: [AttendeeAvailability], organizerAvailability: AttendeeAvailability?, organizerEvents: [CalendarEvent]) {
-        guard !requiredEmails.isEmpty else { return ([], [], [], nil, []) }
         guard let provider = providers.first(where: { $0.account.id == accountID }) else { return ([], [], [], nil, []) }
 
         let cal = AppTimeZone.calendar
@@ -291,7 +290,12 @@ final class CalendarService: ObservableObject {
             allEmails.insert(smtp, at: 0)
         }
 
-        let availability = try await provider.getUserAvailability(emails: allEmails, from: requestStart, to: requestEnd)
+        let availability: [AttendeeAvailability]
+        if allEmails.isEmpty {
+            availability = []
+        } else {
+            availability = try await provider.getUserAvailability(emails: allEmails, from: requestStart, to: requestEnd)
+        }
 
         // Split returned rows into three buckets by email. Required participates in slot search,
         // optional is tooltip-only, organizer is its own variable used as a slot blocker.
