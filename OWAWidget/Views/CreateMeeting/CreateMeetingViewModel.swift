@@ -91,12 +91,7 @@ final class CreateMeetingViewModel: ObservableObject {
     /// Изменение `draft` запускает debounced auto-refresh слотов.
     func shiftSelectedWeek(by weeks: Int) {
         guard weeks != 0 else { return }
-        isLoadingSlots = true
-        freeSlots = []
-        attendeeAvailabilities = []
-        organizerAvailability = nil
-        organizerEvents = []
-        selectedSlot = nil
+        clearSlotResults(showSpinner: true)
         var d = draft
         d.selectedWeekStart = d.weekStartOffset(by: weeks)
         draft = d
@@ -106,15 +101,23 @@ final class CreateMeetingViewModel: ObservableObject {
     func resetToCurrentWeek() {
         let monday = MeetingDraft.mondayOfWeek(containing: Date())
         guard MeetingDraft.weekCalendar.startOfDay(for: draft.selectedWeekStart) != monday else { return }
-        isLoadingSlots = true
-        freeSlots = []
-        attendeeAvailabilities = []
-        organizerAvailability = nil
-        organizerEvents = []
-        selectedSlot = nil
+        clearSlotResults(showSpinner: true)
         var d = draft
         d.selectedWeekStart = monday
         draft = d
+    }
+
+    /// Обнуляет все availability- и slot-данные. Единая точка правды: при добавлении нового
+    /// @Published-поля для результатов поиска слотов добавлять сброс здесь, а не в каждом
+    /// вызывающем методе.
+    private func clearSlotResults(showSpinner: Bool) {
+        isLoadingSlots = showSpinner
+        freeSlots = []
+        attendeeAvailabilities = []
+        optionalAvailabilities = []
+        organizerAvailability = nil
+        organizerEvents = []
+        selectedSlot = nil
     }
 
     /// True, если выбранная неделя — та, что содержит сегодня.
@@ -298,14 +301,8 @@ final class CreateMeetingViewModel: ObservableObject {
         findSlotsGeneration += 1
         let gen = findSlotsGeneration
 
-        isLoadingSlots = true
+        clearSlotResults(showSpinner: true)
         errorMessage = nil
-        freeSlots = []
-        attendeeAvailabilities = []
-        optionalAvailabilities = []
-        organizerAvailability = nil
-        organizerEvents = []
-        selectedSlot = nil
         slotsSearched = false
 
         let requiredEmails = draft.requiredAttendees.map(\.email)
@@ -399,13 +396,7 @@ final class CreateMeetingViewModel: ObservableObject {
         optionalResults = []
         isOptionalSearching = false
         focusedSearchKind = nil
-        freeSlots = []
-        attendeeAvailabilities = []
-        optionalAvailabilities = []
-        organizerAvailability = nil
-        organizerEvents = []
-        selectedSlot = nil
-        isLoadingSlots = false
+        clearSlotResults(showSpinner: false)
         isCreating = false
         errorMessage = nil
         successMessage = nil
@@ -459,6 +450,16 @@ final class CreateMeetingViewModel: ObservableObject {
     private(set) var cellMatrixComputeCount = 0
     #endif
 
+    /// Хотя бы один источник для отрисовки грида: required-список, организатор
+    /// (availability или его события) или подсчитанные freeSlots. В self-only сценарии
+    /// required может быть пуст, но organizerAvailability/events дают данные для отрисовки.
+    private var hasAnyAvailabilityData: Bool {
+        !attendeeAvailabilities.isEmpty
+            || organizerAvailability != nil
+            || !organizerEvents.isEmpty
+            || !freeSlots.isEmpty
+    }
+
     /// Полная матрица занятости: день → minuteKey (от полуночи) → ячейка.
     /// O(1) при чистом кэше; пересчитывается только при изменении входов.
     var cellMatrix: [Date: [Int: CellAvailability]] {
@@ -476,11 +477,7 @@ final class CreateMeetingViewModel: ObservableObject {
         // Self-only бронирование: required может быть пуст, но если есть availability
         // организатора или его события — грид всё равно должен отрисовать свою занятость
         // и подсветить freeSlots, иначе пользователь не видит, какие окна свободны.
-        guard !attendeeAvailabilities.isEmpty
-            || organizerAvailability != nil
-            || !organizerEvents.isEmpty
-            || !freeSlots.isEmpty
-        else { return [:] }
+        guard hasAnyAvailabilityData else { return [:] }
         let cal = AppTimeZone.calendar
         let intervalSec: TimeInterval = 30 * 60
 

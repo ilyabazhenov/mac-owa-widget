@@ -296,6 +296,7 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
         let vm = makeVM(
             attendees: [],
             attendeeAvailabilities: [availability(email: "stale@x.com", chars: availabilityChars())],
+            optionalAvailabilities: [availability(email: "stale-opt@x.com", chars: availabilityChars())],
             organizerAvailability: availability(email: "me@x.com", chars: availabilityChars()),
             organizerEvents: [makeCalendarEvent(dayOffset: 0, startHour: 10, endHour: 11, title: "Stale")],
             freeSlots: [makeFreeSlot(dayOffset: 0, hour: 10)]
@@ -307,6 +308,7 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
         XCTAssertTrue(vm.isLoadingSlots, "переход на след. неделю всегда поднимает спиннер")
         XCTAssertTrue(vm.freeSlots.isEmpty, "устаревшие слоты должны быть очищены")
         XCTAssertTrue(vm.attendeeAvailabilities.isEmpty)
+        XCTAssertTrue(vm.optionalAvailabilities.isEmpty, "optional availabilities тоже должны сбрасываться, иначе в тултипе остаются данные прошлой недели")
         XCTAssertNil(vm.organizerAvailability)
         XCTAssertTrue(vm.organizerEvents.isEmpty)
         XCTAssertNil(vm.selectedSlot)
@@ -316,6 +318,7 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
         let vm = makeVM(
             attendees: [],
             attendeeAvailabilities: [availability(email: "stale@x.com", chars: availabilityChars())],
+            optionalAvailabilities: [availability(email: "stale-opt@x.com", chars: availabilityChars())],
             freeSlots: [makeFreeSlot(dayOffset: 0, hour: 10)]
         )
         // Уводим неделю в будущее, чтобы reset реально сработал (guard на ту же неделю).
@@ -329,6 +332,7 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
         XCTAssertTrue(vm.isLoadingSlots)
         XCTAssertTrue(vm.freeSlots.isEmpty)
         XCTAssertTrue(vm.attendeeAvailabilities.isEmpty)
+        XCTAssertTrue(vm.optionalAvailabilities.isEmpty)
         XCTAssertNil(vm.selectedSlot)
     }
 
