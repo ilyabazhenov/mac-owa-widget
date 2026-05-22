@@ -20,6 +20,7 @@ struct OWAWidgetApp: App {
     private static let notificationDelegate = AppNotificationDelegate()
 
     init() {
+        DiagnosticLog.event("App init")
         UNUserNotificationCenter.current().delegate = Self.notificationDelegate
         configureAppIcon()
     }
@@ -62,6 +63,7 @@ struct OWAWidgetApp: App {
                 }
             }
             .onAppear {
+                DiagnosticLog.event("Window create-meeting appeared")
                 NSApp.setActivationPolicy(.regular)
                 NSApp.activate(ignoringOtherApps: true)
             }
@@ -79,6 +81,7 @@ struct OWAWidgetApp: App {
                 .environment(\.locale, localizationService.locale)
                 .frame(minWidth: 480, minHeight: 360)
                 .onAppear {
+                    DiagnosticLog.event("Window settings appeared")
                     syncLocalization()
                     updateCheckService.start()
                 }

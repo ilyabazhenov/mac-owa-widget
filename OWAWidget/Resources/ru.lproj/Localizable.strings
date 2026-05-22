@@ -105,6 +105,7 @@
 "preferences.debug.reminder.trigger" = "Показать тестовое напоминание";
 
 "menu.new.meeting" = "Новая встреча";
+"menu.copy.diagnostics" = "Скопировать диагностику";
 "popover.sync.now" = "Синхронизировать";
 "popover.settings" = "Настройки";
 "popover.quit" = "Выйти";

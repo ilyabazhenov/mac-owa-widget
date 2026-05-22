@@ -99,6 +99,33 @@ OWA Widget использует [Sparkle](https://sparkle-project.org) для а
 
 Кнопка появляется, когда приложение находит ссылку на звонок в данных встречи. Проверьте, что организатор добавил ссылку в описание, локацию или отдельное поле онлайн-встречи.
 
+## Диагностика
+
+При каждом запуске OWA Widget пишет короткий лог лайфцикл-событий (запуск, появление иконки в строке меню, состояние аккаунтов, ошибки синхронизации). Лог не содержит названий встреч, email-адресов или паролей — только метаданные.
+
+Файлы находятся здесь:
+
+```text
+~/Library/Application Support/OWAWidget/diagnostic.log           # текущая сессия
+~/Library/Application Support/OWAWidget/diagnostic.previous.log  # предыдущая сессия
+```
+
+**Если иконка в строке меню видна:** правый клик по иконке → **Скопировать диагностику**. Содержимое окажется в буфере обмена.
+
+**Если иконки нет:** откройте файл напрямую. В Finder нажмите `⌘⇧G` и вставьте путь:
+
+```text
+~/Library/Application Support/OWAWidget/diagnostic.log
+```
+
+Или из терминала:
+
+```bash
+open ~/Library/Application\ Support/OWAWidget/diagnostic.log
+```
+
+Прикрепите содержимое к багрепорту — этого обычно достаточно, чтобы понять, на какой стадии запуска что-то пошло не так.
+
 ## Разработка
 
 Информация для разработчиков вынесена в [DEVELOPMENT.md](DEVELOPMENT.md): сборка из исходников, XcodeGen, архитектура, релизная упаковка и GitHub release flow.
@@ -196,6 +223,33 @@ The app is distributed without an Apple Developer ID signature, so Gatekeeper ma
 **Why is there no Join button for a meeting?**
 
 The button appears when the app finds a meeting link in the event data. Check that the organizer included the link in the body, location, or online meeting field.
+
+### Diagnostics
+
+On every launch OWA Widget writes a short lifecycle log (boot, menu bar icon appearance, account state, sync errors). The log contains no meeting titles, email addresses, or passwords — only metadata.
+
+Files live here:
+
+```text
+~/Library/Application Support/OWAWidget/diagnostic.log           # current session
+~/Library/Application Support/OWAWidget/diagnostic.previous.log  # previous session
+```
+
+**If the menu bar icon is visible:** right-click the icon → **Copy diagnostics**. The full report lands on the clipboard.
+
+**If the icon is missing:** open the file directly. In Finder press `⌘⇧G` and paste the path:
+
+```text
+~/Library/Application Support/OWAWidget/diagnostic.log
+```
+
+Or from the terminal:
+
+```bash
+open ~/Library/Application\ Support/OWAWidget/diagnostic.log
+```
+
+Attach the contents to your bug report — usually enough to pinpoint what stage of launch failed.
 
 ### Development
 

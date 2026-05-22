@@ -152,6 +152,10 @@ final class CalendarService: ObservableObject {
 
         guard startBackgroundTasks else { return }
 
+        DiagnosticLog.event(
+            "CalendarService init accounts=\(accounts.count) cachedEvents=\(events.count)"
+        )
+
         Task {
             await notificationService.setup(localization: notificationLocalization)
             await rebuildProviders()
@@ -442,6 +446,9 @@ final class CalendarService: ObservableObject {
             }
         }
         providers = built
+        DiagnosticLog.event(
+            "CalendarService providers rebuilt count=\(built.count) accounts=\(accounts.count)"
+        )
         // A provider rebuild means the user explicitly updated credentials — lift any auth block.
         if syncStatus.isAuthenticationRequired {
             syncStatus = .idle

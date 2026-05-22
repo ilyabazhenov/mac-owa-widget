@@ -36,6 +36,7 @@ struct MenuBarLabelView: View {
         }
         .help(helpText)
         .onAppear {
+            logAppearance()
             KeyboardShortcuts.onKeyUp(for: .createMeeting) {
                 NotificationCenter.default.post(name: .openCreateMeetingShortcut, object: nil)
             }
@@ -67,11 +68,26 @@ struct MenuBarLabelView: View {
 
         menu.addItem(.separator())
 
+        menu.addItem(ClosureMenuItem(title: localization.tr("menu.copy.diagnostics")) {
+            DiagnosticLog.copyReportToClipboard()
+        })
+
+        menu.addItem(.separator())
+
         menu.addItem(ClosureMenuItem(title: localization.tr("popover.quit")) {
             NSApplication.shared.terminate(nil)
         })
 
         return menu
+    }
+
+    private func logAppearance() {
+        let screen = NSScreen.main
+        let size = screen.map { "\(Int($0.frame.width))x\(Int($0.frame.height))" } ?? "n/a"
+        let notch = screen.map { $0.safeAreaInsets.top > 0 ? "yes" : "no" } ?? "n/a"
+        DiagnosticLog.event(
+            "MenuBarLabel appeared screen=\(size) notch=\(notch) mode=\(service.menuBarDisplayMode.rawValue) accounts=\(service.accounts.count)"
+        )
     }
 
     private var iconName: String {

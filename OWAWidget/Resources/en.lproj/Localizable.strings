@@ -105,6 +105,7 @@
 "preferences.debug.reminder.trigger" = "Trigger test reminder";
 
 "menu.new.meeting" = "New Meeting";
+"menu.copy.diagnostics" = "Copy diagnostics";
 "popover.sync.now" = "Sync now";
 "popover.settings" = "Settings";
 "popover.quit" = "Quit";

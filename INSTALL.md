@@ -40,6 +40,22 @@ OWA Widget uses Sparkle for in-app updates:
 - Click **Install** and the app downloads, verifies, installs, and relaunches automatically.
 - You do **not** need to manually download/unpack each new version anymore.
 
+## If the menu bar icon doesn't appear
+
+The app process may launch but its icon can be hidden by macOS (menu bar overflow on notch displays, third-party utilities, etc.). On every launch OWA Widget writes a diagnostic log to:
+
+```text
+~/Library/Application Support/OWAWidget/diagnostic.log
+```
+
+Open it directly to see what happened:
+
+```bash
+open ~/Library/Application\ Support/OWAWidget/diagnostic.log
+```
+
+If you can see the icon, right-click it → **Copy diagnostics** copies the same report to the clipboard. Attach the contents to a bug report.
+
 ---
 
 # Установка OWA Widget
@@ -83,3 +99,19 @@ OWA Widget использует Sparkle для in-app обновлений:
 - Когда выйдет новая версия, в приложении появится кнопка **Установить**.
 - Нажмите **Установить**, и приложение само скачает обновление, проверит подпись, установит его и перезапустится.
 - Вручную скачивать и распаковывать каждый новый релиз больше не нужно.
+
+## Если иконка в строке меню не появилась
+
+Процесс приложения может запуститься, но иконку может скрыть macOS (переполнение строки меню на дисплеях с notch, сторонние утилиты управления menu bar и т. п.). При каждом запуске OWA Widget пишет диагностический лог:
+
+```text
+~/Library/Application Support/OWAWidget/diagnostic.log
+```
+
+Откройте файл напрямую:
+
+```bash
+open ~/Library/Application\ Support/OWAWidget/diagnostic.log
+```
+
+Если иконка всё-таки видна — правый клик по ней → **Скопировать диагностику** кладёт тот же отчёт в буфер обмена. Приложите содержимое к багрепорту.
