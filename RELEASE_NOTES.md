@@ -1,3 +1,45 @@
+## v1.0.38 - 2026-05-22
+
+### RU
+
+#### Что изменилось
+
+- Исправлен краш при открытии настроек на macOS Sequoia: поднятие окон при Cmd+Tab ограничено только окном создания встречи; UI переназначения горячих клавиш в настройках временно отключён (шорткат Ctrl+Opt+N по-прежнему работает).
+- Создание встреч: в тултипе ячейки сетки показывается занятость опциональных участников отдельной секцией; исправлено позиционирование выпадающего списка участников.
+- Диагностика: always-on лог жизненного цикла в Application Support, пункт «Скопировать диагностику» в контекстном меню иконки; инструкции в README и INSTALL.
+- Тесты: покрытие `shouldRaiseWindow` и инвариантов optional-статусов в cell matrix.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Fixed Settings crash on macOS Sequoia: window raise on Cmd+Tab is scoped to the create-meeting window only; keyboard shortcut rebinding UI in Settings is temporarily disabled (default Ctrl+Opt+N still works).
+- Create meeting: cell tooltip shows optional attendee busy status in a separate section; attendee dropdown positioning and hit-testing fixed.
+- Diagnostics: always-on lifecycle log in Application Support, **Copy diagnostics** in the menu bar icon context menu; docs in README and INSTALL.
+- Tests: coverage for `shouldRaiseWindow` and optional-status invariants in the cell matrix.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.37 - 2026-05-21
 
 ### RU
