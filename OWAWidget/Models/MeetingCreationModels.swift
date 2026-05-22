@@ -73,6 +73,10 @@ enum FreeSlotPosition: Sendable {
 struct CellAvailability: Sendable {
     let state: SlotAvailabilityState
     let attendeeStatuses: [AttendeeSlotStatus]
+    /// Статусы необязательных участников в этой ячейке. На `state`/цвет ячейки НЕ влияют —
+    /// показываются только в hover-тултипе, чтобы организатор видел, кто из «опциональных»
+    /// занят в потенциально подходящем слоте.
+    let optionalAttendeeStatuses: [AttendeeSlotStatus]
     /// Non-nil → ячейка соответствует свободному слоту и кликабельна.
     let freeSlot: FreeSlot?
     var slotPosition: FreeSlotPosition = .single

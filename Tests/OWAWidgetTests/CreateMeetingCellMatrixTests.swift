@@ -26,7 +26,9 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
         attendees: [ResolvedAttendee] = [
             ResolvedAttendee(displayName: "Alice", email: "alice@x.com", jobTitle: nil)
         ],
+        optionalAttendees: [ResolvedAttendee] = [],
         attendeeAvailabilities: [AttendeeAvailability] = [],
+        optionalAvailabilities: [AttendeeAvailability] = [],
         organizerAvailability: AttendeeAvailability? = nil,
         organizerEvents: [CalendarEvent] = [],
         freeSlots: [FreeSlot] = []
@@ -43,8 +45,10 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
         var draft = MeetingDraft()
         draft.selectedWeekStart = mondayMSK
         draft.requiredAttendees = attendees
+        draft.optionalAttendees = optionalAttendees
         vm.draft = draft
         vm.attendeeAvailabilities = attendeeAvailabilities
+        vm.optionalAvailabilities = optionalAvailabilities
         vm.organizerAvailability = organizerAvailability
         vm.organizerEvents = organizerEvents
         vm.freeSlots = freeSlots
@@ -449,6 +453,105 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
         XCTAssertEqual(vm.cellMatrixComputeCount, 1)
 
         vm.organizerEvents = [makeCalendarEvent(dayOffset: 0, startHour: 10, endHour: 11, title: "Standup")]
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 2)
+    }
+
+    // MARK: - Optional attendees: tooltip-only surfacing
+
+    func testOptionalAttendeeAppearsInOptionalStatusesButNotInRequired() {
+        // Bob is optional, busy at Mon 10:00. He must appear in optionalAttendeeStatuses
+        // and never in attendeeStatuses (which only carries required + organizer).
+        let bob = ResolvedAttendee(displayName: "Bob", email: "bob@x.com", jobTitle: nil)
+        let idx = slotIndex(dayOffset: 0, hour: 10)
+        let vm = makeVM(
+            optionalAttendees: [bob],
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())],
+            optionalAvailabilities: [availability(email: "bob@x.com", chars: availabilityChars(overrides: [idx: "2"]))]
+        )
+        guard let c = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
+        XCTAssertEqual(c.optionalAttendeeStatuses.count, 1)
+        XCTAssertEqual(c.optionalAttendeeStatuses.first?.displayName, "Bob")
+        XCTAssertEqual(c.optionalAttendeeStatuses.first?.rawChar, "2")
+        XCTAssertFalse(c.attendeeStatuses.contains(where: { $0.displayName == "Bob" }), "необязательный не должен попасть в основной список")
+    }
+
+    func testOptionalAttendeeBusyDoesNotAffectCellState() {
+        // Alice (required) is free, Bob (optional) is busy → cell colour must stay .free.
+        // This is the invariant the user explicitly asked for: optional attendees never tint the grid.
+        let bob = ResolvedAttendee(displayName: "Bob", email: "bob@x.com", jobTitle: nil)
+        let idx = slotIndex(dayOffset: 0, hour: 10)
+        let slot = makeFreeSlot(dayOffset: 0, hour: 10, score: 0.5)
+        let vm = makeVM(
+            optionalAttendees: [bob],
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())],
+            optionalAvailabilities: [availability(email: "bob@x.com", chars: availabilityChars(overrides: [idx: "2"]))],
+            freeSlots: [slot]
+        )
+        guard let c = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
+        if case .free = c.state {} else { XCTFail("expected .free even with busy optional attendee, got \(c.state)") }
+        XCTAssertNotNil(c.freeSlot, "слот всё ещё кликабелен — optional не блокирует выбор")
+    }
+
+    func testEmptyOptionalAvailabilitiesYieldEmptyOptionalStatuses() {
+        // Без optional участников новое поле должно быть пустым массивом, а не nil/ошибкой.
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        guard let c = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
+        XCTAssertTrue(c.optionalAttendeeStatuses.isEmpty)
+    }
+
+    func testOptionalStatusesPropagateThroughMultiRowFreeSlotPass() {
+        // Второй проход в computeCellMatrix пересоздаёт CellAvailability для каждой строки
+        // 60-/90-мин слота. Optional-статусы должны сохраняться во всех строках, иначе тултип
+        // на верхней строке покажет «Опциональные», а на нижней — нет.
+        let bob = ResolvedAttendee(displayName: "Bob", email: "bob@x.com", jobTitle: nil)
+        let slot = makeFreeSlot(dayOffset: 0, hour: 10, durationMinutes: 60, score: 0.7)
+        let vm = makeVM(
+            optionalAttendees: [bob],
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())],
+            optionalAvailabilities: [availability(email: "bob@x.com", chars: availabilityChars())],
+            freeSlots: [slot]
+        )
+        guard let start = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10),
+              let end = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10, minute: 30) else {
+            XCTFail("expected both rows of 60-min slot"); return
+        }
+        XCTAssertEqual(start.slotPosition, .start)
+        XCTAssertEqual(end.slotPosition, .end)
+        XCTAssertEqual(start.optionalAttendeeStatuses.first?.displayName, "Bob", ".start строка теряет optional — регрессия второго прохода")
+        XCTAssertEqual(end.optionalAttendeeStatuses.first?.displayName, "Bob", ".end строка теряет optional — регрессия второго прохода")
+    }
+
+    func testOptionalStatusesPropagateThroughMergedBusyBlockPass() {
+        // Третий проход в computeCellMatrix объединяет соседние busy/tentative/OOF ячейки
+        // в визуальный блок, пересоздавая CellAvailability. Optional-статусы должны выживать.
+        let bob = ResolvedAttendee(displayName: "Bob", email: "bob@x.com", jobTitle: nil)
+        let idx1 = slotIndex(dayOffset: 0, hour: 10)
+        let idx2 = slotIndex(dayOffset: 0, hour: 10, minute: 30)
+        let requiredChars = availabilityChars(overrides: [idx1: "2", idx2: "2"])
+        let vm = makeVM(
+            optionalAttendees: [bob],
+            attendeeAvailabilities: [availability(email: "alice@x.com", chars: requiredChars)],
+            optionalAvailabilities: [availability(email: "bob@x.com", chars: availabilityChars())]
+        )
+        guard let start = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10),
+              let end = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10, minute: 30) else {
+            XCTFail(); return
+        }
+        XCTAssertEqual(start.slotPosition, .start)
+        XCTAssertEqual(end.slotPosition, .end)
+        XCTAssertEqual(start.optionalAttendeeStatuses.first?.displayName, "Bob", "merged-busy блок теряет optional — регрессия третьего прохода")
+        XCTAssertEqual(end.optionalAttendeeStatuses.first?.displayName, "Bob")
+    }
+
+    func testOptionalAvailabilityDataInvalidatesCache() {
+        // Меняем только optionalAvailabilities — кэш обязан инвалидироваться, иначе тултип
+        // покажет устаревшие статусы при обновлении ответа сервера.
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "alice@x.com", chars: availabilityChars())])
+        _ = vm.cellMatrix
+        XCTAssertEqual(vm.cellMatrixComputeCount, 1)
+
+        vm.optionalAvailabilities = [availability(email: "carol@x.com", chars: availabilityChars())]
         _ = vm.cellMatrix
         XCTAssertEqual(vm.cellMatrixComputeCount, 2)
     }

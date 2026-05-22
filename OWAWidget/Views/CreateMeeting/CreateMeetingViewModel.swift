@@ -35,6 +35,9 @@ final class CreateMeetingViewModel: ObservableObject {
     @Published var attendeeAvailabilities: [AttendeeAvailability] = [] {
         didSet { cellMatrixDirty = true }
     }
+    @Published var optionalAvailabilities: [AttendeeAvailability] = [] {
+        didSet { cellMatrixDirty = true }
+    }
     @Published var organizerAvailability: AttendeeAvailability? = nil {
         didSet { cellMatrixDirty = true }
     }
@@ -299,6 +302,7 @@ final class CreateMeetingViewModel: ObservableObject {
             isLoadingSlots = false
             freeSlots = []
             attendeeAvailabilities = []
+            optionalAvailabilities = []
             organizerAvailability = nil
             organizerEvents = []
             selectedSlot = nil
@@ -311,6 +315,7 @@ final class CreateMeetingViewModel: ObservableObject {
         errorMessage = nil
         freeSlots = []
         attendeeAvailabilities = []
+        optionalAvailabilities = []
         organizerAvailability = nil
         organizerEvents = []
         selectedSlot = nil
@@ -333,12 +338,14 @@ final class CreateMeetingViewModel: ObservableObject {
             guard gen == findSlotsGeneration else { return }
             freeSlots = result.slots
             attendeeAvailabilities = result.attendeeAvailability
+            optionalAvailabilities = result.optionalAvailability
             organizerAvailability = result.organizerAvailability
             organizerEvents = result.organizerEvents
             slotsSearched = true
         } catch {
             guard gen == findSlotsGeneration else { return }
             attendeeAvailabilities = []
+            optionalAvailabilities = []
             organizerAvailability = nil
             organizerEvents = []
             errorMessage = error.localizedDescription
@@ -407,6 +414,7 @@ final class CreateMeetingViewModel: ObservableObject {
         focusedSearchKind = nil
         freeSlots = []
         attendeeAvailabilities = []
+        optionalAvailabilities = []
         organizerAvailability = nil
         organizerEvents = []
         selectedSlot = nil
@@ -489,6 +497,28 @@ final class CreateMeetingViewModel: ObservableObject {
             uniqueKeysWithValues: freeSlots.map { ($0.start, $0) }
         )
 
+        // Pre-decode mergedFreeBusy into [Character] once per attendee to avoid
+        // re-allocating the array on every cell visit (5 days × 18 rows = 90 cells).
+        let requiredChars: [(avail: AttendeeAvailability, chars: [Character])] =
+            attendeeAvailabilities.map { ($0, Array($0.mergedFreeBusy)) }
+        let optionalChars: [(avail: AttendeeAvailability, chars: [Character])] =
+            optionalAvailabilities.map { ($0, Array($0.mergedFreeBusy)) }
+        let organizerChars: [Character]? = organizerAvailability.map { Array($0.mergedFreeBusy) }
+
+        func status(for avail: AttendeeAvailability, chars: [Character], at cellStart: Date) -> AttendeeSlotStatus {
+            let idx = Int(cellStart.timeIntervalSince(avail.windowStart) / intervalSec)
+            let ch: Character = (idx >= 0 && idx < chars.count) ? chars[idx] : "0"
+            let displayName: String
+            if let name = nameLookup[avail.email] {
+                displayName = name
+            } else if let atIdx = avail.email.firstIndex(of: "@") {
+                displayName = String(avail.email[avail.email.startIndex..<atIdx])
+            } else {
+                displayName = avail.email
+            }
+            return AttendeeSlotStatus(displayName: displayName, rawChar: ch)
+        }
+
         let days = draft.slotGridWeekInterval().weekdayColumnStartDates(calendar: cal)
         var result: [Date: [Int: CellAvailability]] = [:]
 
@@ -501,28 +531,18 @@ final class CreateMeetingViewModel: ObservableObject {
                     of: day
                 ) else { continue }
 
+                // Required + organizer feed both the tooltip list AND the aggregated cell color.
                 var chars: [Character] = []
                 var statusList: [AttendeeSlotStatus] = []
 
-                for avail in attendeeAvailabilities {
-                    let idx = Int(cellStart.timeIntervalSince(avail.windowStart) / intervalSec)
-                    let freeBusyChars = Array(avail.mergedFreeBusy)
-                    let ch: Character = (idx >= 0 && idx < freeBusyChars.count) ? freeBusyChars[idx] : "0"
-                    chars.append(ch)
-                    let displayName: String
-                    if let name = nameLookup[avail.email] {
-                        displayName = name
-                    } else if let atIdx = avail.email.firstIndex(of: "@") {
-                        displayName = String(avail.email[avail.email.startIndex..<atIdx])
-                    } else {
-                        displayName = avail.email
-                    }
-                    statusList.append(AttendeeSlotStatus(displayName: displayName, rawChar: ch))
+                for pair in requiredChars {
+                    let s = status(for: pair.avail, chars: pair.chars, at: cellStart)
+                    chars.append(s.rawChar)
+                    statusList.append(s)
                 }
 
-                if let orgAvail = organizerAvailability {
+                if let orgAvail = organizerAvailability, let orgChars = organizerChars {
                     let idx = Int(cellStart.timeIntervalSince(orgAvail.windowStart) / intervalSec)
-                    let orgChars = Array(orgAvail.mergedFreeBusy)
                     let ch: Character = (idx >= 0 && idx < orgChars.count) ? orgChars[idx] : "0"
                     chars.append(ch)
                     let cellEnd = cellStart.addingTimeInterval(intervalSec)
@@ -532,13 +552,26 @@ final class CreateMeetingViewModel: ObservableObject {
                     statusList.insert(AttendeeSlotStatus(displayName: "Вы", rawChar: ch, eventTitle: conflictTitle), at: 0)
                 }
 
+                // Optional attendees feed ONLY the tooltip — their chars are intentionally
+                // excluded from the aggregation so cell color never reacts to their busyness.
+                var optionalStatusList: [AttendeeSlotStatus] = []
+                optionalStatusList.reserveCapacity(optionalChars.count)
+                for pair in optionalChars {
+                    optionalStatusList.append(status(for: pair.avail, chars: pair.chars, at: cellStart))
+                }
+
                 var state = SlotAvailabilityState.aggregate(from: chars)
                 let matchedSlot = slotLookup[cellStart]
                 if case .free = state, let slot = matchedSlot {
                     state = .free(score: slot.score)
                 }
 
-                let cell = CellAvailability(state: state, attendeeStatuses: statusList, freeSlot: matchedSlot)
+                let cell = CellAvailability(
+                    state: state,
+                    attendeeStatuses: statusList,
+                    optionalAttendeeStatuses: optionalStatusList,
+                    freeSlot: matchedSlot
+                )
                 if result[day] == nil { result[day] = [:] }
                 result[day]?[timeKey] = cell
             }
@@ -560,6 +593,7 @@ final class CreateMeetingViewModel: ObservableObject {
                 result[day]?[tk] = CellAvailability(
                     state: .free(score: slot.score),
                     attendeeStatuses: existing.attendeeStatuses,
+                    optionalAttendeeStatuses: existing.optionalAttendeeStatuses,
                     freeSlot: slot,
                     slotPosition: pos
                 )
@@ -612,6 +646,7 @@ final class CreateMeetingViewModel: ObservableObject {
                     result[day]?[tk] = CellAvailability(
                         state: existing.state,
                         attendeeStatuses: existing.attendeeStatuses,
+                        optionalAttendeeStatuses: existing.optionalAttendeeStatuses,
                         freeSlot: nil,
                         slotPosition: pos
                     )

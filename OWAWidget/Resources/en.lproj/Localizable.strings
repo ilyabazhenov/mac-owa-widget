@@ -243,3 +243,4 @@
 "create.meeting.legend.tentative" = "Tentative";
 "create.meeting.legend.busy" = "Busy";
 "create.meeting.legend.oof" = "Out of office";
+"create.meeting.tooltip.optional" = "Optional";

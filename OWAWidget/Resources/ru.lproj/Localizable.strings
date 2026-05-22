@@ -243,3 +243,4 @@
 "create.meeting.legend.tentative" = "Под вопросом";
 "create.meeting.legend.busy" = "Занято";
 "create.meeting.legend.oof" = "Вне офиса";
+"create.meeting.tooltip.optional" = "Опциональные";

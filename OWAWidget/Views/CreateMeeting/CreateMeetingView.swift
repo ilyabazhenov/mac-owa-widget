@@ -1623,6 +1623,7 @@ private struct AvailabilityCell: View {
 private struct CellTooltipView: View {
     let cell: CellAvailability
     let cellStart: Date
+    @EnvironmentObject private var localization: LocalizationService
 
     private static let timeFmt: DateFormatter = {
         let f = DateFormatter()
@@ -1663,6 +1664,31 @@ private struct CellTooltipView: View {
         return score >= 0.55 ? "Хороший слот — утро" : "Приемлемо — вечер"
     }
 
+    @ViewBuilder
+    private func attendeeRow(_ status: AttendeeSlotStatus) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(statusColor(for: status.rawChar))
+                    .frame(width: 8, height: 8)
+                Text(status.displayName)
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+                Spacer()
+                Text(statusLabel(for: status.rawChar))
+                    .font(.system(size: 10))
+                    .foregroundStyle(statusColor(for: status.rawChar).opacity(0.85))
+            }
+            if let title = status.eventTitle {
+                Text(title)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.leading, 15)
+            }
+        }
+    }
+
     var body: some View {
         let cellEnd = cell.freeSlot?.end ?? cellStart.addingTimeInterval(30 * 60)
         VStack(alignment: .leading, spacing: 5) {
@@ -1670,27 +1696,15 @@ private struct CellTooltipView: View {
                 .font(.system(size: 11, weight: .semibold))
             Divider()
             ForEach(cell.attendeeStatuses.indices, id: \.self) { idx in
-                let status = cell.attendeeStatuses[idx]
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 7) {
-                        Circle()
-                            .fill(statusColor(for: status.rawChar))
-                            .frame(width: 8, height: 8)
-                        Text(status.displayName)
-                            .font(.system(size: 11))
-                            .lineLimit(1)
-                        Spacer()
-                        Text(statusLabel(for: status.rawChar))
-                            .font(.system(size: 10))
-                            .foregroundStyle(statusColor(for: status.rawChar).opacity(0.85))
-                    }
-                    if let title = status.eventTitle {
-                        Text(title)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .padding(.leading, 15)
-                    }
+                attendeeRow(cell.attendeeStatuses[idx])
+            }
+            if !cell.optionalAttendeeStatuses.isEmpty {
+                Divider()
+                Text(localization.tr("create.meeting.tooltip.optional"))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                ForEach(cell.optionalAttendeeStatuses.indices, id: \.self) { idx in
+                    attendeeRow(cell.optionalAttendeeStatuses[idx])
                 }
             }
             if let note = slotQualityNote {

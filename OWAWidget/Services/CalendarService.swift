@@ -268,9 +268,9 @@ final class CalendarService: ObservableObject {
         displayRange: DateInterval? = nil,
         durationMinutes: Int,
         accountID: UUID
-    ) async throws -> (slots: [FreeSlot], attendeeAvailability: [AttendeeAvailability], organizerAvailability: AttendeeAvailability?, organizerEvents: [CalendarEvent]) {
-        guard !requiredEmails.isEmpty else { return ([], [], nil, []) }
-        guard let provider = providers.first(where: { $0.account.id == accountID }) else { return ([], [], nil, []) }
+    ) async throws -> (slots: [FreeSlot], attendeeAvailability: [AttendeeAvailability], optionalAvailability: [AttendeeAvailability], organizerAvailability: AttendeeAvailability?, organizerEvents: [CalendarEvent]) {
+        guard !requiredEmails.isEmpty else { return ([], [], [], nil, []) }
+        guard let provider = providers.first(where: { $0.account.id == accountID }) else { return ([], [], [], nil, []) }
 
         let cal = AppTimeZone.calendar
         let (requestStart, requestEnd) = UserAvailabilityRequestWindow.bounds(
@@ -280,19 +280,35 @@ final class CalendarService: ObservableObject {
         )
 
         // Include organizer's own availability by resolving their SMTP email from the domain login.
-        // v1: optionalEmails do not affect slot selection — we don't even fetch their availability.
+        // Optional attendees are fetched in the same GetUserAvailability call (one round-trip),
+        // but they only feed the hover-tooltip in the slot grid — never the slot search/ranking.
         let organizerSMTP = try? await provider.resolveOrganizerSMTPEmail()
         var allEmails = requiredEmails
+        for email in optionalEmails where !allEmails.contains(email) {
+            allEmails.append(email)
+        }
         if let smtp = organizerSMTP, !allEmails.contains(smtp) {
             allEmails.insert(smtp, at: 0)
         }
 
         let availability = try await provider.getUserAvailability(emails: allEmails, from: requestStart, to: requestEnd)
 
-        // Remove organizer's row before returning — we only need to block on it, not confuse zip
-        let organizerIdx = organizerSMTP.flatMap { smtp in allEmails.firstIndex(of: smtp) }
-        let organizerAvailability = organizerIdx.flatMap { availability.count > $0 ? availability[$0] : nil }
-        let attendeeAvailability = availability.filter { $0.email != organizerSMTP }
+        // Split returned rows into three buckets by email. Required participates in slot search,
+        // optional is tooltip-only, organizer is its own variable used as a slot blocker.
+        let requiredSet = Set(requiredEmails)
+        let optionalSet = Set(optionalEmails)
+        var attendeeAvailability: [AttendeeAvailability] = []
+        var optionalAvailability: [AttendeeAvailability] = []
+        var organizerAvailability: AttendeeAvailability? = nil
+        for row in availability {
+            if let smtp = organizerSMTP, row.email == smtp {
+                organizerAvailability = row
+            } else if requiredSet.contains(row.email) {
+                attendeeAvailability.append(row)
+            } else if optionalSet.contains(row.email) {
+                optionalAvailability.append(row)
+            }
+        }
 
         // Treat as a real conflict on the organizer's calendar: anything that's on the calendar AND
         // the organizer hasn't declined / wasn't cancelled. Crucially, this keeps `.notResponded` —
@@ -303,16 +319,16 @@ final class CalendarService: ObservableObject {
                 && !ev.isCancelled
                 && ev.responseType != .declined
         }
-        _ = optionalEmails  // reserved for v2 ranking
         let slots = MeetingFreeSlotCalculator.compute(
             from: attendeeAvailability,
+            optionalAvailability: optionalAvailability,
             organizerAvailability: organizerAvailability,
             organizerEvents: organizerEvents,
             range: range,
             durationMinutes: durationMinutes,
             referenceNow: Date()
         )
-        return (slots: slots, attendeeAvailability: attendeeAvailability, organizerAvailability: organizerAvailability, organizerEvents: organizerEvents)
+        return (slots: slots, attendeeAvailability: attendeeAvailability, optionalAvailability: optionalAvailability, organizerAvailability: organizerAvailability, organizerEvents: organizerEvents)
     }
 
     func createMeeting(
