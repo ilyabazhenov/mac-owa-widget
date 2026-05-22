@@ -14,7 +14,7 @@ struct PopoverView: View {
     @State private var selectedDayOffset: Int = 0
     @State private var selectedEvent: CalendarEvent? = nil
     private let minDayOffset = -7
-    private let maxDayOffset = 6
+    private let maxDayOffset = 30
 
     enum DateNavBarPolicy {
         static func shouldShowJumpToToday(selectedDayOffset: Int) -> Bool {
