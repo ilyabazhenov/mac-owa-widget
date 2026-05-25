@@ -1,3 +1,45 @@
+## v1.0.40 - 2026-05-25
+
+### RU
+
+#### Что изменилось
+
+- Исправлена позиция баннера-напоминания на мультимониторных конфигурациях: уведомление теперь корректно появляется на экране, ближайшем к курсору, даже если мониторы разного разрешения или высоты.
+- Fallback-логика «ближайшего экрана» для случаев, когда курсор оказывается на стыке мониторов или ровно на границе frame.
+- Исправлена анимация появления панели: fade-in вместо slide-in при первом показе, чтобы macOS не перетаскивал окно на соседний монитор.
+- Тесты: покрытие `nearestScreenIndex`, `distanceSquared` и edge-кейсов мультимониторных конфигураций.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Fixed notification banner positioning on multi-monitor setups: the banner now correctly appears on the screen nearest to the cursor, even when monitors have different resolutions or heights.
+- Added nearest-screen fallback for cases when the cursor lands in the gap between monitors or exactly on a frame boundary.
+- Fixed panel animation: fade-in instead of slide-in on first appearance to prevent macOS from moving the panel to a wrong monitor.
+- Tests: coverage for `nearestScreenIndex`, `distanceSquared`, and multi-monitor edge cases.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.39 - 2026-05-22
 
 ### RU
