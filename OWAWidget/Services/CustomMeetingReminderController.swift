@@ -247,14 +247,27 @@ final class CustomMeetingReminderController {
         let size = NSSize(width: max(320, fit.width), height: max(80, fit.height))
         panel.setContentSize(size)
 
-        positionPanel(panel, contentSize: size, animated: true)
+        // Позиционируем синхронно до orderFront. animator() на скрытом NSWindow — no-op,
+        // и если до показа поставить окно в offScreenOrigin (как делает slide-in), оно
+        // останется вне visibleFrame целевого экрана. macOS при появлении перетащит окно
+        // на ближайший монитор, где оно ляжет у нижней границы — отсюда симптом «top-right
+        // на multi-monitor оказывается снизу».
+        positionPanel(panel, contentSize: size, animated: false)
 
+        // Появление — через alpha. animator альфы корректно работает на свежепоказанном
+        // окне, а позиция остаётся фиксированной.
+        panel.alphaValue = 0
         currentPanel = panel
         // orderFrontRegardless ensures the panel appears even when the app is not active
         // (OWA Widget is a background menu-bar app). makeKey() then gives it key-window
         // status so SwiftUI buttons respond on first click.
         panel.orderFrontRegardless()
         panel.makeKey()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        }
 
         currentSound.play()
 
@@ -346,7 +359,12 @@ final class CustomMeetingReminderController {
         let position = NotificationPosition.current
         let target = position.origin(in: vf, contentSize: contentSize, margin: margin)
 
-        guard animated else {
+        // animator() на скрытом NSWindow — no-op: setFrameOrigin(start) применится, а
+        // последующее panel.animator().setFrameOrigin(target) проигнорируется. Окно
+        // останется в offScreenOrigin вне visibleFrame, и при orderFront macOS притянет
+        // его к соседнему монитору с приземлением у нижней границы. Поэтому slide-in
+        // допускаем только для уже видимого окна.
+        guard animated && panel.isVisible else {
             panel.setFrameOrigin(target)
             return
         }
