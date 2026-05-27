@@ -50,8 +50,8 @@ if [[ ! -f "${RELEASE_NOTES_FILE}" ]]; then
   exit 1
 fi
 
-echo "Building bundle for version ${VERSION}" >&2
-make -C "${ROOT_DIR}" bundle >&2
+echo "Building universal bundle (arm64 + x86_64) for version ${VERSION}" >&2
+make -C "${ROOT_DIR}" release-bundle >&2
 
 if [[ ! -d "${APP_PATH}" ]]; then
   echo "App bundle not found at ${APP_PATH}" >&2

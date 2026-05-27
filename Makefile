@@ -1,9 +1,9 @@
 APP_NAME    := OWAWidget
 APP_PATH    := .build/$(APP_NAME).app
 SRC_DIR     := OWAWidget
-BIN_DIR     := $(shell swift build --show-bin-path)
-BINARY      := $(BIN_DIR)/$(APP_NAME)
-RESOURCE_BUNDLE := $(BIN_DIR)/$(APP_NAME)_$(APP_NAME).bundle
+# Empty = host default (arm64 on Apple Silicon). Release packaging sets both macOS arches.
+SWIFT_BUILD_ARGS ?=
+RELEASE_SWIFT_BUILD_ARGS := --arch arm64 --arch x86_64
 ENTITLEMENTS := $(SRC_DIR)/OWAWidget-dev.entitlements
 INFO_PLIST  := $(SRC_DIR)/Info.plist
 CODE_SIGN_IDENTITY ?= -
@@ -19,7 +19,7 @@ WATCH_DEBOUNCE ?= 2
 SPARKLE_ARTIFACTS_DIR := .build/artifacts/sparkle/Sparkle
 SPARKLE_FRAMEWORK     := $(SPARKLE_ARTIFACTS_DIR)/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework
 
-.PHONY: build bundle validate-release-notes release-package run kill clean watch logs help
+.PHONY: build bundle release-bundle validate-release-notes release-package run kill clean watch logs help
 
 ## Validate latest release notes structure (RU/EN)
 validate-release-notes:
@@ -27,17 +27,21 @@ validate-release-notes:
 
 ## Compile Swift sources
 build:
-	swift build 2>&1
+	swift build $(SWIFT_BUILD_ARGS) 2>&1
 
-## Assemble .app bundle from compiled binary
+## Assemble .app bundle from compiled binary (native arch by default)
 bundle: build
-	@mkdir -p $(APP_PATH)/Contents/MacOS
-	@mkdir -p $(APP_PATH)/Contents/Resources
-	@mkdir -p $(APP_PATH)/Contents/Frameworks
-	@rm -rf "$(APP_PATH)/$(APP_NAME)_$(APP_NAME).bundle"
-	cp $(BINARY) $(APP_PATH)/Contents/MacOS/$(APP_NAME)
-	cp $(INFO_PLIST) $(APP_PATH)/Contents/
-	@VERSION=$$(tr -d '[:space:]' < "$(VERSION_FILE)"); \
+	@set -e; \
+	BIN_DIR="$$(swift build $(SWIFT_BUILD_ARGS) --show-bin-path)"; \
+	BINARY="$$BIN_DIR/$(APP_NAME)"; \
+	RESOURCE_BUNDLE="$$BIN_DIR/$(APP_NAME)_$(APP_NAME).bundle"; \
+	mkdir -p $(APP_PATH)/Contents/MacOS; \
+	mkdir -p $(APP_PATH)/Contents/Resources; \
+	mkdir -p $(APP_PATH)/Contents/Frameworks; \
+	rm -rf "$(APP_PATH)/$(APP_NAME)_$(APP_NAME).bundle"; \
+	cp "$$BINARY" "$(APP_PATH)/Contents/MacOS/$(APP_NAME)"; \
+	cp $(INFO_PLIST) $(APP_PATH)/Contents/; \
+	VERSION=$$(tr -d '[:space:]' < "$(VERSION_FILE)"); \
 	[ -n "$$VERSION" ] || (echo "$(VERSION_FILE) is empty" && exit 1); \
 	BUILD_NUMBER=$$(git rev-list --count HEAD 2>/dev/null || echo "1"); \
 	case "$$BUILD_NUMBER" in \
@@ -46,9 +50,9 @@ bundle: build
 	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $$VERSION" "$(APP_PATH)/Contents/Info.plist" >/dev/null 2>&1 || \
 	  /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $$VERSION" "$(APP_PATH)/Contents/Info.plist"; \
 	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $$BUILD_NUMBER" "$(APP_PATH)/Contents/Info.plist" >/dev/null 2>&1 || \
-	  /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $$BUILD_NUMBER" "$(APP_PATH)/Contents/Info.plist"
-	/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $(APP_BUNDLE_ID)" "$(APP_PATH)/Contents/Info.plist"
-	@if [ -d "$(RESOURCE_BUNDLE)" ]; then cp -R "$(RESOURCE_BUNDLE)" $(APP_PATH)/Contents/Resources/; fi
+	  /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $$BUILD_NUMBER" "$(APP_PATH)/Contents/Info.plist"; \
+	/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $(APP_BUNDLE_ID)" "$(APP_PATH)/Contents/Info.plist"; \
+	if [ -d "$$RESOURCE_BUNDLE" ]; then cp -R "$$RESOURCE_BUNDLE" $(APP_PATH)/Contents/Resources/; fi
 	@if [ -d "$(SRC_DIR)/Resources" ]; then cp -R $(SRC_DIR)/Resources/*.lproj $(APP_PATH)/Contents/Resources/; fi
 	@if [ -f "$(SRC_DIR)/Resources/AppIcon.icns" ]; then cp "$(SRC_DIR)/Resources/AppIcon.icns" "$(APP_PATH)/Contents/Resources/AppIcon.icns"; fi
 	@printf 'APPL????' > $(APP_PATH)/Contents/PkgInfo
@@ -69,6 +73,15 @@ bundle: build
 	  "$(APP_PATH)/Contents/Frameworks/Sparkle.framework"
 	codesign --sign "$(CODE_SIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) --force --deep $(APP_PATH)
 	@echo "✓ Bundle ready: $(APP_PATH)"
+
+## Release .app bundle: universal binary (Apple Silicon + Intel)
+release-bundle:
+	@$(MAKE) bundle SWIFT_BUILD_ARGS="$(RELEASE_SWIFT_BUILD_ARGS)"
+	@lipo -info "$(APP_PATH)/Contents/MacOS/$(APP_NAME)" | grep -q 'x86_64' || \
+	  (echo "Release binary missing x86_64 (Intel). Check SWIFT_BUILD_ARGS." >&2 && exit 1)
+	@lipo -info "$(APP_PATH)/Contents/MacOS/$(APP_NAME)" | grep -q 'arm64' || \
+	  (echo "Release binary missing arm64 (Apple Silicon). Check SWIFT_BUILD_ARGS." >&2 && exit 1)
+	@echo "✓ Universal binary: $$(lipo -info "$(APP_PATH)/Contents/MacOS/$(APP_NAME)" | sed 's/.*: //')"
 
 ## Build .app and package release zip + appcast.xml.
 ## Internally delegates to scripts/package_release.sh which:
@@ -127,7 +140,7 @@ logs:
 
 help:
 	@echo "make build   — compile Swift sources"
-	@echo "make release-package — build and create release zip from VERSION"
+	@echo "make release-package — universal (arm64+x86_64) zip + appcast from VERSION"
 	@echo "make run     — build, bundle and launch"
 	@echo "make watch   — auto-rebuild on file changes"
 	@echo "make logs    — show recent diagnostic logs"

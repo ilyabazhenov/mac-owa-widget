@@ -122,7 +122,9 @@ To build a release archive locally:
 make release-package
 ```
 
-This command builds `.build/OWAWidget.app`, creates `dist/OWAWidget-v<version>-macos.zip`, EdDSA-signs it with Sparkle's `sign_update`, and emits `dist/appcast.xml`.
+This command builds a **universal** `.build/OWAWidget.app` (Apple Silicon `arm64` + Intel `x86_64`), creates `dist/OWAWidget-v<version>-macos.zip`, EdDSA-signs it with Sparkle's `sign_update`, and emits `dist/appcast.xml`.
+
+Local dev (`make run`, `make build`) still compiles for the host architecture only for faster iteration.
 
 The signing key is read from the login Keychain entry `https://sparkle-project.org` / account `ed25519` by default, or from the `SPARKLE_ED_PRIVATE_KEY` environment variable in CI.
 
