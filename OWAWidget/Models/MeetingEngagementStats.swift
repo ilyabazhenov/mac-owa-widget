@@ -25,6 +25,7 @@ enum MeetingJoinSource: String, Codable, Sendable {
     case reminderNotification
     case reminderPicker
     case inAppReminder
+    case globalShortcut
 }
 
 struct MeetingEngagementSnapshot: Sendable {

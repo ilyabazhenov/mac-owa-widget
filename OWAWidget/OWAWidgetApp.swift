@@ -49,6 +49,7 @@ struct OWAWidgetApp: App {
                     syncLocalization()
                     updateCheckService.start()
                     appearanceService.applyOnLaunch()
+                    setupGlobalHotkeyJoin()
                 }
         }
         .menuBarExtraStyle(.window)
@@ -109,6 +110,10 @@ struct OWAWidgetApp: App {
 
     private func syncLocalization() {
         calendarService.setNotificationLocalization(localizationService.notificationLocalization)
+    }
+
+    private func setupGlobalHotkeyJoin() {
+        GlobalHotkeyJoinService.shared.start(calendarService: calendarService)
     }
 
     private func configureAppIcon() {

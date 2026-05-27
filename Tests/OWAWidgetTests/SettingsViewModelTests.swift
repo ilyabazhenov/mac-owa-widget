@@ -48,6 +48,18 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(vm.hasUnsavedChanges)
     }
 
+    func testSavePreferencesPersistsGlobalJoinHotkeyEnabledToService() {
+        let (service, vm, _) = makeSUT()
+
+        XCTAssertTrue(vm.globalJoinHotkeyEnabled)
+        vm.globalJoinHotkeyEnabled = false
+        XCTAssertTrue(vm.hasUnsavedChanges)
+        vm.savePreferences()
+
+        XCTAssertFalse(service.globalJoinHotkeyEnabled)
+        XCTAssertFalse(vm.hasUnsavedChanges)
+    }
+
     func testChangingSyncIntervalMarksHasUnsavedChanges() {
         let (_, vm, _) = makeSUT()
         XCTAssertFalse(vm.hasUnsavedChanges)
@@ -124,6 +136,7 @@ final class SettingsViewModelTests: XCTestCase {
         defaults.removeObject(forKey: NotificationScreenPolicy.defaultsKey)
         defaults.removeObject(forKey: "menuBarDisplayMode")
         defaults.removeObject(forKey: "dimPastMeetingsOnTimeline")
+        defaults.removeObject(forKey: "globalJoinHotkeyEnabled")
         defaults.removeObject(forKey: "meetingEngagementStats.storage.v1")
     }
 

@@ -42,6 +42,8 @@
 
 "preferences.shortcuts.section" = "Shortcuts";
 "preferences.shortcuts.createMeeting" = "New Meeting";
+"preferences.shortcuts.joinMeeting" = "Join meeting";
+"preferences.shortcuts.joinMeeting.hint" = "Hotkey: %@";
 
 "preferences.startup.section" = "Startup";
 "preferences.startup.launchAtLogin" = "Launch at login";
@@ -130,6 +132,10 @@
 "meeting.no.upcoming" = "No upcoming meetings";
 "meeting.join" = "Join";
 "meeting.join.help" = "Join %@ meeting";
+"meeting.no.link" = "No link";
+"join.selection.title" = "Choose meeting";
+"join.selection.header" = "Meetings starting now";
+"join.hotkey.noMeeting" = "No meeting starting now";
 "meeting.copy.link" = "Copy join link";
 "meeting.now" = "now";
 "meeting.happening.now" = "Happening now";

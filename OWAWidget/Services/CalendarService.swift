@@ -53,6 +53,7 @@ final class CalendarService: ObservableObject {
     private let notificationPositionKey = NotificationPosition.defaultsKey
     private let menuBarDisplayModeKey = "menuBarDisplayMode"
     private let dimPastMeetingsOnTimelineKey = "dimPastMeetingsOnTimeline"
+    private let globalJoinHotkeyEnabledKey = "globalJoinHotkeyEnabled"
 
     var syncInterval: TimeInterval {
         get { UserDefaults.standard.double(forKey: syncIntervalKey).nonZero ?? 300 }
@@ -121,6 +122,17 @@ final class CalendarService: ObservableObject {
             return UserDefaults.standard.bool(forKey: dimPastMeetingsOnTimelineKey)
         }
         set { UserDefaults.standard.set(newValue, forKey: dimPastMeetingsOnTimelineKey) }
+    }
+
+    /// When `true` (default), Ctrl+Option+J joins current/next meeting globally.
+    var globalJoinHotkeyEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: globalJoinHotkeyEnabledKey) == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: globalJoinHotkeyEnabledKey)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: globalJoinHotkeyEnabledKey) }
     }
 
     init(

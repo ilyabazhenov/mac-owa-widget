@@ -42,6 +42,8 @@
 
 "preferences.shortcuts.section" = "Горячие клавиши";
 "preferences.shortcuts.createMeeting" = "Новая встреча";
+"preferences.shortcuts.joinMeeting" = "Подключиться к встрече";
+"preferences.shortcuts.joinMeeting.hint" = "Хоткей: %@";
 
 "preferences.startup.section" = "Запуск";
 "preferences.startup.launchAtLogin" = "Запускать при входе в систему";
@@ -130,6 +132,10 @@
 "meeting.no.upcoming" = "Нет предстоящих встреч";
 "meeting.join" = "Подключиться";
 "meeting.join.help" = "Подключиться к встрече %@";
+"meeting.no.link" = "Нет ссылки";
+"join.selection.title" = "Выберите встречу";
+"join.selection.header" = "Встречи, которые начинаются сейчас";
+"join.hotkey.noMeeting" = "Сейчас нет встречи для подключения";
 "meeting.copy.link" = "Скопировать ссылку";
 "meeting.now" = "сейчас";
 "meeting.happening.now" = "Идёт сейчас";

@@ -7,93 +7,79 @@ final class MeetingJoinSelectionController {
 
     private var panel: NSPanel?
 
-    func present(items: [MeetingReminderItem], onJoin: @escaping (MeetingReminderItem) -> Void) {
+    func present(
+        items: [MeetingReminderItem],
+        localization: LocalizationService? = nil,
+        onJoin: @escaping (MeetingReminderItem) -> Void
+    ) {
         guard !items.isEmpty else { return }
+
+        let localization = localization ?? LocalizationService()
 
         panel?.close()
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
-            styleMask: [.titled, .closable, .nonactivatingPanel, .fullSizeContentView],
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 120),
+            styleMask: [.nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         panel.isFloatingPanel = true
         panel.level = .floating
-        panel.title = "Choose meeting"
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
 
-        let view = MeetingJoinSelectionView(items: items) { [weak panel] item in
-            onJoin(item)
-            panel?.close()
-            PostJoinDismissController.shared.dismissAfterJoin(context: .notificationPicker)
+        let closePanel: () -> Void = { [weak panel] in
+            if let panel { panel.close() }
         }
+
+        let view = MeetingReminderBannerView(
+            title: localization.tr("join.selection.title"),
+            subtitle: localization.tr("join.selection.header"),
+            items: items,
+            accentColor: .orange,
+            joinTitle: localization.tr("meeting.join"),
+            dismissTitle: localization.tr("notification.action.dismiss"),
+            onJoin: { item in
+                onJoin(item)
+                closePanel()
+                PostJoinDismissController.shared.dismissAfterJoin(context: .notificationPicker)
+            },
+            onDismiss: closePanel
+        )
+        .environment(\.locale, localization.locale)
+
         let hosting = NSHostingView(rootView: view)
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView = hosting
+
+        hosting.layoutSubtreeIfNeeded()
+        let fitting = hosting.fittingSize
+        panel.setContentSize(
+            NSSize(
+                width: max(340, fitting.width),
+                height: max(80, fitting.height)
+            )
+        )
 
         if let screen = NotificationScreenPolicy.current.resolve() {
             let visible = screen.visibleFrame
-            let x = visible.maxX - panel.frame.width - 18
-            let y = visible.maxY - panel.frame.height - 18
+            let frame = panel.frame
+            let x = visible.midX - frame.width / 2
+            let y = visible.midY - frame.height / 2
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         }
 
         self.panel = panel
-        panel.makeKeyAndOrderFront(nil)
+        panel.orderFrontRegardless()
+        panel.makeKey()
         NSApp.activate(ignoringOtherApps: true)
-    }
-}
-
-private struct MeetingJoinSelectionView: View {
-    let items: [MeetingReminderItem]
-    let onJoin: (MeetingReminderItem) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Meetings starting now")
-                .font(.system(size: 14, weight: .semibold))
-
-            ScrollView {
-                VStack(spacing: 8) {
-                    ForEach(items, id: \.eventID) { item in
-                        HStack(spacing: 8) {
-                            Image(systemName: item.platform.systemIcon)
-                                .foregroundStyle(.orange)
-                                .frame(width: 14)
-                            Text(timeRange(item))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 90, alignment: .leading)
-                            Text(item.title)
-                                .font(.system(size: 12))
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-
-                            if item.hasJoinURL {
-                                Button("Join") { onJoin(item) }
-                                    .buttonStyle(.borderedProminent)
-                                    .controlSize(.small)
-                            } else {
-                                Text("No link")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .padding(14)
-        .frame(width: 420, height: 260)
-    }
-
-    private func timeRange(_ item: MeetingReminderItem) -> String {
-        let formatter = DateFormatter()
-        formatter.timeZone = AppTimeZone.zone
-        formatter.timeStyle = .short
-        formatter.dateStyle = .none
-        return "\(formatter.string(from: item.startDate))-\(formatter.string(from: item.endDate))"
     }
 }

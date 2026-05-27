@@ -13,6 +13,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var notificationPosition: NotificationPosition { didSet { updateUnsavedChanges() } }
     @Published var menuBarDisplayMode: MenuBarDisplayMode { didSet { updateUnsavedChanges() } }
     @Published var dimPastMeetingsOnTimeline: Bool { didSet { updateUnsavedChanges() } }
+    @Published var globalJoinHotkeyEnabled: Bool { didSet { updateUnsavedChanges() } }
     @Published var launchAtLogin: Bool
     @Published var launchAtLoginRequiresApproval: Bool
     @Published private(set) var hasUnsavedChanges: Bool = false
@@ -44,6 +45,7 @@ final class SettingsViewModel: ObservableObject {
         self.notificationPosition = calendarService.notificationPosition
         self.menuBarDisplayMode = calendarService.menuBarDisplayMode
         self.dimPastMeetingsOnTimeline = calendarService.dimPastMeetingsOnTimeline
+        self.globalJoinHotkeyEnabled = calendarService.globalJoinHotkeyEnabled
         self.launchAtLogin = launchAtLoginManager.isEnabled
         self.launchAtLoginRequiresApproval = launchAtLoginManager.requiresApproval
         self.baselinePreferences = PreferencesSnapshot(
@@ -55,7 +57,8 @@ final class SettingsViewModel: ObservableObject {
             notificationScreenPolicy: calendarService.notificationScreenPolicy,
             notificationPosition: calendarService.notificationPosition,
             menuBarDisplayMode: calendarService.menuBarDisplayMode,
-            dimPastMeetingsOnTimeline: calendarService.dimPastMeetingsOnTimeline
+            dimPastMeetingsOnTimeline: calendarService.dimPastMeetingsOnTimeline,
+            globalJoinHotkeyEnabled: calendarService.globalJoinHotkeyEnabled
         )
         updateUnsavedChanges()
     }
@@ -131,6 +134,7 @@ final class SettingsViewModel: ObservableObject {
         service.notificationPosition = notificationPosition
         service.menuBarDisplayMode = menuBarDisplayMode
         service.dimPastMeetingsOnTimeline = dimPastMeetingsOnTimeline
+        service.globalJoinHotkeyEnabled = globalJoinHotkeyEnabled
         service.setMeetingEngagementScope(meetingEngagementScope)
         service.setMeetingEngagementPeriod(meetingEngagementDefaultPeriod)
         service.applySavedPreferences()
@@ -177,6 +181,7 @@ final class SettingsViewModel: ObservableObject {
         let notificationPosition: NotificationPosition
         let menuBarDisplayMode: MenuBarDisplayMode
         let dimPastMeetingsOnTimeline: Bool
+        let globalJoinHotkeyEnabled: Bool
     }
 
     private func currentPreferencesSnapshot() -> PreferencesSnapshot {
@@ -189,7 +194,8 @@ final class SettingsViewModel: ObservableObject {
             notificationScreenPolicy: notificationScreenPolicy,
             notificationPosition: notificationPosition,
             menuBarDisplayMode: menuBarDisplayMode,
-            dimPastMeetingsOnTimeline: dimPastMeetingsOnTimeline
+            dimPastMeetingsOnTimeline: dimPastMeetingsOnTimeline,
+            globalJoinHotkeyEnabled: globalJoinHotkeyEnabled
         )
     }
 

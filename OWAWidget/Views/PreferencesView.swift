@@ -89,6 +89,16 @@ struct PreferencesView: View {
                 .pickerStyle(.menu)
             }
 
+            Section(localization.tr("preferences.shortcuts.section")) {
+                Toggle(
+                    localization.tr("preferences.shortcuts.joinMeeting"),
+                    isOn: $vm.globalJoinHotkeyEnabled
+                )
+                Text(localization.tr("preferences.shortcuts.joinMeeting.hint", "Ctrl+Option+J"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
             Section(localization.tr("preferences.timeline.section")) {
                 Toggle(
                     localization.tr("preferences.timeline.dimPastMeetings"),
