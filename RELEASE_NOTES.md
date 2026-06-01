@@ -1,3 +1,43 @@
+## v1.0.41 - 2026-06-01
+
+### RU
+
+#### Что изменилось
+
+- Popover: события на весь день вынесены в закреплённую шапку над таймлайном — они больше не занимают колонки пересечений и не вытесняют короткие встречи; при четырёх и более all-day доступен горизонтальный скролл.
+- Глобальный хоткей **Ctrl+Option+J** для подключения к текущей или начинающейся в ближайшие 2 минуты встрече из любого приложения; при нескольких подходящих встречах показывается компактный выбор; переключатель в настройках.
+- Релизная сборка — universal binary (**Apple Silicon и Intel**); локальная dev-сборка по-прежнему нативная для скорости.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Popover: all-day events moved to a sticky header above the timeline — they no longer participate in overlap columns or crowd out short meetings; horizontal scroll when there are four or more all-day events.
+- Global hotkey **Ctrl+Option+J** to join the current meeting or one starting within the next 2 minutes from any app; compact picker when multiple meetings qualify; toggle in Settings.
+- Release builds ship as a universal binary (**Apple Silicon and Intel**); local dev builds remain native for speed.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.40 - 2026-05-25
 
 ### RU
