@@ -1,8 +1,35 @@
 import SwiftUI
 import AppKit
 
+struct MeetingDaySection: Identifiable, Equatable {
+    var id: String { label }
+    let label: String
+    let date: Date
+    let timedEvents: [CalendarEvent]
+    let allDayEvents: [CalendarEvent]
+
+    static func partition(
+        events: [CalendarEvent],
+        label: String,
+        dayStart: Date,
+        dayEnd: Date
+    ) -> MeetingDaySection {
+        let inDay = events.filter { $0.startDate < dayEnd && $0.endDate > dayStart }
+        let allDay = inDay
+            .filter { $0.isAllDay }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        let timed = inDay.filter { !$0.isAllDay }
+        return MeetingDaySection(
+            label: label,
+            date: dayStart,
+            timedEvents: timed,
+            allDayEvents: allDay
+        )
+    }
+}
+
 struct MeetingListView: View {
-    let sections: [(label: String, date: Date, events: [CalendarEvent])]
+    let sections: [MeetingDaySection]
     var contentHorizontalPadding: CGFloat = 12
     var selectedEventID: String? = nil
     var onSelect: (CalendarEvent) -> Void = { _ in }
@@ -18,11 +45,21 @@ struct MeetingListView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    ForEach(sections, id: \.label) { section in
+                    ForEach(sections) { section in
                         Section {
                             hourlySection(section: section)
                         } header: {
-                            sectionHeader(section.label)
+                            VStack(alignment: .leading, spacing: 0) {
+                                sectionHeader(section.label)
+                                AllDayEventsHeaderView(
+                                    events: section.allDayEvents,
+                                    contentHorizontalPadding: contentHorizontalPadding,
+                                    timeColumnWidth: timeColumnWidth,
+                                    selectedEventID: selectedEventID,
+                                    onSelect: onSelect
+                                )
+                            }
+                            .background(Color(nsColor: .windowBackgroundColor).opacity(0.95))
                         }
                     }
                 }
@@ -32,7 +69,7 @@ struct MeetingListView: View {
                 hasAutoScrolledToCurrentSlot = false
                 scrollToCurrentSlotIfNeeded(proxy: proxy)
             }
-            .onChange(of: sections.map(\.events.count)) { _ in
+            .onChange(of: sections.map(\.timedEvents.count)) { _ in
                 scrollToCurrentSlotIfNeeded(proxy: proxy)
             }
             .onChange(of: sections.first?.date) { _ in
@@ -56,10 +93,10 @@ struct MeetingListView: View {
 
     @ViewBuilder
     private func hourlySection(
-        section: (label: String, date: Date, events: [CalendarEvent])
+        section: MeetingDaySection
     ) -> some View {
         let slots = TimelineMeetingLayout.makeHourSlots(
-            events: section.events,
+            events: section.timedEvents,
             sectionDate: section.date,
             referenceDate: Date()
         )

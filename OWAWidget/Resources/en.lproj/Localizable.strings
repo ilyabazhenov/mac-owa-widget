@@ -151,6 +151,8 @@
 "meeting.role.organizer.short" = "Host";
 "meeting.categories" = "Categories";
 "meeting.categories.more" = "%d more";
+"meeting.allday.icon.a11y" = "All-day events";
+"meeting.allday.pill.a11y" = "All-day event: %@";
 
 "meeting.rsvp.accept" = "Accept";
 "meeting.rsvp.tentative" = "Tentative";

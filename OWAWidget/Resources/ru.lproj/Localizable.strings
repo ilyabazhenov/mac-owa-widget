@@ -151,6 +151,8 @@
 "meeting.role.organizer.short" = "Орг.";
 "meeting.categories" = "Категории";
 "meeting.categories.more" = "ещё %d";
+"meeting.allday.icon.a11y" = "События на весь день";
+"meeting.allday.pill.a11y" = "Событие на весь день: %@";
 
 "meeting.rsvp.accept" = "Принять";
 "meeting.rsvp.tentative" = "Под вопросом";

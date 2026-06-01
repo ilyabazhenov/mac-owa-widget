@@ -398,13 +398,19 @@ struct PopoverView: View {
         }
     }
 
-    private var eventSections: [(label: String, date: Date, events: [CalendarEvent])] {
+    private var eventSections: [MeetingDaySection] {
         let calendar = AppTimeZone.calendar
         let dayStart = calendar.startOfDay(for: selectedDate)
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
 
-        let events = service.events.filter { $0.startDate < dayEnd && $0.endDate > dayStart }
-        return [(localization.daySectionLabel(for: dayStart, calendar: calendar), dayStart, events)]
+        return [
+            MeetingDaySection.partition(
+                events: service.events,
+                label: localization.daySectionLabel(for: dayStart, calendar: calendar),
+                dayStart: dayStart,
+                dayEnd: dayEnd
+            )
+        ]
     }
 }
 
