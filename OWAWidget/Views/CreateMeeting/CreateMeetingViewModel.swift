@@ -159,9 +159,20 @@ final class CreateMeetingViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // Инициальный эмит обрабатывается явным Task в конце init: на macOS под анимацию
+        // открытия окна RunLoop.main уходит в .tracking, и debounce-таймер в .default mode
+        // может вообще не сработать — пользователь зависает в плейсхолдере «Подбираем
+        // свободные слоты…», потому что findSlots() так и не дёргается.
+        //
+        // Порядок removeDuplicates → dropFirst важен: инициальный $draft и последующая
+        // мутация `draft.location` из recentLocations имеют одинаковый slotAutoRefreshKey,
+        // и removeDuplicates должна сначала запомнить первый key, чтобы отфильтровать
+        // второй. Если поменять местами, мутация location пройдёт как «первый» через
+        // removeDuplicates и через 450 мс стрельнёт лишний findSlots.
         $draft
             .map(\.slotAutoRefreshKey)
             .removeDuplicates()
+            .dropFirst()
             .debounce(for: .milliseconds(450), scheduler: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self else { return }
@@ -175,9 +186,10 @@ final class CreateMeetingViewModel: ObservableObject {
             draft.location = last.url
         }
 
-        // Дебаунс на $draft подгрузит слоты через 450 мс — на это время placeholder
-        // показывал бы пустую подсказку. Сразу включаем спиннер, чтобы UI не флешил.
         isLoadingSlots = true
+        Task { [weak self] in
+            await self?.findSlots()
+        }
     }
 
     // MARK: - Search

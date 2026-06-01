@@ -701,6 +701,64 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
         _ = vm.cellMatrix
         XCTAssertEqual(vm.cellMatrixComputeCount, 1, "перестановка не должна инвалидировать")
     }
+
+    // MARK: - Авто-триггер findSlots на init
+
+    /// Регрессия на «зависание в плейсхолдере "Подбираем свободные слоты…"».
+    /// Раньше первый findSlots ждал Combine-debounce 450 мс на RunLoop.main; под анимацию
+    /// открытия окна на macOS RunLoop уходит в .tracking, и таймер в .default mode мог
+    /// вообще не сработать. Фикс — явный `Task` в init. Если кто-то его уберёт обратно
+    /// на чистую Combine-подписку, этот тест поймает регрессию.
+    func testFindSlotsFiresImmediatelyOnInitWithoutWaitingForDebounce() async {
+        let accountID = UUID()
+        let provider = CountingAvailabilityProvider(accountID: accountID)
+        let svc = CalendarService(
+            providers: [provider],
+            eventCacheStore: TestInMemoryEventCacheStore(snapshot: nil),
+            notificationService: TestNoOpNotificationService(),
+            customMeetingReminders: TestNoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+        let vm = CreateMeetingViewModel(calendarService: svc, accountID: accountID)
+
+        // 150 мс — комфортно больше времени на Task hop + сетевые моки, но сильно меньше
+        // 450 мс Combine-debounce. Если бы findSlots дёргался только подпиской, к этому
+        // моменту он бы ещё не успел отстрелить.
+        try? await Task.sleep(nanoseconds: 150_000_000)
+
+        let calls = await provider.getUserAvailabilityCallCount
+        XCTAssertEqual(calls, 1, "findSlots должен дёргаться один раз из явного Task в init")
+        XCTAssertTrue(vm.slotsSearched, "после успешного findSlots плейсхолдер должен смениться на грид")
+        XCTAssertFalse(vm.isLoadingSlots, "после успешного findSlots спиннер должен погаснуть")
+    }
+
+    /// Регрессия на двойной findSlots. Combine-подписка дропает первый эмит через
+    /// `.dropFirst()`, чтобы инициальный fetch не дублировался с явным Task в init.
+    /// Дополнительно проверяем, что мутация `draft.location` из recentLocations (которая
+    /// эмитит $draft с тем же slotAutoRefreshKey) не приводит к лишнему findSlots —
+    /// порядок `.removeDuplicates().dropFirst()` это гарантирует.
+    func testInitDoesNotDoubleFireFindSlotsAfterDebounceWindow() async {
+        let accountID = UUID()
+        let provider = CountingAvailabilityProvider(accountID: accountID)
+        let svc = CalendarService(
+            providers: [provider],
+            eventCacheStore: TestInMemoryEventCacheStore(snapshot: nil),
+            notificationService: TestNoOpNotificationService(),
+            customMeetingReminders: TestNoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+        let vm = CreateMeetingViewModel(calendarService: svc, accountID: accountID)
+
+        // 700 мс — заведомо больше 450 мс debounce. Если порядок операторов сломан или
+        // dropFirst убран, к этому моменту прилетит второй findSlots.
+        try? await Task.sleep(nanoseconds: 700_000_000)
+
+        let calls = await provider.getUserAvailabilityCallCount
+        XCTAssertEqual(calls, 1, "после init должен быть ровно один findSlots, без дубля от Combine-подписки")
+        XCTAssertTrue(vm.slotsSearched)
+    }
 }
 
 // MARK: - Test doubles
@@ -741,4 +799,35 @@ private final class TestNoOpMeetingReminderController: CustomMeetingReminderCont
         localization: NotificationLocalization,
         sound: MeetingReminderSound
     ) {}
+}
+
+/// Считает вызовы getUserAvailability — proxy на findSlots() со стороны VM, поскольку
+/// CalendarService.findFreeSlots всегда дёргает getUserAvailability, когда allEmails непуст
+/// (организатор резолвится в `me@x.com`, так что allEmails ≥ 1).
+private actor CountingAvailabilityProvider: CalendarProvider {
+    let account: CalendarAccount
+    private(set) var getUserAvailabilityCallCount = 0
+
+    init(accountID: UUID) {
+        self.account = CalendarAccount(
+            id: accountID,
+            displayName: "Test",
+            serverURL: "example.com",
+            email: "me@x.com"
+        )
+    }
+
+    func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] { [] }
+    func validateCredentials() async throws {}
+
+    func resolveOrganizerSMTPEmail() async throws -> String? { "me@x.com" }
+
+    func getUserAvailability(
+        emails: [String],
+        from start: Date,
+        to end: Date
+    ) async throws -> [AttendeeAvailability] {
+        getUserAvailabilityCallCount += 1
+        return []
+    }
 }
