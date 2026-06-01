@@ -910,7 +910,7 @@ actor OWAClient {
 
         let (data, response): (Data, URLResponse)
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await sessionDataAllowingStaleReconnect(for: request)
         } catch let urlErr as URLError {
             log.error("EWS CreateItem URLError code=\(urlErr.code.rawValue, privacy: .public) (\(urlErr.localizedDescription, privacy: .public))")
             throw urlErr
@@ -1026,7 +1026,7 @@ actor OWAClient {
             "EWS respondToMeeting itemId=\(String(itemId.prefix(40)), privacy: .public) action=\(elementName, privacy: .public)"
         )
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await sessionDataAllowingStaleReconnect(for: request)
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
         let responseBody = String(data: data.prefix(600), encoding: .utf8) ?? ""
         log.info(
