@@ -16,7 +16,10 @@ struct KeychainService {
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: accountID.uuidString,
-            kSecValueData: data
+            kSecValueData: data,
+            // AfterFirstUnlock: readable by background sync while the screen is locked.
+            // ThisDeviceOnly: never restored to another device via backup/migration.
+            kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
 
         let status = SecItemAdd(query as CFDictionary, nil)

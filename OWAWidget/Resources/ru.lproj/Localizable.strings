@@ -19,6 +19,8 @@
 "settings.accounts.empty.title" = "Аккаунтов пока нет";
 "settings.accounts.empty.subtitle" = "Нажмите +, чтобы добавить Exchange-аккаунт";
 "settings.accounts.remove" = "Удалить";
+"settings.accounts.remove.confirm.title" = "Удалить учётную запись?";
+"settings.accounts.remove.confirm.message" = "«%@» будет удалена, а сохранённый пароль — стёрт из Keychain. Это действие необратимо.";
 "settings.accounts.add" = "Добавить аккаунт";
 "settings.account.sheet.add" = "Добавить аккаунт";
 "settings.account.sheet.edit" = "Изменить аккаунт";
@@ -39,6 +41,10 @@
 "settings.account.connected" = "Подключение успешно";
 "settings.account.save.failed" = "Не удалось сохранить: %@";
 "settings.account.connection.auth.failed" = "Не удалось подключиться к OWA. Проверьте адрес сервера, логин и пароль.";
+"settings.account.certificate.untrusted.title" = "Недоверенный сертификат сервера";
+"settings.account.certificate.untrusted.message" = "Сервер %@ предъявил сертификат, которому система не доверяет.\n\nОтпечаток SHA-256:\n%@\n\nДоверяйте серверу только если вы узнаёте этот отпечаток.";
+"settings.account.certificate.trust" = "Доверять этому серверу";
+"settings.account.certificate.trusted" = "Сертификат сервера добавлен в доверенные. Повторная проверка…";
 
 "preferences.shortcuts.section" = "Горячие клавиши";
 "preferences.shortcuts.createMeeting" = "Новая встреча";
@@ -173,10 +179,12 @@
 "sync.status.idle" = "Синхронизации ещё не было";
 "sync.status.syncing" = "Синхронизация...";
 "sync.status.synced" = "Синхронизировано %@";
-"sync.elapsed.seconds" = "%d с назад";
+"sync.elapsed.justnow" = "только что";
+"sync.elapsed.ago" = "%@ назад";
 "sync.status.offline.cached" = "Офлайн: показываю кэшированные встречи (%@)";
 "sync.status.error" = "Ошибка: %@";
 "sync.status.auth.required" = "Неверный пароль — обновите в Настройках";
+"sync.status.certificate.untrusted" = "Недоверенный сертификат сервера — подтвердите в Настройках";
 
 "date.today" = "Сегодня";
 "date.tomorrow" = "Завтра";

@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @StateObject private var vm: SettingsViewModel
     @EnvironmentObject private var localization: LocalizationService
+    @State private var accountPendingDeletion: CalendarAccount?
 
     init(calendarService: CalendarService) {
         _vm = StateObject(wrappedValue: SettingsViewModel(calendarService: calendarService))
@@ -72,11 +73,28 @@ struct SettingsView: View {
                                 Image(systemName: "pencil")
                             }
                             .buttonStyle(.plain)
+                            .help(localization.tr("settings.account.sheet.edit"))
+
+                            Button {
+                                accountPendingDeletion = account
+                            } label: {
+                                Image(systemName: "trash")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                            .help(localization.tr("settings.accounts.remove"))
                         }
                         .padding(.vertical, 4)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                accountPendingDeletion = account
+                            } label: {
+                                Label(localization.tr("settings.accounts.remove"), systemImage: "trash")
+                            }
+                        }
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
-                                vm.deleteAccount(account)
+                                accountPendingDeletion = account
                             } label: {
                                 Label(localization.tr("settings.accounts.remove"), systemImage: "trash")
                             }
@@ -98,6 +116,27 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+        }
+        .alert(
+            localization.tr("settings.accounts.remove.confirm.title"),
+            isPresented: Binding(
+                get: { accountPendingDeletion != nil },
+                set: { if !$0 { accountPendingDeletion = nil } }
+            ),
+            presenting: accountPendingDeletion
+        ) { account in
+            Button(localization.tr("settings.accounts.remove"), role: .destructive) {
+                vm.deleteAccount(account)
+                accountPendingDeletion = nil
+            }
+            Button(localization.tr("settings.account.cancel"), role: .cancel) {
+                accountPendingDeletion = nil
+            }
+        } message: { account in
+            Text(localization.tr(
+                "settings.accounts.remove.confirm.message",
+                account.displayName.isEmpty ? account.email : account.displayName
+            ))
         }
     }
 
@@ -128,7 +167,7 @@ struct SettingsView: View {
             Divider()
 
             HStack {
-                Button(localization.tr("settings.account.cancel")) { vm.editingAccount = nil }
+                Button(localization.tr("settings.account.cancel")) { vm.cancelEditing() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button(vm.isAddingNew ? localization.tr("settings.account.add") : localization.tr("settings.account.save")) {
@@ -142,5 +181,26 @@ struct SettingsView: View {
             .padding()
         }
         .frame(width: 420, height: 380)
+        .alert(
+            localization.tr("settings.account.certificate.untrusted.title"),
+            isPresented: Binding(
+                get: { vm.pendingCertTrust != nil },
+                set: { if !$0 { vm.cancelCertificateTrust() } }
+            ),
+            presenting: vm.pendingCertTrust
+        ) { _ in
+            Button(localization.tr("settings.account.certificate.trust")) {
+                vm.confirmCertificateTrust(localization: localization)
+            }
+            Button(localization.tr("settings.account.cancel"), role: .cancel) {
+                vm.cancelCertificateTrust()
+            }
+        } message: { pending in
+            Text(localization.tr(
+                "settings.account.certificate.untrusted.message",
+                pending.host,
+                pending.fingerprint
+            ))
+        }
     }
 }

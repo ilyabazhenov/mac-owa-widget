@@ -196,6 +196,13 @@ final class CalendarService: ObservableObject {
 
     func removeAccount(_ account: CalendarAccount) throws {
         try KeychainService.delete(accountID: account.id)
+        // Drop any pinned (manually trusted) certificate for this server so a stale
+        // fingerprint can't silently trust the host if the account is re-added later.
+        if account.accountType == .owa,
+           let base = try? OWAClient.parseBaseURL(account.serverURL),
+           let host = base.host {
+            TrustedCertificateStore.untrust(forKey: TrustedCertificateStore.key(host: host, port: base.port ?? 443))
+        }
         accounts.removeAll { $0.id == account.id }
         persistAccounts()
         Task { await rebuildProviders() }
@@ -359,9 +366,10 @@ final class CalendarService: ObservableObject {
         guard let provider = providers.first(where: { $0.account.id == accountID }) else {
             throw OWAError.authenticationFailed("Account not found")
         }
-        // Не пытаемся создать встречу, если creds уже отвергнуты — иначе риск lockout AD.
-        if syncStatus.isAuthenticationRequired {
-            throw OWAError.httpError(401, "Authentication required")
+        // Не пытаемся создать встречу, если синк заблокирован: отвергнутые creds (риск
+        // lockout AD) ИЛИ недоверенный сертификат сервера.
+        if syncStatus.blocksSync {
+            throw OWAError.httpError(401, "Authentication or certificate trust required")
         }
         do {
             try await provider.createMeeting(
@@ -374,10 +382,7 @@ final class CalendarService: ObservableObject {
                 optionalAttendees: optionalAttendees
             )
         } catch {
-            if OWAError.isAuthError(error) {
-                syncStatus = .authenticationRequired
-                log.error("createMeeting suspended sync: auth error — \(error.localizedDescription, privacy: .public)")
-            }
+            applyBlockingError(error, context: "createMeeting")
             throw error
         }
         syncNow()
@@ -404,6 +409,7 @@ final class CalendarService: ObservableObject {
             log.info("respondToMeeting succeeded eventID=\(event.id, privacy: .public)")
         } catch {
             applyResponseType(event.responseType, to: event.id)
+            applyBlockingError(error, context: "respondToMeeting")
             log.error("respondToMeeting failed eventID=\(event.id, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
             throw error
         }
@@ -414,17 +420,31 @@ final class CalendarService: ObservableObject {
         events[idx] = events[idx].withResponseType(type)
     }
 
+    /// Maps a request error onto a blocking sync status so the circuit breaker engages and
+    /// the user gets an actionable state (re-enter password / re-trust the server) instead
+    /// of repeated network calls against a rejecting or untrusted server.
+    private func applyBlockingError(_ error: Error, context: String) {
+        if let cert = OWAError.untrustedCertificateInfo(from: error) {
+            syncStatus = .certificateTrustRequired(host: cert.host, fingerprint: cert.fingerprint)
+            log.error("\(context, privacy: .public) suspended sync: untrusted certificate for \(cert.host, privacy: .public)")
+        } else if OWAError.isAuthError(error) {
+            syncStatus = .authenticationRequired
+            log.error("\(context, privacy: .public) suspended sync: auth error — \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     func openJoinURL(for event: CalendarEvent, source: MeetingJoinSource) {
         guard let url = event.joinURLForActions else { return }
+        // Only record the join if the URL was actually safe to open.
+        guard MeetingURLOpener.open(url) else { return }
         meetingEngagementStats.trackJoin(for: event, source: source)
-        NSWorkspace.shared.open(url)
         recalculateEngagementSnapshot()
     }
 
     func openJoinURL(for reminderItem: MeetingReminderItem, source: MeetingJoinSource) {
         guard let url = reminderItem.joinURL else { return }
+        guard MeetingURLOpener.open(url) else { return }
         meetingEngagementStats.trackJoin(eventID: reminderItem.eventID, startDate: reminderItem.startDate, source: source)
-        NSWorkspace.shared.open(url)
         recalculateEngagementSnapshot()
     }
 
@@ -481,8 +501,9 @@ final class CalendarService: ObservableObject {
         DiagnosticLog.event(
             "CalendarService providers rebuilt count=\(built.count) accounts=\(accounts.count)"
         )
-        // A provider rebuild means the user explicitly updated credentials — lift any auth block.
-        if syncStatus.isAuthenticationRequired {
+        // A provider rebuild means the user explicitly updated credentials or re-trusted
+        // the server — lift any auth / certificate-trust block.
+        if syncStatus.blocksSync {
             syncStatus = .idle
         }
         await performSync(trigger: "rebuildProviders")
@@ -522,8 +543,8 @@ final class CalendarService: ObservableObject {
         // Circuit breaker: do not retry with credentials that were already rejected.
         // This prevents Exchange account lockout from repeated failed auth attempts.
         // Sync resumes when rebuildProviders() is called after a credential update.
-        guard !syncStatus.isAuthenticationRequired else {
-            log.info("Sync \(syncID, privacy: .public) skipped: authentication required")
+        guard !syncStatus.blocksSync else {
+            log.info("Sync \(syncID, privacy: .public) skipped: blocked (auth or certificate trust required)")
             return
         }
 
@@ -562,7 +583,12 @@ final class CalendarService: ObservableObject {
             await rescheduleMeetingRemindersForCurrentEvents()
 
         } catch {
-            if OWAError.isAuthError(error) {
+            if let certInfo = OWAError.untrustedCertificateInfo(from: error) {
+                // Untrusted server certificate — suspend sync and surface an actionable
+                // status so the user can re-trust the server (do NOT fail silently).
+                syncStatus = .certificateTrustRequired(host: certInfo.host, fingerprint: certInfo.fingerprint)
+                log.error("Sync \(syncID, privacy: .public) suspended: untrusted certificate for \(certInfo.host, privacy: .public)")
+            } else if OWAError.isAuthError(error) {
                 // Credentials definitively rejected — suspend sync to prevent account lockout.
                 // Sync resumes only after an explicit credential update (rebuildProviders).
                 syncStatus = .authenticationRequired
@@ -603,7 +629,22 @@ final class CalendarService: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: accountsKey),
               let decoded = try? JSONDecoder().decode([CalendarAccount].self, from: data)
         else { return }
-        accounts = decoded
+
+        // Migrate legacy cleartext http:// server URLs to https://. Before HTTPS was
+        // enforced these could be persisted; without migration they'd now fail to build a
+        // provider (parseBaseURL throws) and sync would silently stop with no UI signal.
+        var migrated = false
+        accounts = decoded.map { account in
+            guard account.serverURL.lowercased().hasPrefix("http://") else { return account }
+            migrated = true
+            var updated = account
+            updated.serverURL = "https://" + account.serverURL.dropFirst("http://".count)
+            return updated
+        }
+        if migrated {
+            persistAccounts()
+            log.info("Migrated legacy http:// account URL(s) to https://")
+        }
     }
 
     private func loadCachedEvents() {

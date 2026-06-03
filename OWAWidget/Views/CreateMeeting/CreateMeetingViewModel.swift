@@ -217,7 +217,7 @@ final class CreateMeetingViewModel: ObservableObject {
                 // normal — user typed more
             } catch {
                 setResults([], kind: kind)
-                print("[CreateMeetingVM] findPeople error: \(error)")
+                log.error("findPeople error: \(error.localizedDescription, privacy: .public)")
             }
         }
         switch kind {

@@ -6,11 +6,22 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
     private let lock = NSLock()
     private var _cookies: [HTTPCookie] = []
     private var _redirectChain: [String] = []
+    private var _pendingUntrusted: (host: String, port: Int, fingerprint: String)?
 
     var allCookies: [HTTPCookie]    { lock.lock(); defer { lock.unlock() }; return _cookies }
     var redirectChain: [String]     { lock.lock(); defer { lock.unlock() }; return _redirectChain }
 
-    func reset() { lock.lock(); _cookies = []; _redirectChain = []; lock.unlock() }
+    func reset() { lock.lock(); _cookies = []; _redirectChain = []; _pendingUntrusted = nil; lock.unlock() }
+
+    /// Returns and clears the most recent rejected (untrusted) certificate, if any.
+    /// Set when the server presented a certificate that failed system validation and
+    /// was not in the user's manual trust store.
+    func takePendingUntrusted() -> (host: String, port: Int, fingerprint: String)? {
+        lock.lock(); defer { lock.unlock() }
+        let value = _pendingUntrusted
+        _pendingUntrusted = nil
+        return value
+    }
 
     func urlSession(
         _ session: URLSession,
@@ -30,7 +41,16 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
             _cookies.append(contentsOf: cookies)
             lock.unlock()
         }
-        completionHandler(request)
+
+        // Still follow the redirect (federated/ADFS login depends on it), but never carry
+        // the Authorization header across a host change to avoid leaking credentials.
+        var forwarded = request
+        if let fromHost = response.url?.host?.lowercased(),
+           let toHost = request.url?.host?.lowercased(),
+           fromHost != toHost {
+            forwarded.setValue(nil, forHTTPHeaderField: "Authorization")
+        }
+        completionHandler(forwarded)
     }
 
     func urlSession(
@@ -38,12 +58,42 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-           let trust = challenge.protectionSpace.serverTrust {
-            completionHandler(.useCredential, URLCredential(trust: trust))
-        } else {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = challenge.protectionSpace.serverTrust else {
             completionHandler(.performDefaultHandling, nil)
+            return
         }
+
+        // 1. Strict system evaluation (valid chain + hostname).
+        var evalError: CFError?
+        if SecTrustEvaluateWithError(trust, &evalError) {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+            return
+        }
+
+        // 2. System rejected — accept only if the user explicitly trusted this exact
+        //    certificate for this host (manual pin for self-signed / internal-CA servers).
+        let storeKey = TrustedCertificateStore.key(
+            host: challenge.protectionSpace.host,
+            port: challenge.protectionSpace.port
+        )
+        let fingerprint = TrustedCertificateStore.leafFingerprint(from: trust)
+        if let fingerprint, TrustedCertificateStore.isTrusted(fingerprint: fingerprint, forKey: storeKey) {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+            return
+        }
+
+        // 3. Untrusted — record for the UI ("trust this server?") and refuse.
+        if let fingerprint {
+            lock.lock()
+            _pendingUntrusted = (
+                host: challenge.protectionSpace.host,
+                port: challenge.protectionSpace.port,
+                fingerprint: fingerprint
+            )
+            lock.unlock()
+        }
+        completionHandler(.cancelAuthenticationChallenge, nil)
     }
 }
 
@@ -105,6 +155,24 @@ actor OWAClient {
         #if DEBUG
         setupDebugLog()
         #endif
+    }
+
+    /// Single chokepoint for network requests. Converts a TLS trust rejection
+    /// (recorded by the session delegate) into a typed `untrustedCertificate` error so
+    /// the UI / background sync can prompt the user to trust the server.
+    private func fetchData(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        do {
+            return try await session.data(for: request)
+        } catch {
+            if let pending = sessionDelegate.takePendingUntrusted() {
+                throw OWAError.untrustedCertificate(
+                    host: pending.host,
+                    port: pending.port,
+                    fingerprint: pending.fingerprint
+                )
+            }
+            throw error
+        }
     }
 
     // MARK: - Auth
@@ -188,8 +256,20 @@ actor OWAClient {
             referer: try url("/owa/auth/logon.aspx").absoluteString
         )
 
-        guard let (data, resp) = try? await session.data(for: req),
-              let http = resp as? HTTPURLResponse,
+        // Propagate an untrusted-certificate rejection here instead of swallowing it into
+        // the fallback form — otherwise the typed error (and the delegate's pending record,
+        // which is cleared on read) would be lost and the trust prompt might never surface.
+        let data: Data
+        let resp: URLResponse
+        do {
+            (data, resp) = try await self.fetchData(req)
+        } catch let error as OWAError {
+            if case .untrustedCertificate = error { throw error }
+            return fallback
+        } catch {
+            return fallback
+        }
+        guard let http = resp as? HTTPURLResponse,
               let pageURL = http.url,
               let html = String(data: data, encoding: .utf8) else {
             return fallback
@@ -206,7 +286,15 @@ actor OWAClient {
                 let raw = ns.substring(with: m.range(at: 1))
                 // Может быть относительным URL
                 if raw.hasPrefix("http") {
-                    actionURL = raw
+                    // Принимаем абсолютный action только если он на том же хосте, что и
+                    // страница с формой (pageURL). Это пропускает легитимную федерацию
+                    // (ADFS/login.microsoftonline.com — форма и POST на одном чужом хосте),
+                    // но блокирует подмену action на сторонний хост (эксфильтрация пароля).
+                    if let extracted = URL(string: raw),
+                       extracted.host?.lowercased() == pageURL.host?.lowercased() {
+                        actionURL = raw
+                    }
+                    // иначе оставляем безопасный дефолт actionURL (/owa/auth.owa)
                 } else if let base = URL(string: raw, relativeTo: pageURL) {
                     actionURL = base.absoluteURL.absoluteString
                 }
@@ -245,7 +333,7 @@ actor OWAClient {
         // Если форма пустая — возвращаем fallback-набор полей
         if hiddenFields.isEmpty { hiddenFields = fallback.hiddenFields }
 
-        log.debug("Parsed form: action=\(actionURL), fields=\(hiddenFields.map { "\($0.0)=\($0.1)" })")
+        log.debug("Parsed form: action=\(actionURL), fields=\(hiddenFields.map(\.0))")
         return LoginForm(action: actionURL, hiddenFields: hiddenFields, referer: referer)
     }
 
@@ -272,7 +360,7 @@ actor OWAClient {
             .joined(separator: "&")
             .data(using: .utf8)
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await self.fetchData(request)
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
         return (data, http)
     }
@@ -280,7 +368,7 @@ actor OWAClient {
     private func fetchCanaryFromOWAPage() async throws {
         var req = URLRequest(url: try url("/owa/"))
         addCommonHeaders(&req)
-        let (data, _) = try await session.data(for: req)
+        let (data, _) = try await self.fetchData(req)
         if let html = String(data: data, encoding: .utf8) {
             canaryToken = extractCanaryFromHTML(html)
         }
@@ -435,7 +523,7 @@ actor OWAClient {
         var request = try serviceRequest(action: "GetCalendarView", canary: canary)
         request.setValue(jsonString.formEncoded, forHTTPHeaderField: "X-OWA-UrlPostData")
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await self.fetchData(request)
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
         let durationMS = Int(Date().timeIntervalSince(started) * 1000)
         log.info(
@@ -515,7 +603,7 @@ actor OWAClient {
         while true {
             attempt += 1
             do {
-                return try await session.data(for: request)
+                return try await self.fetchData(request)
             } catch let urlError as URLError where urlError.code == .networkConnectionLost {
                 #if DEBUG
                 dlog("sessionData: networkConnectionLost attempt \(attempt)/\(maxStaleRetries)")
@@ -784,7 +872,7 @@ actor OWAClient {
         var req = try serviceRequest(action: "GetUserAvailabilityInternal", canary: canary)
         req.setValue(jsonString.formEncoded, forHTTPHeaderField: "X-OWA-UrlPostData")
 
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await self.fetchData(req)
         if let http = response as? HTTPURLResponse, http.statusCode == 440 || http.statusCode == 401 {
             canaryToken = nil
             guard attempt < 1 else {
@@ -1060,7 +1148,7 @@ actor OWAClient {
         var request = try serviceRequest(action: "GetCalendarFolders", canary: canary)
         request.setValue("{}".formEncoded, forHTTPHeaderField: "X-OWA-UrlPostData")
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await self.fetchData(request)
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
         log.info(
             "OWA GetCalendarFolders completed sync=\(SyncDiagnostics.syncIDText, privacy: .public) status=\(http.statusCode, privacy: .public) bytes=\(data.count, privacy: .public)"
@@ -1176,7 +1264,11 @@ actor OWAClient {
         guard let parsed = URL(string: cleaned), let host = parsed.host else {
             throw OWAError.invalidURL(input)
         }
-        let scheme = parsed.scheme ?? "https"
+        let scheme = (parsed.scheme ?? "https").lowercased()
+        // Credentials must never travel over cleartext HTTP.
+        guard scheme == "https" else {
+            throw OWAError.invalidURL(input)
+        }
         let port   = parsed.port.map { ":\($0)" } ?? ""
         guard let base = URL(string: "\(scheme)://\(host)\(port)") else {
             throw OWAError.invalidURL(input)

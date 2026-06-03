@@ -19,6 +19,8 @@
 "settings.accounts.empty.title" = "No accounts yet";
 "settings.accounts.empty.subtitle" = "Click + to add your Exchange account";
 "settings.accounts.remove" = "Remove";
+"settings.accounts.remove.confirm.title" = "Remove account?";
+"settings.accounts.remove.confirm.message" = "“%@” will be removed and its saved password deleted from the Keychain. This cannot be undone.";
 "settings.accounts.add" = "Add Account";
 "settings.account.sheet.add" = "Add Account";
 "settings.account.sheet.edit" = "Edit Account";
@@ -39,6 +41,10 @@
 "settings.account.connected" = "Connected successfully";
 "settings.account.save.failed" = "Save failed: %@";
 "settings.account.connection.auth.failed" = "Could not connect to OWA. Check the server address, login, and password.";
+"settings.account.certificate.untrusted.title" = "Untrusted server certificate";
+"settings.account.certificate.untrusted.message" = "The server %@ presented a certificate that is not trusted by the system.\n\nSHA-256 fingerprint:\n%@\n\nOnly trust this server if you recognize this fingerprint.";
+"settings.account.certificate.trust" = "Trust This Server";
+"settings.account.certificate.trusted" = "Server certificate trusted. Testing again…";
 
 "preferences.shortcuts.section" = "Shortcuts";
 "preferences.shortcuts.createMeeting" = "New Meeting";
@@ -173,10 +179,12 @@
 "sync.status.idle" = "Not synced yet";
 "sync.status.syncing" = "Syncing...";
 "sync.status.synced" = "Synced %@";
-"sync.elapsed.seconds" = "%d s ago";
+"sync.elapsed.justnow" = "just now";
+"sync.elapsed.ago" = "%@ ago";
 "sync.status.offline.cached" = "Offline, showing cached meetings (%@)";
 "sync.status.error" = "Error: %@";
 "sync.status.auth.required" = "Invalid password — update in Settings";
+"sync.status.certificate.untrusted" = "Untrusted server certificate — re-confirm in Settings";
 
 "date.today" = "Today";
 "date.tomorrow" = "Tomorrow";

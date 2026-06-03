@@ -402,7 +402,7 @@ final class CustomMeetingReminderController {
         if let onJoin {
             onJoin(item)
         } else if let url = item.joinURL {
-            NSWorkspace.shared.open(url)
+            MeetingURLOpener.open(url)
         }
         closeCurrentPanelAndFinish(fallbackPanel: fallbackPanel)
     }

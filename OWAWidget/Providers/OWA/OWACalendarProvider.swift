@@ -153,8 +153,9 @@ actor OWACalendarProvider: CalendarProvider {
     static func resolveJoinURL(from item: OWACalendarItem, using detector: MeetingURLDetector = MeetingURLDetector())
         -> (URL?, MeetingPlatform)
     {
-        // 1. Dedicated join URL field
-        if let urlStr = item.JoinOnlineMeetingUrl, !urlStr.isEmpty, let url = URL(string: urlStr) {
+        // 1. Dedicated join URL field — normalize scheme; drop file:// / custom schemes.
+        if let urlStr = item.JoinOnlineMeetingUrl, !urlStr.isEmpty,
+           let url = MeetingURLOpener.safeURL(fromString: urlStr) {
             return (url, detector.detectPlatform(from: urlStr))
         }
 

@@ -34,6 +34,22 @@
             <string>%d min</string>
         </dict>
     </dict>
+    <key>unit.hours.short</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@hours@</string>
+        <key>hours</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d h</string>
+            <key>other</key>
+            <string>%d h</string>
+        </dict>
+    </dict>
     <key>unit.meetings</key>
     <dict>
         <key>NSStringLocalizedFormatKey</key>

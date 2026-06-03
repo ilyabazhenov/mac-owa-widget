@@ -25,16 +25,13 @@
     <key>NSUserNotificationUsageDescription</key>
     <string>Mac Owa Widget notifies you before meetings start so you can join with one click.</string>
     <!--
-        NSAllowsArbitraryLoads is intentionally enabled to support on-premise Exchange /
-        OWA servers that use self-signed or internal CA certificates.
-        If you distribute via the Mac App Store, replace this with NSExceptionDomains
-        scoped to your specific Exchange server hostname.
+        App Transport Security is left at its secure defaults (TLS 1.2+, valid chain).
+        Self-signed / internal-CA on-premise Exchange servers are supported via an explicit
+        user "trust this server" action (TrustedCertificateStore), which pins the leaf
+        certificate fingerprint instead of disabling ATS globally.
+        If you have a legacy server that requires TLS < 1.2, add a scoped NSExceptionDomains
+        entry for that specific hostname here.
     -->
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSAllowsArbitraryLoads</key>
-        <true/>
-    </dict>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <!--

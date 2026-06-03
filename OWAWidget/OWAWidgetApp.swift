@@ -228,7 +228,7 @@ final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,
         if let urlString = userInfo["joinURL"] as? String,
            let url = URL(string: urlString) {
             DispatchQueue.main.async {
-                NSWorkspace.shared.open(url)
+                guard MeetingURLOpener.open(url) else { return }
                 PostJoinDismissController.shared.dismissAfterJoin(context: .notificationAction)
             }
         }

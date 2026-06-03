@@ -81,6 +81,10 @@ final class LocalizationService: ObservableObject {
         plural(key: "unit.minutes.short", count: count)
     }
 
+    func hoursShort(_ count: Int) -> String {
+        plural(key: "unit.hours.short", count: count)
+    }
+
     func meetings(_ count: Int) -> String {
         plural(key: "unit.meetings", count: count)
     }
@@ -103,14 +107,15 @@ final class LocalizationService: ObservableObject {
         case .syncing:
             return tr("sync.status.syncing")
         case .lastSynced(let date):
-            let elapsedSeconds = max(0, Int(now.timeIntervalSince(date).rounded(.down)))
-            return tr("sync.status.synced", tr("sync.elapsed.seconds", elapsedSeconds))
+            return tr("sync.status.synced", relativeSyncPhrase(since: date, now: now))
         case .offlineCached(let message):
             return tr("sync.status.offline.cached", message)
         case .error(let message):
             return tr("sync.status.error", message)
         case .authenticationRequired:
             return tr("sync.status.auth.required")
+        case .certificateTrustRequired:
+            return tr("sync.status.certificate.untrusted")
         }
     }
 
@@ -140,6 +145,19 @@ final class LocalizationService: ObservableObject {
         formatter.locale = locale
         formatter.timeZone = AppTimeZone.zone
         return formatter.string(from: date)
+    }
+
+    private func relativeSyncPhrase(since date: Date, now: Date) -> String {
+        let elapsed = max(0, now.timeIntervalSince(date))
+        if elapsed < 60 {
+            return tr("sync.elapsed.justnow")
+        }
+        let minutes = Int(elapsed / 60)
+        if minutes < 60 {
+            return tr("sync.elapsed.ago", minutesShort(minutes))
+        }
+        let hours = Int(elapsed / 3600)
+        return tr("sync.elapsed.ago", hoursShort(hours))
     }
 
     private func plural(key: String, count: Int) -> String {

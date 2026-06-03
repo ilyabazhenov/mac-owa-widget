@@ -46,7 +46,7 @@ final class LocalizationServiceTests: XCTestCase {
         XCTAssertEqual(service.minutes(5), "5 минут")
     }
 
-    func testSyncStatusShowsElapsedSecondsInRussian() {
+    func testSyncStatusShowsJustNowWhenRecentInRussian() {
         let service = LocalizationService(
             selectedLanguage: .russian,
             preferredLanguages: ["en-US"]
@@ -56,10 +56,70 @@ final class LocalizationServiceTests: XCTestCase {
 
         let text = service.syncStatusText(.lastSynced(syncedAt), relativeTo: now)
 
-        XCTAssertEqual(text, "Синхронизировано 5 с назад")
+        XCTAssertEqual(text, "Синхронизировано только что")
     }
 
-    func testSyncStatusClampsFutureSyncDateToZeroSeconds() {
+    func testSyncStatusShowsElapsedMinutesInRussian() {
+        let service = LocalizationService(
+            selectedLanguage: .russian,
+            preferredLanguages: ["en-US"]
+        )
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let syncedAt = now.addingTimeInterval(-5 * 60)
+
+        let text = service.syncStatusText(.lastSynced(syncedAt), relativeTo: now)
+
+        XCTAssertEqual(text, "Синхронизировано 5 мин назад")
+    }
+
+    func testSyncStatusShowsElapsedHoursInEnglish() {
+        let service = LocalizationService(
+            selectedLanguage: .english,
+            preferredLanguages: ["en-US"]
+        )
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let syncedAt = now.addingTimeInterval(-2 * 3600)
+
+        let text = service.syncStatusText(.lastSynced(syncedAt), relativeTo: now)
+
+        XCTAssertEqual(text, "Synced 2 h ago")
+    }
+
+    func testSyncStatusSecondsToMinutesBoundaryInEnglish() {
+        let service = LocalizationService(
+            selectedLanguage: .english,
+            preferredLanguages: ["en-US"]
+        )
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+        XCTAssertEqual(
+            service.syncStatusText(.lastSynced(now.addingTimeInterval(-59)), relativeTo: now),
+            "Synced just now"
+        )
+        XCTAssertEqual(
+            service.syncStatusText(.lastSynced(now.addingTimeInterval(-60)), relativeTo: now),
+            "Synced 1 min ago"
+        )
+    }
+
+    func testSyncStatusMinutesToHoursBoundaryInEnglish() {
+        let service = LocalizationService(
+            selectedLanguage: .english,
+            preferredLanguages: ["en-US"]
+        )
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+        XCTAssertEqual(
+            service.syncStatusText(.lastSynced(now.addingTimeInterval(-59 * 60)), relativeTo: now),
+            "Synced 59 min ago"
+        )
+        XCTAssertEqual(
+            service.syncStatusText(.lastSynced(now.addingTimeInterval(-60 * 60)), relativeTo: now),
+            "Synced 1 h ago"
+        )
+    }
+
+    func testSyncStatusClampsFutureSyncDateToJustNow() {
         let service = LocalizationService(
             selectedLanguage: .english,
             preferredLanguages: ["en-US"]
@@ -69,7 +129,7 @@ final class LocalizationServiceTests: XCTestCase {
 
         let text = service.syncStatusText(.lastSynced(syncedAt), relativeTo: now)
 
-        XCTAssertEqual(text, "Synced 0 s ago")
+        XCTAssertEqual(text, "Synced just now")
     }
 
     func testDaySectionLabelForTodayIncludesConcreteDateInRussian() {

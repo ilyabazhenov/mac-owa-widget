@@ -9,6 +9,9 @@ enum SyncStatus: Sendable {
     /// Sync is suspended because the stored credentials were rejected by the server.
     /// Resumes automatically when the user updates their password.
     case authenticationRequired
+    /// Sync is suspended because the server presented an untrusted certificate
+    /// (e.g. a self-signed cert rotated). Resumes after the user re-trusts the server.
+    case certificateTrustRequired(host: String, fingerprint: String)
 
     var displayText: String {
         switch self {
@@ -26,6 +29,8 @@ enum SyncStatus: Sendable {
             return "Error: \(msg)"
         case .authenticationRequired:
             return NSLocalizedString("sync.status.auth.required", comment: "")
+        case .certificateTrustRequired:
+            return NSLocalizedString("sync.status.certificate.untrusted", comment: "")
         }
     }
 
@@ -47,5 +52,16 @@ enum SyncStatus: Sendable {
     var isAuthenticationRequired: Bool {
         if case .authenticationRequired = self { return true }
         return false
+    }
+
+    var isCertificateTrustRequired: Bool {
+        if case .certificateTrustRequired = self { return true }
+        return false
+    }
+
+    /// True when sync is suspended pending explicit user action (re-enter password or
+    /// re-trust the server). Used by the circuit breaker to stop retrying.
+    var blocksSync: Bool {
+        isAuthenticationRequired || isCertificateTrustRequired
     }
 }

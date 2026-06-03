@@ -264,7 +264,7 @@ struct PopoverView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        TimelineView(.periodic(from: .now, by: 30)) { context in
             HStack(spacing: 8) {
                 Text(localization.syncStatusText(service.syncStatus, relativeTo: context.date))
                     .lineLimit(1)

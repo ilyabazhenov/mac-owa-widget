@@ -24,6 +24,16 @@ final class SettingsViewModel: ObservableObject {
     @Published var isAddingNew = false
     @Published var isTesting = false
     @Published var testResult: String?
+    /// Set when a connection test hit an untrusted server certificate; drives the
+    /// "trust this server?" confirmation. Nil otherwise.
+    @Published var pendingCertTrust: PendingCertificateTrust?
+
+    struct PendingCertificateTrust: Identifiable, Equatable {
+        let host: String
+        let port: Int
+        let fingerprint: String
+        var id: String { "\(host):\(port):\(fingerprint)" }
+    }
 
     private let service: CalendarService
     private let launchAtLoginManager: any LaunchAtLoginManaging
@@ -69,6 +79,7 @@ final class SettingsViewModel: ObservableObject {
         guard let account = editingAccount else { return }
         isTesting = true
         testResult = nil
+        pendingCertTrust = nil
 
         let pwd = editingPassword
         Task {
@@ -77,10 +88,33 @@ final class SettingsViewModel: ObservableObject {
                 try await provider.validateCredentials()
                 testResult = "✓ \(localization.tr("settings.account.connected"))"
             } catch {
-                testResult = "✗ \(ConnectionTestMessage.failure(for: error, localization: localization))"
+                if let cert = OWAError.untrustedCertificateInfo(from: error) {
+                    // Offer to trust this specific server certificate instead of a generic failure.
+                    pendingCertTrust = PendingCertificateTrust(
+                        host: cert.host, port: cert.port, fingerprint: cert.fingerprint
+                    )
+                    testResult = nil
+                } else {
+                    testResult = "✗ \(ConnectionTestMessage.failure(for: error, localization: localization))"
+                }
             }
             isTesting = false
         }
+    }
+
+    /// User confirmed trust for the server certificate surfaced by `pendingCertTrust`.
+    /// Pins the fingerprint and re-runs the connection test.
+    func confirmCertificateTrust(localization: LocalizationService) {
+        guard let pending = pendingCertTrust else { return }
+        let key = TrustedCertificateStore.key(host: pending.host, port: pending.port)
+        TrustedCertificateStore.trust(fingerprint: pending.fingerprint, forKey: key)
+        pendingCertTrust = nil
+        testResult = localization.tr("settings.account.certificate.trusted")
+        testConnection(localization: localization)
+    }
+
+    func cancelCertificateTrust() {
+        pendingCertTrust = nil
     }
 
     // MARK: - Account CRUD
@@ -110,9 +144,21 @@ final class SettingsViewModel: ObservableObject {
             }
             accounts = service.accounts
             editingAccount = nil
+            editingPassword = ""
+            pendingCertTrust = nil
         } catch {
             testResult = localization.tr("settings.account.save.failed", error.localizedDescription)
         }
+    }
+
+    /// Dismisses the account edit sheet and wipes the in-memory password and transient
+    /// test state so a plaintext password never lingers after the form closes.
+    func cancelEditing() {
+        editingAccount = nil
+        editingPassword = ""
+        testResult = nil
+        pendingCertTrust = nil
+        isAddingNew = false
     }
 
     func deleteAccount(_ account: CalendarAccount) {
