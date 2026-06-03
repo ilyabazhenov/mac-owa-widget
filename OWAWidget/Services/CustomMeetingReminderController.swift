@@ -47,25 +47,31 @@ final class CustomMeetingReminderController {
     var onJoin: ((MeetingReminderItem) -> Void)?
 
     #if DEBUG
-    private static let debugLogURL = URL(fileURLWithPath: "/tmp/owawidget_reminder.log")
+    // Debug-only trace in the user-private app-support debug dir (0700/0600), not /tmp
+    // which is world-readable on macOS.
+    private static let debugLogURL: URL? = DebugLogLocation.url(for: "reminder.log")
 
     init() {
+        guard let url = Self.debugLogURL else { return }
         let header = "=== OWAWidget Reminder Log started \(Date()) ===\n"
-        try? header.write(to: Self.debugLogURL, atomically: true, encoding: .utf8)
+        try? header.write(to: url, atomically: true, encoding: .utf8)
+        DebugLogLocation.tightenPermissions(at: url)
     }
 
     private func dlog(_ message: String) {
+        guard let url = Self.debugLogURL else { return }
         let f = DateFormatter()
         f.timeZone = AppTimeZone.zone
         f.dateFormat = "HH:mm:ss.SSS"
         let line = "[\(f.string(from: Date()))] \(message)\n"
         guard let data = line.data(using: .utf8) else { return }
-        if let handle = try? FileHandle(forWritingTo: Self.debugLogURL) {
+        if let handle = try? FileHandle(forWritingTo: url) {
             handle.seekToEndOfFile()
             handle.write(data)
             try? handle.close()
         } else {
-            try? data.write(to: Self.debugLogURL, options: .atomic)
+            try? data.write(to: url, options: .atomic)
+            DebugLogLocation.tightenPermissions(at: url)
         }
     }
     #endif

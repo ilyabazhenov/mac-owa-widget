@@ -93,13 +93,7 @@ actor OWACalendarProvider: CalendarProvider {
         else {
             #if DEBUG
             if let subject = item.Subject {
-                let line = "[mapItem] dropped: subject='\(subject)' startStr=\(item.Start ?? "nil") endStr=\(item.End ?? "nil")\n"
-                if let data = line.data(using: .utf8) {
-                    let logURL = URL(fileURLWithPath: "/tmp/owawidget_freeslots.log")
-                    if let fh = try? FileHandle(forWritingTo: logURL) {
-                        fh.seekToEndOfFile(); fh.write(data); try? fh.close()
-                    }
-                }
+                appendCalendarMappingDebugLog("[mapItem] dropped: subject='\(subject)' startStr=\(item.Start ?? "nil") endStr=\(item.End ?? "nil")\n")
             }
             #endif
             return nil
@@ -107,13 +101,7 @@ actor OWACalendarProvider: CalendarProvider {
         #if DEBUG
         // One-shot dump of the raw start string so we can see what timezone format OWA returns.
         if subject.contains("9:00") || subject.contains("9 утр") {
-            let line = "[mapItem RAW] subject='\(subject)' startStr='\(startStr)' parsedAsLocal=\(startDate)\n"
-            if let data = line.data(using: .utf8) {
-                let logURL = URL(fileURLWithPath: "/tmp/owawidget_freeslots.log")
-                if let fh = try? FileHandle(forWritingTo: logURL) {
-                    fh.seekToEndOfFile(); fh.write(data); try? fh.close()
-                }
-            }
+            appendCalendarMappingDebugLog("[mapItem RAW] subject='\(subject)' startStr='\(startStr)' parsedAsLocal=\(startDate)\n")
         }
         #endif
 
@@ -250,3 +238,18 @@ actor OWACalendarProvider: CalendarProvider {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+#if DEBUG
+/// Appends a calendar-mapping trace to the user-private debug dir (0700/0600), never to
+/// /tmp (world-readable on macOS).
+private func appendCalendarMappingDebugLog(_ line: String) {
+    guard let url = DebugLogLocation.url(for: "calendar-mapping.log"),
+          let data = line.data(using: .utf8) else { return }
+    if let fh = try? FileHandle(forWritingTo: url) {
+        fh.seekToEndOfFile(); fh.write(data); try? fh.close()
+    } else {
+        try? data.write(to: url, options: .atomic)
+        DebugLogLocation.tightenPermissions(at: url)
+    }
+}
+#endif
