@@ -4,6 +4,13 @@ import AppKit
 struct MeetingRowView: View {
     let event: CalendarEvent
     var compact: Bool = false
+    /// When true, the Join action is rendered as a compact icon button (matching the
+    /// timeline) instead of a full-width text button — leaves more room for long titles.
+    var iconOnlyJoin: Bool = false
+    /// When true, the row is dimmed to signal the meeting has already ended (used in
+    /// search results, which span past days). Disabled by default so callers like the
+    /// "next meeting" banner are unaffected.
+    var isPast: Bool = false
     @EnvironmentObject private var calendarService: CalendarService
     @EnvironmentObject private var localization: LocalizationService
     @State private var didCopy = false
@@ -84,14 +91,20 @@ struct MeetingRowView: View {
                         calendarService.openJoinURL(for: event, source: .meetingRow)
                         PostJoinDismissController.shared.dismissAfterJoin(context: .popoverContent)
                     } label: {
-                        Text(localization.tr("meeting.join"))
-                            .font(.system(size: 11, weight: .semibold))
-                            .lineLimit(1)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(meetingAccentColor(for: event).opacity(0.15))
-                            .foregroundStyle(meetingAccentColor(for: event))
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                        if iconOnlyJoin {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.system(size: compact ? 13 : 16))
+                                .foregroundStyle(meetingAccentColor(for: event))
+                        } else {
+                            Text(localization.tr("meeting.join"))
+                                .font(.system(size: 11, weight: .semibold))
+                                .lineLimit(1)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(meetingAccentColor(for: event).opacity(0.15))
+                                .foregroundStyle(meetingAccentColor(for: event))
+                                .clipShape(RoundedRectangle(cornerRadius: 5))
+                        }
                     }
                     .buttonStyle(.plain)
                     .help(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
@@ -104,6 +117,7 @@ struct MeetingRowView: View {
         .padding(.vertical, compact ? 5 : 8)
         .padding(.horizontal, 14)
         .background(rowBackground)
+        .opacity(isPast ? 0.5 : 1)
         .contentShape(Rectangle())
         .overlay(alignment: .trailing) {
             if event.isHappeningNow && !compact {
@@ -114,7 +128,7 @@ struct MeetingRowView: View {
                     .padding(.vertical, 2)
                     .background(Color.orange)
                     .clipShape(Capsule())
-                    .padding(.trailing, event.joinURLForActions != nil ? 90 : 14)
+                    .padding(.trailing, joinTrailingInset)
             }
         }
         .accessibilityElement(children: .ignore)
@@ -142,7 +156,16 @@ struct MeetingRowView: View {
         if event.isEffectivelyCancelled {
             parts.append(localization.tr("meeting.status.cancelled"))
         }
+        if isPast {
+            parts.append(localization.tr("a11y.meeting.past"))
+        }
         return parts.joined(separator: ", ")
+    }
+
+    /// Trailing inset for the "now" badge so it clears the join cluster.
+    private var joinTrailingInset: CGFloat {
+        guard event.joinURLForActions != nil else { return 14 }
+        return iconOnlyJoin ? 64 : 90
     }
 
     private var rowBackground: Color {

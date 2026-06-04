@@ -260,3 +260,13 @@
 "create.meeting.legend.busy" = "Занято";
 "create.meeting.legend.oof" = "Вне офиса";
 "create.meeting.tooltip.optional" = "Опциональные";
+
+"popover.search" = "Поиск встреч";
+"search.placeholder" = "Название, участники, место";
+"search.clear" = "Очистить поиск";
+"search.empty.title" = "Ничего не найдено";
+"search.empty.subtitle" = "Попробуйте изменить запрос";
+"a11y.search.field" = "Поле поиска встреч";
+"a11y.search.results" = "Результаты поиска";
+"search.scope.hint" = "Поиск только среди загруженных встреч";
+"a11y.meeting.past" = "Уже завершилась";

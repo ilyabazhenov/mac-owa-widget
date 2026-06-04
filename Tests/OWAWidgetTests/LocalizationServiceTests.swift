@@ -241,4 +241,27 @@ final class LocalizationServiceTests: XCTestCase {
 
         XCTAssertEqual(text, "Скоро начнутся: 2 встречи")
     }
+
+    func testLocalizableStringsKeyParityBetweenEnglishAndRussian() throws {
+        func loadKeys(_ language: String) throws -> Set<String> {
+            let path = "\(FileManager.default.currentDirectoryPath)/OWAWidget/Resources/\(language).lproj/Localizable.strings"
+            guard let dict = NSDictionary(contentsOfFile: path) as? [String: String] else {
+                throw XCTSkip("Could not load \(language) Localizable.strings at \(path)")
+            }
+            return Set(dict.keys)
+        }
+
+        let en = try loadKeys("en")
+        let ru = try loadKeys("ru")
+
+        XCTAssertFalse(en.isEmpty)
+        XCTAssertEqual(
+            en.subtracting(ru).sorted(), [],
+            "Keys present in en but missing in ru"
+        )
+        XCTAssertEqual(
+            ru.subtracting(en).sorted(), [],
+            "Keys present in ru but missing in en"
+        )
+    }
 }

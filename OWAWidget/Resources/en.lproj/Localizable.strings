@@ -260,3 +260,13 @@
 "create.meeting.legend.busy" = "Busy";
 "create.meeting.legend.oof" = "Out of office";
 "create.meeting.tooltip.optional" = "Optional";
+
+"popover.search" = "Search meetings";
+"search.placeholder" = "Search by title, people, location";
+"search.clear" = "Clear search";
+"search.empty.title" = "Nothing found";
+"search.empty.subtitle" = "Try a different query";
+"a11y.search.field" = "Meeting search field";
+"a11y.search.results" = "Search results";
+"search.scope.hint" = "Searching loaded meetings only";
+"a11y.meeting.past" = "Already ended";

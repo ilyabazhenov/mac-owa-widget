@@ -13,8 +13,15 @@ struct PopoverView: View {
     let contentHorizontalPadding: CGFloat = 12
     @State private var selectedDayOffset: Int = 0
     @State private var selectedEvent: CalendarEvent? = nil
+    @State private var searchQuery: String = ""
+    @State private var isSearchBarPresented: Bool = false
+    @FocusState private var isSearchFieldFocused: Bool
     private let minDayOffset = -7
     private let maxDayOffset = 30
+
+    private var isSearching: Bool {
+        !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     enum DateNavBarPolicy {
         static func shouldShowJumpToToday(selectedDayOffset: Int) -> Bool {
@@ -39,6 +46,18 @@ struct PopoverView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if isSearchBarPresented {
+                Divider()
+                MeetingSearchField(
+                    text: $searchQuery,
+                    isFocused: $isSearchFieldFocused,
+                    placeholder: localization.tr("search.placeholder"),
+                    onClear: { searchQuery = "" },
+                    onCancel: { closeSearch() }
+                )
+                .padding(.horizontal, contentHorizontalPadding)
+                .padding(.vertical, 8)
+            }
             Divider()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -55,6 +74,8 @@ struct PopoverView: View {
         .accessibilityLabel(localization.tr("app.name"))
         .onDisappear {
             resetMeetingDetailState()
+            searchQuery = ""
+            isSearchBarPresented = false
         }
     }
 
@@ -66,6 +87,15 @@ struct PopoverView: View {
                 .font(.system(size: 13, weight: .semibold))
 
             Spacer()
+
+            Button { toggleSearch() } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundStyle(isSearchBarPresented ? Color.accentColor : .primary)
+            }
+            .buttonStyle(.plain)
+            .help(localization.tr("popover.search"))
+            .accessibilityLabel(localization.tr("popover.search"))
 
             if service.syncStatus.isSyncing {
                 ProgressView()
@@ -150,30 +180,41 @@ struct PopoverView: View {
 
     private var dayTimelineContent: some View {
         ZStack(alignment: .bottom) {
-            VStack(spacing: 0) {
-                dateNavBar
-                Divider()
-                UpdateAvailableBannerView(
-                    updateCheck: updateCheck,
-                    horizontalPadding: contentHorizontalPadding
-                )
-                if updateCheck.availableUpdate != nil {
-                    Divider()
-                }
-                if selectedDayOffset == 0 && !nextEvents.isEmpty {
-                    NextMeetingBannerView(
-                        events: nextEvents,
-                        horizontalPadding: contentHorizontalPadding,
+            Group {
+                if isSearching {
+                    SearchResultsView(
+                        groups: searchResultGroups,
+                        contentHorizontalPadding: contentHorizontalPadding,
+                        selectedEventID: selectedEvent?.id,
                         onSelect: selectEvent
                     )
-                    Divider().padding(.top, 8)
+                } else {
+                    VStack(spacing: 0) {
+                        dateNavBar
+                        Divider()
+                        UpdateAvailableBannerView(
+                            updateCheck: updateCheck,
+                            horizontalPadding: contentHorizontalPadding
+                        )
+                        if updateCheck.availableUpdate != nil {
+                            Divider()
+                        }
+                        if selectedDayOffset == 0 && !nextEvents.isEmpty {
+                            NextMeetingBannerView(
+                                events: nextEvents,
+                                horizontalPadding: contentHorizontalPadding,
+                                onSelect: selectEvent
+                            )
+                            Divider().padding(.top, 8)
+                        }
+                        MeetingListView(
+                            sections: eventSections,
+                            contentHorizontalPadding: contentHorizontalPadding,
+                            selectedEventID: selectedEvent?.id,
+                            onSelect: selectEvent
+                        )
+                    }
                 }
-                MeetingListView(
-                    sections: eventSections,
-                    contentHorizontalPadding: contentHorizontalPadding,
-                    selectedEventID: selectedEvent?.id,
-                    onSelect: selectEvent
-                )
             }
             .accessibilityHidden(selectedEvent != nil)
             .overlay {
@@ -312,6 +353,31 @@ struct PopoverView: View {
         selectedEvent = MeetingDetailStatePolicy.selectedEventAfterPopoverDisappear(selectedEvent)
     }
 
+    private func toggleSearch() {
+        withAnimation(.easeInOut(duration: 0.18)) {
+            isSearchBarPresented.toggle()
+        }
+        if isSearchBarPresented {
+            // Defer focus to the next runloop tick: the field is only inserted into the
+            // hierarchy once `isSearchBarPresented` flips, so focusing synchronously here
+            // targets a view that doesn't exist yet and is silently dropped.
+            DispatchQueue.main.async {
+                isSearchFieldFocused = true
+            }
+        } else {
+            searchQuery = ""
+        }
+        resetMeetingDetailState()
+    }
+
+    private func closeSearch() {
+        searchQuery = ""
+        isSearchFieldFocused = false
+        withAnimation(.easeInOut(duration: 0.18)) {
+            isSearchBarPresented = false
+        }
+    }
+
     // MARK: - Error / empty states
 
     private var noAccountState: some View {
@@ -396,6 +462,84 @@ struct PopoverView: View {
             }
             return group.sorted { ($0.joinURL != nil ? 0 : 1) < ($1.joinURL != nil ? 0 : 1) }
         }
+    }
+
+    // MARK: - Search
+
+    /// Pure, UI-free meeting search over already-loaded events.
+    /// Mirrors the `*Policy` pattern used elsewhere in this view so it can be unit-tested.
+    enum MeetingSearchPolicy {
+        struct DayGroup: Identifiable, Equatable {
+            var id: Date { date }
+            let date: Date
+            let events: [CalendarEvent]
+        }
+
+        /// Splits text into words on any non-alphanumeric boundary. Used identically for
+        /// both the query and the searchable fields so punctuation (apostrophes, hyphens)
+        /// can't make the two sides tokenize differently — e.g. query "O'Brien" must split
+        /// the same way as a field containing "O'Brien".
+        static func words(in text: String) -> [Substring] {
+            text.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        }
+
+        /// `query` is split into word tokens; an event matches only when every token is a
+        /// **word-start prefix** of at least one word across the searchable fields (AND
+        /// across tokens). Matching on word boundaries — rather than substring anywhere —
+        /// avoids short queries like "ai" matching inside transliterated words
+        /// (e.g. "Михаил" → "mikhail"). Cross-script matching ("ivan" → "Иван", "ai" → "АИ")
+        /// is preserved via `OWAPersonSearchTokenMatch.normalizedForms`.
+        static func matches(_ event: CalendarEvent, query: String) -> Bool {
+            let tokens = words(in: query).map(String.init)
+            guard !tokens.isEmpty else { return false }
+
+            var fields = [event.title]
+            if let organizer = event.organizer { fields.append(organizer) }
+            fields.append(contentsOf: event.attendees)
+            if let location = event.location { fields.append(location) }
+            if let body = event.bodyPreview { fields.append(body) }
+
+            // Normalized (lowercased + Latin-transliterated) forms of every individual word.
+            var wordForms = Set<String>()
+            for field in fields {
+                for word in words(in: field) {
+                    wordForms.formUnion(OWAPersonSearchTokenMatch.normalizedForms(String(word)))
+                }
+            }
+            guard !wordForms.isEmpty else { return false }
+
+            return tokens.allSatisfy { token in
+                let tokenForms = OWAPersonSearchTokenMatch.normalizedForms(token)
+                guard !tokenForms.isEmpty else { return false }
+                return tokenForms.contains { qf in
+                    wordForms.contains { $0.hasPrefix(qf) }
+                }
+            }
+        }
+
+        /// Empty/whitespace query → no results. Cancelled and all-day events are kept;
+        /// search should surface everything. Results are sorted by start date ascending.
+        static func filter(_ events: [CalendarEvent], query: String) -> [CalendarEvent] {
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return [] }
+            return events
+                .filter { matches($0, query: trimmed) }
+                .sorted { $0.startDate < $1.startDate }
+        }
+
+        /// Groups events by calendar day, groups ordered ascending by date.
+        /// The human-readable day label is produced by the view (it depends on localization).
+        static func groupByDay(_ events: [CalendarEvent], calendar: Calendar) -> [DayGroup] {
+            let buckets = Dictionary(grouping: events) { calendar.startOfDay(for: $0.startDate) }
+            return buckets
+                .map { DayGroup(date: $0.key, events: $0.value.sorted { $0.startDate < $1.startDate }) }
+                .sorted { $0.date < $1.date }
+        }
+    }
+
+    private var searchResultGroups: [MeetingSearchPolicy.DayGroup] {
+        let filtered = MeetingSearchPolicy.filter(service.events, query: searchQuery)
+        return MeetingSearchPolicy.groupByDay(filtered, calendar: AppTimeZone.calendar)
     }
 
     private var eventSections: [MeetingDaySection] {
