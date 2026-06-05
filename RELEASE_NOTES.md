@@ -1,3 +1,49 @@
+## v1.0.42 - 2026-06-05
+
+### RU
+
+#### Что изменилось
+
+- Popover: поиск встреч по названию, организатору, участникам, локации и описанию среди уже загруженных событий (окно синхронизации −7…+30 дней); результаты сгруппированы по дням, компактная кнопка подключения.
+- Безопасность: строгая проверка TLS-сертификатов с per-host pinning; недоверенный сертификат — явный промпт «доверять серверу» вместо молчаливого сбоя; только HTTPS; миграция legacy `http://` аккаунтов на `https://`; защита join-ссылок от небезопасных схем; усиленное хранение паролей в Keychain.
+- Настройки: удаление аккаунта через кнопку корзины и контекстное меню с подтверждением.
+- Создание встреч: исправлено зависание в плейсхолдере «Подбираем свободные слоты…» при открытии окна без участников.
+- OWA/EWS: автоматический повтор запроса при обрыве устаревшего HTTP keep-alive при создании встречи и RSVP (Accept/Decline/Tentative).
+- Статус синхронизации: относительные подписи («только что», «N минут назад», «N часов назад»).
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Popover: search meetings by title, organizer, attendees, location, and description among already loaded events (sync window −7…+30 days); results grouped by day with a compact join button.
+- Security: strict TLS certificate validation with per-host pinning; untrusted certificates show an explicit “trust this server” prompt instead of failing silently; HTTPS only; legacy `http://` accounts migrated to `https://`; join URLs blocked from unsafe schemes; hardened Keychain credential storage.
+- Settings: delete accounts via trash button and context menu with confirmation.
+- Create meeting: fixed hanging on the “Finding free slots…” placeholder when opening the window without attendees.
+- OWA/EWS: automatic retry when a stale HTTP keep-alive drops the connection during meeting creation and RSVP (Accept/Decline/Tentative).
+- Sync status: relative time labels (just now, N minutes ago, N hours ago).
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.41 - 2026-06-01
 
 ### RU
