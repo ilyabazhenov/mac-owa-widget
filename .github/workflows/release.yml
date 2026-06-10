@@ -48,6 +48,7 @@ jobs:
 
           VERSION=""
           ARCHIVE_PATH=""
+          STABLE_ARCHIVE_PATH=""
           APPCAST_PATH=""
           while IFS= read -r line; do
             case "${line}" in
@@ -57,19 +58,23 @@ jobs:
               ARCHIVE_PATH=*)
                 ARCHIVE_PATH="${line#ARCHIVE_PATH=}"
                 ;;
+              STABLE_ARCHIVE_PATH=*)
+                STABLE_ARCHIVE_PATH="${line#STABLE_ARCHIVE_PATH=}"
+                ;;
               APPCAST_PATH=*)
                 APPCAST_PATH="${line#APPCAST_PATH=}"
                 ;;
             esac
           done <<< "${OUTPUT}"
 
-          if [[ -z "${VERSION}" || -z "${ARCHIVE_PATH}" || -z "${APPCAST_PATH}" ]]; then
+          if [[ -z "${VERSION}" || -z "${ARCHIVE_PATH}" || -z "${STABLE_ARCHIVE_PATH}" || -z "${APPCAST_PATH}" ]]; then
             echo "Failed to parse release metadata from package script output" >&2
             exit 1
           fi
 
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "archive_path=${ARCHIVE_PATH}" >> "${GITHUB_OUTPUT}"
+          echo "stable_archive_path=${STABLE_ARCHIVE_PATH}" >> "${GITHUB_OUTPUT}"
           echo "appcast_path=${APPCAST_PATH}" >> "${GITHUB_OUTPUT}"
 
       - name: Create GitHub release and upload artifacts
@@ -79,6 +84,7 @@ jobs:
         run: |
           VERSION="${{ steps.package.outputs.version }}"
           ARCHIVE_PATH="${{ steps.package.outputs.archive_path }}"
+          STABLE_ARCHIVE_PATH="${{ steps.package.outputs.stable_archive_path }}"
           APPCAST_PATH="${{ steps.package.outputs.appcast_path }}"
           TAG="v${VERSION}"
 
@@ -87,13 +93,13 @@ jobs:
           if [[ "${EXISTS}" -eq 1 ]]; then
             echo "Release ${TAG} already exists, uploading/updating artifacts"
             gh release edit "${TAG}" --notes-file RELEASE_NOTES.md
-            # --clobber so re-runs overwrite both the zip and the appcast.
-            gh release upload "${TAG}" "${ARCHIVE_PATH}" "${APPCAST_PATH}" --clobber
+            # --clobber so re-runs overwrite versioned zip, stable alias, and appcast.
+            gh release upload "${TAG}" "${ARCHIVE_PATH}" "${STABLE_ARCHIVE_PATH}" "${APPCAST_PATH}" --clobber
           else
-            # appcast.xml ships as a release asset so that
-            # https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml
-            # always resolves to the latest release's feed.
-            gh release create "${TAG}" "${ARCHIVE_PATH}" "${APPCAST_PATH}" \
+            # Stable OWAWidget-macos.zip and appcast.xml use fixed asset names so that
+            # https://github.com/<owner>/<repo>/releases/latest/download/<name>
+            # always resolves to the latest release.
+            gh release create "${TAG}" "${ARCHIVE_PATH}" "${STABLE_ARCHIVE_PATH}" "${APPCAST_PATH}" \
               --title "${TAG}" \
               --notes-file RELEASE_NOTES.md
           fi

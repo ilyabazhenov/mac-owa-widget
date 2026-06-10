@@ -30,20 +30,21 @@
 
 ## Установка
 
-1. Откройте [последний релиз](https://github.com/ilyabazhenov/mac-owa-widget/releases/latest).
-2. Скачайте `.zip` архив для macOS.
-3. Распакуйте архив и перенесите `OWAWidget.app` в `/Applications`.
-4. Если macOS блокирует первый запуск, один раз снимите quarantine-атрибут:
+1. [Скачайте OWAWidget-macos.zip](https://github.com/ilyabazhenov/mac-owa-widget/releases/latest/download/OWAWidget-macos.zip) — ссылка всегда ведёт на последнюю версию.
+2. Распакуйте архив и перенесите `OWAWidget.app` в `/Applications`.
+3. Если macOS блокирует первый запуск, один раз снимите quarantine-атрибут:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/OWAWidget.app
 ```
 
-5. Запустите приложение:
+4. Запустите приложение:
 
 ```bash
 open /Applications/OWAWidget.app
 ```
+
+Список изменений по версиям — на [странице релизов](https://github.com/ilyabazhenov/mac-owa-widget/releases/latest).
 
 После запуска OWA Widget появится в строке меню. Иконки в Dock нет, приложение работает только как menu bar app.
 
@@ -155,20 +156,21 @@ open ~/Library/Application\ Support/OWAWidget/diagnostic.log
 
 ### Installation
 
-1. Open the [latest release](https://github.com/ilyabazhenov/mac-owa-widget/releases/latest).
-2. Download the macOS `.zip` archive.
-3. Extract it and move `OWAWidget.app` to `/Applications`.
-4. If macOS blocks the first launch, remove the quarantine attribute once:
+1. [Download OWAWidget-macos.zip](https://github.com/ilyabazhenov/mac-owa-widget/releases/latest/download/OWAWidget-macos.zip) — this link always points to the latest version.
+2. Extract the archive and move `OWAWidget.app` to `/Applications`.
+3. If macOS blocks the first launch, remove the quarantine attribute once:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/OWAWidget.app
 ```
 
-5. Launch the app:
+4. Launch the app:
 
 ```bash
 open /Applications/OWAWidget.app
 ```
+
+Release notes live on the [releases page](https://github.com/ilyabazhenov/mac-owa-widget/releases/latest).
 
 OWA Widget will appear in the macOS menu bar. It has no Dock icon.
 

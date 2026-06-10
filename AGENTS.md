@@ -184,12 +184,13 @@ make run
  - `## vX.Y.Z - YYYY-MM-DD`
  - `### RU` и `### EN`
  - В обеих секциях обязательны подразделы про изменения и установку.
+ - В обоих языках в инструкции по установке давай прямую ссылку на `https://github.com/ilyabazhenov/mac-owa-widget/releases/latest/download/OWAWidget-macos.zip`, затем распаковку в `/Applications`.
  - В обоих языках в инструкции по установке обязательно указывай, что `xattr -dr com.apple.quarantine /Applications/OWAWidget.app` нужен ТОЛЬКО при первой установке; последующие обновления ставит Sparkle автоматически.
  3. Перед упаковкой обязательно зафиксируй релизные изменения (`VERSION`, `RELEASE_NOTES.md` и связанные файлы) в git commit, чтобы `CFBundleVersion`/`sparkle:version` гарантированно выросли относительно предыдущего релиза (build номер берется из `git rev-list --count HEAD`).
- 4. Сборка архива и appcast: `make release-package` (создает `dist/OWAWidget-v<ver>-macos.zip` и `dist/appcast.xml`).
+ 4. Сборка архива и appcast: `make release-package` (создает `dist/OWAWidget-v<ver>-macos.zip`, `dist/OWAWidget-macos.zip` и `dist/appcast.xml`).
  - Требуется доступ к EdDSA-приватнику (логин-Keychain или env `SPARKLE_ED_PRIVATE_KEY`). Если ключа нет — скрипт упадет; не пытайся выпустить релиз без подписи.
  5. Перед публикацией проверь `dist/appcast.xml`: `sparkle:version` нового релиза должен быть строго больше `sparkle:version` предыдущего опубликованного релиза.
- 6. Публикация на GitHub через `gh release create` с двумя ассетами: zip и appcast.xml.
+ 6. Публикация на GitHub через `gh release create` с тремя ассетами: versioned zip, `OWAWidget-macos.zip` (стабильная ссылка для установки) и `appcast.xml`.
  7. Возврат пользователю URL релиза.
 
 - Если пользователь просит **"подготовить релиз"** (без явного требования публикации):

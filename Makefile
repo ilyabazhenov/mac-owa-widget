@@ -86,7 +86,7 @@ release-bundle:
 ## Build .app and package release zip + appcast.xml.
 ## Internally delegates to scripts/package_release.sh which:
 ##   1) builds the bundle (re-invokes this Makefile's bundle target),
-##   2) creates the versioned zip,
+##   2) creates the versioned zip and a stable OWAWidget-macos.zip alias,
 ##   3) EdDSA-signs it via Sparkle's sign_update,
 ##   4) emits dist/appcast.xml with the resulting signature/length.
 release-package: validate-release-notes

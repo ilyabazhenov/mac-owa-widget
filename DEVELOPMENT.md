@@ -122,7 +122,7 @@ To build a release archive locally:
 make release-package
 ```
 
-This command builds a **universal** `.build/OWAWidget.app` (Apple Silicon `arm64` + Intel `x86_64`), creates `dist/OWAWidget-v<version>-macos.zip`, EdDSA-signs it with Sparkle's `sign_update`, and emits `dist/appcast.xml`.
+This command builds a **universal** `.build/OWAWidget.app` (Apple Silicon `arm64` + Intel `x86_64`), creates `dist/OWAWidget-v<version>-macos.zip`, copies it to `dist/OWAWidget-macos.zip` for stable install links, EdDSA-signs the versioned archive with Sparkle's `sign_update`, and emits `dist/appcast.xml`.
 
 Local dev (`make run`, `make build`) still compiles for the host architecture only for faster iteration.
 
@@ -152,7 +152,10 @@ A manual GitHub Actions workflow is available at `.github/workflows/release.yml`
 
 Reusing an existing version updates the same `v<version>` release tag instead of creating a new one.
 
-The workflow builds the app, creates the zip archive, signs it through Sparkle, generates `appcast.xml`, and creates or updates a GitHub Release with tag `v<version>`. Both the zip and `appcast.xml` are uploaded as release assets so `https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml` resolves to the latest published update feed.
+The workflow builds the app, creates the versioned zip archive plus a stable `OWAWidget-macos.zip` alias, signs it through Sparkle, generates `appcast.xml`, and creates or updates a GitHub Release with tag `v<version>`. All three assets are uploaded so stable URLs resolve on every release:
+
+- `https://github.com/<owner>/<repo>/releases/latest/download/OWAWidget-macos.zip` — manual first install
+- `https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml` — Sparkle update feed
 
 The CI job requires `SPARKLE_ED_PRIVATE_KEY`. Without this secret, the workflow aborts to avoid shipping an unsigned build that installed clients would reject.
 

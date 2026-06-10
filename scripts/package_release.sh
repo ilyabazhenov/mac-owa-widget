@@ -6,7 +6,8 @@
 #
 # Outputs (printed at the end, parsed by the GitHub Actions workflow):
 #   VERSION=<x.y.z>
-#   ARCHIVE_PATH=<path/to/zip>
+#   ARCHIVE_PATH=<path/to/versioned/zip>
+#   STABLE_ARCHIVE_PATH=<path/to/stable/zip>
 #   APPCAST_PATH=<path/to/appcast.xml>
 #
 # Signing key resolution order:
@@ -115,9 +116,16 @@ fi
 
 cp "${TMP_APPCAST_DIR}/appcast.xml" "${APPCAST_PATH}"
 
+# Stable filename for human install links:
+# https://github.com/<owner>/<repo>/releases/latest/download/OWAWidget-macos.zip
+STABLE_ARCHIVE_PATH="${DIST_DIR}/${APP_NAME}-macos.zip"
+cp "${ARCHIVE_PATH}" "${STABLE_ARCHIVE_PATH}"
+
 echo "✓ Release package ready: ${ARCHIVE_PATH}" >&2
+echo "✓ Stable install alias:  ${STABLE_ARCHIVE_PATH}" >&2
 echo "✓ Appcast generated:    ${APPCAST_PATH}" >&2
 
 echo "VERSION=${VERSION}"
 echo "ARCHIVE_PATH=${ARCHIVE_PATH}"
+echo "STABLE_ARCHIVE_PATH=${STABLE_ARCHIVE_PATH}"
 echo "APPCAST_PATH=${APPCAST_PATH}"

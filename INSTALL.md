@@ -1,14 +1,14 @@
 # OWA Widget Installation
 
-Install OWA Widget from the latest GitHub release:
+Download the latest build:
 
-- Latest release: https://github.com/ilyabazhenov/mac-owa-widget/releases/latest
+- **Direct download:** https://github.com/ilyabazhenov/mac-owa-widget/releases/latest/download/OWAWidget-macos.zip
+- **Release notes:** https://github.com/ilyabazhenov/mac-owa-widget/releases/latest
 
-## 1) Download the app archive
+## 1) Download and extract
 
-1. Open the latest release page.
-2. Download the `.zip` asset for macOS.
-3. Extract the archive.
+1. Download `OWAWidget-macos.zip` using the link above.
+2. Extract the archive.
 
 ## 2) Move app to Applications
 
@@ -60,15 +60,15 @@ If you can see the icon, right-click it → **Copy diagnostics** copies the same
 
 # Установка OWA Widget
 
-Установите OWA Widget из последнего релиза на GitHub:
+Скачайте последнюю сборку:
 
-- Последний релиз: https://github.com/ilyabazhenov/mac-owa-widget/releases/latest
+- **Прямая ссылка:** https://github.com/ilyabazhenov/mac-owa-widget/releases/latest/download/OWAWidget-macos.zip
+- **Список изменений:** https://github.com/ilyabazhenov/mac-owa-widget/releases/latest
 
-## 1) Скачайте архив приложения
+## 1) Скачайте и распакуйте
 
-1. Откройте страницу последнего релиза.
-2. Скачайте `.zip`-архив для macOS.
-3. Распакуйте архив.
+1. Скачайте `OWAWidget-macos.zip` по ссылке выше.
+2. Распакуйте архив.
 
 ## 2) Переместите приложение в Applications
 

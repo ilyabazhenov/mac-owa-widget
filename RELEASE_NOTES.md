@@ -13,14 +13,15 @@
 
 #### Установка
 
-1. Переместите `OWAWidget.app` в `/Applications`.
-2. Снимите quarantine-атрибуты (нужно только при первой установке):
+1. Скачайте [OWAWidget-macos.zip](https://github.com/ilyabazhenov/mac-owa-widget/releases/latest/download/OWAWidget-macos.zip).
+2. Распакуйте архив и переместите `OWAWidget.app` в `/Applications`.
+3. Снимите quarantine-атрибуты (нужно только при первой установке):
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/OWAWidget.app
 ```
 
-3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+4. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
 
 ### EN
 
@@ -35,14 +36,15 @@ xattr -dr com.apple.quarantine /Applications/OWAWidget.app
 
 #### Installation
 
-1. Move `OWAWidget.app` to `/Applications`.
-2. Remove quarantine attributes (required only for the first install):
+1. Download [OWAWidget-macos.zip](https://github.com/ilyabazhenov/mac-owa-widget/releases/latest/download/OWAWidget-macos.zip).
+2. Extract the archive and move `OWAWidget.app` to `/Applications`.
+3. Remove quarantine attributes (required only for the first install):
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/OWAWidget.app
 ```
 
-3. All subsequent updates are installed automatically via the in-app **Install** button.
+4. All subsequent updates are installed automatically via the in-app **Install** button.
 
 ## v1.0.41 - 2026-06-01
 
