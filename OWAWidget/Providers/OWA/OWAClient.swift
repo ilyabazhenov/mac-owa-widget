@@ -845,7 +845,7 @@ actor OWAClient {
 
     func resolveOrganizerSMTPEmail() async throws -> String? {
         if let cached = cachedOrganizerSMTPEmail { return cached }
-        // Strip domain prefix: "moscow\U_M1G4U" → "U_M1G4U"
+        // Strip domain prefix: "DOMAIN\username" → "username"
         let alias = username.components(separatedBy: "\\").last ?? username
         let results = (try? await findPeople(query: alias)) ?? []
         // Prefer exact alias match in email localpart, fall back to first result
