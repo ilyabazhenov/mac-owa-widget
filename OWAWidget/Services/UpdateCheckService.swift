@@ -214,7 +214,7 @@ final class UpdateCheckService: NSObject, ObservableObject {
         let controller = SPUStandardUpdaterController(
             startingUpdater: false,
             updaterDelegate: bridge,
-            userDriverDelegate: nil
+            userDriverDelegate: bridge
         )
         bridge.owner = self
         self.delegateBridge = bridge
@@ -228,7 +228,12 @@ final class UpdateCheckService: NSObject, ObservableObject {
 /// Pure Obj-C delegate adapter. Sparkle requires `NSObject` conformance and
 /// invokes the methods from arbitrary contexts; we extract Sendable primitives
 /// and hop to the main actor before mutating ``UpdateCheckService`` state.
-final class SparkleUpdaterDelegateBridge: NSObject, SPUUpdaterDelegate, @unchecked Sendable {
+///
+/// Also conforms to ``SPUStandardUserDriverDelegate`` so we can bring Sparkle's
+/// update windows to the front. The app runs as an accessory (LSUIElement), so
+/// without an explicit activation Sparkle's "new version available" / install
+/// progress windows open *behind* other apps' windows.
+final class SparkleUpdaterDelegateBridge: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDelegate, @unchecked Sendable {
     weak var owner: UpdateCheckService?
 
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
@@ -243,6 +248,31 @@ final class SparkleUpdaterDelegateBridge: NSObject, SPUUpdaterDelegate, @uncheck
     func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
         Task { @MainActor [weak self] in
             self?.owner?.processNoUpdate()
+        }
+    }
+
+    // MARK: SPUStandardUserDriverDelegate
+
+    /// Called right before Sparkle shows an update window. Activate the app so the
+    /// window is ordered in front of all other apps instead of opening behind them.
+    nonisolated func standardUserDriverWillHandleShowingUpdate(
+        _ handleShowingUpdate: Bool,
+        forUpdate update: SUAppcastItem,
+        state: SPUUserUpdateState
+    ) {
+        Self.bringAppToFront()
+    }
+
+    /// Modal alerts (e.g. "you're up to date", errors) need the same treatment.
+    nonisolated func standardUserDriverWillShowModalAlert() {
+        Self.bringAppToFront()
+    }
+
+    private nonisolated static func bringAppToFront() {
+        // Sparkle invokes its user-driver delegate on the main thread, but hop
+        // explicitly to satisfy strict concurrency and guard against edge cases.
+        Task { @MainActor in
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 }
