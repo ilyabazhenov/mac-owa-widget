@@ -1,5 +1,23 @@
 import Foundation
 
+/// Whether an attendee was invited as a required or an optional participant.
+/// (Named distinctly from `AttendeeKind` in MeetingCreationModels, which models compose-time input.)
+enum EventAttendeeKind: String, Codable, Sendable, Hashable {
+    case required, optional
+}
+
+/// A single meeting participant with their RSVP status. Loaded lazily via `GetItem`
+/// because `GetCalendarView` (the sync request) does not return attendee collections.
+struct EventAttendee: Identifiable, Sendable, Hashable, Codable {
+    let name: String
+    let email: String?
+    let kind: EventAttendeeKind
+    let response: MeetingResponseType
+
+    /// Stable identity for `ForEach`: email is unique when present, otherwise fall back to name+kind.
+    var id: String { (email?.isEmpty == false ? email! : name) + "|" + kind.rawValue }
+}
+
 struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
     let id: String
     let title: String
@@ -19,6 +37,8 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
     let responseType: MeetingResponseType
     let changeKey: String?
     let instanceKey: String?
+    /// Lazily loaded participant list. `nil` = not yet fetched; `[]` = fetched, no attendees.
+    let detailedAttendees: [EventAttendee]?
 
     init(
         id: String,
@@ -38,7 +58,8 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         categories: [String] = [],
         responseType: MeetingResponseType = .notResponded,
         changeKey: String? = nil,
-        instanceKey: String? = nil
+        instanceKey: String? = nil,
+        detailedAttendees: [EventAttendee]? = nil
     ) {
         self.id = id
         self.title = title
@@ -58,6 +79,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         self.responseType = responseType
         self.changeKey = changeKey
         self.instanceKey = instanceKey
+        self.detailedAttendees = detailedAttendees
     }
 
     init(from decoder: Decoder) throws {
@@ -80,6 +102,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         responseType = try c.decodeIfPresent(MeetingResponseType.self, forKey: .responseType) ?? .notResponded
         changeKey = try c.decodeIfPresent(String.self, forKey: .changeKey)
         instanceKey = try c.decodeIfPresent(String.self, forKey: .instanceKey)
+        detailedAttendees = try c.decodeIfPresent([EventAttendee].self, forKey: .detailedAttendees)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -102,12 +125,14 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         try c.encode(responseType, forKey: .responseType)
         try c.encodeIfPresent(changeKey, forKey: .changeKey)
         try c.encodeIfPresent(instanceKey, forKey: .instanceKey)
+        try c.encodeIfPresent(detailedAttendees, forKey: .detailedAttendees)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, title, startDate, endDate, location, bodyPreview, joinURL, platform
         case isAllDay, organizer, attendees, accountID
         case isCancelled, isOrganizer, categories, responseType, changeKey, instanceKey
+        case detailedAttendees
     }
 
     func withResponseType(_ type: MeetingResponseType) -> CalendarEvent {
@@ -118,7 +143,19 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
             attendees: attendees, accountID: accountID,
             isCancelled: isCancelled, isOrganizer: isOrganizer,
             categories: categories, responseType: type, changeKey: changeKey,
-            instanceKey: instanceKey
+            instanceKey: instanceKey, detailedAttendees: detailedAttendees
+        )
+    }
+
+    func withDetailedAttendees(_ list: [EventAttendee]) -> CalendarEvent {
+        CalendarEvent(
+            id: id, title: title, startDate: startDate, endDate: endDate,
+            location: location, bodyPreview: bodyPreview, joinURL: joinURL,
+            platform: platform, isAllDay: isAllDay, organizer: organizer,
+            attendees: attendees, accountID: accountID,
+            isCancelled: isCancelled, isOrganizer: isOrganizer,
+            categories: categories, responseType: responseType, changeKey: changeKey,
+            instanceKey: instanceKey, detailedAttendees: list
         )
     }
 

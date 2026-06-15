@@ -160,6 +160,18 @@
 "meeting.allday.icon.a11y" = "События на весь день";
 "meeting.allday.pill.a11y" = "Событие на весь день: %@";
 
+"meeting.attendees.title" = "Участники";
+"meeting.attendees.required" = "Обязательные";
+"meeting.attendees.optional" = "Необязательные";
+"meeting.attendees.loading" = "Загрузка участников…";
+"meeting.attendees.failed" = "Не удалось загрузить участников";
+"meeting.attendees.status.accepted" = "Принял";
+"meeting.attendees.status.tentative" = "Под вопросом";
+"meeting.attendees.status.declined" = "Отклонил";
+"meeting.attendees.status.organizer" = "Организатор";
+"meeting.attendees.status.noresponse" = "Не ответил";
+"meeting.attendees.status.organizerOnly" = "Статусы ответов видны только организатору встречи";
+
 "meeting.rsvp.accept" = "Принять";
 "meeting.rsvp.tentative" = "Под вопросом";
 "meeting.rsvp.decline" = "Отклонить";

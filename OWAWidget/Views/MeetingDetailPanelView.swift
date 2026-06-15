@@ -22,7 +22,7 @@ struct MeetingDetailPanelView: View {
                     .padding(.vertical, 12)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 230, maxHeight: 286)
+        .frame(maxWidth: .infinity, minHeight: 230, maxHeight: 400)
         .background(
             RoundedRectangle(cornerRadius: 14)
                 .fill(Color(nsColor: .windowBackgroundColor))
@@ -93,10 +93,8 @@ struct MeetingDetailContentView: View {
             MeetingDetailActionsView(event: event, onJoinCompleted: onJoinCompleted)
 
             VStack(alignment: .leading, spacing: 8) {
-                detailRow(
-                    systemImage: "clock",
-                    text: "\(dayLabel) · \(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))"
-                )
+                // Time lives in the header; this row carries only the date to avoid repeating it.
+                detailRow(systemImage: "clock", text: dayLabel)
 
                 if event.isEffectivelyCancelled {
                     detailRow(systemImage: "xmark.circle", text: localization.tr("meeting.status.cancelled"))
@@ -106,19 +104,20 @@ struct MeetingDetailContentView: View {
                     detailRow(systemImage: "person.fill.checkmark", text: localization.tr("meeting.role.organizer"))
                 }
 
-                detailRow(systemImage: "mappin.and.ellipse", text: locationLabel)
+                if let locationLabel {
+                    detailRow(systemImage: "mappin.and.ellipse", text: locationLabel)
+                }
 
                 if let categoriesLine = categoriesLine {
                     detailRow(systemImage: "tag", text: categoriesLine)
                 }
 
-                if let organizer = event.organizer {
+                // The organizer's own name is redundant when "You are the organizer" already shows above.
+                if let organizer = event.organizer, !event.isOrganizer {
                     detailRow(systemImage: "person", text: organizer)
                 }
 
-                if !event.attendees.isEmpty {
-                    detailRow(systemImage: "person.2", text: event.attendees.joined(separator: ", "))
-                }
+                MeetingAttendeesView(event: event)
             }
 
             if let body = event.bodyPreview?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -152,9 +151,17 @@ struct MeetingDetailContentView: View {
         return formatter.string(from: event.startDate)
     }
 
-    private var locationLabel: String {
+    private var locationLabel: String? {
         let trimmed = event.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? localization.tr("meeting.location.unspecified") : trimmed
+        if trimmed.isEmpty {
+            return localization.tr("meeting.location.unspecified")
+        }
+        // When the "location" is just the join link, the Join/Copy buttons already represent it.
+        if let join = event.joinURL?.absoluteString,
+           trimmed == join.trimmingCharacters(in: .whitespacesAndNewlines) {
+            return nil
+        }
+        return trimmed
     }
 
     private var categoriesLine: String? {
@@ -167,6 +174,181 @@ struct MeetingDetailContentView: View {
         }
         let rest = cats.count - maxShow
         return "\(localization.tr("meeting.categories")): \(head) (\(localization.tr("meeting.categories.more", rest)))"
+    }
+}
+
+private struct MeetingAttendeesView: View {
+    let event: CalendarEvent
+
+    @EnvironmentObject private var localization: LocalizationService
+    @EnvironmentObject private var calendarService: CalendarService
+
+    @State private var loadState: LoadState = .idle
+
+    private enum LoadState: Equatable {
+        case idle, loading, loaded([EventAttendee]), failed
+    }
+
+    var body: some View {
+        Group {
+            switch loadState {
+            case .idle, .loading:
+                statusRow {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.mini)
+                        Text(localization.tr("meeting.attendees.loading"))
+                    }
+                }
+            case .failed:
+                statusRow { Text(localization.tr("meeting.attendees.failed")) }
+            case .loaded(let attendees):
+                attendeesList(attendees)
+            }
+        }
+        .task(id: event.id) {
+            loadState = .loading
+            do {
+                let list = try await calendarService.loadAttendees(for: event)
+                guard !Task.isCancelled else { return }
+                loadState = .loaded(list)
+            } catch {
+                // A cancelled task (view dismissed or switched meetings) must not clobber the
+                // state the replacement task is already setting.
+                guard !Task.isCancelled else { return }
+                loadState = .failed
+            }
+        }
+    }
+
+    /// Two flexible columns so long Russian full names share the panel width; truncated names
+    /// reveal in full on hover (`.help`).
+    private let columns = [
+        GridItem(.flexible(), spacing: 10, alignment: .leading),
+        GridItem(.flexible(), spacing: 10, alignment: .leading),
+    ]
+
+    @ViewBuilder
+    private func attendeesList(_ attendees: [EventAttendee]) -> some View {
+        let visible = MeetingAttendeeList.forDisplay(attendees, organizer: event.organizer)
+        if !visible.isEmpty {
+            let required = visible.filter { $0.kind == .required }
+            let optional = visible.filter { $0.kind == .optional }
+            // Exchange exposes per-attendee response tracking only to the organizer; for everyone
+            // else every status comes back "Unknown", so we drop the (meaningless) circles and explain.
+            let showStatus = event.isOrganizer
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "person.2")
+                        .frame(width: 16)
+                    Text(localization.tr("meeting.attendees.title"))
+                    Text("\(visible.count)")
+                        .foregroundStyle(.tertiary)
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+
+                if !showStatus {
+                    Label(localization.tr("meeting.attendees.status.organizerOnly"), systemImage: "info.circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.leading, 22)
+                }
+
+                group(titleKey: "meeting.attendees.required", attendees: required, showStatus: showStatus)
+                group(titleKey: "meeting.attendees.optional", attendees: optional, showStatus: showStatus)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func group(titleKey: String, attendees: [EventAttendee], showStatus: Bool) -> some View {
+        if !attendees.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(localization.tr(titleKey))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 4) {
+                    ForEach(attendees) { attendee in
+                        attendeeRow(attendee, showStatus: showStatus)
+                    }
+                }
+            }
+            .padding(.leading, 22)
+        }
+    }
+
+    @ViewBuilder
+    private func attendeeRow(_ attendee: EventAttendee, showStatus: Bool) -> some View {
+        HStack(spacing: 6) {
+            if showStatus {
+                statusIcon(for: attendee.response)
+            } else {
+                // Neutral bullet: no status available, so don't imply "no response".
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 3))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 14)
+                    .accessibilityHidden(true)
+            }
+            Text(attendee.name)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .help(attendee.name)
+    }
+
+    private func statusIcon(for response: MeetingResponseType) -> some View {
+        let style = responseStyle(response)
+        return Image(systemName: style.icon)
+            .foregroundStyle(style.color)
+            .frame(width: 14)
+            .accessibilityLabel(localization.tr(style.a11yKey))
+    }
+
+    @ViewBuilder
+    private func statusRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "person.2")
+                .frame(width: 16)
+            content()
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(.secondary)
+    }
+
+    private func responseStyle(_ response: MeetingResponseType) -> (icon: String, color: Color, a11yKey: String) {
+        switch response {
+        case .accepted:     return ("checkmark.circle.fill", .green, "meeting.attendees.status.accepted")
+        case .tentative:    return ("questionmark.circle.fill", .orange, "meeting.attendees.status.tentative")
+        case .declined:     return ("xmark.circle.fill", .red, "meeting.attendees.status.declined")
+        case .organizer:    return ("person.fill.checkmark", .secondary, "meeting.attendees.status.organizer")
+        case .notResponded: return ("circle", .secondary, "meeting.attendees.status.noresponse")
+        }
+    }
+}
+
+/// Pure presentation logic for the attendee list, factored out for testing: drops the organizer
+/// (who is shown on their own row, and whom Exchange also lists among the required attendees) and
+/// sorts the remainder alphabetically.
+enum MeetingAttendeeList {
+    static func forDisplay(_ attendees: [EventAttendee], organizer: String?) -> [EventAttendee] {
+        let organizerKey = organizer?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return attendees
+            .filter { attendee in
+                if attendee.response == .organizer { return false }
+                if let organizerKey, !organizerKey.isEmpty,
+                   attendee.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == organizerKey {
+                    return false
+                }
+                return true
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }
 

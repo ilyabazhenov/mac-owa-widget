@@ -67,6 +67,44 @@ enum OWACalendarViewRequestPayload {
     }
 }
 
+// MARK: - GetCalendarEvent (attendees)
+
+enum OWAGetCalendarEventPayload {
+    /// Mirrors the OWA web client's calendar peek request (`action=GetCalendarEvent`). `GetCalendarView`
+    /// (the sync request) does not return attendee collections; `GetCalendarEvent` returns the full
+    /// event — including `RequiredAttendees`/`OptionalAttendees` — for a single event id.
+    /// Shape captured from a live `owa.alfabank.ru` HAR (Exchange 15.2.1748.10).
+    static func make(itemId: String, changeKey: String?, timezoneID: String) -> [String: Any] {
+        var eventId: [String: Any] = [
+            "__type": "ItemId:#Exchange",
+            "Id": itemId,
+        ]
+        if let changeKey {
+            eventId["ChangeKey"] = changeKey
+        }
+        return [
+            "__type": "GetCalendarEventJsonRequest:#Exchange",
+            "Header": owaSharedHeader(timezoneID: timezoneID),
+            "Body": [
+                "__type": "GetCalendarEventRequest:#Exchange",
+                "EventIds": [eventId],
+                "ItemShape": [
+                    "__type": "ItemResponseShape:#Exchange",
+                    "BaseShape": "IdOnly",
+                    "FilterHtmlContent": true,
+                    "BlockExternalImagesIfSenderUntrusted": true,
+                    "BlockContentFromUnknownSenders": false,
+                    "AddBlankTargetToLinks": true,
+                    "ClientSupportsIrm": true,
+                    "FilterInlineSafetyTips": true,
+                    "MaximumBodySize": 0,
+                    "BodyType": "HTML",
+                ] as [String: Any],
+            ] as [String: Any],
+        ]
+    }
+}
+
 // MARK: - Shared helpers
 
 private func owaSharedHeader(timezoneID: String, version: String = "V2017_08_18") -> [String: Any] {
@@ -322,6 +360,84 @@ enum OWACreateCalendarEventPayload {
           </soap:Body>
         </soap:Envelope>
         """
+    }
+}
+
+// MARK: - GetCalendarEvent attendees parser
+
+/// Tolerant extractor for attendees out of a `GetCalendarEvent` response. The exact wrapper shape
+/// varies by Exchange build, so we recursively locate `RequiredAttendees`/`OptionalAttendees`
+/// wherever they sit and accept the several shapes OWA uses for the attendee list.
+enum OWACalendarEventAttendeesParser {
+    static func attendees(fromJSONData data: Data) -> [EventAttendee] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) else { return [] }
+        var result: [EventAttendee] = []
+        collect(in: json, into: &result)
+        return result
+    }
+
+    private static func collect(in value: Any, into result: inout [EventAttendee]) {
+        if let array = value as? [Any] {
+            for element in array { collect(in: element, into: &result) }
+            return
+        }
+        guard let dict = value as? [String: Any] else { return }
+
+        if let required = dict["RequiredAttendees"] {
+            result.append(contentsOf: parseContainer(required, kind: .required))
+        }
+        if let optional = dict["OptionalAttendees"] {
+            result.append(contentsOf: parseContainer(optional, kind: .optional))
+        }
+        for (key, nested) in dict where key != "RequiredAttendees" && key != "OptionalAttendees" {
+            collect(in: nested, into: &result)
+        }
+    }
+
+    /// Accepts `{ "Attendee": [...] }`, `{ "Attendee": {...} }`, `[ {...} ]`, or a single attendee dict.
+    private static func parseContainer(_ value: Any, kind: EventAttendeeKind) -> [EventAttendee] {
+        if let dict = value as? [String: Any], let inner = dict["Attendee"] {
+            return parseList(inner, kind: kind)
+        }
+        return parseList(value, kind: kind)
+    }
+
+    private static func parseList(_ value: Any, kind: EventAttendeeKind) -> [EventAttendee] {
+        if let array = value as? [Any] {
+            return array.compactMap { parseAttendee($0, kind: kind) }
+        }
+        if let single = parseAttendee(value, kind: kind) {
+            return [single]
+        }
+        return []
+    }
+
+    private static func parseAttendee(_ value: Any, kind: EventAttendeeKind) -> EventAttendee? {
+        guard let dict = value as? [String: Any] else { return nil }
+        let mailbox = dict["Mailbox"] as? [String: Any]
+        let name = (mailbox?["Name"] as? String ?? dict["Name"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let rawEmail = (mailbox?["EmailAddress"] as? String ?? dict["EmailAddress"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let email = (rawEmail?.isEmpty == false) ? rawEmail : nil
+        let displayName = name.isEmpty ? (email ?? "") : name
+        guard !displayName.isEmpty else { return nil }
+        return EventAttendee(
+            name: displayName,
+            email: email,
+            kind: kind,
+            response: mapResponse(dict["ResponseType"] as? String)
+        )
+    }
+
+    private static func mapResponse(_ raw: String?) -> MeetingResponseType {
+        switch raw {
+        case "Accept":    return .accepted
+        case "Tentative": return .tentative
+        case "Decline":   return .declined
+        case "Organizer": return .organizer
+        default:          return .notResponded
+        }
     }
 }
 

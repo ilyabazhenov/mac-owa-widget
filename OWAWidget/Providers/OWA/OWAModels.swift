@@ -276,6 +276,8 @@ struct OWAAttendeeList: Decodable {
 
 struct OWAAttendee: Decodable {
     let Mailbox: OWAMailbox?
+    /// EWS attendee response: `Accept` / `Tentative` / `Decline` / `NoResponseReceived` / `Organizer` / `Unknown`.
+    let ResponseType: String?
 }
 
 // MARK: - Errors

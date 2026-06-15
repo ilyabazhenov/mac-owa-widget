@@ -271,7 +271,62 @@ final class CalendarServiceOfflineTests: XCTestCase {
         XCTAssertEqual(secondService.menuBarDisplayMode, .status)
     }
 
+    func testLoadAttendeesFetchesOnceThenServesFromCache() async throws {
+        let attendees = [EventAttendee(name: "X", email: "x@y.z", kind: .required, response: .accepted)]
+        let provider = CountingAttendeesProvider(result: attendees)
+        let event = makeEvent(id: "evt", accountID: provider.account.id)
+        let service = makeAttendeesService(provider: provider, events: [event])
+
+        let first = try await service.loadAttendees(for: event)
+        XCTAssertEqual(first, attendees)
+        var calls = await provider.callCount
+        XCTAssertEqual(calls, 1)
+        // The loaded list is cached back onto the event in the store.
+        XCTAssertEqual(service.events.first { $0.id == "evt" }?.detailedAttendees, attendees)
+
+        // Re-opening passes the now-cached event; loadAttendees must short-circuit (no 2nd request).
+        let cached = try XCTUnwrap(service.events.first { $0.id == "evt" })
+        let second = try await service.loadAttendees(for: cached)
+        XCTAssertEqual(second, attendees)
+        calls = await provider.callCount
+        XCTAssertEqual(calls, 1)
+    }
+
+    func testLoadAttendeesCachesEmptyResultToAvoidRefetch() async throws {
+        let provider = CountingAttendeesProvider(result: [])
+        let event = makeEvent(id: "evt-empty", accountID: provider.account.id)
+        let service = makeAttendeesService(provider: provider, events: [event])
+
+        _ = try await service.loadAttendees(for: event)
+        // Empty list is cached as [] (not nil) so re-open does not hit the network again.
+        XCTAssertEqual(service.events.first { $0.id == "evt-empty" }?.detailedAttendees, [])
+        let cached = try XCTUnwrap(service.events.first { $0.id == "evt-empty" })
+        _ = try await service.loadAttendees(for: cached)
+        let calls = await provider.callCount
+        XCTAssertEqual(calls, 1)
+    }
+
+    private func makeAttendeesService(
+        provider: any CalendarProvider,
+        events: [CalendarEvent]
+    ) -> CalendarService {
+        let service = CalendarService(
+            providers: [provider],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: NoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+        service.replaceEventsForTests(events)
+        return service
+    }
+
     private func makeEvent(id: String) -> CalendarEvent {
+        makeEvent(id: id, accountID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!)
+    }
+
+    private func makeEvent(id: String, accountID: UUID) -> CalendarEvent {
         CalendarEvent(
             id: id,
             title: "Test Event",
@@ -284,8 +339,26 @@ final class CalendarServiceOfflineTests: XCTestCase {
             isAllDay: false,
             organizer: nil,
             attendees: [],
-            accountID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+            accountID: accountID
         )
+    }
+}
+
+private actor CountingAttendeesProvider: CalendarProvider {
+    let account = CalendarAccount(displayName: "Test", serverURL: "example.com", email: "a@b.c")
+    private let result: [EventAttendee]
+    private(set) var callCount = 0
+
+    init(result: [EventAttendee]) {
+        self.result = result
+    }
+
+    func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] { [] }
+    func validateCredentials() async throws {}
+
+    func fetchAttendees(for event: CalendarEvent) async throws -> [EventAttendee] {
+        callCount += 1
+        return result
     }
 }
 

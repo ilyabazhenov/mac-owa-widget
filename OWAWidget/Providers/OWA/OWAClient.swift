@@ -547,6 +547,93 @@ actor OWAClient {
         return (try JSONDecoder().decode(OWAServiceResponse.self, from: data)).Body?.Items ?? []
     }
 
+    // MARK: - GetCalendarEvent (attendees)
+
+    /// Lazily fetches the attendee list for a single meeting. `GetCalendarView` omits attendee
+    /// collections, so the detail panel calls this on demand. Replicates the OWA web client's
+    /// `GetCalendarEvent` peek request (HAR-captured), including the `X-OWA-ActionId` headers.
+    func fetchMeetingAttendees(itemId: String, changeKey: String?, attempt: Int = 0) async throws -> [EventAttendee] {
+        let canary = try await ensureCanary()
+        try Task.checkCancellation()
+
+        let payload = OWAGetCalendarEventPayload.make(
+            itemId: itemId,
+            changeKey: changeKey,
+            timezoneID: windowsTimezoneID()
+        )
+        let jsonString = Self.serializeJSONTypeFirst(payload)
+        let jsonBody = Data(jsonString.utf8)
+
+        guard var components = URLComponents(url: try url("/owa/service.svc"), resolvingAgainstBaseURL: false) else {
+            throw OWAError.invalidURL("/owa/service.svc")
+        }
+        components.queryItems = [
+            URLQueryItem(name: "action", value: "GetCalendarEvent"),
+            URLQueryItem(name: "EP", value: "1"),
+            URLQueryItem(name: "ID", value: "-1725"),
+            URLQueryItem(name: "AC", value: "1"),
+        ]
+        guard let serviceURL = components.url else { throw OWAError.invalidURL("/owa/service.svc") }
+
+        var request = URLRequest(url: serviceURL, timeoutInterval: 18)
+        request.httpMethod = "POST"
+        request.httpBody = jsonBody
+        request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        request.setValue("ru,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        request.setValue(canary, forHTTPHeaderField: "X-OWA-CANARY")
+        request.setValue("GetCalendarEvent", forHTTPHeaderField: "Action")
+        request.setValue("-1725", forHTTPHeaderField: "X-OWA-ActionId")
+        request.setValue("GetCalendarEventAction", forHTTPHeaderField: "X-OWA-ActionName")
+        request.setValue("1", forHTTPHeaderField: "X-OWA-Attempt")
+        request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+        request.setValue(baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")), forHTTPHeaderField: "Origin")
+        let correlationId = Self.makeCorrelationId()
+        request.setValue(correlationId, forHTTPHeaderField: "X-OWA-CorrelationId")
+        request.setValue(correlationId, forHTTPHeaderField: "client-request-id")
+        request.setValue(Self.iso8601Millis(Date()), forHTTPHeaderField: "X-OWA-ClientBegin")
+        request.setValue("15.2.1748.10", forHTTPHeaderField: "X-OWA-ClientBuildVersion")
+        request.setValue(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+            forHTTPHeaderField: "User-Agent"
+        )
+
+        let started = Date()
+        let syncID = SyncDiagnostics.syncIDText
+        let (data, response) = try await sessionDataAllowingStaleReconnect(for: request)
+        guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
+        let durationMS = Int(Date().timeIntervalSince(started) * 1000)
+        log.info(
+            "OWA request completed sync=\(syncID, privacy: .public) action=GetCalendarEvent status=\(http.statusCode, privacy: .public) bytes=\(data.count, privacy: .public) durationMs=\(durationMS, privacy: .public)"
+        )
+
+        #if DEBUG
+        if let url = DebugLogLocation.url(for: "getcalendarevent_last.json") {
+            try? data.write(to: url, options: .atomic)
+            DebugLogLocation.tightenPermissions(at: url)
+        }
+        #endif
+
+        if http.statusCode == 440 || http.statusCode == 401 {
+            canaryToken = nil
+            guard attempt < 1 else {
+                throw OWAError.httpError(http.statusCode, "GetCalendarEvent auth retry exhausted")
+            }
+            try await authenticate()
+            return try await fetchMeetingAttendees(itemId: itemId, changeKey: changeKey, attempt: attempt + 1)
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            let msg = String(data: data.prefix(300), encoding: .utf8) ?? ""
+            log.warning(
+                "OWA request failed sync=\(syncID, privacy: .public) action=GetCalendarEvent status=\(http.statusCode, privacy: .public) responseKind=\(OWAError.diagnosticResponseKind(from: msg), privacy: .public)"
+            )
+            throw OWAError.httpError(http.statusCode, msg)
+        }
+
+        return OWACalendarEventAttendeesParser.attendees(fromJSONData: data)
+    }
+
     private func dumpGetCalendarViewResponseIfNeeded(
         data: Data,
         statusCode: Int,

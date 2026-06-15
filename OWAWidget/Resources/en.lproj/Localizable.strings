@@ -160,6 +160,18 @@
 "meeting.allday.icon.a11y" = "All-day events";
 "meeting.allday.pill.a11y" = "All-day event: %@";
 
+"meeting.attendees.title" = "Participants";
+"meeting.attendees.required" = "Required";
+"meeting.attendees.optional" = "Optional";
+"meeting.attendees.loading" = "Loading participants…";
+"meeting.attendees.failed" = "Couldn't load participants";
+"meeting.attendees.status.accepted" = "Accepted";
+"meeting.attendees.status.tentative" = "Tentative";
+"meeting.attendees.status.declined" = "Declined";
+"meeting.attendees.status.organizer" = "Organizer";
+"meeting.attendees.status.noresponse" = "No response";
+"meeting.attendees.status.organizerOnly" = "Response statuses are visible to the meeting organizer only";
+
 "meeting.rsvp.accept" = "Accept";
 "meeting.rsvp.tentative" = "Tentative";
 "meeting.rsvp.decline" = "Decline";

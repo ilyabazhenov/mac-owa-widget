@@ -415,6 +415,23 @@ final class CalendarService: ObservableObject {
         }
     }
 
+    /// Lazily loads the attendee list for a meeting (via `GetItem`) and caches it back onto the
+    /// event in `events`. Returns the cached list immediately if already loaded, so re-opening the
+    /// same meeting performs no network request until the next sync replaces the event.
+    func loadAttendees(for event: CalendarEvent) async throws -> [EventAttendee] {
+        if let cached = events.first(where: { $0.id == event.id })?.detailedAttendees {
+            return cached
+        }
+        guard let provider = providers.first(where: { $0.account.id == event.accountID }) else {
+            throw CalendarProviderError.notSupported
+        }
+        let attendees = try await provider.fetchAttendees(for: event)
+        if let idx = events.firstIndex(where: { $0.id == event.id }) {
+            events[idx] = events[idx].withDetailedAttendees(attendees)
+        }
+        return attendees
+    }
+
     private func applyResponseType(_ type: MeetingResponseType, to eventID: String) {
         guard let idx = events.firstIndex(where: { $0.id == eventID }) else { return }
         events[idx] = events[idx].withResponseType(type)
