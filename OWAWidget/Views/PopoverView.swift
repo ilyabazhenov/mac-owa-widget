@@ -6,7 +6,7 @@ struct PopoverView: View {
     @EnvironmentObject private var localization: LocalizationService
     @EnvironmentObject private var updateCheck: UpdateCheckService
     @Environment(\.openWindow) private var openWindow
-    private let popoverSize = PopoverSize.defaultValue
+    private var popoverSize: PopoverSize { service.popoverSize }
     private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     private let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
     private var fullVersion: String { "\(appVersion).\(appBuild)" }
@@ -67,7 +67,7 @@ struct PopoverView: View {
         .frame(width: CGFloat(popoverSize.width), height: CGFloat(popoverSize.height))
         .background(Color(nsColor: .windowBackgroundColor))
         .background {
-            PopoverWindowAligner(popoverSize: popoverSize)
+            PopoverWindowRegistrar()
                 .frame(width: 0, height: 0)
         }
         .accessibilityElement(children: .contain)
@@ -158,6 +158,34 @@ struct PopoverView: View {
                 .lineLimit(1)
         }
         .help(localization.effectiveLanguageCode == "ru" ? "Доля подключений: \(snapshot.joinedViaWidget)/\(snapshot.eligibleMeetings)" : "Join rate: \(snapshot.joinedViaWidget)/\(snapshot.eligibleMeetings)")
+    }
+
+    /// Quick popover-size switcher. Applies immediately (unlike the Settings picker,
+    /// which is gated behind Save), writing straight through to the shared service.
+    private var popoverSizeMenu: some View {
+        Menu {
+            Picker(localization.tr("preferences.popover.size"), selection: popoverSizeSelection) {
+                ForEach(PopoverSize.Preset.allCases) { preset in
+                    Text(localization.tr(preset.localizationKey)).tag(preset)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 10))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(localization.tr("preferences.popover.size"))
+        .accessibilityLabel(localization.tr("preferences.popover.size"))
+    }
+
+    private var popoverSizeSelection: Binding<PopoverSize.Preset> {
+        Binding(
+            get: { service.popoverSizePreset },
+            set: { service.popoverSizePreset = $0 }
+        )
     }
 
     // MARK: - Content
@@ -318,6 +346,8 @@ struct PopoverView: View {
 
                 Spacer(minLength: 8)
                 footerEngagementIndicator
+
+                popoverSizeMenu
 
                 Text("v\(fullVersion)")
                     .lineLimit(1)

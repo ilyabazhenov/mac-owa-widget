@@ -63,6 +63,12 @@
 "preferences.menubar.display.countdown" = "Как сейчас: countdown";
 "preferences.menubar.display.status" = "Status: Next / Now / Free";
 
+"preferences.popover.section" = "Окно";
+"preferences.popover.size" = "Размер окна";
+"popover.size.compact" = "Компактный";
+"popover.size.medium" = "Средний";
+"popover.size.large" = "Большой";
+
 "preferences.timeline.section" = "Таймлайн";
 "preferences.timeline.dimPastMeetings" = "Приглушать прошедшие встречи на сегодня";
 "preferences.notifications.section" = "Уведомления";

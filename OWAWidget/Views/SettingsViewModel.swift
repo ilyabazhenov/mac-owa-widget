@@ -12,6 +12,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var notificationScreenPolicy: NotificationScreenPolicy { didSet { updateUnsavedChanges() } }
     @Published var notificationPosition: NotificationPosition { didSet { updateUnsavedChanges() } }
     @Published var menuBarDisplayMode: MenuBarDisplayMode { didSet { updateUnsavedChanges() } }
+    @Published var popoverSizePreset: PopoverSize.Preset { didSet { updateUnsavedChanges() } }
     @Published var dimPastMeetingsOnTimeline: Bool { didSet { updateUnsavedChanges() } }
     @Published var globalJoinHotkeyEnabled: Bool { didSet { updateUnsavedChanges() } }
     @Published var launchAtLogin: Bool
@@ -54,6 +55,7 @@ final class SettingsViewModel: ObservableObject {
         self.notificationScreenPolicy = calendarService.notificationScreenPolicy
         self.notificationPosition = calendarService.notificationPosition
         self.menuBarDisplayMode = calendarService.menuBarDisplayMode
+        self.popoverSizePreset = calendarService.popoverSizePreset
         self.dimPastMeetingsOnTimeline = calendarService.dimPastMeetingsOnTimeline
         self.globalJoinHotkeyEnabled = calendarService.globalJoinHotkeyEnabled
         self.launchAtLogin = launchAtLoginManager.isEnabled
@@ -67,6 +69,7 @@ final class SettingsViewModel: ObservableObject {
             notificationScreenPolicy: calendarService.notificationScreenPolicy,
             notificationPosition: calendarService.notificationPosition,
             menuBarDisplayMode: calendarService.menuBarDisplayMode,
+            popoverSizePreset: calendarService.popoverSizePreset,
             dimPastMeetingsOnTimeline: calendarService.dimPastMeetingsOnTimeline,
             globalJoinHotkeyEnabled: calendarService.globalJoinHotkeyEnabled
         )
@@ -179,6 +182,12 @@ final class SettingsViewModel: ObservableObject {
         service.notificationScreenPolicy = notificationScreenPolicy
         service.notificationPosition = notificationPosition
         service.menuBarDisplayMode = menuBarDisplayMode
+        // Only write the popover preset if the user actually changed it here. The footer
+        // quick-switcher can change `service.popoverSizePreset` while this (Save-gated)
+        // form is open; an unconditional write would clobber that with our stale value.
+        if popoverSizePreset != baselinePreferences.popoverSizePreset {
+            service.popoverSizePreset = popoverSizePreset
+        }
         service.dimPastMeetingsOnTimeline = dimPastMeetingsOnTimeline
         service.globalJoinHotkeyEnabled = globalJoinHotkeyEnabled
         service.setMeetingEngagementScope(meetingEngagementScope)
@@ -226,6 +235,7 @@ final class SettingsViewModel: ObservableObject {
         let notificationScreenPolicy: NotificationScreenPolicy
         let notificationPosition: NotificationPosition
         let menuBarDisplayMode: MenuBarDisplayMode
+        let popoverSizePreset: PopoverSize.Preset
         let dimPastMeetingsOnTimeline: Bool
         let globalJoinHotkeyEnabled: Bool
     }
@@ -240,6 +250,7 @@ final class SettingsViewModel: ObservableObject {
             notificationScreenPolicy: notificationScreenPolicy,
             notificationPosition: notificationPosition,
             menuBarDisplayMode: menuBarDisplayMode,
+            popoverSizePreset: popoverSizePreset,
             dimPastMeetingsOnTimeline: dimPastMeetingsOnTimeline,
             globalJoinHotkeyEnabled: globalJoinHotkeyEnabled
         )

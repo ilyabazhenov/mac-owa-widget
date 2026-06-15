@@ -2,34 +2,57 @@ import XCTest
 @testable import OWAWidget
 
 final class PopoverSizeTests: XCTestCase {
-    func testClampsSizeToSupportedBounds() {
-        let tooSmall = PopoverSize(width: 200, height: 200).clamped()
-        let tooLarge = PopoverSize(width: 900, height: 900).clamped()
 
-        XCTAssertEqual(tooSmall, PopoverSize.minimum)
-        XCTAssertEqual(tooLarge, PopoverSize.maximum)
+    // MARK: - Presets
+
+    func testCompactPresetMatchesHistoricalDefault() {
+        XCTAssertEqual(PopoverSize.Preset.compact.size, .defaultValue)
     }
 
-    func testResizesByDragDeltaWithinBounds() {
-        let resized = PopoverSize.defaultValue.resizedBy(widthDelta: 120, heightDelta: -80)
-
-        XCTAssertEqual(resized.width, PopoverSize.defaultValue.width + 120, accuracy: 0.001)
-        XCTAssertEqual(resized.height, PopoverSize.defaultValue.height - 80, accuracy: 0.001)
+    func testPresetsOnlyGrowFromCompact() {
+        let compact = PopoverSize.Preset.compact.size
+        for preset in [PopoverSize.Preset.medium, .large] {
+            XCTAssertGreaterThanOrEqual(preset.size.width, compact.width)
+            XCTAssertGreaterThanOrEqual(preset.size.height, compact.height)
+        }
+        XCTAssertGreaterThan(PopoverSize.Preset.large.size.width, PopoverSize.Preset.medium.size.width)
+        XCTAssertGreaterThan(PopoverSize.Preset.large.size.height, PopoverSize.Preset.medium.size.height)
     }
 
-    func testStoreLoadsDefaultWhenNoSavedSizeExists() {
-        let defaults = UserDefaults(suiteName: "PopoverSizeTests.empty")!
-        defaults.removePersistentDomain(forName: "PopoverSizeTests.empty")
-
-        XCTAssertEqual(PopoverSizeStore.load(from: defaults), .defaultValue)
+    func testEveryPresetStaysWithinSupportedBounds() {
+        for preset in PopoverSize.Preset.allCases {
+            let size = preset.size
+            XCTAssertGreaterThanOrEqual(size.width, PopoverSize.minimum.width, "\(preset) width too small")
+            XCTAssertLessThanOrEqual(size.width, PopoverSize.maximum.width, "\(preset) width too large")
+            XCTAssertGreaterThanOrEqual(size.height, PopoverSize.minimum.height, "\(preset) height too small")
+            XCTAssertLessThanOrEqual(size.height, PopoverSize.maximum.height, "\(preset) height too large")
+        }
     }
 
-    func testStorePersistsClampedSize() {
-        let defaults = UserDefaults(suiteName: "PopoverSizeTests.persisted")!
-        defaults.removePersistentDomain(forName: "PopoverSizeTests.persisted")
+    // MARK: - Preset store
 
-        PopoverSizeStore.save(PopoverSize(width: 900, height: 200), to: defaults)
+    func testStoreLoadsCompactWhenNothingSaved() {
+        let defaults = UserDefaults(suiteName: "PopoverSizePresetTests.empty")!
+        defaults.removePersistentDomain(forName: "PopoverSizePresetTests.empty")
 
-        XCTAssertEqual(PopoverSizeStore.load(from: defaults), PopoverSize(width: 760, height: 320))
+        XCTAssertEqual(PopoverSizePresetStore.load(from: defaults), .compact)
+    }
+
+    func testStoreRoundTripsEveryPreset() {
+        let defaults = UserDefaults(suiteName: "PopoverSizePresetTests.roundtrip")!
+        defaults.removePersistentDomain(forName: "PopoverSizePresetTests.roundtrip")
+
+        for preset in PopoverSize.Preset.allCases {
+            PopoverSizePresetStore.save(preset, to: defaults)
+            XCTAssertEqual(PopoverSizePresetStore.load(from: defaults), preset)
+        }
+    }
+
+    func testStoreFallsBackToCompactForUnknownRawValue() {
+        let defaults = UserDefaults(suiteName: "PopoverSizePresetTests.unknown")!
+        defaults.removePersistentDomain(forName: "PopoverSizePresetTests.unknown")
+        defaults.set("gigantic", forKey: "popoverSizePreset")
+
+        XCTAssertEqual(PopoverSizePresetStore.load(from: defaults), .compact)
     }
 }

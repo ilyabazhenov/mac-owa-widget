@@ -32,6 +32,16 @@ final class CalendarService: ObservableObject {
     @Published private(set) var engagementSnapshot: MeetingEngagementSnapshot = .empty
     @Published private(set) var engagementPeriod: MeetingEngagementPeriod = .today
 
+    /// Selected popover size preset. Published so the popover frame and the footer
+    /// quick-switcher update live; persisted on every change. Storing the preset (not a
+    /// raw size) guarantees the popover is always one of the offered sizes.
+    @Published var popoverSizePreset: PopoverSize.Preset = PopoverSizePresetStore.load() {
+        didSet { PopoverSizePresetStore.save(popoverSizePreset) }
+    }
+
+    /// Pixel size for the popover frame, derived from the selected preset.
+    var popoverSize: PopoverSize { popoverSizePreset.size }
+
     private var providers: [any CalendarProvider] = []
     private let scheduler = SyncScheduler()
     private let notificationService: any NotificationServicing

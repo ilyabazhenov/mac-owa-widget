@@ -89,6 +89,15 @@ struct PreferencesView: View {
                 .pickerStyle(.menu)
             }
 
+            Section(localization.tr("preferences.popover.section")) {
+                Picker(localization.tr("preferences.popover.size"), selection: $vm.popoverSizePreset) {
+                    ForEach(PopoverSize.Preset.allCases) { preset in
+                        Text(localization.tr(preset.localizationKey)).tag(preset)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
             Section(localization.tr("preferences.shortcuts.section")) {
                 Toggle(
                     localization.tr("preferences.shortcuts.joinMeeting"),

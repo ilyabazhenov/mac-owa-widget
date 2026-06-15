@@ -48,6 +48,51 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(vm.hasUnsavedChanges)
     }
 
+    func testChangingPopoverSizePresetMarksHasUnsavedChanges() {
+        let (_, vm, _) = makeSUT()
+        XCTAssertEqual(vm.popoverSizePreset, .compact)
+        XCTAssertFalse(vm.hasUnsavedChanges)
+
+        vm.popoverSizePreset = .large
+        XCTAssertTrue(vm.hasUnsavedChanges)
+    }
+
+    func testRevertingPopoverSizePresetToBaselineClearsHasUnsavedChanges() {
+        let (_, vm, _) = makeSUT()
+        vm.popoverSizePreset = .large
+        XCTAssertTrue(vm.hasUnsavedChanges)
+
+        vm.popoverSizePreset = .compact
+        XCTAssertFalse(vm.hasUnsavedChanges)
+    }
+
+    func testSavePreferencesPersistsPopoverSizePresetToService() {
+        let (service, vm, _) = makeSUT()
+        XCTAssertEqual(service.popoverSizePreset, .compact)
+
+        vm.popoverSizePreset = .large
+        vm.savePreferences()
+
+        XCTAssertEqual(service.popoverSizePreset, .large)
+        XCTAssertEqual(service.popoverSize, PopoverSize.Preset.large.size)
+        XCTAssertFalse(vm.hasUnsavedChanges)
+    }
+
+    /// Regression: the footer quick-switcher can change the preset while the Settings
+    /// form is open. Saving an unrelated change must not revert that.
+    func testSaveDoesNotClobberPresetChangedElsewhere() {
+        let (service, vm, _) = makeSUT()
+
+        // Simulate the footer switcher changing the size while Settings is open.
+        service.popoverSizePreset = .large
+
+        // User changes an unrelated setting and saves, without touching the size picker.
+        vm.syncInterval = 450
+        vm.savePreferences()
+
+        XCTAssertEqual(service.popoverSizePreset, .large)
+    }
+
     func testSavePreferencesPersistsGlobalJoinHotkeyEnabledToService() {
         let (service, vm, _) = makeSUT()
 
@@ -138,6 +183,7 @@ final class SettingsViewModelTests: XCTestCase {
         defaults.removeObject(forKey: "dimPastMeetingsOnTimeline")
         defaults.removeObject(forKey: "globalJoinHotkeyEnabled")
         defaults.removeObject(forKey: "meetingEngagementStats.storage.v1")
+        defaults.removeObject(forKey: "popoverSizePreset")
     }
 
     nonisolated private static func applyBaselineUserDefaults() {

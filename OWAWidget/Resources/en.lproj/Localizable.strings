@@ -63,6 +63,12 @@
 "preferences.menubar.display.countdown" = "Countdown (current)";
 "preferences.menubar.display.status" = "Status: Next / Now / Free";
 
+"preferences.popover.section" = "Window";
+"preferences.popover.size" = "Window size";
+"popover.size.compact" = "Compact";
+"popover.size.medium" = "Medium";
+"popover.size.large" = "Large";
+
 "preferences.timeline.section" = "Timeline";
 "preferences.timeline.dimPastMeetings" = "Dim past meetings on today's timeline";
 "preferences.notifications.section" = "Notifications";
