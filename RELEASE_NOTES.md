@@ -1,3 +1,43 @@
+## v1.0.43 - 2026-06-16
+
+### RU
+
+#### Что изменилось
+
+- Popover: настраиваемый размер окна — три пресета (компактный/средний/большой). Быстрое переключение из футера (применяется сразу) и из настроек (по кнопке «Сохранить»). Выбор запоминается между запусками.
+- Окно деталей встречи: список участников.
+- Автообновление: окна Sparkle теперь поднимаются на передний план.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Popover: adjustable window size — three presets (compact/medium/large). Switch quickly from the footer (applied immediately) or from Settings (on Save). The choice persists across launches.
+- Meeting detail window: attendee list.
+- Auto-update: Sparkle windows are now brought to the foreground.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.42 - 2026-06-05
 
 ### RU
