@@ -131,7 +131,12 @@ final class SettingsViewModel: ObservableObject {
 
     func beginEditAccount(_ account: CalendarAccount) {
         editingAccount = account
+        // Reading the password pops the system keychain-access dialog (drawn by
+        // SecurityAgent). When it closes, focus stays with the system agent and the
+        // settings window drops behind other apps. Re-activate ourselves so the
+        // window — and the edit sheet about to open on it — comes back to the front.
         editingPassword = (try? KeychainService.load(accountID: account.id)) ?? ""
+        NSApp.activate(ignoringOtherApps: true)
         testResult = nil
         isAddingNew = false
     }

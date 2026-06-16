@@ -66,12 +66,12 @@ struct OWAWidgetApp: App {
             .onAppear {
                 DiagnosticLog.event("Window create-meeting appeared")
                 AppDelegate.createMeetingWindowVisible = true
-                NSApp.setActivationPolicy(.regular)
+                AppDelegate.updateActivationPolicy()
                 NSApp.activate(ignoringOtherApps: true)
             }
             .onDisappear {
                 AppDelegate.createMeetingWindowVisible = false
-                NSApp.setActivationPolicy(.accessory)
+                AppDelegate.updateActivationPolicy()
             }
         }
         .windowResizability(.contentMinSize)
@@ -89,6 +89,13 @@ struct OWAWidgetApp: App {
                     DiagnosticLog.event("Window settings appeared")
                     syncLocalization()
                     updateCheckService.start()
+                    AppDelegate.settingsWindowVisible = true
+                    AppDelegate.updateActivationPolicy()
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+                .onDisappear {
+                    AppDelegate.settingsWindowVisible = false
+                    AppDelegate.updateActivationPolicy()
                 }
                 .onChange(of: localizationService.selectedLanguage) { _ in
                     syncLocalization()
@@ -132,15 +139,30 @@ struct OWAWidgetApp: App {
 /// IMPORTANT: this must NOT touch any other window (e.g. the settings window).
 /// applicationDidBecomeActive fires during SwiftUI's window-construction phase when a
 /// new Window scene mounts; calling makeKeyAndOrderFront on a half-constructed window
-/// reliably crashes on macOS Sequoia (15.x). The settings window stays in `.accessory`
-/// mode, isn't reachable via Cmd+Tab, and doesn't need the raise — so we scope this
-/// strictly to create-meeting via a flag set in its onAppear/onDisappear plus an
-/// identifier check as a belt-and-suspenders guard.
+/// reliably crashes on macOS Sequoia (15.x). The settings window also flips the app to
+/// `.regular` while it's open (so it shows in the Dock and is reachable via Cmd+Tab), but
+/// it does NOT need an explicit raise: a regular app's main window is brought forward by
+/// the system on activation. So we scope this raise strictly to create-meeting via a flag
+/// set in its onAppear/onDisappear plus an identifier check as a belt-and-suspenders guard,
+/// which also keeps us off the half-constructed settings window during its mount.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Flipped to `true` while the create-meeting window is on screen.
     /// Mutated from SwiftUI onAppear/onDisappear (main thread). Read from
     /// applicationDidBecomeActive (main thread). Single-thread access only.
     nonisolated(unsafe) static var createMeetingWindowVisible = false
+
+    /// Flipped to `true` while the settings window is on screen.
+    /// Same single-thread (main) access contract as `createMeetingWindowVisible`.
+    nonisolated(unsafe) static var settingsWindowVisible = false
+
+    /// Shows the app in the Dock (`.regular`) while any normal window is on screen,
+    /// and hides it back to a pure menu-bar agent (`.accessory`) once they all close.
+    /// Computed from the union of window-visibility flags so closing one window while
+    /// another stays open doesn't prematurely drop the Dock icon.
+    static func updateActivationPolicy() {
+        let shouldShowInDock = createMeetingWindowVisible || settingsWindowVisible
+        NSApp.setActivationPolicy(shouldShowInDock ? .regular : .accessory)
+    }
 
     func applicationDidBecomeActive(_ notification: Notification) {
         let createMeetingVisible = AppDelegate.createMeetingWindowVisible

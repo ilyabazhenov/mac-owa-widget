@@ -154,7 +154,11 @@ struct SettingsView: View {
                 AccountSettingsView(
                     account: Binding(
                         get: { vm.editingAccount ?? CalendarAccount(displayName: "", serverURL: "", email: "") },
-                        set: { vm.editingAccount = $0 }
+                        // При закрытии окна editingAccount становится nil, но поля при потере
+                        // фокуса успевают закоммитить значение и через этот setter «воскрешают»
+                        // пустой аккаунт, из-за чего sheet тут же открывается заново. Игнорируем
+                        // запись, если редактирование уже завершено.
+                        set: { if vm.editingAccount != nil { vm.editingAccount = $0 } }
                     ),
                     password: $vm.editingPassword,
                     isNew: vm.isAddingNew,
