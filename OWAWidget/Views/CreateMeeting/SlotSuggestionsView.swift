@@ -67,7 +67,9 @@ struct SlotSuggestionsView: View {
     }
 
     private func suggestionRow(_ slot: FreeSlot) -> some View {
-        let isSelected = slot.id == selectedSlot?.id
+        // `selectSlot` создаёт новый FreeSlot со свежим UUID, поэтому сравниваем
+        // по времени слота, а не по id (иначе подсветка выбора не срабатывает).
+        let isSelected = selectedSlot.map { $0.start == slot.start && $0.end == slot.end } ?? false
         let day = Self.dayFmt.string(from: slot.start).capitalized
         let timeRange = "\(Self.timeFmt.string(from: slot.start)) – \(Self.timeFmt.string(from: slot.end))"
         let reason = localization.tr(SlotRanker.reasonKey(for: slot))
