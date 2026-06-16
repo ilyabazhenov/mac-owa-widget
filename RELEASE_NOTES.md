@@ -1,3 +1,45 @@
+## v1.0.44 - 2026-06-16
+
+### RU
+
+#### Что изменилось
+
+- Создание встреч: выбор длительности — пресеты 30 мин / 1 ч / 1.5 ч / 2 ч. Поиск свободных слотов и грид занятости теперь учитывают выбранную длительность: клик по ячейке выделяет окно нужной длины в пределах непрерывного свободного промежутка (не захватывая занятые соседние ячейки и не вылезая за конец дня); слишком короткие свободные «дырки» приглушаются; после смены длительности показывается предупреждение, если выбранный слот стал занят.
+- Создание встреч: исправлена подсветка выбранного предложенного слота — радио-кнопка в списках «Лучшие варианты» и доступных слотов теперь корректно отмечает выбор.
+- Настройки: окно настроек отображается в Доке, пока открыто (иконка остаётся, если параллельно открыто окно создания встречи).
+- Настройки: окно редактирования аккаунта больше не открывается повторно пустым после закрытия; после системного запроса доступа к Keychain окно настроек возвращается на передний план.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Create meeting: meeting duration picker — presets 30 min / 1 h / 1.5 h / 2 h. Free-slot search and the availability grid now honor the selected duration: clicking a cell selects a window of the chosen length within a continuous free gap (without grabbing busy neighbors or spilling past the end of day); free gaps too short to fit are dimmed; a warning appears if the selected slot becomes busy after changing the duration.
+- Create meeting: fixed highlighting of the selected suggested slot — the radio button in the “Best options” and available-slots lists now marks the selection correctly.
+- Settings: the settings window now appears in the Dock while open (the icon stays if the create-meeting window is also open).
+- Settings: the account edit sheet no longer reopens empty after closing; the settings window returns to the foreground after the system Keychain access prompt.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (required only for the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates are installed automatically via the in-app **Install** button.
+
 ## v1.0.43 - 2026-06-16
 
 ### RU
