@@ -198,8 +198,7 @@ make run
  - Требуется доступ к EdDSA-приватнику (логин-Keychain или env `SPARKLE_ED_PRIVATE_KEY`). Если ключа нет — скрипт упадет; не пытайся выпустить релиз без подписи.
  5. Перед публикацией проверь `dist/appcast.xml`: `sparkle:version` нового релиза должен быть строго больше `sparkle:version` предыдущего опубликованного релиза.
  6. Публикация на GitHub через `gh release create` с двумя ассетами: zip и appcast.xml.
- - В `--notes-file` передавай **только секцию текущей версии**, а НЕ весь `RELEASE_NOTES.md` (он содержит весь changelog всех версий — иначе в тело релиза попадут все прошлые версии). Вырежи секцию во временный файл, например:
-   `awk '/^## vX\.Y\.Z /{f=1} f && /^## v/ && !/^## vX\.Y\.Z /{exit} f{print}' RELEASE_NOTES.md > /tmp/notes.md` и публикуй с `--notes-file /tmp/notes.md`.
+ - В `--notes-file` передавай **только секцию текущей версии**, а НЕ весь `RELEASE_NOTES.md` (он содержит весь changelog — иначе в тело релиза попадут все прошлые версии). `make release-package` сам вырезает секцию в `dist/release-notes-v<ver>.md` и печатает её путь как `NOTES_PATH=…`. Используй именно этот файл: `gh release create vX.Y.Z dist/OWAWidget-vX.Y.Z-macos.zip dist/appcast.xml --title vX.Y.Z --notes-file dist/release-notes-vX.Y.Z.md`.
  7. Возврат пользователю URL релиза.
 
 - Если пользователь просит **"подготовить релиз"** (без явного требования публикации):

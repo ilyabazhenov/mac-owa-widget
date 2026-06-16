@@ -118,6 +118,31 @@ cp "${TMP_APPCAST_DIR}/appcast.xml" "${APPCAST_PATH}"
 echo "✓ Release package ready: ${ARCHIVE_PATH}" >&2
 echo "✓ Appcast generated:    ${APPCAST_PATH}" >&2
 
+# Extract ONLY the current version's section from the full changelog. RELEASE_NOTES.md
+# accumulates every version; passing the whole file to `gh release --notes-file` would
+# list all past versions in the GitHub release body. Publishers must use NOTES_PATH.
+NOTES_PATH="${DIST_DIR}/release-notes-v${VERSION}.md"
+VERSION_RE="$(printf '%s' "${VERSION}" | sed 's/\./\\./g')"
+awk -v re="^## v${VERSION_RE} " '
+  $0 ~ re { f = 1 }
+  f && /^## v/ && $0 !~ re { exit }
+  f { print }
+' "${RELEASE_NOTES_FILE}" > "${NOTES_PATH}"
+
+if ! grep -qE "^## v${VERSION_RE} " "${NOTES_PATH}"; then
+  echo "Failed to extract release notes for v${VERSION}: no '## v${VERSION} - YYYY-MM-DD' heading found in ${RELEASE_NOTES_FILE}." >&2
+  exit 1
+fi
+
+NOTES_SECTION_COUNT="$(grep -cE '^## v[0-9]' "${NOTES_PATH}")"
+if [[ "${NOTES_SECTION_COUNT}" -ne 1 ]]; then
+  echo "Extracted notes for v${VERSION} contain ${NOTES_SECTION_COUNT} version sections, expected exactly 1." >&2
+  exit 1
+fi
+
+echo "✓ Release notes section: ${NOTES_PATH}" >&2
+
 echo "VERSION=${VERSION}"
 echo "ARCHIVE_PATH=${ARCHIVE_PATH}"
 echo "APPCAST_PATH=${APPCAST_PATH}"
+echo "NOTES_PATH=${NOTES_PATH}"

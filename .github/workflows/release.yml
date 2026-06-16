@@ -60,10 +60,13 @@ jobs:
               APPCAST_PATH=*)
                 APPCAST_PATH="${line#APPCAST_PATH=}"
                 ;;
+              NOTES_PATH=*)
+                NOTES_PATH="${line#NOTES_PATH=}"
+                ;;
             esac
           done <<< "${OUTPUT}"
 
-          if [[ -z "${VERSION}" || -z "${ARCHIVE_PATH}" || -z "${APPCAST_PATH}" ]]; then
+          if [[ -z "${VERSION}" || -z "${ARCHIVE_PATH}" || -z "${APPCAST_PATH}" || -z "${NOTES_PATH}" ]]; then
             echo "Failed to parse release metadata from package script output" >&2
             exit 1
           fi
@@ -71,6 +74,7 @@ jobs:
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "archive_path=${ARCHIVE_PATH}" >> "${GITHUB_OUTPUT}"
           echo "appcast_path=${APPCAST_PATH}" >> "${GITHUB_OUTPUT}"
+          echo "notes_path=${NOTES_PATH}" >> "${GITHUB_OUTPUT}"
 
       - name: Create GitHub release and upload artifacts
         env:
@@ -80,13 +84,17 @@ jobs:
           VERSION="${{ steps.package.outputs.version }}"
           ARCHIVE_PATH="${{ steps.package.outputs.archive_path }}"
           APPCAST_PATH="${{ steps.package.outputs.appcast_path }}"
+          # Single-version section extracted by package_release.sh. Do NOT use the full
+          # RELEASE_NOTES.md here — it holds every version and would dump the whole
+          # changelog into the release body.
+          NOTES_PATH="${{ steps.package.outputs.notes_path }}"
           TAG="v${VERSION}"
 
           gh release view "${TAG}" >/dev/null 2>&1 && EXISTS=1 || EXISTS=0
 
           if [[ "${EXISTS}" -eq 1 ]]; then
             echo "Release ${TAG} already exists, uploading/updating artifacts"
-            gh release edit "${TAG}" --notes-file RELEASE_NOTES.md
+            gh release edit "${TAG}" --notes-file "${NOTES_PATH}"
             # --clobber so re-runs overwrite both the zip and the appcast.
             gh release upload "${TAG}" "${ARCHIVE_PATH}" "${APPCAST_PATH}" --clobber
           else
@@ -95,5 +103,5 @@ jobs:
             # always resolves to the latest release's feed.
             gh release create "${TAG}" "${ARCHIVE_PATH}" "${APPCAST_PATH}" \
               --title "${TAG}" \
-              --notes-file RELEASE_NOTES.md
+              --notes-file "${NOTES_PATH}"
           fi
