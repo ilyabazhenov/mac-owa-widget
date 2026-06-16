@@ -328,7 +328,7 @@ final class CreateMeetingViewModel: ObservableObject {
                 optionalEmails: optionalEmails,
                 range: range,
                 displayRange: displayRange,
-                durationMinutes: 30,
+                durationMinutes: draft.durationMinutes,
                 accountID: accountID
             )
             guard gen == findSlotsGeneration else { return }
@@ -358,6 +358,28 @@ final class CreateMeetingViewModel: ObservableObject {
     func selectSlot(start: Date, end: Date) {
         guard end > Date() else { return }
         selectedSlot = FreeSlot(start: start, end: end, score: 0)
+    }
+
+    /// Смена желаемой длительности через чипы-пресеты. Меняет `draft.durationMinutes`
+    /// (что запускает debounced пере-поиск слотов), и сразу растягивает уже выбранный
+    /// слот от его старта под новую длину — чтобы выделение в гриде обновилось мгновенно.
+    /// Если растянутое окно окажется занятым, это покажет `selectedSlotHasConflict`
+    /// после возврата свежих freeSlots.
+    func setDuration(_ minutes: Int) {
+        guard minutes != draft.durationMinutes else { return }
+        draft.durationMinutes = minutes
+        if let slot = selectedSlot {
+            let newEnd = slot.start.addingTimeInterval(Double(minutes) * 60)
+            selectedSlot = FreeSlot(start: slot.start, end: newEnd, score: slot.score)
+        }
+    }
+
+    /// True, если выбранный слот после смены длительности больше не попадает в свободные
+    /// окна (его старт отсутствует среди найденных freeSlots). Используется для подсветки
+    /// конфликта. Считаем только по завершённому поиску, не во время загрузки.
+    var selectedSlotHasConflict: Bool {
+        guard let slot = selectedSlot, slotsSearched, !isLoadingSlots else { return false }
+        return !freeSlots.contains { abs($0.start.timeIntervalSince(slot.start)) < 60 }
     }
 
     // MARK: - Time picker bindings
@@ -654,6 +676,35 @@ final class CreateMeetingViewModel: ObservableObject {
                         slotPosition: pos
                     )
                 }
+            }
+        }
+
+        // Четвёртый проход: помечаем свободные ячейки, которые входят в непрерывное окно
+        // короче выбранной длительности — туда полноценная встреча не помещается. Грид
+        // покажет их приглушённо, без «Свободно», чтобы было видно, где реально влезает слот.
+        let slotsNeeded = max(1, Int(ceil(Double(draft.durationMinutes) / 30.0)))
+        if slotsNeeded > 1 {
+            for day in days {
+                guard result[day] != nil else { continue }
+                var runKeys: [Int] = []
+                func flushRun() {
+                    if runKeys.count < slotsNeeded {
+                        for tk in runKeys {
+                            guard var cell = result[day]?[tk] else { continue }
+                            cell.fitsDuration = false
+                            result[day]?[tk] = cell
+                        }
+                    }
+                    runKeys.removeAll(keepingCapacity: true)
+                }
+                for tk in sortedTimeKeys {
+                    if case .free = result[day]?[tk]?.state {
+                        runKeys.append(tk)
+                    } else {
+                        flushRun()
+                    }
+                }
+                flushRun()
             }
         }
 

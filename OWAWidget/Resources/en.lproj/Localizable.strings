@@ -245,6 +245,8 @@
 "create.meeting.no.slots.next.week" = "Next week";
 "create.meeting.no.slots.shorter" = "Shorten to 30 min";
 "create.meeting.available.slots" = "Available slots";
+"create.meeting.duration.hint" = "Meeting length — searching windows of this size";
+"create.meeting.duration.conflict" = "Selected window is busy — pick another slot";
 "create.meeting.suggestions.title" = "Top picks";
 "create.meeting.suggestions.reason.early" = "Early morning";
 "create.meeting.suggestions.reason.morning" = "Morning";

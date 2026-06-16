@@ -245,6 +245,8 @@
 "create.meeting.no.slots.next.week" = "Следующая неделя";
 "create.meeting.no.slots.shorter" = "Сократить до 30 мин";
 "create.meeting.available.slots" = "Доступные слоты";
+"create.meeting.duration.hint" = "Длительность встречи — ищем окна этой длины";
+"create.meeting.duration.conflict" = "Выбранное окно занято — выберите другой слот";
 "create.meeting.suggestions.title" = "Лучшие варианты";
 "create.meeting.suggestions.reason.early" = "Раннее утро";
 "create.meeting.suggestions.reason.morning" = "Утро";

@@ -759,6 +759,111 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
         XCTAssertEqual(calls, 1, "после init должен быть ровно один findSlots, без дубля от Combine-подписки")
         XCTAssertTrue(vm.slotsSearched)
     }
+
+    // MARK: - fitsDuration: грид помечает короткие свободные «дырки»
+
+    /// Длительность 30 мин (slotsNeeded == 1) — проход пропускается, все свободные ячейки fits.
+    func testFitsDurationTrueForAllFreeCellsAtThirtyMinutes() {
+        let chars = availabilityChars(overrides: [slotIndex(dayOffset: 0, hour: 9, minute: 30): "2"])
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "a@x.com", chars: chars)])
+        // duration по умолчанию 30
+        let m = vm.cellMatrix
+        XCTAssertEqual(cell(in: m, dayOffset: 0, hour: 9)?.fitsDuration, true,
+                       "при 30 мин даже одиночная свободная ячейка помещается")
+    }
+
+    /// Длительность 1ч: ряд из 2 ячеек помещается, одиночная свободная ячейка — нет.
+    func testFitsDurationOneHourMarksShortRun() {
+        // 09:30 и 11:00 заняты → 09:00 одиночный (len1), 10:00–10:30 ряд (len2), 11:30+ длинный.
+        let chars = availabilityChars(overrides: [
+            slotIndex(dayOffset: 0, hour: 9, minute: 30): "2",
+            slotIndex(dayOffset: 0, hour: 11, minute: 0): "2"
+        ])
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "a@x.com", chars: chars)])
+        var draft = vm.draft
+        draft.durationMinutes = 60
+        vm.draft = draft
+
+        let m = vm.cellMatrix
+        XCTAssertEqual(cell(in: m, dayOffset: 0, hour: 9)?.fitsDuration, false,
+                       "одиночная свободная ячейка 09:00 — час не помещается")
+        XCTAssertEqual(cell(in: m, dayOffset: 0, hour: 10)?.fitsDuration, true,
+                       "ряд 10:00–11:00 (2 ячейки) — час помещается")
+        XCTAssertEqual(cell(in: m, dayOffset: 0, hour: 10, minute: 30)?.fitsDuration, true)
+        XCTAssertEqual(cell(in: m, dayOffset: 0, hour: 11, minute: 30)?.fitsDuration, true,
+                       "длинный ряд после 11:00 помещает час")
+    }
+
+    /// Длительность 2ч (slotsNeeded == 4): ряды короче 4 ячеек помечаются как не вмещающие.
+    func testFitsDurationTwoHoursMarksRunsShorterThanFour() {
+        // 10:00 и 12:00 заняты → ряды [09:00–10:00]=2, [10:30–12:00]=3, [12:30–18:00]=long.
+        let chars = availabilityChars(overrides: [
+            slotIndex(dayOffset: 0, hour: 10, minute: 0): "2",
+            slotIndex(dayOffset: 0, hour: 12, minute: 0): "2"
+        ])
+        let vm = makeVM(attendeeAvailabilities: [availability(email: "a@x.com", chars: chars)])
+        var draft = vm.draft
+        draft.durationMinutes = 120
+        vm.draft = draft
+
+        let m = vm.cellMatrix
+        XCTAssertEqual(cell(in: m, dayOffset: 0, hour: 9)?.fitsDuration, false,
+                       "ряд из 2 ячеек — 2ч не помещается")
+        XCTAssertEqual(cell(in: m, dayOffset: 0, hour: 11)?.fitsDuration, false,
+                       "ряд из 3 ячеек — 2ч не помещается")
+        XCTAssertEqual(cell(in: m, dayOffset: 0, hour: 12, minute: 30)?.fitsDuration, true,
+                       "длинный ряд после 12:00 помещает 2ч")
+    }
+
+    // MARK: - setDuration: растягивание выбранного слота
+
+    func testSetDurationStretchesSelectedSlotFromStart() {
+        let vm = makeVM()
+        let slot = makeFreeSlot(dayOffset: 0, hour: 10, durationMinutes: 30)
+        vm.selectedSlot = slot
+        vm.setDuration(120)
+        XCTAssertEqual(vm.draft.durationMinutes, 120)
+        XCTAssertEqual(vm.selectedSlot?.start, slot.start, "старт сохраняется")
+        XCTAssertEqual(vm.selectedSlot?.end, slot.start.addingTimeInterval(120 * 60),
+                       "конец растягивается под новую длительность")
+    }
+
+    func testSetDurationSameValueIsNoOp() {
+        let vm = makeVM()
+        let slot = makeFreeSlot(dayOffset: 0, hour: 10, durationMinutes: 30)
+        vm.selectedSlot = slot
+        vm.setDuration(30)
+        XCTAssertEqual(vm.selectedSlot?.end, slot.end, "та же длительность — слот не трогаем")
+    }
+
+    // MARK: - selectedSlotHasConflict
+
+    func testSelectedSlotHasConflictWhenStartNotAmongFreeSlots() {
+        let other = makeFreeSlot(dayOffset: 0, hour: 14, durationMinutes: 60)
+        let vm = makeVM(freeSlots: [other])
+        vm.selectedSlot = makeFreeSlot(dayOffset: 0, hour: 10, durationMinutes: 60)
+        vm.slotsSearched = true
+        vm.isLoadingSlots = false
+        XCTAssertTrue(vm.selectedSlotHasConflict)
+    }
+
+    func testSelectedSlotNoConflictWhenStartMatchesFreeSlot() {
+        // Конфликт определяется по старту окна, длина freeSlot роли не играет.
+        let free = makeFreeSlot(dayOffset: 0, hour: 10, durationMinutes: 60)
+        let vm = makeVM(freeSlots: [free])
+        vm.selectedSlot = makeFreeSlot(dayOffset: 0, hour: 10, durationMinutes: 120)
+        vm.slotsSearched = true
+        vm.isLoadingSlots = false
+        XCTAssertFalse(vm.selectedSlotHasConflict)
+    }
+
+    func testSelectedSlotNoConflictWhileLoading() {
+        let vm = makeVM(freeSlots: [])
+        vm.selectedSlot = makeFreeSlot(dayOffset: 0, hour: 10, durationMinutes: 60)
+        vm.slotsSearched = true
+        vm.isLoadingSlots = true
+        XCTAssertFalse(vm.selectedSlotHasConflict, "во время загрузки конфликт не показываем")
+    }
 }
 
 // MARK: - Test doubles

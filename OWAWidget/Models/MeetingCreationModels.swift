@@ -82,6 +82,10 @@ struct CellAvailability: Sendable {
     /// Non-nil → ячейка соответствует свободному слоту и кликабельна.
     let freeSlot: FreeSlot?
     var slotPosition: FreeSlotPosition = .single
+    /// Свободная ячейка входит в непрерывное окно достаточной длины для выбранной
+    /// длительности встречи. Если `false` — все свободны, но полноценный слот сюда не
+    /// помещается (короткая «дырка»), и грид показывает её приглушённо, без «Свободно».
+    var fitsDuration: Bool = true
 }
 
 enum AttendeeKind: Sendable, Hashable {
@@ -97,6 +101,12 @@ struct MeetingDraft: Sendable {
     var optionalAttendees: [ResolvedAttendee] = []
     /// Понедельник (startOfDay) выбранной недели. Поиск слотов идёт по Mon–Fri этой недели.
     var selectedWeekStart: Date = MeetingDraft.mondayOfWeek(containing: Date())
+    /// Желаемая длительность встречи в минутах. Поиск ищет окна именно такой длины
+    /// (`MeetingFreeSlotCalculator` берёт ceil(duration/30) смежных свободных ячеек).
+    var durationMinutes: Int = 30
+
+    /// Доступные пресеты длительности для чипов в окне создания.
+    static let durationPresets = [30, 60, 90, 120]
 
     var allAttendees: [ResolvedAttendee] {
         requiredAttendees + optionalAttendees
@@ -114,6 +124,7 @@ struct MeetingDraft: Sendable {
     var slotAutoRefreshKey: String {
         requiredAttendees.map(\.email).sorted().joined(separator: "\u{1e}")
             + "|\(Int(selectedWeekStart.timeIntervalSince1970))"
+            + "|d\(durationMinutes)"
     }
 
     /// Stable key для инвалидации `CreateMeetingViewModel.cellMatrix`.
@@ -122,7 +133,7 @@ struct MeetingDraft: Sendable {
     var cellMatrixSignature: String {
         let req = requiredAttendees.map(\.email).sorted().joined(separator: ",")
         let opt = optionalAttendees.map(\.email).sorted().joined(separator: ",")
-        return "\(req)|\(opt)|\(Int(selectedWeekStart.timeIntervalSince1970))"
+        return "\(req)|\(opt)|\(Int(selectedWeekStart.timeIntervalSince1970))|d\(durationMinutes)"
     }
 
     /// Поиск слотов: Mon 00:00 → Fri 18:00 выбранной недели. Для **текущей** недели

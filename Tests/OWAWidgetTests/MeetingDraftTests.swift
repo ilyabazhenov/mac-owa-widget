@@ -141,4 +141,24 @@ final class MeetingDraftTests: XCTestCase {
         let week = d.slotGridWeekInterval()
         XCTAssertEqual(week.duration, 7 * 86400, accuracy: 1.0)
     }
+
+    // MARK: - Длительность встречи влияет на ключи пере-поиска / пересчёта грида
+
+    func testSlotAutoRefreshKeyChangesWhenDurationChanges() {
+        let monday = MeetingDraft.mondayOfWeek(containing: Date())
+        let a = makeDraft(weekStart: monday)
+        var b = makeDraft(weekStart: monday)
+        b.durationMinutes = 120
+        XCTAssertNotEqual(a.slotAutoRefreshKey, b.slotAutoRefreshKey,
+                          "смена длительности должна перезапускать поиск слотов")
+    }
+
+    func testCellMatrixSignatureChangesWhenDurationChanges() {
+        let monday = MeetingDraft.mondayOfWeek(containing: Date())
+        let a = makeDraft(weekStart: monday)
+        var b = makeDraft(weekStart: monday)
+        b.durationMinutes = 60
+        XCTAssertNotEqual(a.cellMatrixSignature, b.cellMatrixSignature,
+                          "смена длительности должна инвалидировать раскраску грида")
+    }
 }

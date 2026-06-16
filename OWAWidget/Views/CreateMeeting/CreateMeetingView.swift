@@ -370,11 +370,17 @@ struct CreateMeetingView: View {
             VStack(alignment: .leading, spacing: 14) {
                 suggestionsBlock
 
-                HStack(spacing: 8) {
-                    sectionLabel(localization.tr("create.meeting.available.slots"))
-                    Spacer()
-                    viewModePicker
-                    TimeZoneBadge()
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        sectionLabel(localization.tr("create.meeting.available.slots"))
+                        durationPicker
+                        Spacer()
+                        viewModePicker
+                        TimeZoneBadge()
+                    }
+                    if vm.selectedSlotHasConflict {
+                        slotConflictWarning
+                    }
                 }
 
                 slotViewContainer
@@ -435,6 +441,17 @@ struct CreateMeetingView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
 
+                // Длинную встречу часто некуда вписать — предложим сократить до 30 мин.
+                if vm.draft.durationMinutes > 30 {
+                    Button {
+                        vm.setDuration(30)
+                    } label: {
+                        Text(localization.tr("create.meeting.no.slots.shorter"))
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -451,7 +468,8 @@ struct CreateMeetingView: View {
                     cellMatrix: vm.cellMatrix,
                     selectedSlot: vm.selectedSlot,
                     onSelectSlot: { vm.selectSlot(start: $0, end: $1) },
-                    gridWeekInterval: vm.draft.slotGridWeekInterval()
+                    gridWeekInterval: vm.draft.slotGridWeekInterval(),
+                    slotDurationMinutes: vm.draft.durationMinutes
                 )
                 .frame(height: MeetingSlotGridMetrics.gridHeight)
                 if vm.slotsSearched && !vm.attendeeAvailabilities.isEmpty {
@@ -470,6 +488,52 @@ struct CreateMeetingView: View {
                 .padding(.bottom, 8)
             }
             .frame(height: MeetingSlotsLayout.slotViewHeight)
+        }
+    }
+
+    /// Чипы-пресеты длительности встречи. Смена длительности через `vm.setDuration`
+    /// растягивает выбранный слот и запускает пере-поиск окон нужной длины.
+    private var durationPicker: some View {
+        HStack(spacing: 4) {
+            ForEach(MeetingDraft.durationPresets, id: \.self) { minutes in
+                let isActive = vm.draft.durationMinutes == minutes
+                Button {
+                    vm.setDuration(minutes)
+                } label: {
+                    Text(Self.durationLabel(minutes))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(isActive ? Color.white : Color(nsColor: .labelColor))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(isActive ? Color.accentColor : Color(nsColor: .controlColor))
+                        )
+                }
+                .buttonStyle(.plain)
+                .help(localization.tr("create.meeting.duration.hint"))
+            }
+        }
+    }
+
+    /// «30м», «1ч», «1.5ч», «2ч» — компактная подпись для чипа длительности.
+    private static func durationLabel(_ minutes: Int) -> String {
+        if minutes < 60 { return "\(minutes)м" }
+        let hours = Double(minutes) / 60.0
+        let str = hours == hours.rounded()
+            ? String(Int(hours))
+            : String(format: "%.1f", hours)
+        return "\(str)ч"
+    }
+
+    private var slotConflictWarning: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.orange)
+            Text(localization.tr("create.meeting.duration.conflict"))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -1228,6 +1292,9 @@ struct WeekGridSlotView: View {
     let selectedSlot: FreeSlot?
     let onSelectSlot: (Date, Date) -> Void
     let gridWeekInterval: DateInterval
+    /// Желаемая длительность встречи. Одиночный клик по ячейке выделяет окно этой длины;
+    /// перетаскивание нескольких строк задаёт длительность вручную.
+    let slotDurationMinutes: Int
 
     @State private var hoveredInfo: HoveredInfo? = nil
     @State private var mousePosition: CGPoint = .zero
@@ -1259,6 +1326,27 @@ struct WeekGridSlotView: View {
 
     private var days: [DayKey] {
         gridWeekInterval.weekdayColumnStartDates(calendar: AppTimeZone.calendar)
+    }
+
+    /// Вписывает окно выбранной длительности в непрерывный свободный ряд вокруг кликнутой
+    /// ячейки. Якорим старт на клике; если окно вылезает за конец свободного ряда — сдвигаем
+    /// старт назад, чтобы поместиться, не задевая занятые ячейки. Возвращает (startMin, endMin).
+    private func fittedWindow(day: DayKey, clickMinute: Int) -> (Int, Int) {
+        let cal = AppTimeZone.calendar
+        let now = Date()
+        let row = cellMatrix[day] ?? [:]
+        // Свободная и ещё не прошедшая 30-мин ячейка.
+        let isFree: (Int) -> Bool = { tk in
+            guard let cell = row[tk], case .free = cell.state else { return false }
+            guard let cs = cal.date(bySettingHour: tk / 60, minute: tk % 60, second: 0, of: day) else { return false }
+            return cs.addingTimeInterval(30 * 60) > now
+        }
+        let window = SlotClickSnap.fittedWindow(
+            clickMinute: clickMinute,
+            durationMinutes: slotDurationMinutes,
+            isFree: isFree
+        )
+        return (window.start, window.end)
     }
 
     private func timeLabel(_ key: TimeKey) -> String {
@@ -1408,8 +1496,15 @@ struct WeekGridSlotView: View {
                     .onEnded { _ in
                         if let p = dragPreview {
                             let cal = AppTimeZone.calendar
-                            if let s = cal.date(bySettingHour: p.startMinute / 60, minute: p.startMinute % 60, second: 0, of: p.day),
-                               let e = cal.date(bySettingHour: p.endMinute   / 60, minute: p.endMinute   % 60, second: 0, of: p.day) {
+                            // Одиночный клик (одна строка) → вписываем окно выбранной длительности
+                            // в непрерывный свободный ряд вокруг клика (не вылезая на занятые
+                            // ячейки). Перетаскивание нескольких строк → явный ручной размер.
+                            let dragged = p.endMinute - p.startMinute
+                            let (startMinute, endMinute) = dragged <= 30
+                                ? fittedWindow(day: p.day, clickMinute: p.startMinute)
+                                : (p.startMinute, p.endMinute)
+                            if let s = cal.date(bySettingHour: startMinute / 60, minute: startMinute % 60, second: 0, of: p.day),
+                               let e = cal.date(bySettingHour: endMinute / 60, minute: endMinute % 60, second: 0, of: p.day) {
                                 onSelectSlot(s, e)
                             }
                         }
@@ -1510,12 +1605,19 @@ private struct AvailabilityCell: View {
         return "\(parts[0]) \(parts[1].prefix(1))."
     }
 
+    /// Свободна индивидуально, но выбранная длительность в это окно не помещается.
+    private var freeButTooShort: Bool {
+        guard let cell else { return false }
+        if case .free = cell.state { return !cell.fitsDuration }
+        return false
+    }
+
     private var cellLabel: String? {
         guard let cell else { return nil }
         guard !isSelected else { return nil }
         switch cell.state {
         case .free:
-            return "Свободно"
+            return cell.fitsDuration ? "Свободно" : nil
         case .tentative, .busy, .outOfOffice:
             let blocked = cell.attendeeStatuses.filter { $0.rawChar != "0" }
             guard !blocked.isEmpty else { return nil }
@@ -1541,6 +1643,12 @@ private struct AvailabilityCell: View {
     private var bg: Color {
         guard let cell else { return .clear }
         // selected cells show through from overlay; no separate fill here
+        // Свободно, но окно слишком короткое для выбранной длительности — нейтральный
+        // приглушённый фон, чтобы отличать от полноценно доступных слотов.
+        if freeButTooShort {
+            let base = Color(nsColor: .tertiaryLabelColor)
+            return base.opacity(isHovered ? 0.22 : 0.14)
+        }
         if colorScheme == .dark {
             // Насыщенные jewel-тона под тёмный фон
             switch cell.state {
