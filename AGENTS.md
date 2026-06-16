@@ -177,6 +177,14 @@ make run
 
 ## Релизный процесс по запросу пользователя
 
+> **Релиз собирается и публикуется ТОЛЬКО локально.** Все шаги (`make release-package`
+> + `gh release create`) выполняй на локальной машине. **НЕ запускай** GitHub Actions
+> workflow `release.yml` (`gh workflow run release.yml`) — на раннере стоит старый Xcode
+> (16.4), несовместимый с зависимостью `KeyboardShortcuts` (`2.4.0`): сборка падает с
+> `no such module 'KeyboardShortcuts'` / `language versions ... (given: [5], supported: [])`.
+> Локальный Xcode собирает корректно. Пока CI не починен (пин `KeyboardShortcuts` на
+> совместимую версию **или** подъём Xcode в воркфлоу), путь публикации — локальный.
+
 - Если пользователь просит **"выпустить новый релиз"** (или эквивалентно), выполняй полный цикл публикации:
  1. Обновление `VERSION`.
  2. Обновление `RELEASE_NOTES.md`.

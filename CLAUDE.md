@@ -30,3 +30,4 @@ swift build
 ## Ограничения агентов
 
 - Никогда не используй `isolation: "worktree"` при вызове Agent tool. Worktree изоляция запрещена.
+- Релиз собирается и публикуется **только локально** (`make release-package` + `gh release create`). Не запускай GitHub Actions workflow `release.yml` — раннер с Xcode 16.4 несовместим с зависимостью `KeyboardShortcuts`. Подробности — в `AGENTS.md`, раздел «Релизный процесс».
