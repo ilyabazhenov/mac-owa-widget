@@ -56,6 +56,22 @@
 "preferences.startup.requiresApproval" = "Approval needed in System Settings → Login Items.";
 "preferences.startup.openSettings" = "Open System Settings";
 
+"preferences.timezone.section" = "Time Zone";
+"preferences.timezone.picker" = "Display zone";
+"preferences.timezone.hint" = "Meeting times, days, and the countdown are shown in this zone.";
+"timezone.option.system" = "System";
+"timezone.city.kaliningrad" = "Kaliningrad";
+"timezone.city.moscow" = "Moscow";
+"timezone.city.samara" = "Samara";
+"timezone.city.yekaterinburg" = "Yekaterinburg";
+"timezone.city.omsk" = "Omsk";
+"timezone.city.krasnoyarsk" = "Krasnoyarsk";
+"timezone.city.irkutsk" = "Irkutsk";
+"timezone.city.yakutsk" = "Yakutsk";
+"timezone.city.vladivostok" = "Vladivostok";
+"timezone.city.magadan" = "Magadan";
+"timezone.city.kamchatka" = "Kamchatka";
+
 "preferences.sync.section" = "Sync";
 "preferences.sync.interval" = "Sync interval";
 "preferences.menubar.section" = "Menu Bar";

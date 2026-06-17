@@ -98,6 +98,7 @@ struct MeetingListView: View {
         let slots = TimelineMeetingLayout.makeHourSlots(
             events: section.timedEvents,
             sectionDate: section.date,
+            calendar: AppTimeZone.calendar,
             referenceDate: Date()
         )
 

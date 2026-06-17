@@ -56,6 +56,22 @@
 "preferences.startup.requiresApproval" = "Требуется разрешение в Системных настройках → Объекты входа.";
 "preferences.startup.openSettings" = "Открыть Системные настройки";
 
+"preferences.timezone.section" = "Часовой пояс";
+"preferences.timezone.picker" = "Пояс отображения";
+"preferences.timezone.hint" = "Время встреч, дни и countdown показываются в этом поясе.";
+"timezone.option.system" = "Системный";
+"timezone.city.kaliningrad" = "Калининград";
+"timezone.city.moscow" = "Москва";
+"timezone.city.samara" = "Самара";
+"timezone.city.yekaterinburg" = "Екатеринбург";
+"timezone.city.omsk" = "Омск";
+"timezone.city.krasnoyarsk" = "Красноярск";
+"timezone.city.irkutsk" = "Иркутск";
+"timezone.city.yakutsk" = "Якутск";
+"timezone.city.vladivostok" = "Владивосток";
+"timezone.city.magadan" = "Магадан";
+"timezone.city.kamchatka" = "Камчатка";
+
 "preferences.sync.section" = "Синхронизация";
 "preferences.sync.interval" = "Интервал синхронизации";
 "preferences.menubar.section" = "Строка меню";

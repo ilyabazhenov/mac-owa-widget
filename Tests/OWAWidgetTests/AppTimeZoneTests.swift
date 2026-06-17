@@ -3,7 +3,33 @@ import XCTest
 
 final class AppTimeZoneTests: XCTestCase {
 
-    func testZoneIdentifierIsEuropeMoscow() {
+    private var originalStored: String?
+
+    override func setUp() {
+        super.setUp()
+        // `AppTimeZone.zone` now reads UserDefaults, so isolate these tests from any value
+        // a parallel/previous test (or the dev machine) may have left behind.
+        originalStored = UserDefaults.standard.string(forKey: AppTimeZone.storageKey)
+        UserDefaults.standard.removeObject(forKey: AppTimeZone.storageKey)
+    }
+
+    override func tearDown() {
+        UserDefaults.standard.set(originalStored, forKey: AppTimeZone.storageKey)
+        super.tearDown()
+    }
+
+    func testDefaultZoneIsEuropeMoscowWhenUnset() {
+        XCTAssertEqual(AppTimeZone.zone.identifier, "Europe/Moscow")
+    }
+
+    func testZoneFollowsStoredSelection() {
+        UserDefaults.standard.set("Asia/Yekaterinburg", forKey: AppTimeZone.storageKey)
+        XCTAssertEqual(AppTimeZone.zone.identifier, "Asia/Yekaterinburg")
+        XCTAssertEqual(AppTimeZone.zone.secondsFromGMT(), 5 * 3600)
+    }
+
+    func testInvalidStoredZoneFallsBackToMoscow() {
+        UserDefaults.standard.set("Not/AZone", forKey: AppTimeZone.storageKey)
         XCTAssertEqual(AppTimeZone.zone.identifier, "Europe/Moscow")
     }
 

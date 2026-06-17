@@ -64,6 +64,7 @@ final class CalendarService: ObservableObject {
     private let menuBarDisplayModeKey = "menuBarDisplayMode"
     private let dimPastMeetingsOnTimelineKey = "dimPastMeetingsOnTimeline"
     private let globalJoinHotkeyEnabledKey = "globalJoinHotkeyEnabled"
+    private let displayTimeZoneKey = AppTimeZone.storageKey
 
     var syncInterval: TimeInterval {
         get { UserDefaults.standard.double(forKey: syncIntervalKey).nonZero ?? 300 }
@@ -143,6 +144,13 @@ final class CalendarService: ObservableObject {
             return UserDefaults.standard.bool(forKey: globalJoinHotkeyEnabledKey)
         }
         set { UserDefaults.standard.set(newValue, forKey: globalJoinHotkeyEnabledKey) }
+    }
+
+    /// Display timezone used for all UI rendering and day boundaries (see `AppTimeZone`).
+    /// Defaults to Moscow when unset, preserving the app's original behavior.
+    var displayTimeZoneOption: DisplayTimeZoneOption {
+        get { DisplayTimeZoneOption(storageValue: UserDefaults.standard.string(forKey: displayTimeZoneKey)) }
+        set { UserDefaults.standard.set(newValue.storageValue, forKey: displayTimeZoneKey) }
     }
 
     init(
@@ -578,9 +586,14 @@ final class CalendarService: ObservableObject {
         syncStatus = .syncing
 
         let now = Date()
-        let todayStart = Calendar.current.startOfDay(for: now)
-        let start = Calendar.current.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart
-        let end = Calendar.current.date(byAdding: .day, value: 30, to: now) ?? now
+        // Use the display calendar so the fetched window's day boundaries align with the
+        // timezone the UI groups events by ("today/tomorrow"), not the macOS system clock.
+        // The boundaries are absolute `Date` instants; the wire format still formats them in
+        // `TimeZone.current` to match the OWA `TimeZoneContext`.
+        let calendar = AppTimeZone.calendar
+        let todayStart = calendar.startOfDay(for: now)
+        let start = calendar.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart
+        let end = calendar.date(byAdding: .day, value: 30, to: now) ?? now
 
         do {
             var fetched: [CalendarEvent] = []

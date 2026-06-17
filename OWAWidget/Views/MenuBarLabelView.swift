@@ -103,7 +103,8 @@ struct MenuBarLabelView: View {
             mode: service.menuBarDisplayMode,
             events: service.events,
             now: now,
-            shortTimeFormatter: localization.shortTime
+            shortTimeFormatter: localization.shortTime,
+            calendar: AppTimeZone.calendar
         )
     }
 

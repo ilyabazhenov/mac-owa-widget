@@ -24,6 +24,10 @@ struct PreferencesView: View {
         (30, 30),
     ]
 
+    private func timeZoneLabel(_ option: DisplayTimeZoneOption) -> String {
+        "\(localization.tr(option.localizationKey)) · \(option.utcOffsetLabel)"
+    }
+
     var body: some View {
         Form {
             // NOTE: keyboard-shortcut customization UI (KeyboardShortcuts.Recorder)
@@ -70,6 +74,18 @@ struct PreferencesView: View {
                     }
                 }
                 .pickerStyle(.menu)
+            }
+
+            Section(localization.tr("preferences.timezone.section")) {
+                Picker(localization.tr("preferences.timezone.picker"), selection: $vm.displayTimeZone) {
+                    ForEach(DisplayTimeZoneOption.selectable) { option in
+                        Text(timeZoneLabel(option)).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                Text(localization.tr("preferences.timezone.hint"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
 
             Section(localization.tr("preferences.sync.section")) {

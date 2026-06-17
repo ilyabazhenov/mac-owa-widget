@@ -15,6 +15,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var popoverSizePreset: PopoverSize.Preset { didSet { updateUnsavedChanges() } }
     @Published var dimPastMeetingsOnTimeline: Bool { didSet { updateUnsavedChanges() } }
     @Published var globalJoinHotkeyEnabled: Bool { didSet { updateUnsavedChanges() } }
+    @Published var displayTimeZone: DisplayTimeZoneOption { didSet { updateUnsavedChanges() } }
     @Published var launchAtLogin: Bool
     @Published var launchAtLoginRequiresApproval: Bool
     @Published private(set) var hasUnsavedChanges: Bool = false
@@ -58,6 +59,7 @@ final class SettingsViewModel: ObservableObject {
         self.popoverSizePreset = calendarService.popoverSizePreset
         self.dimPastMeetingsOnTimeline = calendarService.dimPastMeetingsOnTimeline
         self.globalJoinHotkeyEnabled = calendarService.globalJoinHotkeyEnabled
+        self.displayTimeZone = calendarService.displayTimeZoneOption
         self.launchAtLogin = launchAtLoginManager.isEnabled
         self.launchAtLoginRequiresApproval = launchAtLoginManager.requiresApproval
         self.baselinePreferences = PreferencesSnapshot(
@@ -71,7 +73,8 @@ final class SettingsViewModel: ObservableObject {
             menuBarDisplayMode: calendarService.menuBarDisplayMode,
             popoverSizePreset: calendarService.popoverSizePreset,
             dimPastMeetingsOnTimeline: calendarService.dimPastMeetingsOnTimeline,
-            globalJoinHotkeyEnabled: calendarService.globalJoinHotkeyEnabled
+            globalJoinHotkeyEnabled: calendarService.globalJoinHotkeyEnabled,
+            displayTimeZone: calendarService.displayTimeZoneOption
         )
         updateUnsavedChanges()
     }
@@ -195,6 +198,7 @@ final class SettingsViewModel: ObservableObject {
         }
         service.dimPastMeetingsOnTimeline = dimPastMeetingsOnTimeline
         service.globalJoinHotkeyEnabled = globalJoinHotkeyEnabled
+        service.displayTimeZoneOption = displayTimeZone
         service.setMeetingEngagementScope(meetingEngagementScope)
         service.setMeetingEngagementPeriod(meetingEngagementDefaultPeriod)
         service.applySavedPreferences()
@@ -243,6 +247,7 @@ final class SettingsViewModel: ObservableObject {
         let popoverSizePreset: PopoverSize.Preset
         let dimPastMeetingsOnTimeline: Bool
         let globalJoinHotkeyEnabled: Bool
+        let displayTimeZone: DisplayTimeZoneOption
     }
 
     private func currentPreferencesSnapshot() -> PreferencesSnapshot {
@@ -257,7 +262,8 @@ final class SettingsViewModel: ObservableObject {
             menuBarDisplayMode: menuBarDisplayMode,
             popoverSizePreset: popoverSizePreset,
             dimPastMeetingsOnTimeline: dimPastMeetingsOnTimeline,
-            globalJoinHotkeyEnabled: globalJoinHotkeyEnabled
+            globalJoinHotkeyEnabled: globalJoinHotkeyEnabled,
+            displayTimeZone: displayTimeZone
         )
     }
 

@@ -1,21 +1,32 @@
 import Foundation
 
 extension DateFormatter {
-    static let shortTime: DateFormatter = {
+    // The timezone is re-applied on every access (cheap) rather than captured once at init,
+    // so a change to the configurable display timezone takes effect without recreating the
+    // formatter. Accessed on the main actor during rendering.
+    private static let _shortTime: DateFormatter = {
         let f = DateFormatter()
         f.timeStyle = .short
         f.dateStyle = .none
-        f.timeZone = AppTimeZone.zone
         return f
     }()
 
-    static let shortDate: DateFormatter = {
+    static var shortTime: DateFormatter {
+        _shortTime.timeZone = AppTimeZone.zone
+        return _shortTime
+    }
+
+    private static let _shortDate: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .none
-        f.timeZone = AppTimeZone.zone
         return f
     }()
+
+    static var shortDate: DateFormatter {
+        _shortDate.timeZone = AppTimeZone.zone
+        return _shortDate
+    }
 }
 
 extension Date {

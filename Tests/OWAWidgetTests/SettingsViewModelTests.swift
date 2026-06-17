@@ -105,6 +105,42 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(vm.hasUnsavedChanges)
     }
 
+    func testDefaultDisplayTimeZoneIsMoscowAndClean() {
+        let (service, vm, _) = makeSUT()
+        XCTAssertEqual(vm.displayTimeZone, .fixed("Europe/Moscow"))
+        XCTAssertEqual(service.displayTimeZoneOption, .fixed("Europe/Moscow"))
+        XCTAssertFalse(vm.hasUnsavedChanges)
+    }
+
+    func testChangingDisplayTimeZoneMarksHasUnsavedChanges() {
+        let (_, vm, _) = makeSUT()
+        XCTAssertFalse(vm.hasUnsavedChanges)
+
+        vm.displayTimeZone = .system
+        XCTAssertTrue(vm.hasUnsavedChanges)
+    }
+
+    func testRevertingDisplayTimeZoneToBaselineClearsHasUnsavedChanges() {
+        let (_, vm, _) = makeSUT()
+        vm.displayTimeZone = .fixed("Asia/Vladivostok")
+        XCTAssertTrue(vm.hasUnsavedChanges)
+
+        vm.displayTimeZone = .fixed("Europe/Moscow")
+        XCTAssertFalse(vm.hasUnsavedChanges)
+    }
+
+    func testSavePreferencesPersistsDisplayTimeZoneToService() {
+        let (service, vm, _) = makeSUT()
+
+        vm.displayTimeZone = .fixed("Europe/Samara")
+        XCTAssertTrue(vm.hasUnsavedChanges)
+        vm.savePreferences()
+
+        XCTAssertEqual(service.displayTimeZoneOption, .fixed("Europe/Samara"))
+        XCTAssertEqual(UserDefaults.standard.string(forKey: AppTimeZone.storageKey), "Europe/Samara")
+        XCTAssertFalse(vm.hasUnsavedChanges)
+    }
+
     func testChangingSyncIntervalMarksHasUnsavedChanges() {
         let (_, vm, _) = makeSUT()
         XCTAssertFalse(vm.hasUnsavedChanges)
@@ -184,6 +220,7 @@ final class SettingsViewModelTests: XCTestCase {
         defaults.removeObject(forKey: "globalJoinHotkeyEnabled")
         defaults.removeObject(forKey: "meetingEngagementStats.storage.v1")
         defaults.removeObject(forKey: "popoverSizePreset")
+        defaults.removeObject(forKey: AppTimeZone.storageKey)
     }
 
     nonisolated private static func applyBaselineUserDefaults() {
