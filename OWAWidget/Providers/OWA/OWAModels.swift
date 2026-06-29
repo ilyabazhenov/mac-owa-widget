@@ -394,4 +394,15 @@ enum OWAError: LocalizedError {
             return false
         }
     }
+
+    /// A *confirmed* credential rejection: the login flow reached the OWA logon surface and it
+    /// declined to grant a session (`authenticationFailed`). Unlike a 401/440 on a data request —
+    /// which can be a transient session/load-balancer blip and is ridden out by the breaker
+    /// threshold — this is definitive and should latch the wrong-password state immediately.
+    static func isDefinitiveAuthRejection(_ error: Error) -> Bool {
+        if case .authenticationFailed = error as? OWAError {
+            return true
+        }
+        return false
+    }
 }

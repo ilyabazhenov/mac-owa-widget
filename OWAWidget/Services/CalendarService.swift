@@ -298,10 +298,15 @@ final class CalendarService: ObservableObject {
     /// once `authFailureThreshold` failures accumulate. Returns `true` when now latched.
     /// Below the threshold the visible status is left to the caller, so a sync keeps showing
     /// cached events and an action surfaces its own error.
+    /// `definitive` marks a confirmed credential rejection (we reached the OWA logon surface and
+    /// it declined to grant a session). That is not a transient blip, so it latches on the first
+    /// failure instead of riding out `authFailureThreshold`. Ambiguous 401/440s on data requests
+    /// (session expiry, an LB hiccup, an AD lockout from another device) pass `definitive: false`
+    /// and keep the threshold grace.
     @discardableResult
-    private func registerAuthFailure(isProbe: Bool) -> Bool {
+    private func registerAuthFailure(isProbe: Bool, definitive: Bool) -> Bool {
         consecutiveAuthFailures += 1
-        guard isProbe || consecutiveAuthFailures >= authFailureThreshold else {
+        guard isProbe || definitive || consecutiveAuthFailures >= authFailureThreshold else {
             return false
         }
         syncStatus = .authenticationRequired
@@ -549,10 +554,11 @@ final class CalendarService: ObservableObject {
             syncStatus = .certificateTrustRequired(host: cert.host, fingerprint: cert.fingerprint)
             log.error("\(context, privacy: .public) suspended sync: untrusted certificate for \(cert.host, privacy: .public)")
         } else if OWAError.isAuthError(error) {
-            // Route through the shared breaker so a single transient 401 on an action doesn't
-            // hard-latch the whole app — it latches only at the same threshold the sync path
-            // uses, and leaves `lastAuthProbeAt` correctly initialised for the auto-probe.
-            if registerAuthFailure(isProbe: false) {
+            // Route through the shared breaker so a transient 401 on an action doesn't hard-latch
+            // the whole app — an ambiguous 401/440 latches only at the threshold, while a confirmed
+            // logon-page rejection latches immediately. Leaves `lastAuthProbeAt` correctly
+            // initialised for the auto-probe.
+            if registerAuthFailure(isProbe: false, definitive: OWAError.isDefinitiveAuthRejection(error)) {
                 log.error("\(context, privacy: .public) suspended sync: auth error (failures=\(self.consecutiveAuthFailures, privacy: .public)) — \(error.localizedDescription, privacy: .public)")
             } else {
                 log.warning("\(context, privacy: .public) transient auth failure \(self.consecutiveAuthFailures, privacy: .public)/\(self.authFailureThreshold, privacy: .public)")
@@ -589,7 +595,7 @@ final class CalendarService: ObservableObject {
     /// Feeds one simulated auth failure through the real breaker path, so you can watch it
     /// stay transient on the first failure and latch on the next (threshold behaviour).
     func debugSimulateAuthFailure() {
-        if registerAuthFailure(isProbe: false) {
+        if registerAuthFailure(isProbe: false, definitive: false) {
             log.info("DEBUG: simulated auth failure → latched")
         } else {
             syncStatus = events.isEmpty
@@ -776,7 +782,7 @@ final class CalendarService: ObservableObject {
                 // Latching suspends the scheduler (preventing account lockout); a slow
                 // auto-probe and the manual "retry" action can still lift it without the user
                 // re-entering the password.
-                if registerAuthFailure(isProbe: isAuthBlockProbe) {
+                if registerAuthFailure(isProbe: isAuthBlockProbe, definitive: OWAError.isDefinitiveAuthRejection(error)) {
                     log.error("Sync \(syncID, privacy: .public) suspended: auth error (failures=\(self.consecutiveAuthFailures, privacy: .public)) — \(error.localizedDescription, privacy: .public)")
                 } else {
                     // Not latched yet — treat as transient: keep showing cached events and

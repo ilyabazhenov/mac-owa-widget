@@ -218,6 +218,7 @@
 "sync.elapsed.ago" = "%@ назад";
 "sync.status.offline.cached" = "Офлайн: показываю кэшированные встречи (%@)";
 "sync.status.error" = "Ошибка: %@";
+"error.owa.unreachable" = "Не удалось подключиться к серверу";
 "sync.status.auth.required" = "Неверный пароль — обновите в Настройках";
 "sync.status.certificate.untrusted" = "Недоверенный сертификат сервера — подтвердите в Настройках";
 

@@ -218,6 +218,7 @@
 "sync.elapsed.ago" = "%@ ago";
 "sync.status.offline.cached" = "Offline, showing cached meetings (%@)";
 "sync.status.error" = "Error: %@";
+"error.owa.unreachable" = "Could not reach the server";
 "sync.status.auth.required" = "Invalid password — update in Settings";
 "sync.status.certificate.untrusted" = "Untrusted server certificate — re-confirm in Settings";
 

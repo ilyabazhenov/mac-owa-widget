@@ -236,13 +236,52 @@ actor OWAClient {
                 .replacingOccurrences(of: "\r", with: "")
                 .trimmingCharacters(in: .whitespaces)
                 .prefix(300)
-            throw OWAError.authenticationFailed(
+            let detail =
                 "No CANARY. " +
                 "FormAction: \(loginForm.action). " +
                 "AuthURL: \(authFinalURL) (HTTP \(authResponse.statusCode)). " +
                 "Redirects: \(sessionDelegate.redirectChain.joined(separator: "|")). " +
                 "Cookies: \(delegateCookies.map(\.name)). " +
                 "AuthBody[\(authData.count)]: \(bodyPreview ?? "?")"
+
+            // We never reach this guard on success (a CANARY would be set), so "no CANARY" means
+            // one of three things, classified on the response *content* rather than a bare status
+            // code (so captive 200 pages stay out of the latch and bad-password re-renders are
+            // caught even with a non-2xx status):
+            //   (a) We reached an OWA forms-logon surface that declined to grant a session — a
+            //       confirmed credential rejection → `authenticationFailed`, which latches the
+            //       wrong-password breaker immediately.
+            //   (b) An explicit 401/440 without an OWA logon page in hand — a genuine rejection or
+            //       a transient session/LB blip. Surface as `httpError`: still an auth error
+            //       (`isAuthError`), so it rides out the breaker threshold, but NOT a definitive
+            //       logon-page rejection — this avoids latching "wrong password" on a single 440
+            //       session-timeout.
+            //   (c) We never reached a working OWA login at all: an external reverse proxy
+            //       answering `/owa/auth.owa` with a 404 while VPN is off, a 5xx, or a captive-
+            //       portal / SSO interstitial returning its own 200 HTML. Connectivity, not
+            //       credentials → a connectivity error that `isAuthError` ignores and the breaker
+            //       treats as a transient/offline condition that self-heals once the network path
+            //       is restored.
+            let reachedLogon = Self.responseLooksLikeOWALogon(finalURL: authResponse.url, body: authData)
+            if reachedLogon {
+                throw OWAError.authenticationFailed(detail)
+            }
+            if authResponse.statusCode == 401 || authResponse.statusCode == 440 {
+                throw OWAError.httpError(authResponse.statusCode, detail)
+            }
+            // Throw a connectivity error rather than `httpError(statusCode, detail)`. A
+            // hand-built `URLError` has no localized description (its `localizedDescription` falls
+            // back to the cryptic "operation couldn't be completed … error -1004"), so attach a
+            // clean localized message: that is what surfaces in the offline status footer and the
+            // connection test, while the verbose diagnostic stays in the log line below instead of
+            // leaking into the UI. `isAuthError` ignores `URLError`, so the breaker treats this as
+            // a transient/offline condition that self-heals once the network path is restored.
+            log.warning(
+                "OWA auth got no CANARY without reaching an OWA logon page (status \(authResponse.statusCode, privacy: .public)) — treating as connectivity, not bad credentials. \(detail, privacy: .public)"
+            )
+            throw URLError(
+                .cannotConnectToHost,
+                userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("error.owa.unreachable", comment: "Shown when OWA could not be reached, e.g. the VPN is off")]
             )
         }
         log.info("OWA auth OK sync=\(syncID, privacy: .public)")
@@ -283,6 +322,13 @@ actor OWAClient {
         } catch let error as OWAError {
             if case .untrustedCertificate = error { throw error }
             return fallback
+        } catch let urlError as URLError {
+            // Connectivity failure reaching the login page (host unreachable, DNS, timeout —
+            // e.g. the OWA host is only routable over VPN, which is currently off). Do NOT fold
+            // this into the fallback login form: that would march the flow into a bogus
+            // "No CANARY" `authenticationFailed`, which the sync breaker latches as a false
+            // "wrong password". Propagate it so the breaker classifies it as offline instead.
+            throw urlError
         } catch {
             return fallback
         }
@@ -1378,6 +1424,48 @@ actor OWAClient {
             throw OWAError.invalidURL(input)
         }
         return base
+    }
+
+    /// Heuristic used when an authentication attempt produced no CANARY: did the flow actually
+    /// land on an OWA forms-logon surface (so a missing CANARY means the credentials were
+    /// rejected), or did it never reach OWA at all (an external reverse-proxy 404 while VPN is
+    /// off, a 5xx, or a captive-portal / SSO page answering with its own HTML)?
+    ///
+    /// Returns `true` only when the final URL or the response body carries an OWA-specific
+    /// marker. A generic captive-portal/proxy page has none of these, so it is correctly treated
+    /// as connectivity rather than a wrong password. Conversely, a bad-password response that
+    /// re-renders `logon.aspx` is recognised even if it arrives with a non-2xx status.
+    static func responseLooksLikeOWALogon(finalURL: URL?, body: Data) -> Bool {
+        // Only `logon.aspx` in the FINAL url is a reliable signal: OWA redirects a declined
+        // forms login to logon.aspx. `auth.owa` is deliberately NOT matched here — it is the POST
+        // target, so a proxy answering that path with a 404 (VPN off) leaves the final url on
+        // auth.owa without ever rendering an OWA logon page.
+        if let path = finalURL?.path.lowercased(), path.contains("logon.aspx") {
+            return true
+        }
+        // Decode the (capped) body as ISO Latin-1, NOT UTF-8: Latin-1 maps every byte 0–255 to a
+        // code point, so it never returns nil. That keeps the scan robust to the page's charset
+        // (RU Exchange often serves logon.aspx as windows-1251) and to the `prefix` cut landing
+        // mid multi-byte sequence — every marker below is pure ASCII and survives byte-for-byte in
+        // any ASCII superset. The cap bounds work; logon markers appear near the top.
+        guard let html = String(bytes: body.prefix(64_000), encoding: .isoLatin1)?.lowercased() else {
+            return false
+        }
+        // OWA's forms-logon page is rendered by the `auth_logon` ASP page (`OwaPage =
+        // ASP.auth_logon_aspx`) and/or references `logon.aspx`. These are OWA-specific. The POST
+        // target `/owa/auth.owa` is deliberately NOT a body marker: a proxy/SSO error page can
+        // echo the requested path verbatim, which would falsely read as an OWA logon page.
+        if html.contains("logon.aspx") || html.contains("auth_logon") {
+            return true
+        }
+        // Fallback: OWA's logon form emits a `passwd` field alongside its signature hidden
+        // fields. Require the combination — a lone password input is too generic (captive
+        // portals have those too) to attribute to OWA.
+        let hasOWAPasswordField = html.contains("name=\"passwd\"")
+        let hasOWAHiddenField = html.contains("name=\"destination\"")
+            || html.contains("name=\"flags\"")
+            || html.contains("name=\"isutf8\"")
+        return hasOWAPasswordField && hasOWAHiddenField
     }
 }
 

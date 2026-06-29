@@ -179,9 +179,10 @@ final class CalendarServiceOfflineTests: XCTestCase {
     }
 
     func testSingleAuthFailureDoesNotLatch() async {
-        // A one-off auth blip (transient session expiry, an AD lockout caused by another
-        // device, a load-balancer hiccup) must not flip the "wrong password" state — the
-        // breaker only latches after `authFailureThreshold` consecutive failures.
+        // A one-off *ambiguous* auth blip (a 401/440 on a data request — transient session
+        // expiry, a load-balancer hiccup) must not flip the "wrong password" state — for these
+        // the breaker only latches after `authFailureThreshold` consecutive failures. (A confirmed
+        // logon-page rejection latches immediately; see testDefinitiveAuthRejectionLatchesImmediately.)
         let service = CalendarService(
             providers: [AuthFailingProvider()],
             eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
@@ -192,7 +193,30 @@ final class CalendarServiceOfflineTests: XCTestCase {
         )
 
         await service.performSyncForTests()
-        XCTAssertFalse(service.syncStatus.isAuthenticationRequired, "A single auth failure must not latch")
+        XCTAssertFalse(service.syncStatus.isAuthenticationRequired, "A single ambiguous 401 must not latch")
+    }
+
+    func testDefinitiveAuthRejectionLatchesImmediately() async {
+        // A confirmed credential rejection (`authenticationFailed` — the login flow reached the
+        // OWA logon page and it declined) is not a transient blip, so it must latch the
+        // wrong-password state on the FIRST failure without riding out the threshold.
+        let provider = DefinitiveAuthRejectionProvider()
+        let service = CalendarService(
+            providers: [provider],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: NoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+
+        await service.performSyncForTests()
+        XCTAssertTrue(
+            service.syncStatus.isAuthenticationRequired,
+            "A confirmed logon-page rejection must latch on the first failure"
+        )
+        let calls = await provider.fetchCallCount
+        XCTAssertEqual(calls, 1, "Latched on the first failure — no second attempt needed")
     }
 
     func testAuthFailureLatchesAfterThresholdConsecutiveFailures() async {
@@ -515,7 +539,24 @@ private actor FailingProvider: CalendarProvider {
     func validateCredentials() async throws {}
 }
 
+/// Throws an *ambiguous* 401 — the case the breaker rides out across `authFailureThreshold`
+/// failures (a transient session/load-balancer blip), as opposed to a confirmed logon-page
+/// rejection (`authenticationFailed`) which latches immediately.
 private actor AuthFailingProvider: CalendarProvider {
+    let account = CalendarAccount(displayName: "Test", serverURL: "example.com", email: "a@b.c")
+    private(set) var fetchCallCount = 0
+
+    func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] {
+        fetchCallCount += 1
+        throw OWAError.httpError(401, "unauthorized")
+    }
+
+    func validateCredentials() async throws {}
+}
+
+/// Throws a confirmed credential rejection (`authenticationFailed`) — the definitive case that
+/// must latch the wrong-password state on the very first failure, without the threshold grace.
+private actor DefinitiveAuthRejectionProvider: CalendarProvider {
     let account = CalendarAccount(displayName: "Test", serverURL: "example.com", email: "a@b.c")
     private(set) var fetchCallCount = 0
 
@@ -550,7 +591,7 @@ private actor AuthThenNetworkFailProvider: CalendarProvider {
         fetchCallCount += 1
         if authFailuresRemaining > 0 {
             authFailuresRemaining -= 1
-            throw OWAError.authenticationFailed("auth")
+            throw OWAError.httpError(401, "unauthorized")
         }
         throw URLError(.timedOut)
     }
@@ -575,7 +616,7 @@ private actor RecoverableAuthProvider: CalendarProvider {
         fetchCallCount += 1
         if failuresRemaining > 0 {
             failuresRemaining -= 1
-            throw OWAError.authenticationFailed("transient")
+            throw OWAError.httpError(401, "unauthorized")
         }
         return events
     }
