@@ -344,6 +344,25 @@ struct PopoverView: View {
                         .foregroundStyle(.orange)
                 }
 
+                // Inline retry next to the status, so the user doesn't have to find the
+                // toolbar refresh. For an auth block, route through the breaker-lifting retry
+                // (a plain sync would be skipped); otherwise a normal manual sync.
+                if service.syncStatus.isAuthenticationRequired || service.syncStatus.isOfflineCached {
+                    Button(localization.tr("popover.retry")) {
+                        if service.syncStatus.isAuthenticationRequired {
+                            service.retryAfterAuthBlock()
+                        } else {
+                            service.syncNow()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .help(service.syncStatus.isAuthenticationRequired
+                        ? localization.tr("popover.retry.help")
+                        : localization.tr("popover.sync.now"))
+                }
+
                 Spacer(minLength: 8)
                 footerEngagementIndicator
 
@@ -445,8 +464,16 @@ struct PopoverView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Button(localization.tr("popover.retry")) { service.syncNow() }
-                .font(.system(size: 12))
+            Button(localization.tr("popover.retry")) {
+                // When auth is latched, syncNow() is a no-op (the breaker guard skips it), so
+                // route through the breaker-lifting retry instead — same action as the footer.
+                if service.syncStatus.isAuthenticationRequired {
+                    service.retryAfterAuthBlock()
+                } else {
+                    service.syncNow()
+                }
+            }
+            .font(.system(size: 12))
         }
         .padding(24)
         .frame(maxWidth: .infinity)

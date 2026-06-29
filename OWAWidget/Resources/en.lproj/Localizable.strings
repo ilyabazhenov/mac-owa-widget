@@ -143,6 +143,7 @@
 "popover.no.accounts.subtitle" = "Open Settings to add your Exchange account.";
 "popover.open.settings" = "Open Settings";
 "popover.retry" = "Retry";
+"popover.retry.help" = "Retry sync without re-entering the password";
 "popover.resize.help" = "Drag to resize";
 "popover.nav.today" = "Today";
 

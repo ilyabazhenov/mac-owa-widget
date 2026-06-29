@@ -143,6 +143,7 @@
 "popover.no.accounts.subtitle" = "Откройте настройки, чтобы добавить Exchange-аккаунт.";
 "popover.open.settings" = "Открыть настройки";
 "popover.retry" = "Повторить";
+"popover.retry.help" = "Повторить синхронизацию без повторного ввода пароля";
 "popover.resize.help" = "Потяните, чтобы изменить размер";
 "popover.nav.today" = "Сегодня";
 

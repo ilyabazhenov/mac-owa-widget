@@ -54,6 +54,45 @@ final class CalendarService: ObservableObject {
     private var activeSyncIDs = Set<Int>()
     private var syncRequestGate = SyncRequestGate()
 
+    // MARK: - Auth circuit breaker
+
+    /// Number of consecutive sync cycles that failed with an auth error (401/440).
+    /// A single transient blip (session expiry, load-balancer hiccup, an AD lockout
+    /// triggered by another stale device) should not latch the "wrong password" state,
+    /// so we only suspend sync after `authFailureThreshold` failures in a row.
+    private var consecutiveAuthFailures = 0
+
+    /// Timestamp of the last auth-block probe (or of the moment we latched). While the
+    /// breaker is tripped we let one probe sync through every `authProbeInterval` so a
+    /// transient cause — or an AD lockout that has since cleared — self-heals without the
+    /// user re-entering the password, and without hammering the server into a new lockout.
+    private var lastAuthProbeAt: Date?
+
+    /// Consecutive auth failures required before suspending sync. `2` rides out a single
+    /// transient blip while latching on the next failure. Each failed cycle already costs
+    /// ~2 credential submissions (the request plus one internal re-auth), so this is the
+    /// dominant contributor to AD-lockout risk before the breaker engages — do not raise it
+    /// carelessly. (`1` would match the pre-breaker attempt count exactly, at the cost of
+    /// surfacing the message on every blip; recovery is handled by the auto-probe either way.)
+    private let authFailureThreshold = 2
+
+    /// Minimum spacing between auth-block probes. At one attempt per 30 min the app's own
+    /// contribution stays far below any realistic AD lockout threshold/observation window.
+    /// In DEBUG it can be shortened via the `OWA_AUTH_PROBE_INTERVAL_SECONDS` default so the
+    /// auto-probe is observable live without waiting half an hour.
+    #if DEBUG
+    private var authProbeInterval: TimeInterval {
+        let override = UserDefaults.standard.double(forKey: "OWA_AUTH_PROBE_INTERVAL_SECONDS")
+        return override > 0 ? override : 30 * 60
+    }
+    #else
+    private let authProbeInterval: TimeInterval = 30 * 60
+    #endif
+
+    /// Source of "now" for the auth breaker's time math. Injectable so probe timing is
+    /// deterministically testable; defaults to the system clock in production.
+    private let clock: () -> Date
+
     private let accountsKey = "calendarAccounts"
     private let syncIntervalKey = "syncInterval"
     private let notificationLeadKey = "notificationLeadMinutes"
@@ -160,12 +199,14 @@ final class CalendarService: ObservableObject {
         customMeetingReminders: any CustomMeetingReminderControlling = CustomMeetingReminderController(),
         initialNotificationLocalization: NotificationLocalization = .english,
         loadPersistedAccounts: Bool = true,
-        startBackgroundTasks: Bool = true
+        startBackgroundTasks: Bool = true,
+        clock: @escaping () -> Date = { Date() }
     ) {
         self.providers = providers
         self.eventCacheStore = eventCacheStore
         self.notificationService = notificationService
         self.customMeetingReminders = customMeetingReminders
+        self.clock = clock
         self.notificationLocalization = initialNotificationLocalization
         self.engagementPeriod = meetingEngagementStats.defaultPeriod
         if let reminderController = customMeetingReminders as? CustomMeetingReminderController {
@@ -242,6 +283,44 @@ final class CalendarService: ObservableObject {
         Task { await performSync(trigger: "manual") }
     }
 
+    /// Lifts an authentication block on explicit user request (the footer "retry" action)
+    /// and forces an immediate sync, without requiring the user to re-enter the password.
+    /// Use when the block was caused by a transient failure or an AD lockout that has since
+    /// cleared. Resetting the breaker makes `performSync` bypass the auth guard for this run.
+    func retryAfterAuthBlock() {
+        guard liftAuthBlockForRetry() else { return }
+        Task { await performSync(trigger: "manualAuthRetry") }
+    }
+
+    /// Records one auth failure — from a sync cycle or an action request (create/RSVP) — and
+    /// decides whether to latch the breaker. Latches (suspending sync until a probe, the
+    /// retry action, or a credential update lifts it) when a probe has just failed again, or
+    /// once `authFailureThreshold` failures accumulate. Returns `true` when now latched.
+    /// Below the threshold the visible status is left to the caller, so a sync keeps showing
+    /// cached events and an action surfaces its own error.
+    @discardableResult
+    private func registerAuthFailure(isProbe: Bool) -> Bool {
+        consecutiveAuthFailures += 1
+        guard isProbe || consecutiveAuthFailures >= authFailureThreshold else {
+            return false
+        }
+        syncStatus = .authenticationRequired
+        lastAuthProbeAt = clock()
+        return true
+    }
+
+    /// Resets the auth circuit breaker so the next `performSync` bypasses the guard.
+    /// Returns `false` (and does nothing) when there is no auth block to lift.
+    @discardableResult
+    private func liftAuthBlockForRetry() -> Bool {
+        guard syncStatus.isAuthenticationRequired else { return false }
+        consecutiveAuthFailures = 0
+        lastAuthProbeAt = nil
+        syncStatus = .idle
+        log.info("Manual auth-block retry requested")
+        return true
+    }
+
     func setNotificationLocalization(_ localization: NotificationLocalization) {
         guard notificationLocalization != localization else { return }
         notificationLocalization = localization
@@ -256,6 +335,13 @@ final class CalendarService: ObservableObject {
 
     func performSyncForTests() async {
         await performSync(trigger: "tests")
+    }
+
+    /// Awaitable counterpart of `retryAfterAuthBlock()` for tests — lifts the auth block and
+    /// runs the forced sync inline instead of on a detached Task.
+    func retryAfterAuthBlockForTests() async {
+        guard liftAuthBlockForRetry() else { return }
+        await performSync(trigger: "manualAuthRetry")
     }
 
     func replaceEventsForTests(_ events: [CalendarEvent]) {
@@ -463,8 +549,14 @@ final class CalendarService: ObservableObject {
             syncStatus = .certificateTrustRequired(host: cert.host, fingerprint: cert.fingerprint)
             log.error("\(context, privacy: .public) suspended sync: untrusted certificate for \(cert.host, privacy: .public)")
         } else if OWAError.isAuthError(error) {
-            syncStatus = .authenticationRequired
-            log.error("\(context, privacy: .public) suspended sync: auth error — \(error.localizedDescription, privacy: .public)")
+            // Route through the shared breaker so a single transient 401 on an action doesn't
+            // hard-latch the whole app — it latches only at the same threshold the sync path
+            // uses, and leaves `lastAuthProbeAt` correctly initialised for the auto-probe.
+            if registerAuthFailure(isProbe: false) {
+                log.error("\(context, privacy: .public) suspended sync: auth error (failures=\(self.consecutiveAuthFailures, privacy: .public)) — \(error.localizedDescription, privacy: .public)")
+            } else {
+                log.warning("\(context, privacy: .public) transient auth failure \(self.consecutiveAuthFailures, privacy: .public)/\(self.authFailureThreshold, privacy: .public)")
+            }
         }
     }
 
@@ -484,6 +576,29 @@ final class CalendarService: ObservableObject {
     }
 
     #if DEBUG
+    /// Latches the auth circuit breaker immediately so the popover's "wrong password" UI
+    /// (status text + footer/errorState "retry" buttons + tooltip) can be inspected live
+    /// without provoking a real 401 (and the AD-lockout risk that comes with it).
+    func debugForceAuthBlock() {
+        consecutiveAuthFailures = authFailureThreshold
+        syncStatus = .authenticationRequired
+        lastAuthProbeAt = clock()
+        log.info("DEBUG: forced auth block")
+    }
+
+    /// Feeds one simulated auth failure through the real breaker path, so you can watch it
+    /// stay transient on the first failure and latch on the next (threshold behaviour).
+    func debugSimulateAuthFailure() {
+        if registerAuthFailure(isProbe: false) {
+            log.info("DEBUG: simulated auth failure → latched")
+        } else {
+            syncStatus = events.isEmpty
+                ? .error("debug auth failure")
+                : .offlineCached("debug auth failure")
+            log.info("DEBUG: simulated auth failure \(self.consecutiveAuthFailures, privacy: .public)/\(self.authFailureThreshold, privacy: .public) (transient)")
+        }
+    }
+
     func triggerTestReminderNow() {
         let now = Date()
         let start = now.addingTimeInterval(5 * 60)
@@ -537,10 +652,12 @@ final class CalendarService: ObservableObject {
             "CalendarService providers rebuilt count=\(built.count) accounts=\(accounts.count)"
         )
         // A provider rebuild means the user explicitly updated credentials or re-trusted
-        // the server — lift any auth / certificate-trust block.
+        // the server — lift any auth / certificate-trust block and reset the breaker.
         if syncStatus.blocksSync {
             syncStatus = .idle
         }
+        consecutiveAuthFailures = 0
+        lastAuthProbeAt = nil
         await performSync(trigger: "rebuildProviders")
     }
 
@@ -575,12 +692,28 @@ final class CalendarService: ObservableObject {
             return
         }
 
-        // Circuit breaker: do not retry with credentials that were already rejected.
-        // This prevents Exchange account lockout from repeated failed auth attempts.
-        // Sync resumes when rebuildProviders() is called after a credential update.
-        guard !syncStatus.blocksSync else {
-            log.info("Sync \(syncID, privacy: .public) skipped: blocked (auth or certificate trust required)")
+        // Circuit breaker. A certificate-trust problem can't self-heal — it needs explicit
+        // user action — so stay fully suspended until rebuildProviders() lifts it.
+        if syncStatus.isCertificateTrustRequired {
+            log.info("Sync \(syncID, privacy: .public) skipped: certificate trust required")
             return
+        }
+
+        // An auth block may be transient (session blip, an AD lockout that has since
+        // cleared), so don't retry on every scheduler tick — that risks a fresh lockout —
+        // but do let a single probe through every `authProbeInterval` so it can recover on
+        // its own. `isAuthBlockProbe` tells the catch handler to re-latch (not reset) if the
+        // probe fails again.
+        var isAuthBlockProbe = false
+        if syncStatus.isAuthenticationRequired {
+            let elapsed = clock().timeIntervalSince(lastAuthProbeAt ?? .distantPast)
+            guard elapsed >= authProbeInterval else {
+                log.info("Sync \(syncID, privacy: .public) skipped: auth block, next probe in \(Int((self.authProbeInterval - elapsed).rounded()), privacy: .public)s")
+                return
+            }
+            lastAuthProbeAt = clock()
+            isAuthBlockProbe = true
+            log.info("Sync \(syncID, privacy: .public) auth-block probe attempt")
         }
 
         syncStatus = .syncing
@@ -597,6 +730,15 @@ final class CalendarService: ObservableObject {
 
         do {
             var fetched: [CalendarEvent] = []
+            // KNOWN LIMITATION (multi-account): providers are fetched fail-fast — `for try await`
+            // rethrows the first provider's error and cancels the rest, so a single account's
+            // failure (e.g. a wrong password on one of two OWA accounts) aborts the whole cycle
+            // before `events` is assigned, discarding a healthy account's freshly fetched events.
+            // Combined with the app-wide `syncStatus`/breaker (one status for all accounts), one
+            // bad account can suspend sync for a good one. This is acceptable today because the
+            // dominant case is a single account (Google is a stub), so there is nothing to lose.
+            // A proper fix is per-account fetch results + per-account breaker/status (see the
+            // "#5" review note); intentionally deferred rather than half-built.
             try await SyncDiagnostics.$syncID.withValue(syncID) {
                 try await withThrowingTaskGroup(of: [CalendarEvent].self) { group in
                     for provider in providers {
@@ -616,6 +758,8 @@ final class CalendarService: ObservableObject {
 
             eventCacheStore.save(events: events, rangeStart: start, rangeEnd: end)
             syncStatus = .lastSynced(Date())
+            consecutiveAuthFailures = 0
+            lastAuthProbeAt = nil
             syncRequestGate.recordSyncSucceeded()
             log.info("Sync \(syncID, privacy: .public) complete events=\(self.events.count, privacy: .public)")
             recalculateEngagementSnapshot()
@@ -629,10 +773,30 @@ final class CalendarService: ObservableObject {
                 syncStatus = .certificateTrustRequired(host: certInfo.host, fingerprint: certInfo.fingerprint)
                 log.error("Sync \(syncID, privacy: .public) suspended: untrusted certificate for \(certInfo.host, privacy: .public)")
             } else if OWAError.isAuthError(error) {
-                // Credentials definitively rejected — suspend sync to prevent account lockout.
-                // Sync resumes only after an explicit credential update (rebuildProviders).
+                // Latching suspends the scheduler (preventing account lockout); a slow
+                // auto-probe and the manual "retry" action can still lift it without the user
+                // re-entering the password.
+                if registerAuthFailure(isProbe: isAuthBlockProbe) {
+                    log.error("Sync \(syncID, privacy: .public) suspended: auth error (failures=\(self.consecutiveAuthFailures, privacy: .public)) — \(error.localizedDescription, privacy: .public)")
+                } else {
+                    // Not latched yet — treat as transient: keep showing cached events and
+                    // let the next scheduled cycle retry.
+                    if events.isEmpty, let snapshot = eventCacheStore.load(), !snapshot.events.isEmpty {
+                        events = snapshot.events.sorted { $0.startDate < $1.startDate }
+                    }
+                    syncStatus = events.isEmpty
+                        ? .error(error.localizedDescription)
+                        : .offlineCached(error.localizedDescription)
+                    log.warning("Sync \(syncID, privacy: .public) transient auth failure \(self.consecutiveAuthFailures, privacy: .public)/\(self.authFailureThreshold, privacy: .public)")
+                }
+            } else if isAuthBlockProbe {
+                // The probe hit a non-auth error (network/server), so it could NOT confirm the
+                // block has cleared. Stay latched and reschedule the next probe rather than
+                // dropping to a non-blocking status (which would let the scheduler hammer the
+                // rejected credentials on the very next tick).
                 syncStatus = .authenticationRequired
-                log.error("Sync \(syncID, privacy: .public) suspended: auth error — \(error.localizedDescription, privacy: .public)")
+                lastAuthProbeAt = clock()
+                log.warning("Sync \(syncID, privacy: .public) auth-block probe failed with non-auth error — staying latched: \(error.localizedDescription, privacy: .public)")
             } else {
                 if OWAError.isAbstractClassHTTPError(error) {
                     syncRequestGate.recordTransientFailure(at: Date())

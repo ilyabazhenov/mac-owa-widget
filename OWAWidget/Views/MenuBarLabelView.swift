@@ -91,7 +91,18 @@ struct MenuBarLabelView: View {
     }
 
     private var iconName: String {
-        isHappeningNow ? "calendar.badge.clock" : "calendar"
+        // An actionable sync problem takes precedence over the "meeting in progress" icon:
+        // if sync is broken the calendar data may be stale, so surfacing it matters more.
+        if hasSyncProblem { return "calendar.badge.exclamationmark" }
+        return isHappeningNow ? "calendar.badge.clock" : "calendar"
+    }
+
+    /// True for sync states that need the user to act (re-enter password, re-trust the server)
+    /// or that hard-failed with no data. Soft states like `.offlineCached` are intentionally
+    /// excluded — they already surface in the popover footer and shouldn't alarm the menu bar.
+    private var hasSyncProblem: Bool {
+        let status = service.syncStatus
+        return status.isAuthenticationRequired || status.isCertificateTrustRequired || status.isError
     }
 
     private var isHappeningNow: Bool {
@@ -109,6 +120,11 @@ struct MenuBarLabelView: View {
     }
 
     private var helpText: String {
+        // When sync needs attention, the tooltip explains what's wrong (e.g. "Invalid
+        // password — update in Settings") so the exclamation icon is actionable on hover.
+        if hasSyncProblem {
+            return localization.syncStatusText(service.syncStatus)
+        }
         let count = service.events.filter { $0.startDate.isToday }.count
         return count == 0
             ? localization.tr("menubar.no.meetings.today")

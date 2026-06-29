@@ -7,6 +7,7 @@ final class CalendarServiceOfflineTests: XCTestCase {
         super.tearDown()
         UserDefaults.standard.removeObject(forKey: "meetingReminderStyle")
         UserDefaults.standard.removeObject(forKey: "menuBarDisplayMode")
+        UserDefaults.standard.removeObject(forKey: "OWA_AUTH_PROBE_INTERVAL_SECONDS")
     }
 
     func testInitRestoresEventsFromCache() {
@@ -177,7 +178,10 @@ final class CalendarServiceOfflineTests: XCTestCase {
         XCTAssertEqual(reminderController.rescheduledEvents, [[cachedEvent]])
     }
 
-    func testAuthFailureSetsAuthenticationRequiredStatus() async {
+    func testSingleAuthFailureDoesNotLatch() async {
+        // A one-off auth blip (transient session expiry, an AD lockout caused by another
+        // device, a load-balancer hiccup) must not flip the "wrong password" state — the
+        // breaker only latches after `authFailureThreshold` consecutive failures.
         let service = CalendarService(
             providers: [AuthFailingProvider()],
             eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
@@ -188,11 +192,10 @@ final class CalendarServiceOfflineTests: XCTestCase {
         )
 
         await service.performSyncForTests()
-
-        XCTAssertTrue(service.syncStatus.isAuthenticationRequired)
+        XCTAssertFalse(service.syncStatus.isAuthenticationRequired, "A single auth failure must not latch")
     }
 
-    func testAuthCircuitBreakerStopsSubsequentSyncs() async {
+    func testAuthFailureLatchesAfterThresholdConsecutiveFailures() async {
         let provider = AuthFailingProvider()
         let service = CalendarService(
             providers: [provider],
@@ -203,17 +206,142 @@ final class CalendarServiceOfflineTests: XCTestCase {
             startBackgroundTasks: false
         )
 
-        // First sync triggers the auth error and sets the circuit breaker.
+        // Drive to the consecutive-failure threshold (default 2): first failure is transient,
+        // the second latches.
+        await service.performSyncForTests()
+        XCTAssertFalse(service.syncStatus.isAuthenticationRequired)
+        await service.performSyncForTests()
+        XCTAssertTrue(service.syncStatus.isAuthenticationRequired, "Latches after threshold failures")
+        let callsAtLatch = await provider.fetchCallCount
+        XCTAssertEqual(callsAtLatch, 2)
+
+        // Once latched, scheduler-driven syncs are skipped until the probe interval elapses,
+        // so the provider must not be hit again (no lockout-inducing hammering).
+        await service.performSyncForTests()
+        await service.performSyncForTests()
+        let callsAfterLatch = await provider.fetchCallCount
+        XCTAssertEqual(callsAfterLatch, 2, "Latched breaker must skip syncs within the probe interval")
+    }
+
+    func testRetryAfterAuthBlockResumesSyncWithFixedCredentials() async {
+        let event = makeEvent(id: "after-fix")
+        let provider = RecoverableAuthProvider(failuresBeforeSuccess: 2, events: [event])
+        let service = CalendarService(
+            providers: [provider],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: NoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+
+        // Latch the breaker on the wrong-credentials phase (threshold = 2).
+        await service.performSyncForTests()
         await service.performSyncForTests()
         XCTAssertTrue(service.syncStatus.isAuthenticationRequired)
-        let callsAfterFirst = await provider.fetchCallCount
-        XCTAssertEqual(callsAfterFirst, 1)
 
-        // Subsequent syncs must be skipped — provider must not be called again.
+        // The user taps "retry" (credentials now accepted) — sync resumes without re-entry.
+        await service.retryAfterAuthBlockForTests()
+        XCTAssertEqual(service.events, [event])
+        guard case .lastSynced = service.syncStatus else {
+            return XCTFail("Expected lastSynced after a successful retry")
+        }
+    }
+
+    func testAuthBlockProbeIsThrottledThenFiresAfterInterval() async {
+        let clock = MutableClock(Date(timeIntervalSince1970: 1_000))
+        let provider = AuthFailingProvider()
+        let service = CalendarService(
+            providers: [provider],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: NoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false,
+            clock: clock.now
+        )
+
+        // Latch the breaker (threshold = 2).
         await service.performSyncForTests()
         await service.performSyncForTests()
-        let callsAfterSubsequent = await provider.fetchCallCount
-        XCTAssertEqual(callsAfterSubsequent, 1, "Provider must not be called after circuit breaker trips")
+        XCTAssertTrue(service.syncStatus.isAuthenticationRequired)
+        var calls = await provider.fetchCallCount
+        XCTAssertEqual(calls, 2)
+
+        // Within the 30-min probe interval: every scheduler tick is skipped (no hammering).
+        clock.advance(by: 29 * 60)
+        await service.performSyncForTests()
+        calls = await provider.fetchCallCount
+        XCTAssertEqual(calls, 2, "No probe before the interval elapses")
+
+        // Past the interval: exactly one probe fires; its auth failure re-latches the block.
+        clock.advance(by: 2 * 60)
+        await service.performSyncForTests()
+        calls = await provider.fetchCallCount
+        XCTAssertEqual(calls, 3, "One probe fires after the interval")
+        XCTAssertTrue(service.syncStatus.isAuthenticationRequired, "A failed probe stays latched")
+    }
+
+    func testAuthBlockProbeSuccessClearsLatch() async {
+        let clock = MutableClock(Date(timeIntervalSince1970: 1_000))
+        let event = makeEvent(id: "probe-ok")
+        let provider = RecoverableAuthProvider(failuresBeforeSuccess: 2, events: [event])
+        let service = CalendarService(
+            providers: [provider],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: NoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false,
+            clock: clock.now
+        )
+
+        await service.performSyncForTests()
+        await service.performSyncForTests()
+        XCTAssertTrue(service.syncStatus.isAuthenticationRequired)
+
+        // After the interval, the auto-probe succeeds (credentials now accepted) and the
+        // block clears on its own — no user action.
+        clock.advance(by: 31 * 60)
+        await service.performSyncForTests()
+        XCTAssertEqual(service.events, [event])
+        guard case .lastSynced = service.syncStatus else {
+            return XCTFail("Expected a successful auto-probe to clear the latch")
+        }
+    }
+
+    func testAuthBlockProbeFailingWithNonAuthErrorStaysLatched() async {
+        // Regression for #4: a probe that hits a network/server error (not a 401) hasn't
+        // proven the block cleared, so it must stay latched rather than drop to a
+        // non-blocking status that lets the scheduler hammer the rejected credentials.
+        let clock = MutableClock(Date(timeIntervalSince1970: 1_000))
+        let provider = AuthThenNetworkFailProvider(authFailures: 2)
+        let service = CalendarService(
+            providers: [provider],
+            eventCacheStore: InMemoryEventCacheStore(snapshot: nil),
+            notificationService: NoOpNotificationService(),
+            customMeetingReminders: NoOpMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false,
+            clock: clock.now
+        )
+
+        await service.performSyncForTests()
+        await service.performSyncForTests()
+        XCTAssertTrue(service.syncStatus.isAuthenticationRequired)
+        var calls = await provider.fetchCallCount
+        XCTAssertEqual(calls, 2)
+
+        clock.advance(by: 31 * 60)
+        await service.performSyncForTests()  // probe → non-auth error
+        calls = await provider.fetchCallCount
+        XCTAssertEqual(calls, 3, "Probe was attempted")
+        XCTAssertTrue(service.syncStatus.isAuthenticationRequired, "Non-auth probe failure stays latched")
+
+        // The re-latch reschedules the probe, so the next tick is throttled again.
+        await service.performSyncForTests()
+        calls = await provider.fetchCallCount
+        XCTAssertEqual(calls, 3, "Re-latched block is throttled again")
     }
 
     func testFailedSyncReschedulesRemindersEvenWithNoEvents() async {
@@ -394,6 +522,62 @@ private actor AuthFailingProvider: CalendarProvider {
     func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] {
         fetchCallCount += 1
         throw OWAError.authenticationFailed("wrong password")
+    }
+
+    func validateCredentials() async throws {}
+}
+
+/// Hand-advanceable clock for deterministic auth-probe timing tests.
+private final class MutableClock {
+    private var current: Date
+    init(_ start: Date) { current = start }
+    func advance(by interval: TimeInterval) { current = current.addingTimeInterval(interval) }
+    func now() -> Date { current }
+}
+
+/// Throws auth errors a fixed number of times to latch the breaker, then throws a non-auth
+/// (network) error — models a probe that can't confirm whether the block has cleared.
+private actor AuthThenNetworkFailProvider: CalendarProvider {
+    let account = CalendarAccount(displayName: "Test", serverURL: "example.com", email: "a@b.c")
+    private var authFailuresRemaining: Int
+    private(set) var fetchCallCount = 0
+
+    init(authFailures: Int) {
+        self.authFailuresRemaining = authFailures
+    }
+
+    func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] {
+        fetchCallCount += 1
+        if authFailuresRemaining > 0 {
+            authFailuresRemaining -= 1
+            throw OWAError.authenticationFailed("auth")
+        }
+        throw URLError(.timedOut)
+    }
+
+    func validateCredentials() async throws {}
+}
+
+/// Fails with an auth error a fixed number of times, then succeeds — models a transient
+/// rejection (expired session / cleared AD lockout) that resolves after the user retries.
+private actor RecoverableAuthProvider: CalendarProvider {
+    let account = CalendarAccount(displayName: "Test", serverURL: "example.com", email: "a@b.c")
+    private var failuresRemaining: Int
+    private let events: [CalendarEvent]
+    private(set) var fetchCallCount = 0
+
+    init(failuresBeforeSuccess: Int, events: [CalendarEvent]) {
+        self.failuresRemaining = failuresBeforeSuccess
+        self.events = events
+    }
+
+    func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] {
+        fetchCallCount += 1
+        if failuresRemaining > 0 {
+            failuresRemaining -= 1
+            throw OWAError.authenticationFailed("transient")
+        }
+        return events
     }
 
     func validateCredentials() async throws {}

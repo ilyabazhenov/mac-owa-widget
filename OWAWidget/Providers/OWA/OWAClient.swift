@@ -177,10 +177,27 @@ actor OWAClient {
 
     // MARK: - Auth
 
+    /// Removes all cookies from this session's in-memory store. The `URLSession` is dedicated
+    /// to a single OWA host, so clearing all of them is equivalent to clearing the host's.
+    private func clearSessionCookies() {
+        guard let storage = session.configuration.httpCookieStorage else { return }
+        let cookies = storage.cookies ?? []
+        for cookie in cookies {
+            storage.deleteCookie(cookie)
+        }
+        if !cookies.isEmpty {
+            log.debug("Cleared \(cookies.count, privacy: .public) stale session cookie(s) before reauth")
+        }
+    }
+
     func authenticate() async throws {
         let syncID = SyncDiagnostics.syncIDText
         log.info("OWA auth started sync=\(syncID, privacy: .public)")
         sessionDelegate.reset()
+        // Drop any cookies left over from a previous (now-expired) session before logging in
+        // afresh. The login flow re-sets everything it needs; this just prevents a stale cookie
+        // from a prior session riding alongside the new ones if the server doesn't overwrite it.
+        clearSessionCookies()
 
         // 1. Скачиваем страницу логина, получаем action и скрытые поля формы
         let loginForm = try await fetchLoginForm()

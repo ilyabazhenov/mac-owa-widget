@@ -7,7 +7,8 @@ enum SyncStatus: Sendable {
     case offlineCached(String)
     case error(String)
     /// Sync is suspended because the stored credentials were rejected by the server.
-    /// Resumes automatically when the user updates their password.
+    /// Resumes when the user updates the password, taps the "retry" action, or a slow
+    /// background auto-probe succeeds (e.g. after a transient failure or a cleared lockout).
     case authenticationRequired
     /// Sync is suspended because the server presented an untrusted certificate
     /// (e.g. a self-signed cert rotated). Resumes after the user re-trusts the server.

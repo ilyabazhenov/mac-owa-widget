@@ -276,6 +276,14 @@ final class SettingsViewModel: ObservableObject {
         service.triggerTestReminderNow()
     }
 
+    func debugForceAuthBlock() {
+        service.debugForceAuthBlock()
+    }
+
+    func debugSimulateAuthFailure() {
+        service.debugSimulateAuthFailure()
+    }
+
     var testReminderDelaySeconds: Double {
         get {
             let value = UserDefaults.standard.double(forKey: "OWA_TEST_DELAY_SECONDS")

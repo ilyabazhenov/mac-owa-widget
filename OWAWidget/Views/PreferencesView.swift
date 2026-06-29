@@ -219,6 +219,13 @@ struct PreferencesView: View {
                 Button(localization.tr("preferences.debug.reminder.trigger")) {
                     vm.triggerTestReminderNow()
                 }
+
+                Button("Force auth block") {
+                    vm.debugForceAuthBlock()
+                }
+                Button("Simulate one auth failure") {
+                    vm.debugSimulateAuthFailure()
+                }
             }
             #endif
         }
