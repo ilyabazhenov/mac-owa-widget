@@ -1,3 +1,45 @@
+## v1.0.45 - 2026-06-30
+
+### RU
+
+#### Что изменилось
+
+- Настройки: добавлен выбор часового пояса отображения календаря. Можно оставить «Системный» (как в macOS) либо выбрать пояс из списка РФ (UTC+2…+12). По умолчанию — Москва, поведение текущих пользователей не меняется. Смена пояса применяется без перезапуска.
+- Синхронизация: больше нет ложного «Неверный пароль», когда сервер OWA недоступен (например, выключен VPN). Теперь приложение отличает настоящую страницу входа OWA от ответов 404/5xx и показывает понятное сообщение «Не удалось подключиться к серверу».
+- Синхронизация: авто-восстановление после ошибки аутентификации. Блокировка ставится не с первой ошибки, а после двух подряд (переживает кратковременные сбои сессии), снимается авто-пробой раз в 30 минут, а в футере появилась кнопка «Повторить» — можно разблокировать вручную без повторного ввода пароля.
+- Меню-бар: при проблемах (ошибка входа, сертификат, сбой синхронизации) иконка показывает значок-предупреждение, а во всплывающей подсказке — текст ошибки.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Settings: added a calendar display time zone picker. Keep “System” (follows macOS) or choose a zone from the Russia list (UTC+2…+12). Default is Moscow, so current behavior is unchanged. Changing the zone applies without a restart.
+- Sync: no more false “Invalid password” when the OWA server is unreachable (e.g. VPN is off). The app now distinguishes a real OWA logon page from 404/5xx responses and shows a clear “Could not connect to the server” message.
+- Sync: auto-recovery after an authentication error. The block is no longer triggered by a single failure but after two in a row (survives transient session blips), clears itself via an auto-probe every 30 minutes, and a “Retry” button in the footer lets you unblock manually without re-entering the password.
+- Menu bar: on problems (auth error, certificate, sync failure) the icon shows a warning badge and the tooltip shows the error text.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (only needed on the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates install automatically via the “Install” button inside the app.
+
 ## v1.0.44 - 2026-06-16
 
 ### RU
