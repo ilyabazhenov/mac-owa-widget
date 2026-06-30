@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OWA Widget — встречи Exchange / OWA в строке меню macOS</title>
+<meta name="description" content="macOS menu bar приложение: ближайшие встречи из Microsoft Exchange / OWA и подключение к Teams, Zoom, Webex, Google Meet в один клик.">
+<link rel="icon" href="images/app-screenshot.png">
+
+<!-- Open Graph -->
+<meta property="og:title" content="OWA Widget — встречи Exchange / OWA в строке меню macOS">
+<meta property="og:description" content="Ближайшие встречи из Microsoft Exchange / OWA и подключение к звонку в один клик.">
+<meta property="og:image" content="images/github-social-preview.png">
+<meta property="og:type" content="website">
+
+<style>
+  :root{
+    --bg:#0d0d10;
+    --bg-soft:#16161b;
+    --card:#1c1c22;
+    --card-2:#23232b;
+    --border:rgba(255,255,255,.08);
+    --border-strong:rgba(255,255,255,.14);
+    --fg:#f2f2f5;
+    --fg-dim:#a9a9b4;
+    --fg-faint:#73737e;
+    --accent:#2f6fed;
+    --accent-2:#5b8dff;
+    --orange:#ff8a1e;
+    --purple:#9b6bff;
+    --radius:18px;
+    --maxw:1100px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--fg);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  section{position:relative}
+
+  /* ---------- Nav ---------- */
+  nav{
+    position:sticky;top:0;z-index:50;
+    backdrop-filter:saturate(180%) blur(20px);
+    -webkit-backdrop-filter:saturate(180%) blur(20px);
+    background:rgba(13,13,16,.72);
+    border-bottom:1px solid var(--border);
+  }
+  .nav-inner{display:flex;align-items:center;justify-content:space-between;height:60px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.02em}
+  .brand .logo{
+    width:28px;height:28px;border-radius:7px;
+    background:linear-gradient(135deg,#3a3a44,#1a1a20);
+    border:1px solid var(--border-strong);
+    display:grid;place-items:center;font-size:15px;
+  }
+  .nav-links{display:flex;align-items:center;gap:8px}
+  .nav-links a{color:var(--fg-dim);font-size:14px;padding:8px 12px;border-radius:9px;transition:.15s}
+  .nav-links a:hover{color:var(--fg);background:var(--card)}
+  .lang-toggle{
+    display:flex;border:1px solid var(--border);border-radius:9px;overflow:hidden;margin-left:6px
+  }
+  .lang-toggle button{
+    background:transparent;border:0;color:var(--fg-faint);
+    font:inherit;font-size:13px;font-weight:600;padding:6px 11px;cursor:pointer;transition:.15s
+  }
+  .lang-toggle button.active{background:var(--accent);color:#fff}
+  .nav-cta{
+    background:var(--fg);color:#0d0d10 !important;font-weight:650;
+    padding:8px 16px !important;border-radius:9px !important;
+  }
+  .nav-cta:hover{background:#fff !important}
+
+  /* ---------- Hero ---------- */
+  .hero{padding:84px 0 48px;overflow:hidden}
+  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center}
+  .glow{
+    position:absolute;border-radius:50%;filter:blur(120px);opacity:.55;pointer-events:none;z-index:0
+  }
+  .glow.a{width:520px;height:520px;background:radial-gradient(circle,#2f6fed55,transparent 70%);top:-160px;left:-120px}
+  .glow.b{width:460px;height:460px;background:radial-gradient(circle,#ff8a1e33,transparent 70%);top:40px;right:-160px}
+  .hero-content{position:relative;z-index:2}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:13px;color:var(--fg-dim);font-weight:600;
+    border:1px solid var(--border);background:var(--card);
+    padding:6px 13px;border-radius:999px;margin-bottom:22px
+  }
+  .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:#39d47e;box-shadow:0 0 10px #39d47e}
+  h1{
+    font-size:clamp(38px,5.2vw,60px);line-height:1.05;letter-spacing:-.03em;
+    font-weight:800;margin-bottom:20px
+  }
+  h1 .grad{
+    background:linear-gradient(120deg,var(--accent-2),#fff 45%,var(--orange));
+    -webkit-background-clip:text;background-clip:text;color:transparent
+  }
+  .lede{font-size:19px;color:var(--fg-dim);max-width:520px;margin-bottom:30px}
+  .cta-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+  .btn{
+    display:inline-flex;align-items:center;gap:10px;
+    font-weight:650;font-size:15px;padding:14px 24px;border-radius:12px;
+    transition:.18s;cursor:pointer;border:1px solid transparent
+  }
+  .btn-primary{
+    background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#fff;
+    box-shadow:0 10px 30px -8px var(--accent)
+  }
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 16px 38px -8px var(--accent)}
+  .btn-ghost{background:var(--card);border-color:var(--border-strong);color:var(--fg)}
+  .btn-ghost:hover{background:var(--card-2)}
+  .cta-note{font-size:13px;color:var(--fg-faint);margin-top:14px}
+  .platforms{display:flex;flex-wrap:wrap;gap:18px;margin-top:30px;font-size:13px;color:var(--fg-dim)}
+  .platforms span{display:inline-flex;align-items:center;gap:7px}
+  .platforms .pin{width:6px;height:6px;border-radius:50%}
+
+  .hero-visual{position:relative;z-index:2;display:grid;place-items:center}
+  .device{
+    position:relative;border-radius:22px;overflow:hidden;
+    border:1px solid var(--border-strong);
+    box-shadow:0 40px 90px -30px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.04);
+    max-width:330px;width:100%;
+    transform:perspective(1400px) rotateY(-12deg) rotateX(3deg);
+    transition:.4s
+  }
+  .device:hover{transform:perspective(1400px) rotateY(-6deg) rotateX(1deg)}
+  .device img{display:block;width:100%}
+
+  /* ---------- Section headers ---------- */
+  .section-pad{padding:70px 0}
+  .section-head{text-align:center;max-width:620px;margin:0 auto 48px}
+  .kicker{color:var(--accent-2);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase}
+  h2{font-size:clamp(28px,3.6vw,40px);letter-spacing:-.02em;font-weight:800;margin:10px 0 14px}
+  .section-head p{color:var(--fg-dim);font-size:17px}
+
+  /* ---------- Features ---------- */
+  .features{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .feature{
+    background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+    padding:26px;transition:.2s
+  }
+  .feature:hover{border-color:var(--border-strong);background:var(--card-2);transform:translateY(-3px)}
+  .feature .ic{
+    width:44px;height:44px;border-radius:12px;display:grid;place-items:center;
+    font-size:22px;margin-bottom:16px;background:rgba(47,111,237,.12);border:1px solid rgba(47,111,237,.25)
+  }
+  .feature h3{font-size:17px;margin-bottom:8px;letter-spacing:-.01em}
+  .feature p{color:var(--fg-dim);font-size:14.5px}
+
+  /* ---------- Requirements ---------- */
+  .req-band{background:var(--bg-soft);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+  .req-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .req{
+    background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;text-align:center
+  }
+  .req .big{font-size:24px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px}
+  .req .lbl{color:var(--fg-faint);font-size:13px;text-transform:uppercase;letter-spacing:.06em}
+
+  /* ---------- Install ---------- */
+  .steps{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-top:8px}
+  .step{
+    background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px 26px;
+    position:relative;display:flex;gap:18px;align-items:flex-start
+  }
+  .step .num{
+    flex:none;width:34px;height:34px;border-radius:50%;
+    background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#fff;
+    display:grid;place-items:center;font-weight:700;font-size:15px
+  }
+  .step h3{font-size:16px;margin-bottom:5px}
+  .step p{color:var(--fg-dim);font-size:14.5px}
+  pre{
+    background:#0a0a0d;border:1px solid var(--border);border-radius:12px;
+    padding:14px 16px;margin-top:12px;overflow-x:auto;
+    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:13px;color:#d6d6df
+  }
+  pre code{white-space:pre}
+  .install-note{
+    margin-top:22px;background:rgba(255,138,30,.08);border:1px solid rgba(255,138,30,.25);
+    border-radius:14px;padding:16px 20px;color:var(--fg-dim);font-size:14.5px
+  }
+  .install-note b{color:var(--orange)}
+
+  /* ---------- FAQ ---------- */
+  .faq{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+  details{
+    background:var(--card);border:1px solid var(--border);border-radius:14px;
+    padding:0 22px;transition:.2s
+  }
+  details[open]{border-color:var(--border-strong);background:var(--card-2)}
+  summary{
+    list-style:none;cursor:pointer;padding:18px 0;font-weight:600;font-size:16px;
+    display:flex;justify-content:space-between;align-items:center;gap:16px
+  }
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";color:var(--fg-faint);font-size:22px;font-weight:400;transition:.2s}
+  details[open] summary::after{transform:rotate(45deg);color:var(--accent-2)}
+  details p{color:var(--fg-dim);padding:0 0 20px;font-size:15px}
+
+  /* ---------- Final CTA ---------- */
+  .final{text-align:center;padding:90px 0}
+  .final-card{
+    position:relative;overflow:hidden;
+    background:linear-gradient(160deg,#1d2740,#16161b 60%);
+    border:1px solid var(--border-strong);border-radius:28px;padding:60px 30px
+  }
+  .final-card h2{margin-bottom:14px}
+  .final-card p{color:var(--fg-dim);font-size:17px;max-width:480px;margin:0 auto 28px}
+
+  /* ---------- Footer ---------- */
+  footer{border-top:1px solid var(--border);padding:36px 0;color:var(--fg-faint);font-size:14px}
+  .foot-inner{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:center}
+  .foot-links{display:flex;gap:20px;flex-wrap:wrap}
+  .foot-links a:hover{color:var(--fg)}
+
+  [data-en]{display:none}
+  html[lang="en"] [data-ru]{display:none}
+  html[lang="en"] [data-en]{display:inline}
+  html[lang="en"] [data-en].block{display:block}
+  html[lang="en"] p[data-en],html[lang="en"] h1[data-en]{display:block}
+
+  @media(max-width:860px){
+    .hero-grid{grid-template-columns:1fr;gap:36px;text-align:center}
+    .hero-content{order:2}.hero-visual{order:1}
+    .lede{margin-left:auto;margin-right:auto}
+    .cta-row,.platforms{justify-content:center}
+    .device{transform:none;max-width:280px}
+    .features,.req-grid{grid-template-columns:1fr}
+    .steps{grid-template-columns:1fr}
+    .nav-links a:not(.nav-cta):not(.lang-toggle *){display:none}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a href="#" class="brand"><span class="logo">📅</span> OWA Widget</a>
+    <div class="nav-links">
+      <a href="#features"><span data-ru>Возможности</span><span data-en>Features</span></a>
+      <a href="#install"><span data-ru>Установка</span><span data-en>Install</span></a>
+      <a href="#faq">FAQ</a>
+      <div class="lang-toggle">
+        <button onclick="setLang('ru')" id="lng-ru">RU</button>
+        <button onclick="setLang('en')" id="lng-en">EN</button>
+      </div>
+      <a class="nav-cta" href="https://github.com/ilyabazhenov/mac-owa-widget/releases/latest">
+        <span data-ru>Скачать</span><span data-en>Download</span>
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <span class="glow a"></span>
+  <span class="glow b"></span>
+  <div class="wrap hero-grid">
+    <div class="hero-content">
+      <span class="eyebrow"><span class="dot"></span>
+        <span data-ru>macOS menu bar · бесплатно · open source</span>
+        <span data-en>macOS menu bar · free · open source</span>
+      </span>
+      <h1 data-ru>Ваши встречи <span class="grad">всегда под рукой</span></h1>
+      <h1 data-en>Your meetings <span class="grad">always one click away</span></h1>
+      <p class="lede" data-ru>Ближайшие встречи из Microsoft Exchange / OWA прямо в строке меню macOS. Подключайтесь к Teams, Zoom, Webex и Google Meet в один клик.</p>
+      <p class="lede" data-en>Upcoming meetings from Microsoft Exchange / OWA right in your macOS menu bar. Join Teams, Zoom, Webex and Google Meet in a single click.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/ilyabazhenov/mac-owa-widget/releases/latest">
+          ↓ <span data-ru>Скачать для macOS</span><span data-en>Download for macOS</span>
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/ilyabazhenov/mac-owa-widget">
+          <span data-ru>Исходный код</span><span data-en>Source code</span>
+        </a>
+      </div>
+      <p class="cta-note" data-ru>Требуется macOS 13 Ventura или новее · Apple Silicon и Intel</p>
+      <p class="cta-note" data-en>Requires macOS 13 Ventura or later · Apple Silicon &amp; Intel</p>
+      <div class="platforms">
+        <span><i class="pin" style="background:#5b8dff"></i>Teams</span>
+        <span><i class="pin" style="background:#2f6fed"></i>Zoom</span>
+        <span><i class="pin" style="background:#39d47e"></i>Webex</span>
+        <span><i class="pin" style="background:#ff8a1e"></i>Google Meet</span>
+        <span><i class="pin" style="background:#9b6bff"></i>KTalk</span>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="device">
+        <img src="images/app-screenshot.png" alt="OWA Widget — popover со списком встреч в строке меню macOS">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features" class="section-pad">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="kicker"><span data-ru>Возможности</span><span data-en>Features</span></span>
+      <h2 data-ru>Всё для рабочего дня</h2>
+      <h2 data-en>Everything for your workday</h2>
+      <p data-ru>Компактно, быстро и без лишнего — там, где вы и так смотрите время.</p>
+      <p data-en>Compact, fast and out of the way — right where you already check the time.</p>
+    </div>
+    <div class="features">
+      <div class="feature">
+        <div class="ic">📋</div>
+        <h3 data-ru>Встречи в popover</h3><h3 data-en>Meetings in a popover</h3>
+        <p data-ru>Ближайшие события компактным списком прямо из строки меню — без переключения окон.</p>
+        <p data-en>Upcoming events in a compact list right from the menu bar — no window switching.</p>
+      </div>
+      <div class="feature">
+        <div class="ic">🗓️</div>
+        <h3 data-ru>Таймлайн дня</h3><h3 data-en>Day timeline</h3>
+        <p data-ru>День как наглядная сетка времени, включая пересекающиеся и параллельные встречи.</p>
+        <p data-en>The day as a clear time grid, including overlapping and parallel meetings.</p>
+      </div>
+      <div class="feature">
+        <div class="ic">🔗</div>
+        <h3 data-ru>Подключение в один клик</h3><h3 data-en>One-click join</h3>
+        <p data-ru>Находит ссылку на звонок в поле встречи, локации и описании и распознаёт платформу.</p>
+        <p data-en>Finds the call link in the meeting field, location and body, and recognises the platform.</p>
+      </div>
+      <div class="feature">
+        <div class="ic">🔔</div>
+        <h3 data-ru>Уведомления</h3><h3 data-en>Notifications</h3>
+        <p data-ru>Локальные напоминания до начала встречи, чтобы не пропустить старт звонка.</p>
+        <p data-en>Local reminders before a meeting starts so you never miss the call.</p>
+      </div>
+      <div class="feature">
+        <div class="ic">👥</div>
+        <h3 data-ru>Несколько аккаунтов</h3><h3 data-en>Multiple accounts</h3>
+        <p data-ru>Подключайте несколько Exchange / OWA аккаунтов и видите все встречи вместе.</p>
+        <p data-en>Connect several Exchange / OWA accounts and see all meetings together.</p>
+      </div>
+      <div class="feature">
+        <div class="ic">🔒</div>
+        <h3 data-ru>Пароли в Keychain</h3><h3 data-en>Passwords in Keychain</h3>
+        <p data-ru>Пароли хранятся только в macOS Keychain. Обновления — внутри приложения через Sparkle.</p>
+        <p data-en>Passwords are stored only in macOS Keychain. Updates ship in-app via Sparkle.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- REQUIREMENTS -->
+<section class="req-band section-pad">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="kicker"><span data-ru>Требования</span><span data-en>Requirements</span></span>
+      <h2 data-ru>Что нужно для работы</h2>
+      <h2 data-en>What you need</h2>
+    </div>
+    <div class="req-grid">
+      <div class="req">
+        <div class="big">macOS 13+</div>
+        <div class="lbl" data-ru>Ventura или новее</div><div class="lbl" data-en>Ventura or later</div>
+      </div>
+      <div class="req">
+        <div class="big">Exchange / OWA</div>
+        <div class="lbl" data-ru>2016, 2019 или Online</div><div class="lbl" data-en>2016, 2019 or Online</div>
+      </div>
+      <div class="req">
+        <div class="big" data-ru>Сеть или VPN</div><div class="big" data-en>Network or VPN</div>
+        <div class="lbl" data-ru>Прямой доступ или корп. VPN</div><div class="lbl" data-en>Direct access or corporate VPN</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INSTALL -->
+<section id="install" class="section-pad">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="kicker"><span data-ru>Установка</span><span data-en>Installation</span></span>
+      <h2 data-ru>Запуск за пару минут</h2>
+      <h2 data-en>Up and running in minutes</h2>
+      <p data-ru>Скачайте архив из последнего релиза и выполните четыре шага.</p>
+      <p data-en>Download the archive from the latest release and follow four steps.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <div>
+          <h3 data-ru>Скачайте релиз</h3><h3 data-en>Download the release</h3>
+          <p data-ru>Откройте <a href="https://github.com/ilyabazhenov/mac-owa-widget/releases/latest" style="color:var(--accent-2)">последний релиз</a> и скачайте <code>.zip</code> для macOS.</p>
+          <p data-en>Open the <a href="https://github.com/ilyabazhenov/mac-owa-widget/releases/latest" style="color:var(--accent-2)">latest release</a> and download the macOS <code>.zip</code>.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div>
+          <h3 data-ru>Переместите в Applications</h3><h3 data-en>Move to Applications</h3>
+          <p data-ru>Распакуйте архив и перенесите <code>OWAWidget.app</code> в <code>/Applications</code>.</p>
+          <p data-en>Extract the archive and move <code>OWAWidget.app</code> to <code>/Applications</code>.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div>
+          <h3 data-ru>Снимите quarantine</h3><h3 data-en>Remove quarantine</h3>
+          <p data-ru>Один раз при первой установке, если macOS блокирует запуск:</p>
+          <p data-en>Once on first install, if macOS blocks the launch:</p>
+          <pre><code>xattr -dr com.apple.quarantine /Applications/OWAWidget.app</code></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">4</div>
+        <div>
+          <h3 data-ru>Запустите приложение</h3><h3 data-en>Launch the app</h3>
+          <p data-ru>OWA Widget появится в строке меню — иконки в Dock нет.</p>
+          <p data-en>OWA Widget appears in the menu bar — there is no Dock icon.</p>
+          <pre><code>open /Applications/OWAWidget.app</code></pre>
+        </div>
+      </div>
+    </div>
+    <div class="install-note">
+      <span data-ru><b>Обновления автоматические.</b> Команда снятия quarantine нужна только при первой установке. Все следующие версии ставит Sparkle прямо из приложения — кнопкой «Установить».</span>
+      <span data-en class="block"><b>Updates are automatic.</b> The quarantine command is only needed on the first install. Every later version is installed by Sparkle right inside the app via the «Install» button.</span>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" class="section-pad">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="kicker">FAQ</span>
+      <h2 data-ru>Частые вопросы</h2>
+      <h2 data-en>Frequently asked</h2>
+    </div>
+    <div class="faq">
+      <details open>
+        <summary><span data-ru>Где взять URL OWA-сервера?</span><span data-en>Where do I find my OWA server URL?</span></summary>
+        <p data-ru>Используйте тот же адрес, по которому открываете корпоративную почту в браузере (например <code>https://mail.company.com</code>). Если сомневаетесь — спросите IT-отдел.</p>
+        <p data-en class="block">Use the same address you open corporate webmail with in your browser (e.g. <code>https://mail.company.com</code>). Ask your IT department if you are not sure.</p>
+      </details>
+      <details>
+        <summary><span data-ru>Нужен ли VPN?</span><span data-en>Do I need a VPN?</span></summary>
+        <p data-ru>Если Exchange / OWA доступен только из корпоративной сети — да. Приложение должно видеть тот же сервер, что и браузер.</p>
+        <p data-en class="block">If Exchange / OWA is only reachable from the corporate network, yes. The app must be able to reach the same server as your browser.</p>
+      </details>
+      <details>
+        <summary><span data-ru>Где хранится пароль?</span><span data-en>Where is my password stored?</span></summary>
+        <p data-ru>Пароль хранится в macOS Keychain. Он не сохраняется в открытом виде в файлах настроек или репозитория.</p>
+        <p data-en class="block">The password is stored in macOS Keychain. It is never kept as plain text in settings or repository files.</p>
+      </details>
+      <details>
+        <summary><span data-ru>Почему macOS блокирует первый запуск?</span><span data-en>Why does macOS block the first launch?</span></summary>
+        <p data-ru>Приложение распространяется без Apple Developer ID подписи, поэтому Gatekeeper помечает первый скачанный bundle как quarantined. Снимите атрибут один раз командой из шага 3.</p>
+        <p data-en class="block">The app is distributed without an Apple Developer ID signature, so Gatekeeper marks the first downloaded bundle as quarantined. Remove the attribute once with the command in step 3.</p>
+      </details>
+      <details>
+        <summary><span data-ru>Почему у встречи нет кнопки подключения?</span><span data-en>Why is there no Join button for a meeting?</span></summary>
+        <p data-ru>Кнопка появляется, когда приложение находит ссылку на звонок. Проверьте, что организатор добавил её в описание, локацию или поле онлайн-встречи.</p>
+        <p data-en class="block">The button appears when the app finds a call link. Make sure the organizer added it to the body, location or online meeting field.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="final">
+  <div class="wrap">
+    <div class="final-card">
+      <span class="glow a" style="opacity:.4;top:-120px;left:10%"></span>
+      <h2 data-ru>Готовы попробовать?</h2>
+      <h2 data-en>Ready to try it?</h2>
+      <p data-ru>Бесплатно, с открытым кодом и автоматическими обновлениями.</p>
+      <p data-en>Free, open source and self-updating.</p>
+      <a class="btn btn-primary" href="https://github.com/ilyabazhenov/mac-owa-widget/releases/latest">
+        ↓ <span data-ru>Скачать OWA Widget</span><span data-en>Download OWA Widget</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-inner">
+    <div>© 2026 Ilya Bazhenov · <span data-ru>Лицензия</span><span data-en>License</span> MIT</div>
+    <div class="foot-links">
+      <a href="https://github.com/ilyabazhenov/mac-owa-widget">GitHub</a>
+      <a href="https://github.com/ilyabazhenov/mac-owa-widget/releases/latest"><span data-ru>Релизы</span><span data-en>Releases</span></a>
+      <a href="https://github.com/ilyabazhenov/mac-owa-widget/issues"><span data-ru>Сообщить о проблеме</span><span data-en>Report an issue</span></a>
+      <a href="https://github.com/ilyabazhenov/mac-owa-widget/blob/main/DEVELOPMENT.md"><span data-ru>Разработка</span><span data-en>Development</span></a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  function setLang(l){
+    document.documentElement.lang=l;
+    localStorage.setItem('owa-lang',l);
+    document.getElementById('lng-ru').classList.toggle('active',l==='ru');
+    document.getElementById('lng-en').classList.toggle('active',l==='en');
+  }
+  var saved=localStorage.getItem('owa-lang');
+  setLang(saved||((navigator.language||'').startsWith('en')?'en':'ru'));
+</script>
+</body>
+</html>
