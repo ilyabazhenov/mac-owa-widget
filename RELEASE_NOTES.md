@@ -1,3 +1,43 @@
+## v1.0.46 - 2026-07-01
+
+### RU
+
+#### Что изменилось
+
+- Синхронизация: восстановлена работа после перехода OWA на единый вход (SSO). Сервер теперь запрашивает интегрированную аутентификацию Windows (NTLM/Negotiate) вместо веб-формы логина — приложение это поддерживает и снова подключается к календарю.
+- Учётная запись указывается в формате `ДОМЕН\логин` (например, `MOSCOW\U_12345`), пароль — тот же, что для входа в ПК. Если у вас уже сохранён такой логин, менять ничего не нужно.
+- Точнее определяется реальный неверный пароль: отказ при NTLM-рукопожатии теперь отличается от обрыва сети (выключенный VPN по-прежнему показывает «Не удалось подключиться к серверу», а не «Неверный пароль»).
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Sync: restored access after OWA moved to single sign-on (SSO). The server now requests Integrated Windows Authentication (NTLM/Negotiate) instead of a web logon form — the app supports this and connects to the calendar again.
+- The account is entered as `DOMAIN\login` (for example `MOSCOW\U_12345`), with the same password you use to sign in to your PC. If you already have such a login saved, nothing needs to change.
+- More accurate detection of a genuinely wrong password: an NTLM handshake rejection is now told apart from a network drop (with the VPN off you still get “Could not connect to the server”, not “Invalid password”).
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove quarantine attributes (only needed on the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates install automatically via the “Install” button inside the app.
+
 ## v1.0.45 - 2026-06-30
 
 ### RU

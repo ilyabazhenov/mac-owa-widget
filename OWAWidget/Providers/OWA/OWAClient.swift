@@ -7,11 +7,34 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
     private var _cookies: [HTTPCookie] = []
     private var _redirectChain: [String] = []
     private var _pendingUntrusted: (host: String, port: Int, fingerprint: String)?
+    private var _authRejected = false
+
+    /// Credentials for Integrated Windows Auth (NTLM/Negotiate). Username is expected in
+    /// `DOMAIN\login` form (e.g. `MOSCOW\U_12345`).
+    private let username: String
+    private let password: String
+
+    init(username: String, password: String) {
+        self.username = username
+        self.password = password
+        super.init()
+    }
 
     var allCookies: [HTTPCookie]    { lock.lock(); defer { lock.unlock() }; return _cookies }
     var redirectChain: [String]     { lock.lock(); defer { lock.unlock() }; return _redirectChain }
 
-    func reset() { lock.lock(); _cookies = []; _redirectChain = []; _pendingUntrusted = nil; lock.unlock() }
+    func reset() { lock.lock(); _cookies = []; _redirectChain = []; _pendingUntrusted = nil; _authRejected = false; lock.unlock() }
+
+    /// Returns and clears whether the last cancelled request was cancelled because the NTLM/
+    /// Negotiate handshake declined our credentials (a confirmed wrong-password), as opposed to
+    /// an ordinary task cancellation — both surface as `NSURLErrorCancelled` (-999), so the flag
+    /// is the only way to tell them apart.
+    func takeAuthRejected() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let value = _authRejected
+        _authRejected = false
+        return value
+    }
 
     /// Returns and clears the most recent rejected (untrusted) certificate, if any.
     /// Set when the server presented a certificate that failed system validation and
@@ -58,7 +81,41 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+        let method = challenge.protectionSpace.authenticationMethod
+
+        // Integrated Windows Auth. OWA moved to SSO, so the server now answers every request with
+        // `401 WWW-Authenticate: Negotiate, NTLM` instead of a forms-login page.
+        //
+        // URLSession always tries the *first* offered method (Negotiate / Kerberos-SPNEGO) and,
+        // given a username+password, never falls back to NTLM on its own. Over CheckPoint VPN
+        // there is no Kerberos ticket / reachable KDC, so Negotiate always fails and the whole
+        // request dies. We therefore explicitly *reject* the Negotiate protection space, which
+        // makes URLSession re-challenge with the next offered method — NTLM — where a plain
+        // DOMAIN\login + password works.
+        if method == NSURLAuthenticationMethodNegotiate {
+            // NSURLSessionAuthChallengeRejectProtectionSpace (== 3). Not surfaced as a named Swift
+            // case in this SDK, so build it from the raw value. "Reject this protection space and
+            // continue with the next authentication method for this request."
+            completionHandler(URLSession.AuthChallengeDisposition(rawValue: 3) ?? .performDefaultHandling, nil)
+            return
+        }
+        if method == NSURLAuthenticationMethodNTLM {
+            // Offer the credential exactly once. A repeat challenge for the same request
+            // (previousFailureCount > 0) means the server rejected it. Cancel and flag it so the
+            // client maps the resulting `NSURLErrorCancelled` to a definitive wrong-password error.
+            guard challenge.previousFailureCount == 0, !username.isEmpty else {
+                lock.lock(); _authRejected = true; lock.unlock()
+                completionHandler(.cancelAuthenticationChallenge, nil)
+                return
+            }
+            completionHandler(
+                .useCredential,
+                URLCredential(user: username, password: password, persistence: .forSession)
+            )
+            return
+        }
+
+        guard method == NSURLAuthenticationMethodServerTrust,
               let trust = challenge.protectionSpace.serverTrust else {
             completionHandler(.performDefaultHandling, nil)
             return
@@ -149,7 +206,7 @@ actor OWAClient {
         config.httpShouldSetCookies = true
         config.timeoutIntervalForRequest = 30
 
-        let delegate = OWASessionDelegate()
+        let delegate = OWASessionDelegate(username: username, password: password)
         self.sessionDelegate = delegate
         self.session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
         #if DEBUG
@@ -169,6 +226,15 @@ actor OWAClient {
                     host: pending.host,
                     port: pending.port,
                     fingerprint: pending.fingerprint
+                )
+            }
+            // The NTLM/Negotiate handshake declined our credentials. This arrives as a generic
+            // `NSURLErrorCancelled` (-999); the delegate flag is what distinguishes a real
+            // credential rejection from an ordinary task cancellation. Map it to the definitive
+            // auth error so the wrong-password breaker latches immediately.
+            if sessionDelegate.takeAuthRejected() {
+                throw OWAError.authenticationFailed(
+                    "Integrated auth (NTLM/Negotiate) rejected credentials for \(username)."
                 )
             }
             throw error
@@ -199,6 +265,22 @@ actor OWAClient {
         // from a prior session riding alongside the new ones if the server doesn't overwrite it.
         clearSessionCookies()
 
+        // Path A — Integrated Windows Auth (NTLM). Since OWA moved to SSO the server returns
+        // `401 WWW-Authenticate: Negotiate, NTLM` for every request; the session delegate answers
+        // the NTLM leg, so a plain authenticated GET /owa/ returns the page + CANARY with no forms
+        // login at all. A rejected handshake throws `authenticationFailed` from `fetchData` (via
+        // the delegate's auth-rejected flag); a connectivity failure (VPN off) throws its URLError
+        // — both propagate out as-is. Only a *successful* GET that simply lacks a CANARY falls
+        // through to the forms-login fallback below.
+        try await fetchCanaryFromOWAPage()
+        collectCanaryFromSession(html: nil)
+        if canaryToken != nil {
+            log.info("OWA auth OK via integrated auth sync=\(syncID, privacy: .public)")
+            return
+        }
+        log.debug("No CANARY via integrated auth — falling back to forms login")
+
+        // Path B — legacy OWA forms-based login (servers still on forms auth).
         // 1. Скачиваем страницу логина, получаем action и скрытые поля формы
         let loginForm = try await fetchLoginForm()
         log.debug("Login form action: \(loginForm.action), fields: \(loginForm.hiddenFields.map(\.0))")
@@ -209,23 +291,12 @@ actor OWAClient {
         log.debug("Auth final URL: \(authFinalURL), status: \(authResponse.statusCode)")
         log.debug("Redirects: \(self.sessionDelegate.redirectChain)")
 
-        // 3. Extract CANARY from cookies captured in redirect chain
+        // 3. Extract CANARY from cookies (redirect chain + session storage) and the auth HTML.
         let delegateCookies = sessionDelegate.allCookies
         log.debug("Delegate cookies: \(delegateCookies.map(\.name))")
-        canaryToken = delegateCookies.first(where: { $0.name == "X-OWA-CANARY" })?.value
+        collectCanaryFromSession(html: authData)
 
-        // 4. Try session's own storage as fallback
-        if canaryToken == nil {
-            let stored = session.configuration.httpCookieStorage?.cookies ?? []
-            canaryToken = stored.first(where: { $0.name == "X-OWA-CANARY" })?.value
-        }
-
-        // 5. Try extracting CANARY from auth response HTML
-        if canaryToken == nil, let html = String(data: authData, encoding: .utf8) {
-            canaryToken = extractCanaryFromHTML(html)
-        }
-
-        // 6. GET /owa/ as authenticated user — CANARY should be in the page HTML
+        // 4. GET /owa/ as authenticated user — CANARY should be in the page HTML
         if canaryToken == nil {
             try await fetchCanaryFromOWAPage()
         }
@@ -321,6 +392,7 @@ actor OWAClient {
             (data, resp) = try await self.fetchData(req)
         } catch let error as OWAError {
             if case .untrustedCertificate = error { throw error }
+            if case .authenticationFailed = error { throw error }
             return fallback
         } catch let urlError as URLError {
             // Connectivity failure reaching the login page (host unreachable, DNS, timeout —
@@ -434,6 +506,22 @@ actor OWAClient {
         let (data, _) = try await self.fetchData(req)
         if let html = String(data: data, encoding: .utf8) {
             canaryToken = extractCanaryFromHTML(html)
+        }
+    }
+
+    /// Pulls the CANARY token from wherever the server may have placed it: cookies captured
+    /// during redirects, the session's own cookie storage, or (optionally) an HTML body. A no-op
+    /// once `canaryToken` is already set.
+    private func collectCanaryFromSession(html: Data?) {
+        if canaryToken == nil {
+            canaryToken = sessionDelegate.allCookies.first(where: { $0.name == "X-OWA-CANARY" })?.value
+        }
+        if canaryToken == nil {
+            let stored = session.configuration.httpCookieStorage?.cookies ?? []
+            canaryToken = stored.first(where: { $0.name == "X-OWA-CANARY" })?.value
+        }
+        if canaryToken == nil, let html, let text = String(data: html, encoding: .utf8) {
+            canaryToken = extractCanaryFromHTML(text)
         }
     }
 
@@ -1135,8 +1223,8 @@ actor OWAClient {
         var request = URLRequest(url: ewsURL, timeoutInterval: 20)
         request.httpMethod = "POST"
         request.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        let credentials = "\(username):\(password)"
-        request.setValue("Basic \(Data(credentials.utf8).base64EncodedString())", forHTTPHeaderField: "Authorization")
+        // Auth is handled by the session delegate's NTLM/Negotiate handshake (same path as the
+        // OWA service calls); no manual Basic header — the SSO server ignores it anyway.
         request.setValue(
             "\"http://schemas.microsoft.com/exchange/services/2006/messages/CreateItem\"",
             forHTTPHeaderField: "SOAPAction"
@@ -1250,9 +1338,7 @@ actor OWAClient {
         var request = URLRequest(url: ewsURL, timeoutInterval: 15)
         request.httpMethod = "POST"
         request.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        let credentials = "\(username):\(password)"
-        let basicAuth = "Basic \(Data(credentials.utf8).base64EncodedString())"
-        request.setValue(basicAuth, forHTTPHeaderField: "Authorization")
+        // Auth handled by the session delegate's NTLM/Negotiate handshake — no manual Basic header.
         request.setValue(
             "\"http://schemas.microsoft.com/exchange/services/2006/messages/CreateItem\"",
             forHTTPHeaderField: "SOAPAction"
