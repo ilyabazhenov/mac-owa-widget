@@ -382,6 +382,27 @@ enum OWAError: LocalizedError {
         return statusCode == 500 && diagnosticResponseKind(from: responseBody) == "fault.abstractClass"
     }
 
+    /// HTTP statuses that mean "the server is reachable but this session is no longer valid":
+    /// the CANARY/cookie expired (`401`/`440`), or the Exchange front-end answered a request
+    /// carrying a stale session cookie with `449` "Retry With" instead of a clean `401` challenge.
+    /// URLSession only runs its NTLM handshake on a real `401`, so a `449` never re-authenticates on
+    /// its own — the stale cookie is re-sent and the server loops `449` while the app mislabels it
+    /// "offline". All three are recovered the same way: drop the cookies and re-run the NTLM
+    /// handshake, then retry once. Unlike `isAuthError` (a definitive wrong-password that must latch
+    /// the breaker), this is transient — the caller retries and never latches.
+    static func isSessionStaleHTTPError(_ error: Error) -> Bool {
+        guard case .httpError(let code, _) = error as? OWAError else { return false }
+        return isSessionStaleStatus(code)
+    }
+
+    /// Raw-status counterpart of `isSessionStaleHTTPError`, for the EWS request paths that branch on
+    /// `http.statusCode` directly (attendees, FindPeople, availability, CreateItem) before wrapping
+    /// it in an `OWAError`. Single source of truth for the "reachable but session invalid → drop
+    /// cookies, re-run NTLM, retry once" set: `401`/`440` (expired) and `449` ("Retry With").
+    static func isSessionStaleStatus(_ statusCode: Int) -> Bool {
+        statusCode == 401 || statusCode == 440 || statusCode == 449
+    }
+
     /// Returns `true` when the error indicates the stored credentials are definitively wrong.
     /// Used by the sync circuit breaker to stop retrying and prevent account lockout.
     static func isAuthError(_ error: Error) -> Bool {

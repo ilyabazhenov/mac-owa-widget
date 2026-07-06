@@ -547,8 +547,12 @@ actor OWAClient {
             )
             log.info("Calendar view fetch complete sync=\(syncID, privacy: .public) items=\(items.count, privacy: .public)")
             return items
-        } catch OWAError.httpError(440, _), OWAError.httpError(401, _) {
-            log.warning("Calendar view auth expired sync=\(syncID, privacy: .public); reauthenticating")
+        } catch let error as OWAError where OWAError.isSessionStaleHTTPError(error) {
+            // 401/440 (expired session) or 449 ("Retry With" on a stale cookie): the server is
+            // reachable but rejects this session. See `isSessionStaleHTTPError`. Force a full
+            // reauth — `authenticate()` clears the stale cookies and re-runs the NTLM handshake —
+            // then retry once on the clean session instead of surfacing a bogus "offline" status.
+            log.warning("Calendar view session stale (\(error.localizedDescription, privacy: .private)) sync=\(syncID, privacy: .public); reauthenticating")
             canaryToken = nil
             try await authenticate()
             let items = try await performCalendarViewRequestWithStartupRetry(
@@ -765,7 +769,7 @@ actor OWAClient {
         }
         #endif
 
-        if http.statusCode == 440 || http.statusCode == 401 {
+        if OWAError.isSessionStaleStatus(http.statusCode) {
             canaryToken = nil
             guard attempt < 1 else {
                 throw OWAError.httpError(http.statusCode, "GetCalendarEvent auth retry exhausted")
@@ -993,7 +997,7 @@ actor OWAClient {
         ftrace("=== END ===\n")
         #endif
 
-        if http.statusCode == 440 || http.statusCode == 401 {
+        if OWAError.isSessionStaleStatus(http.statusCode) {
             canaryToken = nil
             guard attempt < 1 else {
                 throw OWAError.httpError(http.statusCode, "FindPeople auth retry exhausted")
@@ -1111,7 +1115,7 @@ actor OWAClient {
         req.setValue(jsonString.formEncoded, forHTTPHeaderField: "X-OWA-UrlPostData")
 
         let (data, response) = try await self.fetchData(req)
-        if let http = response as? HTTPURLResponse, http.statusCode == 440 || http.statusCode == 401 {
+        if let http = response as? HTTPURLResponse, OWAError.isSessionStaleStatus(http.statusCode) {
             canaryToken = nil
             guard attempt < 1 else {
                 throw OWAError.httpError(http.statusCode, "GetUserAvailabilityInternal auth retry exhausted")
@@ -1247,15 +1251,16 @@ actor OWAClient {
 
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
 
-        if http.statusCode == 401 {
+        if OWAError.isSessionStaleStatus(http.statusCode) {
             guard attempt < 1 else {
-                // Стойкий 401 — пароль протух. Бросаем httpError, чтобы CalendarService
-                // через isAuthError перевёл аккаунт в .authenticationRequired и остановил
-                // дальнейшие попытки до явного обновления пароля (защита от lockout AD).
-                log.error("EWS CreateItem HTTP 401 — auth retry exhausted, surfacing auth error")
-                throw OWAError.httpError(401, "EWS CreateItem auth retry exhausted")
+                // Стойкая ошибка сессии после одной переаутентификации. Бросаем httpError с
+                // РЕАЛЬНЫМ статусом: 401/440 → isAuthError → CalendarService переводит аккаунт в
+                // .authenticationRequired (пароль протух, защита от lockout AD); 449 ("Retry With")
+                // НЕ является isAuthError — всплывёт как транзиентная ошибка, аккаунт не латчим.
+                log.error("EWS CreateItem HTTP \(http.statusCode, privacy: .public) — auth retry exhausted, surfacing error")
+                throw OWAError.httpError(http.statusCode, "EWS CreateItem auth retry exhausted")
             }
-            log.info("EWS CreateItem HTTP 401 — re-authenticating")
+            log.info("EWS CreateItem HTTP \(http.statusCode, privacy: .public) — re-authenticating")
             try await authenticate()
             try await createCalendarEvent(
                 title: title,

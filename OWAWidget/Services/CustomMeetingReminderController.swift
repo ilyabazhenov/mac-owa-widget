@@ -50,6 +50,11 @@ final class CustomMeetingReminderController {
     // Debug-only trace in the user-private app-support debug dir (0700/0600), not /tmp
     // which is world-readable on macOS.
     private static let debugLogURL: URL? = DebugLogLocation.url(for: "reminder.log")
+    private static let previousLogURL: URL? = DebugLogLocation.url(for: "reminder.previous.log")
+    // The log is truncated on launch, but a single long-running session (days) writes one line
+    // per scheduled meeting on every sync generation and used to grow to tens of MB. Cap it and
+    // rotate to a `.previous` file so the on-disk trace stays bounded (~2×cap) within one session.
+    private static let maxLogBytes: UInt64 = 2 * 1024 * 1024
 
     init() {
         guard let url = Self.debugLogURL else { return }
@@ -66,6 +71,18 @@ final class CustomMeetingReminderController {
         let line = "[\(f.string(from: Date()))] \(message)\n"
         guard let data = line.data(using: .utf8) else { return }
         if let handle = try? FileHandle(forWritingTo: url) {
+            let size = handle.seekToEndOfFile()
+            if size > Self.maxLogBytes {
+                try? handle.close()
+                Self.rotateLog(at: url)
+            } else {
+                handle.write(data)
+                try? handle.close()
+                return
+            }
+        }
+        // First write of the session, or right after a rotation: (re)create + append.
+        if let handle = try? FileHandle(forWritingTo: url) {
             handle.seekToEndOfFile()
             handle.write(data)
             try? handle.close()
@@ -73,6 +90,21 @@ final class CustomMeetingReminderController {
             try? data.write(to: url, options: .atomic)
             DebugLogLocation.tightenPermissions(at: url)
         }
+    }
+
+    /// Moves the oversized log to `reminder.previous.log` (replacing any older one) and starts a
+    /// fresh file with a header, so at most one prior generation of trace is kept on disk.
+    private static func rotateLog(at url: URL) {
+        let fm = FileManager.default
+        if let previous = previousLogURL {
+            try? fm.removeItem(at: previous)
+            try? fm.moveItem(at: url, to: previous)
+        } else {
+            try? fm.removeItem(at: url)
+        }
+        let header = "=== OWAWidget Reminder Log rotated \(Date()) ===\n"
+        try? header.write(to: url, atomically: true, encoding: .utf8)
+        DebugLogLocation.tightenPermissions(at: url)
     }
     #endif
 
