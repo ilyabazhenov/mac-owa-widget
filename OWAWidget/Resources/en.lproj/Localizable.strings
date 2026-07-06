@@ -78,6 +78,15 @@
 "preferences.menubar.display" = "Menu bar display";
 "preferences.menubar.display.countdown" = "Countdown (current)";
 "preferences.menubar.display.status" = "Status: Next / Now / Free";
+"preferences.menubar.display.smart" = "Smart";
+"menubar.smart.tip.in.meeting" = "%@ left";
+"menubar.smart.tip.overlap" = "%@ at once";
+"menubar.smart.tip.join.now" = "Time to join";
+"menubar.smart.tip.soon" = "Next at %@";
+"menubar.smart.tip.free.until" = "Free until %@";
+"menubar.smart.tip.next.day" = "Tomorrow at %@";
+"menubar.smart.tip.later" = "In %@";
+"menubar.smart.tip.no.link" = "no join link";
 
 "preferences.popover.section" = "Window";
 "preferences.popover.size" = "Window size";

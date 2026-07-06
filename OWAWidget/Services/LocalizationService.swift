@@ -89,6 +89,10 @@ final class LocalizationService: ObservableObject {
         plural(key: "unit.meetings", count: count)
     }
 
+    func days(_ count: Int) -> String {
+        plural(key: "unit.days", count: count)
+    }
+
     var notificationLocalization: NotificationLocalization {
         NotificationLocalization(
             localeIdentifier: effectiveLanguageCode,

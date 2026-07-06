@@ -31,6 +31,10 @@ enum MenuBarLabelFormatter {
         case .status:
             let status = MenuBarStatusFormatter.presentation(events: events, now: now, calendar: calendar)
             return Presentation(text: status.text, statusKind: status.kind)
+        case .smart:
+            // Smart mode also drives icon + pulse + tooltip, so `MenuBarLabelView` computes it
+            // directly from `MenuBarSmartStatusFormatter` rather than via this text-only path.
+            return nil
         }
     }
 

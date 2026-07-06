@@ -78,6 +78,15 @@
 "preferences.menubar.display" = "Отображение в строке меню";
 "preferences.menubar.display.countdown" = "Как сейчас: countdown";
 "preferences.menubar.display.status" = "Status: Next / Now / Free";
+"preferences.menubar.display.smart" = "Умный";
+"menubar.smart.tip.in.meeting" = "осталось %@";
+"menubar.smart.tip.overlap" = "%@ одновременно";
+"menubar.smart.tip.join.now" = "пора подключаться";
+"menubar.smart.tip.soon" = "следующая в %@";
+"menubar.smart.tip.free.until" = "свободно до %@";
+"menubar.smart.tip.next.day" = "завтра в %@";
+"menubar.smart.tip.later" = "через %@";
+"menubar.smart.tip.no.link" = "ссылки на звонок нет";
 
 "preferences.popover.section" = "Окно";
 "preferences.popover.size" = "Размер окна";

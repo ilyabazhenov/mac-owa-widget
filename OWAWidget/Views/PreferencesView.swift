@@ -101,6 +101,7 @@ struct PreferencesView: View {
                 Picker(localization.tr("preferences.menubar.display"), selection: $vm.menuBarDisplayMode) {
                     Text(localization.tr("preferences.menubar.display.countdown")).tag(MenuBarDisplayMode.countdown)
                     Text(localization.tr("preferences.menubar.display.status")).tag(MenuBarDisplayMode.status)
+                    Text(localization.tr("preferences.menubar.display.smart")).tag(MenuBarDisplayMode.smart)
                 }
                 .pickerStyle(.menu)
             }
