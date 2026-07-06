@@ -1,3 +1,43 @@
+## v1.0.47 - 2026-07-06
+
+### RU
+
+#### Что изменилось
+
+- Меню-бар: новый опциональный режим «умного статуса». Вместо словесной подписи смысл несут иконка, компактная подпись и пульсация: когда встреча идёт или вот-вот начнётся — видно, сколько осталось (иконка пульсирует за ≤2 минуты до старта и во время встречи); когда вы свободны — видно, когда следующая встреча (сегодня / завтра / позже). Детали (ссылка на звонок, число пересечений, «свободен до») перенесены в подсказку при наведении. Включается в настройках; прежние режимы отображения сохранены.
+- Синхронизация: восстановлено подключение, когда сервер OWA отвечает `449 «Retry With»` на протухшую сессию (следствие перехода на единый вход). Приложение теперь распознаёт такой ответ как «сессия устарела», само переустанавливает соединение (заново проходит NTLM) и повторяет запрос — больше нет залипания на «Офлайн: кэш», а кнопка «Повторить» снова помогает. Устаревшая сессия при этом не путается с неверным паролем, поэтому учётная запись в домене не блокируется.
+- Служебное: технический журнал `reminder.log` теперь ротируется по 2 МБ — в долгих сеансах он больше не разрастается до десятков мегабайт.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Menu bar: new optional “smart status” mode. Instead of a worded label, meaning is carried by an icon, a compact label, and a pulse: when a meeting is running or about to start you see how long is left (the icon pulses within 2 minutes of the start and during the meeting); when you're free you see when the next meeting is (today / tomorrow / later). Finer details (call link, number of overlaps, “free until”) moved into the hover tooltip. Toggle it in Settings; the previous display modes are still available.
+- Sync: restored connectivity when the OWA server answers `449 “Retry With”` to a stale session (a side effect of the single sign-on move). The app now recognizes this as “session expired,” re-establishes the connection on its own (re-runs NTLM) and retries the request — no more getting stuck on “Offline: cache,” and the “Retry” button works again. A stale session is no longer mistaken for a wrong password, so the domain account isn't locked out.
+- Housekeeping: the internal `reminder.log` trace now rotates at 2 MB — it no longer grows to tens of megabytes during long sessions.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove the quarantine attributes (only needed on the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates install automatically via the “Install” button inside the app.
+
 ## v1.0.46 - 2026-07-01
 
 ### RU
