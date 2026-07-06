@@ -200,6 +200,7 @@ make run
  - В обоих языках в инструкции по установке обязательно указывай, что `xattr -dr com.apple.quarantine /Applications/OWAWidget.app` нужен ТОЛЬКО при первой установке; последующие обновления ставит Sparkle автоматически.
  3. Перед упаковкой обязательно зафиксируй релизные изменения (`VERSION`, `RELEASE_NOTES.md` и связанные файлы) в git commit, чтобы `CFBundleVersion`/`sparkle:version` гарантированно выросли относительно предыдущего релиза (build номер берется из `git rev-list --count HEAD`).
  4. Сборка архива и appcast: `make release-package` (создает `dist/OWAWidget-v<ver>-macos.zip` и `dist/appcast.xml`).
+ - **Тесты — обязательный гейт.** `make release-package` зависит от таргета `test` и сам прогоняет `swift test` перед упаковкой. Если сьют красный — упаковка не запускается; сначала почини тесты, релиз не выпускай. Не обходи гейт (не вызывай `scripts/package_release.sh` напрямую) ради «быстрого» релиза.
  - Требуется доступ к EdDSA-приватнику (логин-Keychain или env `SPARKLE_ED_PRIVATE_KEY`). Если ключа нет — скрипт упадет; не пытайся выпустить релиз без подписи.
  5. Перед публикацией проверь `dist/appcast.xml`: `sparkle:version` нового релиза должен быть строго больше `sparkle:version` предыдущего опубликованного релиза.
  6. Публикация на GitHub через `gh release create` с двумя ассетами: zip и appcast.xml.

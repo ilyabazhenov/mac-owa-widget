@@ -19,11 +19,15 @@ WATCH_DEBOUNCE ?= 2
 SPARKLE_ARTIFACTS_DIR := .build/artifacts/sparkle/Sparkle
 SPARKLE_FRAMEWORK     := $(SPARKLE_ARTIFACTS_DIR)/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework
 
-.PHONY: build bundle release-bundle validate-release-notes release-package run kill clean watch logs help
+.PHONY: build bundle release-bundle validate-release-notes test release-package run kill clean watch logs help
 
 ## Validate latest release notes structure (RU/EN)
 validate-release-notes:
 	@./scripts/validate_release_notes.sh $(RELEASE_NOTES_FILE)
+
+## Run the full unit-test suite (mandatory gate before release-package)
+test:
+	swift test $(SWIFT_BUILD_ARGS) 2>&1
 
 ## Compile Swift sources
 build:
@@ -89,7 +93,7 @@ release-bundle:
 ##   2) creates the versioned zip,
 ##   3) EdDSA-signs it via Sparkle's sign_update,
 ##   4) emits dist/appcast.xml with the resulting signature/length.
-release-package: validate-release-notes
+release-package: validate-release-notes test
 	@test -f $(VERSION_FILE) || (echo "Missing $(VERSION_FILE)" && exit 1)
 	@test -f $(RELEASE_NOTES_FILE) || (echo "Missing $(RELEASE_NOTES_FILE)" && exit 1)
 	@bash scripts/package_release.sh
