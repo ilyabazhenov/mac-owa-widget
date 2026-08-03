@@ -50,7 +50,7 @@ final class MeetingSearchPolicyTests: XCTestCase {
 
     func testShortTokenDoesNotMatchMidWordTransliteration() {
         // "Михаил" → "mikhail" contains "ai" mid-word; must NOT match.
-        let e = makeEvent(id: "a", title: "Дорожная карта", organizer: "Чернов Михаил Иванович")
+        let e = makeEvent(id: "a", title: "Дорожная карта", organizer: "Петров Михаил Иванович")
         XCTAssertFalse(PopoverView.MeetingSearchPolicy.matches(e, query: "ai"))
     }
 

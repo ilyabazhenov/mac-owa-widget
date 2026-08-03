@@ -10,9 +10,9 @@ final class MeetingAttendeeListTests: XCTestCase {
     }
 
     func testRemovesOrganizerByNameMatch() {
-        let input = [attendee("Чернов Михаил"), attendee("Баженов Илья")]
-        let result = MeetingAttendeeList.forDisplay(input, organizer: "  Чернов Михаил ")
-        XCTAssertEqual(result.map(\.name), ["Баженов Илья"])
+        let input = [attendee("Петров Михаил"), attendee("Иванов Илья")]
+        let result = MeetingAttendeeList.forDisplay(input, organizer: "  Петров Михаил ")
+        XCTAssertEqual(result.map(\.name), ["Иванов Илья"])
     }
 
     func testRemovesOrganizerByResponseType() {
@@ -22,9 +22,9 @@ final class MeetingAttendeeListTests: XCTestCase {
     }
 
     func testSortsAlphabeticallyCaseInsensitively() {
-        let input = [attendee("Юшина Оксана"), attendee("Аниканов Алексей"), attendee("баженов илья")]
+        let input = [attendee("Яшина Оксана"), attendee("Абрамов Алексей"), attendee("иванов илья")]
         let result = MeetingAttendeeList.forDisplay(input, organizer: nil)
-        XCTAssertEqual(result.map(\.name), ["Аниканов Алексей", "баженов илья", "Юшина Оксана"])
+        XCTAssertEqual(result.map(\.name), ["Абрамов Алексей", "иванов илья", "Яшина Оксана"])
     }
 
     func testPreservesKindAfterFilteringAndSorting() {
