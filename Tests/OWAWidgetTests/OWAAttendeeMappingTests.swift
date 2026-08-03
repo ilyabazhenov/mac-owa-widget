@@ -87,7 +87,7 @@ final class OWAAttendeeMappingTests: XCTestCase {
         XCTAssertTrue(parse("not json at all").isEmpty)
     }
 
-    /// Pins the actual `owa.alfabank.ru` (Exchange 15.2) response shape: attendees are a bare array
+    /// Pins the actual corporate OWA (Exchange 15.2) response shape: attendees are a bare array
     /// nested under `Body.ResponseMessages.Items[].Items[]`, mailboxes carry `RoutingType`, and the
     /// server reports `ResponseType: "Unknown"` for tracked-but-unanswered invitees.
     func testParsesRealGetCalendarEventResponseShape() {

@@ -73,7 +73,7 @@ enum OWAGetCalendarEventPayload {
     /// Mirrors the OWA web client's calendar peek request (`action=GetCalendarEvent`). `GetCalendarView`
     /// (the sync request) does not return attendee collections; `GetCalendarEvent` returns the full
     /// event — including `RequiredAttendees`/`OptionalAttendees` — for a single event id.
-    /// Shape captured from a live `owa.alfabank.ru` HAR (Exchange 15.2.1748.10).
+    /// Shape captured from a live corporate OWA HAR (Exchange 15.2.1748.10).
     static func make(itemId: String, changeKey: String?, timezoneID: String) -> [String: Any] {
         var eventId: [String: Any] = [
             "__type": "ItemId:#Exchange",
