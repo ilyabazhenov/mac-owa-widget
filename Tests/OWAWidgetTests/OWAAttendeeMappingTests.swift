@@ -106,13 +106,13 @@ final class OWAAttendeeMappingTests: XCTestCase {
                     {
                       "__type": "CalendarEvent:#Exchange",
                       "Subject": "Обмен опытом",
-                      "Organizer": { "Mailbox": { "Name": "Чернов Михаил", "EmailAddress": "MChernov@example.ru", "RoutingType": "SMTP" } },
+                      "Organizer": { "Mailbox": { "Name": "Петров Михаил", "EmailAddress": "MPetrov@example.ru", "RoutingType": "SMTP" } },
                       "RequiredAttendees": [
-                        { "Mailbox": { "Name": "Чернов Михаил", "EmailAddress": "MChernov@example.ru", "RoutingType": "SMTP" }, "ResponseType": "Unknown" },
-                        { "Mailbox": { "Name": "Баженов Илья", "EmailAddress": "IBazhenov@example.ru", "RoutingType": "SMTP" }, "ResponseType": "Accept" }
+                        { "Mailbox": { "Name": "Петров Михаил", "EmailAddress": "MPetrov@example.ru", "RoutingType": "SMTP" }, "ResponseType": "Unknown" },
+                        { "Mailbox": { "Name": "Иванов Илья", "EmailAddress": "IIvanov@example.ru", "RoutingType": "SMTP" }, "ResponseType": "Accept" }
                       ],
                       "OptionalAttendees": [
-                        { "Mailbox": { "Name": "Каретко Владислав", "EmailAddress": "VKaretko@example.ru", "RoutingType": "SMTP" }, "ResponseType": "Decline" }
+                        { "Mailbox": { "Name": "Сидоров Владислав", "EmailAddress": "VSidorov@example.ru", "RoutingType": "SMTP" }, "ResponseType": "Decline" }
                       ],
                       "Resources": []
                     }
@@ -128,8 +128,8 @@ final class OWAAttendeeMappingTests: XCTestCase {
 
         let required = attendees.filter { $0.kind == .required }
         XCTAssertEqual(required.count, 2)
-        XCTAssertEqual(required[0].name, "Чернов Михаил")
-        XCTAssertEqual(required[0].email, "MChernov@example.ru")
+        XCTAssertEqual(required[0].name, "Петров Михаил")
+        XCTAssertEqual(required[0].email, "MPetrov@example.ru")
         XCTAssertEqual(required[0].response, .notResponded) // "Unknown" → no response
         XCTAssertEqual(required[1].response, .accepted)
 
