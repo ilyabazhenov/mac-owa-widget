@@ -49,22 +49,22 @@
 
     <rect x="178" y="466" width="420" height="54" rx="0" fill="#BDE5FA"/>
     <rect x="178" y="466" width="8" height="54" fill="#7CC5ED"/>
-    <text x="196" y="499" font-size="20" font-weight="750" fill="#20262C">Меншаков</text>
+    <text x="196" y="499" font-size="20" font-weight="750" fill="#20262C">Петров</text>
 
     <rect x="178" y="536" width="560" height="62" rx="0" fill="#FFF000"/>
     <rect x="178" y="536" width="8" height="62" fill="#F4C900"/>
-    <text x="196" y="570" font-size="20" font-weight="750" fill="#20262C">РГ Collection</text>
+    <text x="196" y="570" font-size="20" font-weight="750" fill="#20262C">РГ Платформа</text>
     <text x="346" y="570" font-size="18" fill="#20262C">*.ktalk.ru</text>
     <path d="M706 558a14 14 0 0 1 20 0m-3-10 3 10-10-3" stroke="#6B7280" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
 
     <rect x="248" y="612" width="350" height="62" rx="0" fill="#DDF0FA" stroke="#3498DB" stroke-width="2"/>
     <path d="M248 612l14-14M248 630l32-32M248 648l50-50M248 666l68-68" stroke="#8ACAF0" stroke-width="4"/>
     <text x="268" y="641" font-size="19" font-weight="700" fill="#69737D">Обсуждение инфраструктуры</text>
-    <text x="268" y="668" font-size="17" fill="#69737D">10:15-11:00 · Сергей</text>
+    <text x="268" y="668" font-size="17" fill="#69737D">10:15-11:00 · Михаил</text>
 
     <rect x="178" y="690" width="420" height="54" rx="0" fill="#FF7584"/>
     <rect x="178" y="690" width="8" height="54" fill="#E9445C"/>
-    <text x="196" y="724" font-size="20" font-weight="750" fill="#20262C">Как получить VIP-токены</text>
+    <text x="196" y="724" font-size="20" font-weight="750" fill="#20262C">Обзор квартальных целей</text>
 
     <rect x="318" y="760" width="280" height="54" rx="0" fill="#FFF000" stroke="#2C92D1" stroke-width="2"/>
     <rect x="318" y="760" width="8" height="54" fill="#F4C900"/>
