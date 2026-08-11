@@ -10,6 +10,7 @@ struct MeetingDetailPanelView: View {
     @State private var contentHeight: CGFloat = 0
 
     private let headerHeight: CGFloat = 48
+    private let dividerHeight: CGFloat = 1
     private let minPanelHeight: CGFloat = 230
     private let maxPanelHeight: CGFloat = 400
 
@@ -53,8 +54,10 @@ struct MeetingDetailPanelView: View {
         .onAppear { closeButtonFocused = true }
     }
 
+    /// The divider between header and content counts too: a card one point short of its content
+    /// keeps a scroll bar (and clips the bottom padding) even though everything would fit.
     private var panelHeight: CGFloat {
-        min(max(contentHeight + headerHeight, minPanelHeight), maxPanelHeight)
+        min(max(contentHeight + headerHeight + dividerHeight, minPanelHeight), maxPanelHeight)
     }
 
     private var panelHeader: some View {
@@ -98,7 +101,7 @@ struct MeetingDetailPanelView: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 48)
+        .frame(height: headerHeight)
     }
 }
 
