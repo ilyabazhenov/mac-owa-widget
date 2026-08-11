@@ -263,7 +263,7 @@ struct PopoverView: View {
                 MeetingDetailPanelView(event: selectedEvent) {
                     closeMeetingDetail()
                 }
-                .onExitCommand { closeMeetingDetail() }
+                .onEscapeKey { closeMeetingDetail() }
                 .padding(.horizontal, contentHorizontalPadding)
                 .padding(.bottom, 8)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
