@@ -702,12 +702,13 @@ actor OWAClient {
         return (try JSONDecoder().decode(OWAServiceResponse.self, from: data)).Body?.Items ?? []
     }
 
-    // MARK: - GetCalendarEvent (attendees)
+    // MARK: - GetCalendarEvent (attendees + full body)
 
-    /// Lazily fetches the attendee list for a single meeting. `GetCalendarView` omits attendee
-    /// collections, so the detail panel calls this on demand. Replicates the OWA web client's
-    /// `GetCalendarEvent` peek request (HAR-captured), including the `X-OWA-ActionId` headers.
-    func fetchMeetingAttendees(itemId: String, changeKey: String?, attempt: Int = 0) async throws -> [EventAttendee] {
+    /// Lazily fetches attendees and the full body for a single meeting. `GetCalendarView` omits
+    /// attendee collections and truncates the body to a 255-character `Preview`, so the detail
+    /// panel calls this on demand. Replicates the OWA web client's `GetCalendarEvent` peek request
+    /// (HAR-captured), including the `X-OWA-ActionId` headers; both pieces come from one response.
+    func fetchMeetingDetails(itemId: String, changeKey: String?, attempt: Int = 0) async throws -> CalendarEventDetails {
         let canary = try await ensureCanary()
         try Task.checkCancellation()
 
@@ -775,7 +776,7 @@ actor OWAClient {
                 throw OWAError.httpError(http.statusCode, "GetCalendarEvent auth retry exhausted")
             }
             try await authenticate()
-            return try await fetchMeetingAttendees(itemId: itemId, changeKey: changeKey, attempt: attempt + 1)
+            return try await fetchMeetingDetails(itemId: itemId, changeKey: changeKey, attempt: attempt + 1)
         }
 
         guard (200..<300).contains(http.statusCode) else {
@@ -786,7 +787,10 @@ actor OWAClient {
             throw OWAError.httpError(http.statusCode, msg)
         }
 
-        return OWACalendarEventAttendeesParser.attendees(fromJSONData: data)
+        return CalendarEventDetails(
+            attendees: OWACalendarEventAttendeesParser.attendees(fromJSONData: data),
+            body: OWACalendarEventBodyParser.plainBody(fromJSONData: data)
+        )
     }
 
     private func dumpGetCalendarViewResponseIfNeeded(

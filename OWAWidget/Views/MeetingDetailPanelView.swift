@@ -14,7 +14,9 @@ struct MeetingDetailPanelView: View {
 
             Divider()
 
-            ScrollView(.vertical, showsIndicators: false) {
+            // Indicators stay on: a full agenda can be several screens long, and without the
+            // scrollbar users read the clipped text as "the description is truncated".
+            ScrollView(.vertical) {
                 MeetingDetailContentView(event: event) {
                     onClose()
                 }
@@ -87,6 +89,15 @@ struct MeetingDetailContentView: View {
     var onJoinCompleted: () -> Void = {}
 
     @EnvironmentObject private var localization: LocalizationService
+    @EnvironmentObject private var calendarService: CalendarService
+
+    /// Attendees and the full agenda arrive in one `GetCalendarEvent` response, so the load lives
+    /// here (above both consumers) instead of inside the attendee list.
+    @State private var detailsState: DetailsLoadState = .idle
+
+    enum DetailsLoadState: Equatable {
+        case idle, loading, loaded(CalendarEventDetails), failed
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -117,16 +128,39 @@ struct MeetingDetailContentView: View {
                     detailRow(systemImage: "person", text: organizer)
                 }
 
-                MeetingAttendeesView(event: event)
+                MeetingAttendeesView(event: event, state: detailsState)
             }
 
-            if let body = event.bodyPreview?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !body.isEmpty {
+            if let body = bodyText {
                 Divider()
                 MeetingBodyView(text: body)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: event.id) {
+            detailsState = .loading
+            do {
+                let details = try await calendarService.loadDetails(for: event)
+                guard !Task.isCancelled else { return }
+                detailsState = .loaded(details)
+            } catch {
+                // A cancelled task (panel dismissed or switched meetings) must not clobber the
+                // state the replacement task is already setting.
+                guard !Task.isCancelled else { return }
+                detailsState = .failed
+            }
+        }
+    }
+
+    /// The truncated preview is shown right away and replaced by the full agenda once it loads,
+    /// so the panel never sits empty while the request is in flight.
+    private var bodyText: String? {
+        if case .loaded(let details) = detailsState,
+           let full = details.body?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !full.isEmpty {
+            return full
+        }
+        return event.displayBody
     }
 
     private func detailRow(systemImage: String, text: String) -> some View {
@@ -210,19 +244,14 @@ private struct MeetingBodyView: View {
 
 private struct MeetingAttendeesView: View {
     let event: CalendarEvent
+    /// Owned by `MeetingDetailContentView`: attendees and the agenda share one request.
+    let state: MeetingDetailContentView.DetailsLoadState
 
     @EnvironmentObject private var localization: LocalizationService
-    @EnvironmentObject private var calendarService: CalendarService
-
-    @State private var loadState: LoadState = .idle
-
-    private enum LoadState: Equatable {
-        case idle, loading, loaded([EventAttendee]), failed
-    }
 
     var body: some View {
         Group {
-            switch loadState {
+            switch state {
             case .idle, .loading:
                 statusRow {
                     HStack(spacing: 6) {
@@ -233,21 +262,8 @@ private struct MeetingAttendeesView: View {
                 }
             case .failed:
                 statusRow { Text(localization.tr("meeting.attendees.failed")) }
-            case .loaded(let attendees):
-                attendeesList(attendees)
-            }
-        }
-        .task(id: event.id) {
-            loadState = .loading
-            do {
-                let list = try await calendarService.loadAttendees(for: event)
-                guard !Task.isCancelled else { return }
-                loadState = .loaded(list)
-            } catch {
-                // A cancelled task (view dismissed or switched meetings) must not clobber the
-                // state the replacement task is already setting.
-                guard !Task.isCancelled else { return }
-                loadState = .failed
+            case .loaded(let details):
+                attendeesList(details.attendees)
             }
         }
     }

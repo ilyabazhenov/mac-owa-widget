@@ -423,37 +423,39 @@ final class CalendarServiceOfflineTests: XCTestCase {
         XCTAssertEqual(secondService.menuBarDisplayMode, .status)
     }
 
-    func testLoadAttendeesFetchesOnceThenServesFromCache() async throws {
+    func testLoadDetailsFetchesOnceThenServesFromCache() async throws {
         let attendees = [EventAttendee(name: "X", email: "x@y.z", kind: .required, response: .accepted)]
-        let provider = CountingAttendeesProvider(result: attendees)
+        let provider = CountingDetailsProvider(result: CalendarEventDetails(attendees: attendees, body: "Full agenda"))
         let event = makeEvent(id: "evt", accountID: provider.account.id)
         let service = makeAttendeesService(provider: provider, events: [event])
 
-        let first = try await service.loadAttendees(for: event)
-        XCTAssertEqual(first, attendees)
+        let first = try await service.loadDetails(for: event)
+        XCTAssertEqual(first.attendees, attendees)
         var calls = await provider.callCount
         XCTAssertEqual(calls, 1)
-        // The loaded list is cached back onto the event in the store.
+        // Attendees and the full body are both cached back onto the event in the store.
         XCTAssertEqual(service.events.first { $0.id == "evt" }?.detailedAttendees, attendees)
+        XCTAssertEqual(service.events.first { $0.id == "evt" }?.fullBody, "Full agenda")
 
-        // Re-opening passes the now-cached event; loadAttendees must short-circuit (no 2nd request).
+        // Re-opening passes the now-cached event; loadDetails must short-circuit (no 2nd request).
         let cached = try XCTUnwrap(service.events.first { $0.id == "evt" })
-        let second = try await service.loadAttendees(for: cached)
-        XCTAssertEqual(second, attendees)
+        let second = try await service.loadDetails(for: cached)
+        XCTAssertEqual(second.attendees, attendees)
+        XCTAssertEqual(second.body, "Full agenda")
         calls = await provider.callCount
         XCTAssertEqual(calls, 1)
     }
 
-    func testLoadAttendeesCachesEmptyResultToAvoidRefetch() async throws {
-        let provider = CountingAttendeesProvider(result: [])
+    func testLoadDetailsCachesEmptyResultToAvoidRefetch() async throws {
+        let provider = CountingDetailsProvider(result: CalendarEventDetails(attendees: [], body: nil))
         let event = makeEvent(id: "evt-empty", accountID: provider.account.id)
         let service = makeAttendeesService(provider: provider, events: [event])
 
-        _ = try await service.loadAttendees(for: event)
+        _ = try await service.loadDetails(for: event)
         // Empty list is cached as [] (not nil) so re-open does not hit the network again.
         XCTAssertEqual(service.events.first { $0.id == "evt-empty" }?.detailedAttendees, [])
         let cached = try XCTUnwrap(service.events.first { $0.id == "evt-empty" })
-        _ = try await service.loadAttendees(for: cached)
+        _ = try await service.loadDetails(for: cached)
         let calls = await provider.callCount
         XCTAssertEqual(calls, 1)
     }
@@ -496,19 +498,19 @@ final class CalendarServiceOfflineTests: XCTestCase {
     }
 }
 
-private actor CountingAttendeesProvider: CalendarProvider {
+private actor CountingDetailsProvider: CalendarProvider {
     let account = CalendarAccount(displayName: "Test", serverURL: "example.com", email: "a@b.c")
-    private let result: [EventAttendee]
+    private let result: CalendarEventDetails
     private(set) var callCount = 0
 
-    init(result: [EventAttendee]) {
+    init(result: CalendarEventDetails) {
         self.result = result
     }
 
     func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] { [] }
     func validateCredentials() async throws {}
 
-    func fetchAttendees(for event: CalendarEvent) async throws -> [EventAttendee] {
+    func fetchDetails(for event: CalendarEvent) async throws -> CalendarEventDetails {
         callCount += 1
         return result
     }

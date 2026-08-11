@@ -441,6 +441,68 @@ enum OWACalendarEventAttendeesParser {
     }
 }
 
+// MARK: - GetCalendarEvent body parser
+
+/// Extracts the **full** meeting body from a `GetCalendarEvent` response.
+///
+/// `GetCalendarView` (the sync request) only ever returns `Preview`, which Exchange cuts at
+/// exactly 255 characters — that cut is what users saw as a truncated agenda. The peek request
+/// already used for attendees returns the complete body, so the description is recovered from
+/// the very same response without an extra round trip.
+///
+/// Like the attendees parser this walks the payload instead of decoding a fixed shape: the
+/// wrapper differs between Exchange builds, and the response envelope itself has a `Body` key
+/// (the service response) that must not be mistaken for the item body — only dictionaries
+/// carrying a `Value` string qualify.
+enum OWACalendarEventBodyParser {
+
+    struct ParsedBody: Equatable {
+        let value: String
+        let isHTML: Bool
+    }
+
+    /// Body fields in the order the provider prefers them: plain text first, HTML last.
+    private static let fieldPriority = ["TextBody", "UniqueBody", "Body", "NormalizedBody"]
+
+    /// Returns the body already converted to plain text, or `nil` when the response carries none.
+    static func plainBody(fromJSONData data: Data) -> String? {
+        guard let parsed = parse(fromJSONData: data) else { return nil }
+        let text = (parsed.isHTML || MeetingBodyHTMLConverter.looksLikeHTML(parsed.value))
+            ? MeetingBodyHTMLConverter.plainText(from: parsed.value)
+            : parsed.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    static func parse(fromJSONData data: Data) -> ParsedBody? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        var found: [String: ParsedBody] = [:]
+        collect(in: json, into: &found)
+        for field in fieldPriority {
+            if let body = found[field] { return body }
+        }
+        return nil
+    }
+
+    private static func collect(in value: Any, into found: inout [String: ParsedBody]) {
+        if let array = value as? [Any] {
+            for element in array { collect(in: element, into: &found) }
+            return
+        }
+        guard let dict = value as? [String: Any] else { return }
+
+        for field in fieldPriority {
+            guard found[field] == nil,
+                  let candidate = dict[field] as? [String: Any],
+                  let raw = candidate["Value"] as? String,
+                  !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            let isHTML = (candidate["BodyType"] as? String)?.caseInsensitiveCompare("HTML") == .orderedSame
+            found[field] = ParsedBody(value: raw, isHTML: isHTML)
+        }
+
+        for nested in dict.values { collect(in: nested, into: &found) }
+    }
+}
+
 // MARK: - CalendarFolders parser
 
 enum OWACalendarFoldersParser {

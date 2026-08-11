@@ -18,6 +18,20 @@ struct EventAttendee: Identifiable, Sendable, Hashable, Codable {
     var id: String { (email?.isEmpty == false ? email! : name) + "|" + kind.rawValue }
 }
 
+/// Everything the detail panel loads lazily for one meeting. `GetCalendarView` returns neither
+/// attendees nor the full body (only a 255-character `Preview`), so both come from a single
+/// `GetCalendarEvent` request.
+struct CalendarEventDetails: Sendable, Hashable {
+    let attendees: [EventAttendee]
+    /// Full agenda text; `nil` when the meeting has no body or the server returned none.
+    let body: String?
+
+    init(attendees: [EventAttendee], body: String? = nil) {
+        self.attendees = attendees
+        self.body = body
+    }
+}
+
 struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
     let id: String
     let title: String
@@ -39,6 +53,9 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
     let instanceKey: String?
     /// Lazily loaded participant list. `nil` = not yet fetched; `[]` = fetched, no attendees.
     let detailedAttendees: [EventAttendee]?
+    /// Lazily loaded full agenda. `bodyPreview` from the sync request is capped at 255 characters
+    /// by Exchange, so this is the only place the complete text ever lives.
+    let fullBody: String?
 
     init(
         id: String,
@@ -59,7 +76,8 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         responseType: MeetingResponseType = .notResponded,
         changeKey: String? = nil,
         instanceKey: String? = nil,
-        detailedAttendees: [EventAttendee]? = nil
+        detailedAttendees: [EventAttendee]? = nil,
+        fullBody: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -80,6 +98,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         self.changeKey = changeKey
         self.instanceKey = instanceKey
         self.detailedAttendees = detailedAttendees
+        self.fullBody = fullBody
     }
 
     init(from decoder: Decoder) throws {
@@ -103,6 +122,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         changeKey = try c.decodeIfPresent(String.self, forKey: .changeKey)
         instanceKey = try c.decodeIfPresent(String.self, forKey: .instanceKey)
         detailedAttendees = try c.decodeIfPresent([EventAttendee].self, forKey: .detailedAttendees)
+        fullBody = try c.decodeIfPresent(String.self, forKey: .fullBody)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -126,13 +146,14 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         try c.encodeIfPresent(changeKey, forKey: .changeKey)
         try c.encodeIfPresent(instanceKey, forKey: .instanceKey)
         try c.encodeIfPresent(detailedAttendees, forKey: .detailedAttendees)
+        try c.encodeIfPresent(fullBody, forKey: .fullBody)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, title, startDate, endDate, location, bodyPreview, joinURL, platform
         case isAllDay, organizer, attendees, accountID
         case isCancelled, isOrganizer, categories, responseType, changeKey, instanceKey
-        case detailedAttendees
+        case detailedAttendees, fullBody
     }
 
     func withResponseType(_ type: MeetingResponseType) -> CalendarEvent {
@@ -143,11 +164,14 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
             attendees: attendees, accountID: accountID,
             isCancelled: isCancelled, isOrganizer: isOrganizer,
             categories: categories, responseType: type, changeKey: changeKey,
-            instanceKey: instanceKey, detailedAttendees: detailedAttendees
+            instanceKey: instanceKey, detailedAttendees: detailedAttendees,
+            fullBody: fullBody
         )
     }
 
-    func withDetailedAttendees(_ list: [EventAttendee]) -> CalendarEvent {
+    /// Caches the lazily loaded detail payload. A body that came back empty keeps whatever was
+    /// cached before instead of dropping the user back to the truncated preview.
+    func withDetails(_ details: CalendarEventDetails) -> CalendarEvent {
         CalendarEvent(
             id: id, title: title, startDate: startDate, endDate: endDate,
             location: location, bodyPreview: bodyPreview, joinURL: joinURL,
@@ -155,8 +179,15 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
             attendees: attendees, accountID: accountID,
             isCancelled: isCancelled, isOrganizer: isOrganizer,
             categories: categories, responseType: responseType, changeKey: changeKey,
-            instanceKey: instanceKey, detailedAttendees: list
+            instanceKey: instanceKey, detailedAttendees: details.attendees,
+            fullBody: details.body ?? fullBody
         )
+    }
+
+    /// Text to show as the description: the full body once loaded, the truncated preview until then.
+    var displayBody: String? {
+        let text = (fullBody ?? bodyPreview)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (text?.isEmpty == false) ? text : nil
     }
 
     var isHappeningNow: Bool {

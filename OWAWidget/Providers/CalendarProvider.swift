@@ -7,7 +7,7 @@ protocol CalendarProvider: Actor {
     func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent]
     func validateCredentials() async throws
     func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws
-    func fetchAttendees(for event: CalendarEvent) async throws -> [EventAttendee]
+    func fetchDetails(for event: CalendarEvent) async throws -> CalendarEventDetails
     func findPeople(query: String) async throws -> [ResolvedAttendee]
     func resolveOrganizerSMTPEmail() async throws -> String?
     func getUserAvailability(emails: [String], from start: Date, to end: Date) async throws -> [AttendeeAvailability]
@@ -27,7 +27,7 @@ extension CalendarProvider {
         throw CalendarProviderError.notSupported
     }
 
-    func fetchAttendees(for event: CalendarEvent) async throws -> [EventAttendee] {
+    func fetchDetails(for event: CalendarEvent) async throws -> CalendarEventDetails {
         throw CalendarProviderError.notSupported
     }
 
