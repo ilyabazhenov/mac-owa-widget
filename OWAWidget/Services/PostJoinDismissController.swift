@@ -22,7 +22,16 @@ final class PostJoinDismissController {
         popoverWindow = window
     }
 
+    /// The MenuBarExtra popover window, once it has appeared. Callers use it to tell popover key
+    /// events apart from events belonging to the settings or create-meeting windows.
+    var registeredPopoverWindow: NSWindow? { popoverWindow }
+
     func dismissAfterJoin(context _: PostJoinContext) {
+        dismissPopover()
+    }
+
+    /// Closes the popover regardless of why — after a join, or on Esc.
+    func dismissPopover() {
         // Primary target is MenuBarExtra popover window.
         if let popoverWindow, popoverWindow.isVisible {
             popoverWindow.close()

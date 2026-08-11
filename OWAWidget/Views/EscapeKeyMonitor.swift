@@ -9,11 +9,10 @@ import AppKit
 /// A local event monitor sees the key whoever is first responder, and lives only as long as the
 /// view does.
 ///
-/// The monitor is not window-scoped: the popover is the app's only window while it is open
-/// (MenuBarExtra closes it as soon as focus moves elsewhere), so there is nothing else on screen
-/// that could swallow an Esc meant for the card.
+/// The monitor is app-wide, so `action` receives the event and decides whether the key was meant
+/// for it: returning `false` lets Esc travel on to whichever window actually has focus.
 private struct EscapeKeyMonitor: ViewModifier {
-    let action: () -> Void
+    let action: (NSEvent) -> Bool
 
     @State private var monitor: Any?
 
@@ -24,9 +23,9 @@ private struct EscapeKeyMonitor: ViewModifier {
             .onAppear {
                 guard monitor == nil else { return }
                 monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                    guard event.keyCode == Self.escapeKeyCode else { return event }
-                    action()
-                    // Swallowed: without this the key would travel on and close the whole popover.
+                    guard event.keyCode == Self.escapeKeyCode, action(event) else { return event }
+                    // Swallowed once handled: otherwise the key travels on and the responder chain
+                    // acts on it a second time.
                     return nil
                 }
             }
@@ -40,7 +39,8 @@ private struct EscapeKeyMonitor: ViewModifier {
 }
 
 extension View {
-    func onEscapeKey(perform action: @escaping () -> Void) -> some View {
+    /// `action` returns `true` when it consumed the key.
+    func onEscapeKey(perform action: @escaping (NSEvent) -> Bool) -> some View {
         modifier(EscapeKeyMonitor(action: action))
     }
 }

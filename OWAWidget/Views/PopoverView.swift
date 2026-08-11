@@ -70,6 +70,7 @@ struct PopoverView: View {
             PopoverWindowRegistrar()
                 .frame(width: 0, height: 0)
         }
+        .onEscapeKey(perform: handleEscape)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(localization.tr("app.name"))
         .onDisappear {
@@ -263,7 +264,6 @@ struct PopoverView: View {
                 MeetingDetailPanelView(event: selectedEvent) {
                     closeMeetingDetail()
                 }
-                .onEscapeKey { closeMeetingDetail() }
                 .padding(.horizontal, contentHorizontalPadding)
                 .padding(.bottom, 8)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -404,6 +404,26 @@ struct PopoverView: View {
 
     private func resetMeetingDetailState() {
         selectedEvent = MeetingDetailStatePolicy.selectedEventAfterPopoverDisappear(selectedEvent)
+    }
+
+    /// Esc unwinds the popover one layer at a time — card, then search, then the popover itself —
+    /// so a single monitor owns the key and two handlers never race for the same press.
+    ///
+    /// Events belonging to the settings or create-meeting windows are passed through: the monitor
+    /// is app-wide, and those windows have their own Esc behaviour. An event with no window is
+    /// still treated as the popover's, since that is the only window this view lives in.
+    private func handleEscape(_ event: NSEvent) -> Bool {
+        let popoverWindow = PostJoinDismissController.shared.registeredPopoverWindow
+        guard event.window == nil || event.window === popoverWindow else { return false }
+
+        if selectedEvent != nil {
+            closeMeetingDetail()
+        } else if isSearchBarPresented {
+            closeSearch()
+        } else {
+            PostJoinDismissController.shared.dismissPopover()
+        }
+        return true
     }
 
     /// Single exit point for the detail card: the close button, a click beside it, and Esc.
