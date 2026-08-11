@@ -39,12 +39,6 @@ final class MeetingBodyLayoutTests: XCTestCase {
         XCTAssertEqual(blocks.map(\.kind), [.paragraph, .paragraph])
     }
 
-    func testIdsAreUniqueAndOrdered() {
-        let blocks = MeetingBodyLayout.blocks(from: "a\n\nb\n• c")
-
-        XCTAssertEqual(blocks.map(\.id), [0, 1, 2])
-    }
-
     /// A dash list must not be mistaken for a bullet: only the markers the converter emits count.
     func testDashLineIsAParagraph() {
         let blocks = MeetingBodyLayout.blocks(from: "- не наш маркер")

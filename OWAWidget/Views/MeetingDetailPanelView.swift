@@ -176,12 +176,15 @@ struct MeetingDetailContentView: View {
             // The truncated preview is rendered right away and replaced by the full agenda once it
             // arrives, so the panel never sits empty while the request is in flight.
             detailsState = .loading
-            bodyAttributed = renderBody(text: event.displayBody, html: nil)
+            bodyAttributed = MeetingBodyRenderer.attributedBody(text: event.displayBody, html: nil)
             do {
                 let details = try await calendarService.loadDetails(for: event)
                 guard !Task.isCancelled else { return }
                 detailsState = .loaded(details)
-                bodyAttributed = renderBody(
+                // Tables are rebuilt from the original markup when it is available; without it
+                // (cached text after a restart, or a plain-text body) the same text renders as
+                // running text.
+                bodyAttributed = MeetingBodyRenderer.attributedBody(
                     text: details.body ?? event.displayBody,
                     html: details.bodyHTML
                 )
@@ -192,21 +195,6 @@ struct MeetingDetailContentView: View {
                 detailsState = .failed
             }
         }
-    }
-
-    /// Tables are rebuilt from the original markup when it is available; without it (cached text
-    /// after a restart, or a plain-text body) the same text renders as running text.
-    private func renderBody(text: String?, html: String?) -> NSAttributedString? {
-        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !trimmed.isEmpty else { return nil }
-        let nodes = html.map(MeetingBodyDocument.nodes(fromHTML:))
-            ?? MeetingBodyDocument.nodes(fromPlainText: trimmed)
-        return MeetingBodyAttributedBuilder.attributedString(
-            for: nodes,
-            font: .systemFont(ofSize: 12),
-            color: .secondaryLabelColor,
-            linkColor: .linkColor
-        )
     }
 
     private func detailRow(systemImage: String, text: String) -> some View {

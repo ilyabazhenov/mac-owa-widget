@@ -7,14 +7,13 @@ import Foundation
 /// structure — and everything between tables goes through the usual HTML→text conversion.
 enum MeetingBodyDocument {
 
-    struct Node: Identifiable, Equatable {
+    struct Node: Equatable {
         enum Kind: Equatable {
             /// Plain text; the view lays it out with `MeetingBodyLayout`.
             case text(String)
             case table(Table)
         }
 
-        let id: Int
         let kind: Kind
     }
 
@@ -52,12 +51,12 @@ enum MeetingBodyDocument {
             }
         }
 
-        return kinds.enumerated().map { Node(id: $0.offset, kind: $0.element) }
+        return kinds.map(Node.init(kind:))
     }
 
     static func nodes(fromPlainText text: String) -> [Node] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? [] : [Node(id: 0, kind: .text(trimmed))]
+        return trimmed.isEmpty ? [] : [Node(kind: .text(trimmed))]
     }
 
     // MARK: - Parsing

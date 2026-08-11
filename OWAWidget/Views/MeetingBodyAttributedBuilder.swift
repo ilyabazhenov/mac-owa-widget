@@ -134,7 +134,7 @@ enum MeetingBodyAttributedBuilder {
                 // A cell must contribute at least one paragraph, otherwise its row collapses.
                 var blocks = MeetingBodyLayout.blocks(from: cell)
                 if blocks.isEmpty {
-                    blocks = [MeetingBodyLayout.Block(id: 0, kind: .paragraph, text: "", hasGapBefore: false)]
+                    blocks = [MeetingBodyLayout.Block(kind: .paragraph, text: "", hasGapBefore: false)]
                 }
                 append(
                     blocks: blocks,

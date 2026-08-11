@@ -8,14 +8,13 @@ import Foundation
 /// aligned under the first character.
 enum MeetingBodyLayout {
 
-    struct Block: Identifiable, Equatable {
+    struct Block: Equatable {
         enum Kind: Equatable {
             case paragraph
             /// 1 = `•`, 2 = `◦` (nested list).
             case bullet(level: Int)
         }
 
-        let id: Int
         let kind: Kind
         /// Line content without the bullet marker.
         let text: String
@@ -38,11 +37,11 @@ enum MeetingBodyLayout {
 
             let block: Block
             if let content = trimmed.dropMarker(MeetingBodyHTMLConverter.bulletPrefix) {
-                block = Block(id: blocks.count, kind: .bullet(level: 1), text: content, hasGapBefore: gapPending)
+                block = Block(kind: .bullet(level: 1), text: content, hasGapBefore: gapPending)
             } else if let content = trimmed.dropMarker(MeetingBodyHTMLConverter.nestedBulletPrefix) {
-                block = Block(id: blocks.count, kind: .bullet(level: 2), text: content, hasGapBefore: gapPending)
+                block = Block(kind: .bullet(level: 2), text: content, hasGapBefore: gapPending)
             } else {
-                block = Block(id: blocks.count, kind: .paragraph, text: trimmed, hasGapBefore: gapPending)
+                block = Block(kind: .paragraph, text: trimmed, hasGapBefore: gapPending)
             }
             blocks.append(block)
             gapPending = false

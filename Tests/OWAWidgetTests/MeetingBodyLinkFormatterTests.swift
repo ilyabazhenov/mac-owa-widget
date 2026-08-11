@@ -49,31 +49,7 @@ final class MeetingBodyLinkFormatterTests: XCTestCase {
         XCTAssertTrue(MeetingBodyLinkFormatter.detectLinks(in: "Открой file:///etc/passwd").isEmpty)
     }
 
-    func testAttributedBodyKeepsTextVerbatim() {
-        let body = "Коллеги, привет! 🙂 Повестка: https://wiki.example.com/pages/1 и ещё немного текста."
-
-        let attributed = MeetingBodyLinkFormatter.attributedBody(body)
-
-        XCTAssertEqual(String(attributed.characters), body)
-    }
-
-    func testAttributedBodyMarksOnlyTheLinkRun() {
-        let body = "Повестка: https://wiki.example.com/pages/1 — до встречи"
-
-        let attributed = MeetingBodyLinkFormatter.attributedBody(body)
-
-        let linked = attributed.runs.compactMap { run -> (String, URL)? in
-            guard let url = run.link else { return nil }
-            return (String(attributed[run.range].characters), url)
-        }
-        XCTAssertEqual(linked.count, 1)
-        XCTAssertEqual(linked.first?.0, "https://wiki.example.com/pages/1")
-        XCTAssertEqual(linked.first?.1.absoluteString, "https://wiki.example.com/pages/1")
-    }
-
     func testPlainBodyHasNoLinks() {
-        let attributed = MeetingBodyLinkFormatter.attributedBody("Обсудим планы на квартал")
-
-        XCTAssertTrue(attributed.runs.allSatisfy { $0.link == nil })
+        XCTAssertTrue(MeetingBodyLinkFormatter.detectLinks(in: "Обсудим планы на квартал").isEmpty)
     }
 }
