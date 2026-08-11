@@ -94,6 +94,10 @@ struct MeetingDetailContentView: View {
     /// Attendees and the full agenda arrive in one `GetCalendarEvent` response, so the load lives
     /// here (above both consumers) instead of inside the attendee list.
     @State private var detailsState: DetailsLoadState = .idle
+    /// Built once per body — never in `body`. Parsing an invite's markup and composing the
+    /// attributed string costs a few milliseconds, and the panel re-renders on every sync tick;
+    /// worse, handing the text view a freshly built string resets the user's selection.
+    @State private var bodyAttributed: NSAttributedString?
 
     enum DetailsLoadState: Equatable {
         case idle, loading, loaded(CalendarEventDetails), failed
@@ -131,18 +135,25 @@ struct MeetingDetailContentView: View {
                 MeetingAttendeesView(event: event, state: detailsState)
             }
 
-            if let body = bodyText {
+            if let bodyAttributed, bodyAttributed.length > 0 {
                 Divider()
-                MeetingBodyView(nodes: bodyNodes(for: body))
+                MeetingBodyView(attributed: bodyAttributed)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: event.id) {
+            // The truncated preview is rendered right away and replaced by the full agenda once it
+            // arrives, so the panel never sits empty while the request is in flight.
             detailsState = .loading
+            bodyAttributed = renderBody(text: event.displayBody, html: nil)
             do {
                 let details = try await calendarService.loadDetails(for: event)
                 guard !Task.isCancelled else { return }
                 detailsState = .loaded(details)
+                bodyAttributed = renderBody(
+                    text: details.body ?? event.displayBody,
+                    html: details.bodyHTML
+                )
             } catch {
                 // A cancelled task (panel dismissed or switched meetings) must not clobber the
                 // state the replacement task is already setting.
@@ -152,26 +163,19 @@ struct MeetingDetailContentView: View {
         }
     }
 
-    /// The truncated preview is shown right away and replaced by the full agenda once it loads,
-    /// so the panel never sits empty while the request is in flight.
-    private var bodyText: String? {
-        if case .loaded(let details) = detailsState,
-           let full = details.body?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !full.isEmpty {
-            return full
-        }
-        return event.displayBody
-    }
-
     /// Tables are rebuilt from the original markup when it is available; without it (cached text
     /// after a restart, or a plain-text body) the same text renders as running text.
-    private func bodyNodes(for body: String) -> [MeetingBodyDocument.Node] {
-        if case .loaded(let details) = detailsState,
-           let html = details.bodyHTML,
-           details.body?.trimmingCharacters(in: .whitespacesAndNewlines) == body {
-            return MeetingBodyDocument.nodes(fromHTML: html)
-        }
-        return MeetingBodyDocument.nodes(fromPlainText: body)
+    private func renderBody(text: String?, html: String?) -> NSAttributedString? {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+        let nodes = html.map(MeetingBodyDocument.nodes(fromHTML:))
+            ?? MeetingBodyDocument.nodes(fromPlainText: trimmed)
+        return MeetingBodyAttributedBuilder.attributedString(
+            for: nodes,
+            font: .systemFont(ofSize: 12),
+            color: .secondaryLabelColor,
+            linkColor: .linkColor
+        )
     }
 
     private func detailRow(systemImage: String, text: String) -> some View {
@@ -223,9 +227,9 @@ struct MeetingDetailContentView: View {
 ///
 /// Rendered by AppKit rather than SwiftUI: a `VStack` of `Text` rows could not be selected across
 /// rows, and `Grid` split the width evenly between columns, squeezing an agenda's task column into
-/// two words per line.
+/// two words per line. The string arrives ready-made — see `MeetingDetailContentView`.
 private struct MeetingBodyView: View {
-    let nodes: [MeetingBodyDocument.Node]
+    let attributed: NSAttributedString
 
     var body: some View {
         SelectableAttributedText(attributed: attributed) { url in
@@ -236,15 +240,6 @@ private struct MeetingBodyView: View {
             PostJoinDismissController.shared.dismissAfterJoin(context: .detailPanel)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var attributed: NSAttributedString {
-        MeetingBodyAttributedBuilder.attributedString(
-            for: nodes,
-            font: .systemFont(ofSize: 12),
-            color: .secondaryLabelColor,
-            linkColor: .linkColor
-        )
     }
 }
 
