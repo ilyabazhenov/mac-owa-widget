@@ -16,6 +16,14 @@ struct SelectableAttributedText: NSViewRepresentable {
     let onOpenURL: (URL) -> Void
 
     func makeNSView(context: Context) -> NSTextView {
+        let textView = Self.makeTextView()
+        textView.delegate = context.coordinator
+        return textView
+    }
+
+    /// Separate from `makeNSView` so the configuration can be asserted in tests — one flag here
+    /// decides whether the body lands where SwiftUI put it.
+    static func makeTextView() -> NSTextView {
         let textView = NSTextView()
         textView.isEditable = false
         textView.isSelectable = true
@@ -23,9 +31,12 @@ struct SelectableAttributedText: NSViewRepresentable {
         textView.textContainerInset = .zero
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
-        textView.isVerticallyResizable = true
+        // Must stay off: a self-resizing text view whose text is taller than the frame it was given
+        // grows itself and shifts its origin (frame (0, 0, 300, 400) becomes (0, -499, 300, 899)),
+        // which in the panel showed up as the agenda sliding down behind a blank gap. The height
+        // comes from `sizeThatFits`; the view itself must not have an opinion.
+        textView.isVerticallyResizable = false
         textView.isHorizontallyResizable = false
-        textView.delegate = context.coordinator
         // The attributed string already carries the link colour; without clearing these the text
         // view would repaint links in its own blue and add a second underline.
         textView.linkTextAttributes = [:]
