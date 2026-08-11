@@ -42,4 +42,13 @@ final class MeetingAttendeeListTests: XCTestCase {
         let input = [attendee("Solo Organizer")]
         XCTAssertTrue(MeetingAttendeeList.forDisplay(input, organizer: "Solo Organizer").isEmpty)
     }
+
+    /// A small invite shows its roster right away; a company-wide one starts folded so the
+    /// agenda stays visible in the panel.
+    func testAutoExpandsOnlySmallLists() {
+        XCTAssertTrue(MeetingAttendeeList.autoExpands(count: 0))
+        XCTAssertTrue(MeetingAttendeeList.autoExpands(count: MeetingAttendeeList.autoExpandLimit))
+        XCTAssertFalse(MeetingAttendeeList.autoExpands(count: MeetingAttendeeList.autoExpandLimit + 1))
+        XCTAssertFalse(MeetingAttendeeList.autoExpands(count: 202))
+    }
 }

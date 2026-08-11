@@ -176,6 +176,8 @@
 "join.hotkey.noMeeting" = "No meeting starting now";
 "meeting.copy.link" = "Copy join link";
 "meeting.body.copy" = "Copy description";
+"meeting.attendees.expand" = "Show attendees";
+"meeting.attendees.collapse" = "Hide attendees";
 "meeting.now" = "now";
 "meeting.happening.now" = "Happening now";
 "meeting.remaining.minutes" = "%@ remaining";

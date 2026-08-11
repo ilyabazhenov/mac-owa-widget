@@ -176,6 +176,8 @@
 "join.hotkey.noMeeting" = "Сейчас нет встречи для подключения";
 "meeting.copy.link" = "Скопировать ссылку";
 "meeting.body.copy" = "Скопировать описание";
+"meeting.attendees.expand" = "Показать участников";
+"meeting.attendees.collapse" = "Скрыть участников";
 "meeting.now" = "сейчас";
 "meeting.happening.now" = "Идёт сейчас";
 "meeting.remaining.minutes" = "осталось %@";

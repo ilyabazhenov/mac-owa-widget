@@ -249,6 +249,9 @@ private struct MeetingAttendeesView: View {
 
     @EnvironmentObject private var localization: LocalizationService
 
+    /// `nil` = follow the automatic policy; set once the user clicks the header.
+    @State private var expandOverride: Bool?
+
     var body: some View {
         Group {
             switch state {
@@ -266,6 +269,8 @@ private struct MeetingAttendeesView: View {
                 attendeesList(details.attendees)
             }
         }
+        // Switching meetings inside the same panel must not carry the previous choice over.
+        .onChange(of: event.id) { _ in expandOverride = nil }
     }
 
     /// Two flexible columns so long Russian full names share the panel width; truncated names
@@ -285,29 +290,51 @@ private struct MeetingAttendeesView: View {
             // else every status comes back "Unknown", so we drop the (meaningless) circles and explain.
             let showStatus = event.isOrganizer
 
+            let isExpanded = expandOverride ?? MeetingAttendeeList.autoExpands(count: visible.count)
+
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: "person.2")
-                        .frame(width: 16)
-                    Text(localization.tr("meeting.attendees.title"))
-                    Text("\(visible.count)")
-                        .foregroundStyle(.tertiary)
-                }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
+                header(count: visible.count, isExpanded: isExpanded)
 
-                if !showStatus {
-                    Label(localization.tr("meeting.attendees.status.organizerOnly"), systemImage: "info.circle")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.leading, 22)
-                }
+                if isExpanded {
+                    if !showStatus {
+                        Label(localization.tr("meeting.attendees.status.organizerOnly"), systemImage: "info.circle")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.leading, 22)
+                    }
 
-                group(titleKey: "meeting.attendees.required", attendees: required, showStatus: showStatus)
-                group(titleKey: "meeting.attendees.optional", attendees: optional, showStatus: showStatus)
+                    group(titleKey: "meeting.attendees.required", attendees: required, showStatus: showStatus)
+                    group(titleKey: "meeting.attendees.optional", attendees: optional, showStatus: showStatus)
+                }
             }
         }
+    }
+
+    /// Clickable header: on a 200-person invite the roster otherwise buries the agenda, so a large
+    /// list starts folded and the count alone stays visible.
+    private func header(count: Int, isExpanded: Bool) -> some View {
+        Button {
+            expandOverride = !isExpanded
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "person.2")
+                    .frame(width: 16)
+                Text(localization.tr("meeting.attendees.title"))
+                Text("\(count)")
+                    .foregroundStyle(.tertiary)
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(localization.tr(isExpanded ? "meeting.attendees.collapse" : "meeting.attendees.expand"))
+        .accessibilityLabel(localization.tr(isExpanded ? "meeting.attendees.collapse" : "meeting.attendees.expand"))
+        .accessibilityValue("\(count)")
     }
 
     @ViewBuilder
@@ -384,6 +411,12 @@ private struct MeetingAttendeesView: View {
 /// (who is shown on their own row, and whom Exchange also lists among the required attendees) and
 /// sorts the remainder alphabetically.
 enum MeetingAttendeeList {
+    /// Up to this many participants the list is worth showing straight away; beyond it the roster
+    /// (company-wide invites run into the hundreds) would push the agenda out of the panel.
+    static let autoExpandLimit = 8
+
+    static func autoExpands(count: Int) -> Bool { count <= autoExpandLimit }
+
     static func forDisplay(_ attendees: [EventAttendee], organizer: String?) -> [EventAttendee] {
         let organizerKey = organizer?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return attendees
