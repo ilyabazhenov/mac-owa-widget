@@ -1,3 +1,47 @@
+## v1.0.48 - 2026-08-11
+
+### RU
+
+#### Что изменилось
+
+- Описание встречи больше не обрезается на 255 символах. Раньше запрос синхронизации отдавал только короткое превью, которое Exchange режет ровно на 255 символов, — повестка обрывалась на полуслове. Теперь при открытии карточки подгружается полный текст (тем же запросом, что и список участников, без лишнего похода в сеть).
+- Повестка сохраняет структуру. Таблица с таймингом остаётся таблицей с колонками по содержимому, пункты списков — с маркерами и вложенностью, длинный пункт переносится с отступом и не читается как два разных. Служебная разметка письма (стили, переносы HTML, спецсимволы) больше не протекает в текст.
+- Текст описания можно выделять и копировать, а ссылки на страницы с материалами стали кликабельными — открываются по клику, popover при этом закрывается. Открываются только `https`-ссылки.
+- Список участников сворачивается. На встрече с сотнями приглашённых он больше не выдавливает повестку из карточки: видно количество, раскрывается по клику. Небольшие списки (до 8 человек) показываются сразу.
+- Карточка встречи теперь по высоте содержимого, а не всегда во всю панель, и закрывается тремя способами: крестиком, кликом рядом с ней и по Esc. Esc без открытой карточки закрывает поиск, а если и его нет — сам popover.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- Meeting descriptions are no longer cut at 255 characters. The sync request only ever returned a short preview, which Exchange truncates at exactly 255 characters, so agendas broke off mid-sentence. Opening a meeting now loads the full text — via the same request that fetches attendees, with no extra round trip.
+- Agendas keep their structure. A timetable stays a table with content-sized columns, list items keep their markers and nesting, and a long item wraps with a hanging indent instead of reading as two separate items. The mail's own markup (stylesheets, HTML line wrapping, entities) no longer leaks into the text.
+- Description text can be selected and copied, and links to reference pages are clickable — following one closes the popover. Only `https` links are opened.
+- The attendee list collapses. On a meeting with hundreds of invitees it no longer pushes the agenda out of the card: the count stays visible and the list expands on click. Short lists (up to 8 people) are shown right away.
+- The meeting card is now sized to its content instead of always filling the panel, and it closes three ways: the close button, a click beside it, and Esc. With no card open, Esc closes the search bar, and with neither open it closes the popover.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove the quarantine attributes (only needed on the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates install automatically via the “Install” button inside the app.
+
 ## v1.0.47 - 2026-07-06
 
 ### RU
