@@ -219,10 +219,15 @@ private struct MeetingBodyView: View {
     @EnvironmentObject private var localization: LocalizationService
 
     var body: some View {
-        Text(MeetingBodyLinkFormatter.attributedBody(text))
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(MeetingBodyLayout.blocks(from: text)) { block in
+                row(for: block)
+                    .padding(.top, block.hasGapBefore ? 6 : 0)
+            }
+        }
             .font(.system(size: 12))
             .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .textSelection(.enabled)
             .environment(\.openURL, OpenURLAction { url in
                 // The formatter already filtered schemes; opening through MeetingURLOpener keeps
@@ -233,12 +238,36 @@ private struct MeetingBodyView: View {
                 return .handled
             })
             .contextMenu {
+                // Selection now works per line, so "copy everything" needs its own entry.
                 Button(localization.tr("meeting.body.copy")) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                 }
             }
-            .accessibilityLabel(text)
+    }
+
+    /// Bullets render as marker + text so a wrapped line stays aligned under the first character
+    /// instead of falling back to the left edge and reading as a new item.
+    @ViewBuilder
+    private func row(for block: MeetingBodyLayout.Block) -> some View {
+        switch block.kind {
+        case .paragraph:
+            lineText(block.text)
+        case .bullet(let level):
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(level > 1 ? MeetingBodyHTMLConverter.nestedBulletPrefix : MeetingBodyHTMLConverter.bulletPrefix)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+                lineText(block.text)
+            }
+            .padding(.leading, level > 1 ? 14 : 0)
+        }
+    }
+
+    private func lineText(_ line: String) -> some View {
+        Text(MeetingBodyLinkFormatter.attributedBody(line))
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
