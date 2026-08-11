@@ -1,10 +1,15 @@
 import SwiftUI
 import AppKit
 
-/// Owns the local key monitor. A reference type on purpose: `deinit` guarantees the monitor is
-/// removed even if SwiftUI never delivers `onDisappear`, and the handler lives in a mutable
-/// property that every render refreshes — a monitor closure captured once would otherwise keep
-/// answering from the view snapshot that installed it.
+/// Opaque monitor token. `NSEvent`'s monitor object is only ever handed back to AppKit, so moving
+/// it across threads is safe even though its type carries no such guarantee.
+private struct EventMonitorToken: @unchecked Sendable {
+    let value: Any
+}
+
+/// Owns the local key monitor. A reference type on purpose: the handler lives in a mutable
+/// property that every render refreshes (a monitor closure captured once would keep answering from
+/// the view snapshot that installed it), and `deinit` can act as a last-resort teardown.
 private final class EscapeKeyMonitorBox: ObservableObject {
     var action: (NSEvent) -> Bool = { _ in false }
 
@@ -21,9 +26,21 @@ private final class EscapeKeyMonitorBox: ObservableObject {
         }
     }
 
+    func remove() {
+        guard let monitor else { return }
+        NSEvent.removeMonitor(monitor)
+        self.monitor = nil
+    }
+
+    /// Backstop for a view that never receives `onDisappear`. Releasing a `@StateObject` normally
+    /// happens on the main thread, but that is not a contract, and `removeMonitor` is AppKit.
     deinit {
-        if let monitor {
-            NSEvent.removeMonitor(monitor)
+        guard let monitor else { return }
+        let token = EventMonitorToken(value: monitor)
+        if Thread.isMainThread {
+            NSEvent.removeMonitor(token.value)
+        } else {
+            DispatchQueue.main.async { NSEvent.removeMonitor(token.value) }
         }
     }
 }
@@ -36,7 +53,9 @@ private final class EscapeKeyMonitorBox: ObservableObject {
 /// A local event monitor sees the key whoever is first responder.
 ///
 /// The monitor is app-wide, so `action` receives the event and decides whether the key was meant
-/// for it: returning `false` lets Esc travel on to whichever window actually has focus.
+/// for it: returning `false` lets Esc travel on to whichever window actually has focus. It is also
+/// installed only while the view is on screen — keeping an app-wide key hook alive for a popover
+/// that is closed would widen the interception window for no reason.
 private struct EscapeKeyMonitor: ViewModifier {
     let action: (NSEvent) -> Bool
 
@@ -46,7 +65,9 @@ private struct EscapeKeyMonitor: ViewModifier {
         // Assigning a plain (non-published) property during an update publishes nothing, so this
         // cannot feed back into the render loop.
         box.action = action
-        return content.onAppear { box.install() }
+        return content
+            .onAppear { box.install() }
+            .onDisappear { box.remove() }
     }
 }
 

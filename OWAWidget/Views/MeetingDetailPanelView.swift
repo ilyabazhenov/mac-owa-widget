@@ -11,7 +11,9 @@ struct MeetingDetailPanelView: View {
 
     private let headerHeight: CGFloat = 48
     private let dividerHeight: CGFloat = 1
-    private let minPanelHeight: CGFloat = 230
+    /// Only keeps the card from collapsing while attendees are still loading — the height itself
+    /// comes from the content.
+    private let minPanelHeight: CGFloat = 150
     private let maxPanelHeight: CGFloat = 400
 
     var body: some View {
