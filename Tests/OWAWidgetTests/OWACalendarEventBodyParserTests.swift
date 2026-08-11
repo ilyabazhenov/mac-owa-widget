@@ -16,6 +16,23 @@ final class OWACalendarEventBodyParserTests: XCTestCase {
         return try! JSONSerialization.data(withJSONObject: json)
     }
 
+    /// The raw markup travels alongside the text so the panel can rebuild real tables from it.
+    func testKeepsOriginalMarkupForHTMLBodies() throws {
+        let data = response(item: [
+            "Body": ["BodyType": "HTML", "Value": "<p>Повестка</p>"],
+        ])
+
+        XCTAssertEqual(OWACalendarEventBodyParser.body(fromJSONData: data)?.html, "<p>Повестка</p>")
+    }
+
+    func testPlainTextBodyCarriesNoMarkup() throws {
+        let data = response(item: [
+            "TextBody": ["BodyType": "Text", "Value": "Повестка в виде текста"],
+        ])
+
+        XCTAssertNil(OWACalendarEventBodyParser.body(fromJSONData: data)?.html)
+    }
+
     func testExtractsFullHTMLBodyAsPlainText() throws {
         let data = response(item: [
             "Subject": "Груминг",
@@ -27,7 +44,7 @@ final class OWACalendarEventBodyParserTests: XCTestCase {
             ],
         ])
 
-        XCTAssertEqual(OWACalendarEventBodyParser.plainBody(fromJSONData: data), "Повестка\n\nи материалы")
+        XCTAssertEqual(OWACalendarEventBodyParser.body(fromJSONData: data)?.text, "Повестка\n\nи материалы")
     }
 
     /// The response envelope has a top-level `Body` of its own — it carries no `Value`
@@ -35,7 +52,7 @@ final class OWACalendarEventBodyParserTests: XCTestCase {
     func testIgnoresResponseEnvelopeBody() {
         let data = response(item: ["Subject": "Без описания"])
 
-        XCTAssertNil(OWACalendarEventBodyParser.plainBody(fromJSONData: data))
+        XCTAssertNil(OWACalendarEventBodyParser.body(fromJSONData: data)?.text)
     }
 
     func testPrefersPlainTextBodyOverHTML() {
@@ -44,7 +61,7 @@ final class OWACalendarEventBodyParserTests: XCTestCase {
             "Body": ["BodyType": "HTML", "Value": "<p>Повестка в виде HTML</p>"],
         ])
 
-        XCTAssertEqual(OWACalendarEventBodyParser.plainBody(fromJSONData: data), "Повестка в виде текста")
+        XCTAssertEqual(OWACalendarEventBodyParser.body(fromJSONData: data)?.text, "Повестка в виде текста")
     }
 
     /// Some builds label a plain-text body as HTML-free but still send markup; sniff the value.
@@ -53,7 +70,7 @@ final class OWACalendarEventBodyParserTests: XCTestCase {
             "Body": ["BodyType": "Text", "Value": "<p>Повестка</p>"],
         ])
 
-        XCTAssertEqual(OWACalendarEventBodyParser.plainBody(fromJSONData: data), "Повестка")
+        XCTAssertEqual(OWACalendarEventBodyParser.body(fromJSONData: data)?.text, "Повестка")
     }
 
     func testBlankBodyIsTreatedAsMissing() {
@@ -61,10 +78,10 @@ final class OWACalendarEventBodyParserTests: XCTestCase {
             "Body": ["BodyType": "HTML", "Value": "<html><head><style>p{margin:0}</style></head><body><p>  </p></body></html>"],
         ])
 
-        XCTAssertNil(OWACalendarEventBodyParser.plainBody(fromJSONData: data))
+        XCTAssertNil(OWACalendarEventBodyParser.body(fromJSONData: data)?.text)
     }
 
     func testMalformedPayloadReturnsNil() {
-        XCTAssertNil(OWACalendarEventBodyParser.plainBody(fromJSONData: Data("not json".utf8)))
+        XCTAssertNil(OWACalendarEventBodyParser.body(fromJSONData: Data("not json".utf8))?.text)
     }
 }

@@ -787,9 +787,11 @@ actor OWAClient {
             throw OWAError.httpError(http.statusCode, msg)
         }
 
+        let body = OWACalendarEventBodyParser.body(fromJSONData: data)
         return CalendarEventDetails(
             attendees: OWACalendarEventAttendeesParser.attendees(fromJSONData: data),
-            body: OWACalendarEventBodyParser.plainBody(fromJSONData: data)
+            body: body?.text,
+            bodyHTML: body?.html
         )
     }
 

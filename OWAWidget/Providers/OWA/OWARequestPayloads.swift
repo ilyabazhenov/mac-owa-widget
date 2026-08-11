@@ -464,13 +464,16 @@ enum OWACalendarEventBodyParser {
     /// Body fields in the order the provider prefers them: plain text first, HTML last.
     private static let fieldPriority = ["TextBody", "UniqueBody", "Body", "NormalizedBody"]
 
-    /// Returns the body already converted to plain text, or `nil` when the response carries none.
-    static func plainBody(fromJSONData data: Data) -> String? {
+    /// Returns the body as plain text plus the original markup (the detail panel rebuilds real
+    /// tables from it), or `nil` when the response carries no body at all.
+    static func body(fromJSONData data: Data) -> (text: String, html: String?)? {
         guard let parsed = parse(fromJSONData: data) else { return nil }
-        let text = (parsed.isHTML || MeetingBodyHTMLConverter.looksLikeHTML(parsed.value))
+        let isMarkup = parsed.isHTML || MeetingBodyHTMLConverter.looksLikeHTML(parsed.value)
+        let text = isMarkup
             ? MeetingBodyHTMLConverter.plainText(from: parsed.value)
             : parsed.value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? nil : text
+        guard !text.isEmpty else { return nil }
+        return (text, isMarkup ? parsed.value : nil)
     }
 
     static func parse(fromJSONData data: Data) -> ParsedBody? {

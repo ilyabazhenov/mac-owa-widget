@@ -530,7 +530,7 @@ final class CalendarService: ObservableObject {
     /// sync replaces the event.
     func loadDetails(for event: CalendarEvent) async throws -> CalendarEventDetails {
         if let cached = events.first(where: { $0.id == event.id }), let attendees = cached.detailedAttendees {
-            return CalendarEventDetails(attendees: attendees, body: cached.fullBody)
+            return CalendarEventDetails(attendees: attendees, body: cached.fullBody, bodyHTML: cached.fullBodyHTML)
         }
         guard let provider = providers.first(where: { $0.account.id == event.accountID }) else {
             throw CalendarProviderError.notSupported

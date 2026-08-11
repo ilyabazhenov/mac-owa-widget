@@ -25,10 +25,14 @@ struct CalendarEventDetails: Sendable, Hashable {
     let attendees: [EventAttendee]
     /// Full agenda text; `nil` when the meeting has no body or the server returned none.
     let body: String?
+    /// Original markup, kept so the panel can rebuild real tables. Never persisted — it is an
+    /// order of magnitude larger than the text and is refetched on demand anyway.
+    let bodyHTML: String?
 
-    init(attendees: [EventAttendee], body: String? = nil) {
+    init(attendees: [EventAttendee], body: String? = nil, bodyHTML: String? = nil) {
         self.attendees = attendees
         self.body = body
+        self.bodyHTML = bodyHTML
     }
 }
 
@@ -56,6 +60,9 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
     /// Lazily loaded full agenda. `bodyPreview` from the sync request is capped at 255 characters
     /// by Exchange, so this is the only place the complete text ever lives.
     let fullBody: String?
+    /// Markup behind `fullBody`, used to render tables. In-memory only: it is not part of the
+    /// Codable representation, so the on-disk cache stays small.
+    let fullBodyHTML: String?
 
     init(
         id: String,
@@ -77,7 +84,8 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         changeKey: String? = nil,
         instanceKey: String? = nil,
         detailedAttendees: [EventAttendee]? = nil,
-        fullBody: String? = nil
+        fullBody: String? = nil,
+        fullBodyHTML: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -99,6 +107,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         self.instanceKey = instanceKey
         self.detailedAttendees = detailedAttendees
         self.fullBody = fullBody
+        self.fullBodyHTML = fullBodyHTML
     }
 
     init(from decoder: Decoder) throws {
@@ -123,6 +132,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         instanceKey = try c.decodeIfPresent(String.self, forKey: .instanceKey)
         detailedAttendees = try c.decodeIfPresent([EventAttendee].self, forKey: .detailedAttendees)
         fullBody = try c.decodeIfPresent(String.self, forKey: .fullBody)
+        fullBodyHTML = nil
     }
 
     func encode(to encoder: Encoder) throws {
@@ -165,7 +175,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
             isCancelled: isCancelled, isOrganizer: isOrganizer,
             categories: categories, responseType: type, changeKey: changeKey,
             instanceKey: instanceKey, detailedAttendees: detailedAttendees,
-            fullBody: fullBody
+            fullBody: fullBody, fullBodyHTML: fullBodyHTML
         )
     }
 
@@ -180,7 +190,8 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
             isCancelled: isCancelled, isOrganizer: isOrganizer,
             categories: categories, responseType: responseType, changeKey: changeKey,
             instanceKey: instanceKey, detailedAttendees: details.attendees,
-            fullBody: details.body ?? fullBody
+            fullBody: details.body ?? fullBody,
+            fullBodyHTML: details.bodyHTML ?? fullBodyHTML
         )
     }
 

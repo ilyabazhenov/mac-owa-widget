@@ -133,7 +133,7 @@ struct MeetingDetailContentView: View {
 
             if let body = bodyText {
                 Divider()
-                MeetingBodyView(text: body)
+                MeetingBodyView(nodes: bodyNodes(for: body), plainText: body)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -161,6 +161,17 @@ struct MeetingDetailContentView: View {
             return full
         }
         return event.displayBody
+    }
+
+    /// Tables are rebuilt from the original markup when it is available; without it (cached text
+    /// after a restart, or a plain-text body) the same text renders as running text.
+    private func bodyNodes(for body: String) -> [MeetingBodyDocument.Node] {
+        if case .loaded(let details) = detailsState,
+           let html = details.bodyHTML,
+           details.body?.trimmingCharacters(in: .whitespacesAndNewlines) == body {
+            return MeetingBodyDocument.nodes(fromHTML: html)
+        }
+        return MeetingBodyDocument.nodes(fromPlainText: body)
     }
 
     private func detailRow(systemImage: String, text: String) -> some View {
@@ -208,21 +219,27 @@ struct MeetingDetailContentView: View {
     }
 }
 
-/// Meeting body: selectable text with clickable links.
+/// Meeting body: selectable text, clickable links and real tables.
 ///
-/// Agendas routinely carry wiki/tracker links, and before this the text was a plain `Text` —
-/// unselectable and unclickable, so the only way to follow a link was to reopen the meeting in
-/// OWA itself.
+/// Agendas routinely carry wiki/tracker links and a timetable, and before this the text was a
+/// plain `Text` — unselectable, unclickable and flattened, so the only way to read the agenda
+/// properly was to reopen the meeting in OWA itself.
 private struct MeetingBodyView: View {
-    let text: String
+    let nodes: [MeetingBodyDocument.Node]
+    /// Whole body as text — what the "copy description" menu puts on the pasteboard.
+    let plainText: String
 
     @EnvironmentObject private var localization: LocalizationService
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(MeetingBodyLayout.blocks(from: text)) { block in
-                row(for: block)
-                    .padding(.top, block.hasGapBefore ? 6 : 0)
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(nodes) { node in
+                switch node.kind {
+                case .text(let text):
+                    textBlocks(text)
+                case .table(let table):
+                    tableView(table)
+                }
             }
         }
             .font(.system(size: 12))
@@ -241,9 +258,37 @@ private struct MeetingBodyView: View {
                 // Selection now works per line, so "copy everything" needs its own entry.
                 Button(localization.tr("meeting.body.copy")) {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
+                    NSPasteboard.general.setString(plainText, forType: .string)
                 }
             }
+    }
+
+    private func textBlocks(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(MeetingBodyLayout.blocks(from: text)) { block in
+                row(for: block)
+                    .padding(.top, block.hasGapBefore ? 6 : 0)
+            }
+        }
+    }
+
+    /// Grid keeps the timetable a timetable: columns size themselves to content, so the short
+    /// "block"/"timing" cells stay narrow and the task column gets the remaining width.
+    private func tableView(_ table: MeetingBodyDocument.Table) -> some View {
+        Grid(alignment: .topLeading, horizontalSpacing: 10, verticalSpacing: 6) {
+            ForEach(Array(table.rows.enumerated()), id: \.offset) { index, cells in
+                if index > 0 {
+                    Divider().gridCellColumns(table.columnCount)
+                }
+                GridRow {
+                    ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in
+                        textBlocks(cell)
+                    }
+                }
+                .fontWeight(index == 0 && table.hasHeaderRow ? .semibold : .regular)
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     /// Bullets render as marker + text so a wrapped line stays aligned under the first character
