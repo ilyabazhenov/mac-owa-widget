@@ -123,10 +123,7 @@ struct MeetingDetailContentView: View {
             if let body = event.bodyPreview?.trimmingCharacters(in: .whitespacesAndNewlines),
                !body.isEmpty {
                 Divider()
-                Text(body)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                MeetingBodyView(text: body)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -174,6 +171,40 @@ struct MeetingDetailContentView: View {
         }
         let rest = cats.count - maxShow
         return "\(localization.tr("meeting.categories")): \(head) (\(localization.tr("meeting.categories.more", rest)))"
+    }
+}
+
+/// Meeting body: selectable text with clickable links.
+///
+/// Agendas routinely carry wiki/tracker links, and before this the text was a plain `Text` —
+/// unselectable and unclickable, so the only way to follow a link was to reopen the meeting in
+/// OWA itself.
+private struct MeetingBodyView: View {
+    let text: String
+
+    @EnvironmentObject private var localization: LocalizationService
+
+    var body: some View {
+        Text(MeetingBodyLinkFormatter.attributedBody(text))
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .environment(\.openURL, OpenURLAction { url in
+                // The formatter already filtered schemes; opening through MeetingURLOpener keeps
+                // the allow-list in one place. The popover is dismissed like after "Join", so the
+                // browser doesn't come up behind a floating panel.
+                guard MeetingURLOpener.open(url) else { return .discarded }
+                PostJoinDismissController.shared.dismissAfterJoin(context: .detailPanel)
+                return .handled
+            })
+            .contextMenu {
+                Button(localization.tr("meeting.body.copy")) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                }
+            }
+            .accessibilityLabel(text)
     }
 }
 
