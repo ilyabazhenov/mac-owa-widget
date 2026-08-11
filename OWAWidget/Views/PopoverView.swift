@@ -247,19 +247,23 @@ struct PopoverView: View {
             .accessibilityHidden(selectedEvent != nil)
             .overlay {
                 if selectedEvent != nil {
+                    // The dimmed area doubles as the dismiss target: clicking beside the card
+                    // closes it, the way a sheet behaves. It also stops a click from landing on
+                    // the timeline underneath and silently switching meetings.
                     Color(nsColor: .windowBackgroundColor)
                         .opacity(0.26)
-                        .allowsHitTesting(false)
+                        .contentShape(Rectangle())
+                        .onTapGesture { closeMeetingDetail() }
                         .transition(.opacity)
+                        .accessibilityHidden(true)
                 }
             }
 
             if let selectedEvent {
                 MeetingDetailPanelView(event: selectedEvent) {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        resetMeetingDetailState()
-                    }
+                    closeMeetingDetail()
                 }
+                .onExitCommand { closeMeetingDetail() }
                 .padding(.horizontal, contentHorizontalPadding)
                 .padding(.bottom, 8)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -400,6 +404,13 @@ struct PopoverView: View {
 
     private func resetMeetingDetailState() {
         selectedEvent = MeetingDetailStatePolicy.selectedEventAfterPopoverDisappear(selectedEvent)
+    }
+
+    /// Single exit point for the detail card: the close button, a click beside it, and Esc.
+    private func closeMeetingDetail() {
+        withAnimation(.easeInOut(duration: 0.18)) {
+            resetMeetingDetailState()
+        }
     }
 
     private func toggleSearch() {

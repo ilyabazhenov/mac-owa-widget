@@ -7,6 +7,11 @@ struct MeetingDetailPanelView: View {
 
     @EnvironmentObject private var localization: LocalizationService
     @AccessibilityFocusState private var closeButtonFocused: Bool
+    @State private var contentHeight: CGFloat = 0
+
+    private let headerHeight: CGFloat = 48
+    private let minPanelHeight: CGFloat = 230
+    private let maxPanelHeight: CGFloat = 400
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,9 +27,18 @@ struct MeetingDetailPanelView: View {
                 }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(key: DetailContentHeightKey.self, value: proxy.size.height)
+                        }
+                    )
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 230, maxHeight: 400)
+        // The card hugs its content instead of always filling the maximum height: a short meeting
+        // otherwise left a large blank area, and it left almost nothing beside the card to click
+        // in order to dismiss it.
+        .frame(maxWidth: .infinity, minHeight: panelHeight, maxHeight: panelHeight)
+        .onPreferenceChange(DetailContentHeightKey.self) { contentHeight = $0 }
         .background(
             RoundedRectangle(cornerRadius: 14)
                 .fill(Color(nsColor: .windowBackgroundColor))
@@ -37,6 +51,10 @@ struct MeetingDetailPanelView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(localization.tr("a11y.meeting.details"))
         .onAppear { closeButtonFocused = true }
+    }
+
+    private var panelHeight: CGFloat {
+        min(max(contentHeight + headerHeight, minPanelHeight), maxPanelHeight)
     }
 
     private var panelHeader: some View {
@@ -81,6 +99,14 @@ struct MeetingDetailPanelView: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 48)
+    }
+}
+
+/// Height of the scrollable content, used to size the card to what it actually shows.
+private struct DetailContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
