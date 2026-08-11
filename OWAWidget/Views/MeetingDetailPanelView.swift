@@ -133,7 +133,7 @@ struct MeetingDetailContentView: View {
 
             if let body = bodyText {
                 Divider()
-                MeetingBodyView(nodes: bodyNodes(for: body), plainText: body)
+                MeetingBodyView(nodes: bodyNodes(for: body))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -219,100 +219,32 @@ struct MeetingDetailContentView: View {
     }
 }
 
-/// Meeting body: selectable text, clickable links and real tables.
+/// Meeting body: real tables, clickable links and system-wide text selection.
 ///
-/// Agendas routinely carry wiki/tracker links and a timetable, and before this the text was a
-/// plain `Text` — unselectable, unclickable and flattened, so the only way to read the agenda
-/// properly was to reopen the meeting in OWA itself.
+/// Rendered by AppKit rather than SwiftUI: a `VStack` of `Text` rows could not be selected across
+/// rows, and `Grid` split the width evenly between columns, squeezing an agenda's task column into
+/// two words per line.
 private struct MeetingBodyView: View {
     let nodes: [MeetingBodyDocument.Node]
-    /// Whole body as text — what the "copy description" menu puts on the pasteboard.
-    let plainText: String
-
-    @EnvironmentObject private var localization: LocalizationService
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(nodes) { node in
-                switch node.kind {
-                case .text(let text):
-                    textBlocks(text)
-                case .table(let table):
-                    tableView(table)
-                }
-            }
+        SelectableAttributedText(attributed: attributed) { url in
+            // Links come from server-controlled calendar data: route them through the same
+            // scheme allow-list as join links, and close the popover so the browser doesn't
+            // come up behind a floating panel.
+            guard MeetingURLOpener.open(url) else { return }
+            PostJoinDismissController.shared.dismissAfterJoin(context: .detailPanel)
         }
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .textSelection(.enabled)
-            .environment(\.openURL, OpenURLAction { url in
-                // The formatter already filtered schemes; opening through MeetingURLOpener keeps
-                // the allow-list in one place. The popover is dismissed like after "Join", so the
-                // browser doesn't come up behind a floating panel.
-                guard MeetingURLOpener.open(url) else { return .discarded }
-                PostJoinDismissController.shared.dismissAfterJoin(context: .detailPanel)
-                return .handled
-            })
-            .contextMenu {
-                // Selection now works per line, so "copy everything" needs its own entry.
-                Button(localization.tr("meeting.body.copy")) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(plainText, forType: .string)
-                }
-            }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func textBlocks(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(MeetingBodyLayout.blocks(from: text)) { block in
-                row(for: block)
-                    .padding(.top, block.hasGapBefore ? 6 : 0)
-            }
-        }
-    }
-
-    /// Grid keeps the timetable a timetable: columns size themselves to content, so the short
-    /// "block"/"timing" cells stay narrow and the task column gets the remaining width.
-    private func tableView(_ table: MeetingBodyDocument.Table) -> some View {
-        Grid(alignment: .topLeading, horizontalSpacing: 10, verticalSpacing: 6) {
-            ForEach(Array(table.rows.enumerated()), id: \.offset) { index, cells in
-                if index > 0 {
-                    Divider().gridCellColumns(table.columnCount)
-                }
-                GridRow {
-                    ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in
-                        textBlocks(cell)
-                    }
-                }
-                .fontWeight(index == 0 && table.hasHeaderRow ? .semibold : .regular)
-            }
-        }
-        .padding(.vertical, 2)
-    }
-
-    /// Bullets render as marker + text so a wrapped line stays aligned under the first character
-    /// instead of falling back to the left edge and reading as a new item.
-    @ViewBuilder
-    private func row(for block: MeetingBodyLayout.Block) -> some View {
-        switch block.kind {
-        case .paragraph:
-            lineText(block.text)
-        case .bullet(let level):
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text(level > 1 ? MeetingBodyHTMLConverter.nestedBulletPrefix : MeetingBodyHTMLConverter.bulletPrefix)
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
-                lineText(block.text)
-            }
-            .padding(.leading, level > 1 ? 14 : 0)
-        }
-    }
-
-    private func lineText(_ line: String) -> some View {
-        Text(MeetingBodyLinkFormatter.attributedBody(line))
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
+    private var attributed: NSAttributedString {
+        MeetingBodyAttributedBuilder.attributedString(
+            for: nodes,
+            font: .systemFont(ofSize: 12),
+            color: .secondaryLabelColor,
+            linkColor: .linkColor
+        )
     }
 }
 
