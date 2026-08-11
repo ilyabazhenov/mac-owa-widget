@@ -10,6 +10,10 @@ import Foundation
 ///
 /// Anchors keep their destination: when the visible text is not the URL itself, the `href` is
 /// appended in parentheses so `MeetingBodyLinkFormatter` can still make it clickable.
+///
+/// Agendas are structured documents, so structure is preserved as far as plain text allows:
+/// a table row stays on one line with `|` between cells, and list items keep `•` / `◦` markers
+/// matching the nesting OWA renders.
 enum MeetingBodyHTMLConverter {
 
     static func looksLikeHTML(_ string: String) -> Bool {
@@ -23,7 +27,19 @@ enum MeetingBodyHTMLConverter {
     static func plainText(from html: String) -> String {
         var text = html
         text = replace(in: text, pattern: dropWholeElementsPattern, with: " ")
+        // Outlook hard-wraps the *markup* at ~70 columns. In HTML those newlines are ordinary
+        // whitespace, so they must collapse to spaces — keeping them split sentences mid-phrase
+        // ("Дерево контактов. Исключения\n(доработка)"). Every line break below comes from a tag.
+        text = replace(in: text, pattern: sourceNewlinePattern, with: " ")
         text = expandAnchors(in: text)
+        // Outlook wraps the content of every cell and list item in its own <p>. Left alone, that
+        // paragraph break fires before the cell separator does and a table row falls apart into one
+        // line per cell — so inside cells and bullets the block tags are flattened to spaces first.
+        text = flattenBlockTags(in: text, insideElementsMatching: cellContentPattern)
+        text = flattenBlockTags(in: text, insideElementsMatching: listItemContentPattern)
+        text = markListItems(in: text)
+        text = replace(in: text, pattern: cellPattern, with: cellSeparator)
+        text = replace(in: text, pattern: paragraphPattern, with: "\n\n")
         text = replace(in: text, pattern: lineBreakPattern, with: "\n")
         text = replace(in: text, pattern: tagPattern, with: "")
         text = decodeEntities(in: text)
@@ -63,6 +79,32 @@ enum MeetingBodyHTMLConverter {
         return result
     }
 
+    /// Turns `<li>` into a bullet on its own line, tracking list nesting so sub-items get the
+    /// hollow marker OWA itself renders. Markers carry the hierarchy instead of indentation:
+    /// leading spaces would be trimmed away by the line normalization.
+    private static func markListItems(in html: String) -> String {
+        var depth = 0
+        return replaceMatches(in: html, pattern: listStructurePattern) { match, ns in
+            let tag = ns.substring(with: match.range).lowercased()
+            if tag.hasPrefix("</") {
+                depth = max(0, depth - 1)
+                return "\n"
+            }
+            if tag.hasPrefix("<u") || tag.hasPrefix("<o") {
+                depth += 1
+                return " "
+            }
+            return "\n" + (depth > 1 ? nestedBulletPrefix : bulletPrefix)
+        }
+    }
+
+    /// Replaces `<p>`/`<div>`/`<br>` with spaces, but only within the elements the pattern matches.
+    private static func flattenBlockTags(in html: String, insideElementsMatching pattern: NSRegularExpression) -> String {
+        replaceMatches(in: html, pattern: pattern) { match, ns in
+            replace(in: ns.substring(with: match.range), pattern: innerBlockTagPattern, with: " ")
+        }
+    }
+
     private static func decodeEntities(in string: String) -> String {
         guard string.contains("&") else { return string }
         var result = string
@@ -90,9 +132,18 @@ enum MeetingBodyHTMLConverter {
 
         var lines: [String] = []
         for rawLine in unified.components(separatedBy: "\n") {
-            let line = rawLine
+            var line = rawLine
                 .replacingOccurrences(of: "[ \t]+", with: " ", options: .regularExpression)
                 .trimmingCharacters(in: .whitespaces)
+            if line.contains("|") {
+                // Empty cells collapse, and a row never starts or ends with a dangling separator.
+                line = line
+                    .replacingOccurrences(of: #"\s*\|(\s*\|)+\s*"#, with: cellSeparator, options: .regularExpression)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "| "))
+            }
+            // An empty <li> would otherwise leave a lone bullet behind.
+            if line == bulletPrefix.trimmingCharacters(in: .whitespaces)
+                || line == nestedBulletPrefix.trimmingCharacters(in: .whitespaces) { continue }
             if line.isEmpty, lines.last?.isEmpty == true { continue }
             lines.append(line)
         }
@@ -139,11 +190,26 @@ enum MeetingBodyHTMLConverter {
         try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
     }
 
+    /// Agenda tables are common in invites; a row kept on one line stays readable in the narrow
+    /// panel, whereas one cell per line (the naive rendering) turns a 3×4 table into 12 lines.
+    static let cellSeparator = " | "
+    static let bulletPrefix = "• "
+    static let nestedBulletPrefix = "◦ "
+
     private static let dropWholeElementsPattern = regex(
         #"<!--.*?-->|<style\b[^>]*>.*?</style>|<script\b[^>]*>.*?</script>|<head\b[^>]*>.*?</head>"#
     )
+    private static let sourceNewlinePattern = regex(#"[\r\n\t]+"#)
     private static let anchorPattern = regex(#"<a\b[^>]*?href\s*=\s*["']([^"']*)["'][^>]*>(.*?)</a>"#)
-    private static let lineBreakPattern = regex(#"<br\b[^>]*>|</p>|</div>|</tr>|</li>|</h[1-6]>"#)
+    private static let cellContentPattern = regex(#"<t[dh]\b[^>]*>.*?</t[dh]>"#)
+    private static let listItemContentPattern = regex(#"<li\b[^>]*>.*?</li>"#)
+    private static let innerBlockTagPattern = regex(#"</?p\b[^>]*>|</?div\b[^>]*>|<br\b[^>]*>"#)
+    private static let listStructurePattern = regex(#"<ul\b[^>]*>|<ol\b[^>]*>|</ul>|</ol>|<li\b[^>]*>"#)
+    private static let cellPattern = regex(#"</t[dh]>"#)
+    private static let paragraphPattern = regex(#"</p>"#)
+    // `</li>`, `</ul>` and `</ol>` are deliberately absent — `markListItems` already handles them.
+    // Closing a list item here too would leave a blank line between every bullet.
+    private static let lineBreakPattern = regex(#"<br\b[^>]*>|</div>|</tr>|</h[1-6]>"#)
     private static let tagPattern = regex(#"<[^>]+>"#)
     private static let numericEntityPattern = regex(#"&#(x?)([0-9a-f]+);"#)
 

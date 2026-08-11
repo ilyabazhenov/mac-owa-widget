@@ -27,7 +27,7 @@ final class OWACalendarEventBodyParserTests: XCTestCase {
             ],
         ])
 
-        XCTAssertEqual(OWACalendarEventBodyParser.plainBody(fromJSONData: data), "Повестка\nи материалы")
+        XCTAssertEqual(OWACalendarEventBodyParser.plainBody(fromJSONData: data), "Повестка\n\nи материалы")
     }
 
     /// The response envelope has a top-level `Body` of its own — it carries no `Value`

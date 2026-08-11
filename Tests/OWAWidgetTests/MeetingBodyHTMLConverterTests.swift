@@ -13,7 +13,51 @@ final class MeetingBodyHTMLConverterTests: XCTestCase {
 
         let text = MeetingBodyHTMLConverter.plainText(from: html)
 
-        XCTAssertEqual(text, "Коллеги, привет!\nПовестка ниже")
+        XCTAssertEqual(text, "Коллеги, привет!\n\nПовестка ниже")
+    }
+
+    /// Outlook hard-wraps the markup itself; those newlines are whitespace in HTML and must not
+    /// break a sentence apart ("Дерево контактов. Исключения\n(доработка)" in a real invite).
+    func testSourceLineWrappingDoesNotBreakSentences() {
+        let html = """
+        <p>Дерево контактов. Исключения
+        (доработка)</p>
+        """
+
+        XCTAssertEqual(MeetingBodyHTMLConverter.plainText(from: html), "Дерево контактов. Исключения (доработка)")
+    }
+
+    /// A table row on one line keeps the agenda readable in the narrow panel; one cell per line
+    /// (the naive rendering) turned a small timetable into dozens of lines.
+    func testTableRowStaysOnOneLine() {
+        let html = """
+        <table><tr><td><p>Блок</p></td><td><p>Тайминг</p></td><td><p>Задачи</p></td></tr>
+        <tr><td><p>Soft \\ Hard</p></td><td><p>12:00 - 12:10</p></td><td><ul><li><p>Колл-листы</p></li>
+        <li><p>Госпочта</p><ul><li><p>103ф</p></li></ul></li></ul></td></tr></table>
+        """
+
+        XCTAssertEqual(
+            MeetingBodyHTMLConverter.plainText(from: html),
+            """
+            Блок | Тайминг | Задачи
+            Soft \\ Hard | 12:00 - 12:10
+            • Колл-листы
+            • Госпочта
+            ◦ 103ф
+            """
+        )
+    }
+
+    func testEmptyCellsCollapseInsteadOfLeavingSeparators() {
+        let html = "<table><tr><td></td><td>Тайминг</td><td></td></tr></table>"
+
+        XCTAssertEqual(MeetingBodyHTMLConverter.plainText(from: html), "Тайминг")
+    }
+
+    func testListItemsAreNotSeparatedByBlankLines() {
+        let html = "<ul><li>Первый</li><li>Второй</li><li>Третий</li></ul>"
+
+        XCTAssertEqual(MeetingBodyHTMLConverter.plainText(from: html), "• Первый\n• Второй\n• Третий")
     }
 
     func testBlockTagsBecomeLineBreaksWithoutBlankRuns() {
