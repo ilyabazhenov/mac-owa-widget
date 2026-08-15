@@ -6,7 +6,7 @@ final class MeetingEngagementStatsServiceTests: XCTestCase {
     func testTrackJoinDeduplicatesSameEventPerDay() {
         let defaults = UserDefaults(suiteName: "MeetingEngagementStatsServiceTests.dedup.\(UUID().uuidString)")!
         defaults.removePersistentDomain(forName: defaultsSuiteName(defaults))
-        let service = MeetingEngagementStatsService(defaults: defaults)
+        let service = MeetingEngagementStatsService(secureStore: makeIsolatedStore(), defaults: defaults)
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let event = makeEvent(id: "e1", startDate: now.addingTimeInterval(3600), hasJoinURL: true)
 
@@ -20,7 +20,7 @@ final class MeetingEngagementStatsServiceTests: XCTestCase {
     func testEligibleMeetingsUsesConfiguredScope() {
         let defaults = UserDefaults(suiteName: "MeetingEngagementStatsServiceTests.scope.\(UUID().uuidString)")!
         defaults.removePersistentDomain(forName: defaultsSuiteName(defaults))
-        let service = MeetingEngagementStatsService(defaults: defaults)
+        let service = MeetingEngagementStatsService(secureStore: makeIsolatedStore(), defaults: defaults)
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let withLink = makeEvent(id: "with-link", startDate: now.addingTimeInterval(3600), hasJoinURL: true)
         let withoutLink = makeEvent(id: "without-link", startDate: now.addingTimeInterval(7200), hasJoinURL: false)
@@ -35,7 +35,7 @@ final class MeetingEngagementStatsServiceTests: XCTestCase {
     func testStreakAndMilestoneAreComputedFromHistory() {
         let defaults = UserDefaults(suiteName: "MeetingEngagementStatsServiceTests.streak.\(UUID().uuidString)")!
         defaults.removePersistentDomain(forName: defaultsSuiteName(defaults))
-        let service = MeetingEngagementStatsService(defaults: defaults)
+        let service = MeetingEngagementStatsService(secureStore: makeIsolatedStore(), defaults: defaults)
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let calendar = AppTimeZone.calendar
         let today = calendar.startOfDay(for: now)
@@ -66,6 +66,17 @@ final class MeetingEngagementStatsServiceTests: XCTestCase {
             isAllDay: false,
             organizer: nil,
             accountID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        )
+    }
+
+    /// A throwaway encrypted store per test. Needed for isolation as much as for safety: every
+    /// instance writes under the same storage name, so a shared directory would leak state
+    /// between tests.
+    private func makeIsolatedStore() -> SecureStore {
+        SecureStore(
+            directory: URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+                .appendingPathComponent("engagement-tests-\(UUID().uuidString)", isDirectory: true),
+            keyProvider: InMemorySecureStoreKeyProvider()
         )
     }
 

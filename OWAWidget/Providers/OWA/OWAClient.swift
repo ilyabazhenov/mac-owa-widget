@@ -167,32 +167,21 @@ actor OWAClient {
     private let sessionDelegate: OWASessionDelegate
     private let session: URLSession
     private let log = Logger(subsystem: "com.owawidget", category: "OWAClient")
+    #if DEBUG
     private let getCalendarViewDebugFlagKey = "debugDumpGetCalendarViewResponse"
+    #endif
 
     #if DEBUG
-    private static let debugLogURL: URL? = DebugLogLocation.url(for: "owaclient.log")
+    private static let debugLogName = "owaclient.log"
 
     private nonisolated func setupDebugLog() {
-        guard let url = Self.debugLogURL else { return }
-        let header = "=== OWAClient Log started \(Date()) ===\n"
-        try? header.write(to: url, atomically: true, encoding: .utf8)
-        DebugLogLocation.tightenPermissions(at: url)
+        DebugLogLocation.write("=== OWAClient Log started \(Date()) ===\n", to: Self.debugLogName)
     }
 
     private nonisolated func dlog(_ message: String) {
-        guard let url = Self.debugLogURL else { return }
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss.SSS"
-        let line = "[\(f.string(from: Date()))] \(message)\n"
-        guard let data = line.data(using: .utf8) else { return }
-        if let handle = try? FileHandle(forWritingTo: url) {
-            handle.seekToEndOfFile()
-            handle.write(data)
-            try? handle.close()
-        } else {
-            try? data.write(to: url, options: .atomic)
-            DebugLogLocation.tightenPermissions(at: url)
-        }
+        DebugLogLocation.append("[\(f.string(from: Date()))] \(message)\n", to: Self.debugLogName)
     }
     #endif
 
@@ -684,12 +673,14 @@ actor OWAClient {
         log.info(
             "OWA request completed sync=\(syncID, privacy: .public) request=\(requestID, privacy: .public) action=GetCalendarView folderMode=\(folderMode, privacy: .public) status=\(http.statusCode, privacy: .public) bytes=\(data.count, privacy: .public) durationMs=\(durationMS, privacy: .public)"
         )
+        #if DEBUG
         dumpGetCalendarViewResponseIfNeeded(
             data: data,
             statusCode: http.statusCode,
             requestID: requestID,
             syncID: syncID
         )
+        #endif
 
         guard (200..<300).contains(http.statusCode) else {
             let msg = String(data: data.prefix(300), encoding: .utf8) ?? ""
@@ -764,10 +755,7 @@ actor OWAClient {
         )
 
         #if DEBUG
-        if let url = DebugLogLocation.url(for: "getcalendarevent_last.json") {
-            try? data.write(to: url, options: .atomic)
-            DebugLogLocation.tightenPermissions(at: url)
-        }
+        DebugLogLocation.write(data, to: "getcalendarevent_last.json")
         #endif
 
         if OWAError.isSessionStaleStatus(http.statusCode) {
@@ -795,6 +783,15 @@ actor OWAClient {
         )
     }
 
+    /// Dumps the raw `GetCalendarView` response — every meeting title, attendee and agenda the
+    /// mailbox returns — for debugging sync problems.
+    ///
+    /// DEBUG-only. It used to compile into release builds behind nothing but a hidden
+    /// `debugDumpGetCalendarViewResponse` default, writing the rawest data in the app to
+    /// `owa-debug/` as world-readable 0644 files in a 0755 directory: the one place on disk with
+    /// weaker permissions than everything around it. Now it cannot be switched on in a shipped
+    /// build at all, and what it writes in DEBUG is encrypted like every other trace.
+    #if DEBUG
     private func dumpGetCalendarViewResponseIfNeeded(
         data: Data,
         statusCode: Int,
@@ -803,30 +800,17 @@ actor OWAClient {
     ) {
         guard isGetCalendarViewDebugEnabled() else { return }
 
-        let fileManager = FileManager.default
-        let appSupportBase = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-                .appendingPathComponent("Library/Application Support", isDirectory: true)
-        let debugDirectory = appSupportBase
-            .appendingPathComponent("OWAWidget", isDirectory: true)
-            .appendingPathComponent("owa-debug", isDirectory: true)
-        do {
-            try fileManager.createDirectory(at: debugDirectory, withIntermediateDirectories: true)
-            let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-            let filename = "getcalendarview-\(timestamp)-status\(statusCode)-req\(requestID)-sync\(syncID).json"
-            let fileURL = debugDirectory.appendingPathComponent(filename)
-            let outputData = prettyPrintedJSONDataIfPossible(from: data) ?? data
-            try outputData.write(to: fileURL, options: .atomic)
-            log.notice(
-                "OWA GetCalendarView debug dump saved sync=\(syncID, privacy: .public) request=\(requestID, privacy: .public) status=\(statusCode, privacy: .public) path=\(fileURL.path, privacy: .public)"
-            )
-        } catch {
-            log.error(
-                "OWA GetCalendarView debug dump failed sync=\(syncID, privacy: .public) request=\(requestID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-            )
-        }
+        let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let name = "getcalendarview-\(timestamp)-status\(statusCode)-req\(requestID)-sync\(syncID).json"
+        let outputData = prettyPrintedJSONDataIfPossible(from: data) ?? data
+        DebugLogLocation.write(outputData, to: name)
+        log.notice(
+            "OWA GetCalendarView debug dump saved sync=\(syncID, privacy: .public) request=\(requestID, privacy: .public) status=\(statusCode, privacy: .public)"
+        )
     }
+    #endif
 
+    #if DEBUG
     private func prettyPrintedJSONDataIfPossible(from data: Data) -> Data? {
         guard let object = try? JSONSerialization.jsonObject(with: data) else { return nil }
         return try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
@@ -839,6 +823,7 @@ actor OWAClient {
         }
         return UserDefaults.standard.bool(forKey: getCalendarViewDebugFlagKey)
     }
+    #endif
 
     func respondToMeeting(itemId: String, changeKey: String, action: MeetingResponseAction) async throws {
         try await performEWSRespondRequest(itemId: itemId, changeKey: changeKey, action: action)
@@ -870,22 +855,12 @@ actor OWAClient {
     // MARK: - FindPeople (OWA JSON ComposeHAR)
 
     #if DEBUG
-    private static let findPeopleTraceURL: URL? = DebugLogLocation.url(for: "findpeople_trace.log")
+    private static let findPeopleTraceName = "findpeople_trace.log"
 
     private nonisolated func ftrace(_ message: String) {
-        guard let url = Self.findPeopleTraceURL else { return }
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss.SSS"
-        let line = "[\(f.string(from: Date()))] \(message)\n"
-        guard let data = line.data(using: .utf8) else { return }
-        if let handle = try? FileHandle(forWritingTo: url) {
-            handle.seekToEndOfFile()
-            handle.write(data)
-            try? handle.close()
-        } else {
-            try? data.write(to: url, options: .atomic)
-            DebugLogLocation.tightenPermissions(at: url)
-        }
+        DebugLogLocation.append("[\(f.string(from: Date()))] \(message)\n", to: Self.findPeopleTraceName)
     }
     #endif
 

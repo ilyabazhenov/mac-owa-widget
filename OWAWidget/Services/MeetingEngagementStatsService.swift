@@ -15,22 +15,28 @@ final class MeetingEngagementStatsService {
         var defaultPeriod: MeetingEngagementPeriod
     }
 
-    private let defaults: UserDefaults
-    private let storageKey = "meetingEngagementStats.storage.v1"
+    // `nonisolated` so the migrator can name these keys without hopping to the main actor.
+    nonisolated static let storageName = "engagement"
+    nonisolated static let legacyDefaultsKey = "meetingEngagementStats.storage.v1"
+
+    private let store: SecureCodableStore<StoragePayload>
     private let milestones = [10, 25, 50, 100, 250, 500]
     private var payload: StoragePayload
 
     var scope: MeetingEngagementScope { payload.scope }
     var defaultPeriod: MeetingEngagementPeriod { payload.defaultPeriod }
 
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        if let data = defaults.data(forKey: storageKey),
-           let decoded = try? JSONDecoder().decode(StoragePayload.self, from: data) {
-            self.payload = decoded
-        } else {
-            self.payload = StoragePayload(joins: [], scope: .joinableOnly, defaultPeriod: .today)
-        }
+    init(secureStore: SecureStore = .shared, defaults: UserDefaults = .standard) {
+        let store = SecureCodableStore<StoragePayload>(
+            name: Self.storageName,
+            legacyKey: Self.legacyDefaultsKey,
+            store: secureStore,
+            defaults: defaults,
+            policy: .fallBackToLegacy
+        )
+        self.store = store
+        self.payload = store.load()
+            ?? StoragePayload(joins: [], scope: .joinableOnly, defaultPeriod: .today)
     }
 
     func setScope(_ scope: MeetingEngagementScope) {
@@ -120,8 +126,7 @@ final class MeetingEngagementStatsService {
     }
 
     private func persist() {
-        guard let data = try? JSONEncoder().encode(payload) else { return }
-        defaults.set(data, forKey: storageKey)
+        store.save(payload)
     }
 
     private func eventKey(id: String, startDate: Date) -> String {

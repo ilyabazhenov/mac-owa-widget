@@ -7,25 +7,38 @@ struct LocationRecord: Codable, Identifiable, Sendable {
     var id: String { url }
 }
 
+/// Meeting rooms and conference links the user has typed before, offered as suggestions when
+/// composing. Encrypted at rest: the entries are internal room names and call URLs.
 enum RecentLocationsStore {
-    private static let key = "meetingLocationHistory"
+    typealias Store = SecureCodableStore<[LocationRecord]>
+
+    static let storageName = "recentLocations"
+    static let legacyDefaultsKey = "meetingLocationHistory"
     private static let maxCount = 10
 
-    static func load(defaults: UserDefaults = .standard) -> [LocationRecord] {
-        guard let data = defaults.data(forKey: key),
-              let list = try? JSONDecoder().decode([LocationRecord].self, from: data)
-        else { return [] }
-        return list.sorted { lhs, rhs in
-            lhs.useCount != rhs.useCount
-                ? lhs.useCount > rhs.useCount
-                : lhs.lastUsed > rhs.lastUsed
-        }
+    static let shared: Store = makeStore()
+
+    static func makeStore(
+        secureStore: SecureStore = .shared,
+        defaults: UserDefaults = .standard
+    ) -> Store {
+        Store(
+            name: storageName,
+            legacyKey: legacyDefaultsKey,
+            store: secureStore,
+            defaults: defaults,
+            policy: .fallBackToLegacy
+        )
     }
 
-    static func record(_ url: String, defaults: UserDefaults = .standard) {
+    static func load(store: Store = shared) -> [LocationRecord] {
+        sorted(store.load() ?? [])
+    }
+
+    static func record(_ url: String, store: Store = shared) {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        var current = load(defaults: defaults)
+        var current = load(store: store)
         let now = Date()
         if let idx = current.firstIndex(where: { $0.url == trimmed }) {
             current[idx].useCount += 1
@@ -33,14 +46,14 @@ enum RecentLocationsStore {
         } else {
             current.append(LocationRecord(url: trimmed, useCount: 1, lastUsed: now))
         }
-        current.sort { lhs, rhs in
+        store.save(Array(sorted(current).prefix(maxCount)))
+    }
+
+    private static func sorted(_ records: [LocationRecord]) -> [LocationRecord] {
+        records.sorted { lhs, rhs in
             lhs.useCount != rhs.useCount
                 ? lhs.useCount > rhs.useCount
                 : lhs.lastUsed > rhs.lastUsed
-        }
-        let trimmedList = Array(current.prefix(maxCount))
-        if let data = try? JSONEncoder().encode(trimmedList) {
-            defaults.set(data, forKey: key)
         }
     }
 }

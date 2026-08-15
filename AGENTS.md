@@ -35,6 +35,11 @@ OWAWidget - macOS menu bar приложение на Swift 6 и SwiftUI для �
 - `OWAWidget/Services/MeetingURLDetector.swift` - поиск ссылок на Teams, Zoom, Webex, Google Meet и другие платформы.
 - `OWAWidget/Services/NotificationService.swift` - локальные уведомления о встречах.
 - `OWAWidget/Services/KeychainService.swift` - хранение паролей в Keychain.
+- `OWAWidget/Services/SecureStore.swift` - шифрование всех данных на диске (AES-GCM, мастер-ключ в Keychain). Всё, что пишется в `~/Library/Application Support/OWAWidget/<bundle-id>/store/`, проходит через него. Новые хранилища добавляй сюда, а не в `UserDefaults`: там место только для настроек интерфейса.
+- `OWAWidget/Services/SecureCodableStore.swift` - `Codable`-обёртка над `SecureStore` с одноразовой миграцией из открытого `UserDefaults`-ключа. Порядок миграции обязателен: записали -> перечитали и сверили -> удалили legacy.
+- `OWAWidget/Services/SecureStoreMigrator.swift` - принудительный прогон миграций на старте для хранилищ, которые иначе мигрировали бы лениво.
+
+> **Тесты не должны трогать реальный Keychain.** `swift test` - обязательный гейт `make release-package`, а диалог авторизации связки повесит упаковку. Инжектируй `SecureStore(directory:keyProvider:)` с `InMemorySecureStoreKeyProvider`; `SecureStore.shared` под XCTest сам уходит во временный каталог, но это страховка, а не замена инжекции.
 - `OWAWidget/Services/LaunchAtLoginService.swift` - автозапуск при входе (`SMAppService.mainApp`).
 - `OWAWidget/Services/UpdateCheckService.swift` - обертка над Sparkle (`SPUStandardUpdaterController`) для авто-обновлений по EdDSA-подписанному appcast.xml.
 - `OWAWidget/Views/` - SwiftUI интерфейс меню и настроек.

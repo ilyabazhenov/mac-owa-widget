@@ -39,7 +39,7 @@ final class NotificationServiceAggregationTests: XCTestCase {
         XCTAssertEqual(pending.count, 1)
     }
 
-    func testScheduleNotificationsEncodesMeetingItemsIntoUserInfo() async throws {
+    func testScheduleNotificationsEncodesOnlyEventIDsIntoUserInfo() async throws {
         let center = MockNotificationCenter()
         let service = NotificationService(center: center)
         let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -50,12 +50,27 @@ final class NotificationServiceAggregationTests: XCTestCase {
         await service.scheduleNotifications(for: [first, second], leadMinutes: 5)
         let added = center.addedRequestsSnapshot()
         let request = try XCTUnwrap(added.first)
-        let raw = try XCTUnwrap(request.content.userInfo[NotificationService.itemsUserInfoKey] as? String)
+        let raw = try XCTUnwrap(request.content.userInfo[NotificationService.eventIDsUserInfoKey] as? String)
         let data = try XCTUnwrap(raw.data(using: .utf8))
-        let items = try JSONDecoder().decode([MeetingReminderItem].self, from: data)
+        let ids = try JSONDecoder().decode([String].self, from: data)
 
-        XCTAssertEqual(items.count, 2)
-        XCTAssertEqual(items.map(\.eventID), ["a", "b"])
+        XCTAssertEqual(ids, ["a", "b"])
+    }
+
+    /// The system stores pending notifications in its own unencrypted database, so nothing beyond
+    /// identifiers may be put there — no join URLs, no attendee payload.
+    func testScheduledNotificationCarriesNoJoinURLOrLegacyPayload() async throws {
+        let center = MockNotificationCenter()
+        let service = NotificationService(center: center)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let event = makeEvent(id: "a", start: now.addingTimeInterval(600), joinURL: URL(string: "https://secret.example.com/room"))
+
+        await service.scheduleNotifications(for: [event], leadMinutes: 5)
+        let request = try XCTUnwrap(center.addedRequestsSnapshot().first)
+
+        XCTAssertNil(request.content.userInfo[NotificationService.itemsUserInfoKey])
+        let serialized = request.content.userInfo.map { "\($0.key)=\($0.value)" }.joined()
+        XCTAssertFalse(serialized.contains("secret.example.com"), "join URL попал в системную базу уведомлений")
     }
 
     private func makeEvent(id: String, start: Date, joinURL: URL?) -> CalendarEvent {

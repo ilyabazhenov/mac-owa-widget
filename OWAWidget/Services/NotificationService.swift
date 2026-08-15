@@ -34,7 +34,11 @@ actor NotificationService {
     static let categoryID = "MEETING_JOIN"
     static let actionID = "JOIN_MEETING"
     private let idPrefix = "owawidget."
+    /// Legacy payload: the whole `[MeetingReminderItem]` list, titles and join URLs included.
+    /// No longer written — still read, so reminders scheduled by the previous version keep
+    /// working until they fire.
     static let itemsUserInfoKey = "meetingItems"
+    static let eventIDsUserInfoKey = "meetingEventIDs"
 
     private let center: any UserNotificationCentering
     private let log = Logger(subsystem: "com.owawidget", category: "NotificationService")
@@ -95,10 +99,15 @@ actor NotificationService {
             content.sound = .default
             content.categoryIdentifier = NotificationService.categoryID
 
-            if let itemsData = try? JSONEncoder().encode(cluster.items),
-               let itemsString = String(data: itemsData, encoding: .utf8) {
+            // Only identifiers travel in `userInfo`. The system keeps pending notifications in
+            // its own unencrypted store, outside anything `SecureStore` can protect, so the
+            // payload is resolved from the encrypted cache when the user actually clicks.
+            // (Title and body are still there — the OS has to render them — so this narrows the
+            // exposure rather than removing it.)
+            if let idsData = try? JSONEncoder().encode(cluster.items.map(\.eventID)),
+               let idsString = String(data: idsData, encoding: .utf8) {
                 content.userInfo = [
-                    NotificationService.itemsUserInfoKey: itemsString
+                    NotificationService.eventIDsUserInfoKey: idsString
                 ]
             }
 

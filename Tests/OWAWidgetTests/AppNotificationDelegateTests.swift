@@ -39,6 +39,28 @@ final class AppNotificationDelegateTests: XCTestCase {
         XCTAssertNil(decoded)
     }
 
+    // MARK: - Identifier-only payload
+
+    func testDecodeEventIDsReturnsIdentifiers() throws {
+        let raw = String(data: try JSONEncoder().encode(["a", "b"]), encoding: .utf8)
+        let userInfo: [AnyHashable: Any] = [NotificationService.eventIDsUserInfoKey: raw as Any]
+
+        XCTAssertEqual(AppNotificationDelegate.decodeEventIDs(from: userInfo), ["a", "b"])
+    }
+
+    func testDecodeEventIDsReturnsNilForInvalidPayload() {
+        let userInfo: [AnyHashable: Any] = [NotificationService.eventIDsUserInfoKey: "not-json"]
+
+        XCTAssertNil(AppNotificationDelegate.decodeEventIDs(from: userInfo))
+    }
+
+    func testDecodeEventIDsReturnsNilWhenOnlyLegacyPayloadPresent() {
+        // A reminder scheduled by the previous version: no identifiers, full payload instead.
+        let userInfo: [AnyHashable: Any] = [NotificationService.itemsUserInfoKey: "[]"]
+
+        XCTAssertNil(AppNotificationDelegate.decodeEventIDs(from: userInfo))
+    }
+
     func testHandleNotificationActionRemovesDeliveredNotificationForJoinAction() {
         let delegate = AppNotificationDelegate()
         var removedIDs: [String] = []

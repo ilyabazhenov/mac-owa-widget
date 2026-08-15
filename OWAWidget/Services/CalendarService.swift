@@ -93,7 +93,27 @@ final class CalendarService: ObservableObject {
     /// deterministically testable; defaults to the system clock in production.
     private let clock: () -> Date
 
-    private let accountsKey = "calendarAccounts"
+    /// Encrypted account list. Server hostnames and mailbox addresses used to sit in the
+    /// preferences plist in cleartext; the password has always lived in ``KeychainService`` and
+    /// stays there — moving it here would have made it unrecoverable if either the container or
+    /// the master key were lost, and it would not survive Migration Assistant.
+    private let accountStore: SecureCodableStore<[CalendarAccount]>
+
+    static func makeAccountStore(
+        secureStore: SecureStore = .shared,
+        defaults: UserDefaults = .standard
+    ) -> SecureCodableStore<[CalendarAccount]> {
+        SecureCodableStore(
+            name: "accounts",
+            legacyKey: "calendarAccounts",
+            store: secureStore,
+            defaults: defaults,
+            // Accounts cannot be rebuilt from the network: keep the legacy copy until the
+            // encrypted one is proven readable.
+            policy: .fallBackToLegacy
+        )
+    }
+
     private let syncIntervalKey = "syncInterval"
     private let notificationLeadKey = "notificationLeadMinutes"
     private let meetingReminderStyleKey = "meetingReminderStyle"
@@ -195,6 +215,7 @@ final class CalendarService: ObservableObject {
     init(
         providers: [any CalendarProvider] = [],
         eventCacheStore: any EventCacheStoring = EventCacheStore(),
+        accountStore: SecureCodableStore<[CalendarAccount]> = CalendarService.makeAccountStore(),
         notificationService: any NotificationServicing = NotificationService(),
         customMeetingReminders: any CustomMeetingReminderControlling = CustomMeetingReminderController(),
         initialNotificationLocalization: NotificationLocalization = .english,
@@ -204,6 +225,7 @@ final class CalendarService: ObservableObject {
     ) {
         self.providers = providers
         self.eventCacheStore = eventCacheStore
+        self.accountStore = accountStore
         self.notificationService = notificationService
         self.customMeetingReminders = customMeetingReminders
         self.clock = clock
@@ -227,6 +249,11 @@ final class CalendarService: ObservableObject {
             "CalendarService init accounts=\(accounts.count) cachedEvents=\(events.count)"
         )
 
+        // Drain the cleartext leftovers that nothing else on the startup path would touch.
+        Task.detached(priority: .utility) {
+            SecureStoreMigrator.runPendingMigrations()
+        }
+
         Task {
             await notificationService.setup(localization: notificationLocalization)
             await rebuildProviders()
@@ -239,7 +266,16 @@ final class CalendarService: ObservableObject {
     func addAccount(_ account: CalendarAccount, password: String) throws {
         try KeychainService.save(password: password, accountID: account.id)
         accounts.append(account)
-        persistAccounts()
+
+        // Writing to the encrypted store can genuinely fail — the master key lives in the
+        // Keychain and the user can decline access. Silently keeping the account in memory would
+        // show a working account that vanishes on the next launch, leaving its password behind as
+        // an orphaned Keychain item. Roll the whole thing back instead and let the UI report it.
+        guard persistAccounts() else {
+            accounts.removeLast()
+            try? KeychainService.delete(accountID: account.id)
+            throw CalendarServiceError.accountPersistenceFailed
+        }
         Task { await rebuildProviders() }
     }
 
@@ -248,8 +284,13 @@ final class CalendarService: ObservableObject {
             try KeychainService.save(password: pwd, accountID: account.id)
         }
         guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
+        let previous = accounts[idx]
         accounts[idx] = account
-        persistAccounts()
+
+        guard persistAccounts() else {
+            accounts[idx] = previous
+            throw CalendarServiceError.accountPersistenceFailed
+        }
         Task { await rebuildProviders() }
     }
 
@@ -263,7 +304,12 @@ final class CalendarService: ObservableObject {
             TrustedCertificateStore.untrust(forKey: TrustedCertificateStore.key(host: host, port: base.port ?? 443))
         }
         accounts.removeAll { $0.id == account.id }
-        persistAccounts()
+        // No rollback here: the password and the pinned certificate are already gone, so putting
+        // the account back would leave it unusable. Surface the failure instead — on the next
+        // launch the account reappears from the stale container and has to be removed again.
+        guard persistAccounts() else {
+            throw CalendarServiceError.accountPersistenceFailed
+        }
         Task { await rebuildProviders() }
     }
 
@@ -837,9 +883,7 @@ final class CalendarService: ObservableObject {
     // MARK: - Persistence
 
     private func loadAccounts() {
-        guard let data = UserDefaults.standard.data(forKey: accountsKey),
-              let decoded = try? JSONDecoder().decode([CalendarAccount].self, from: data)
-        else { return }
+        guard let decoded = accountStore.load() else { return }
 
         // Migrate legacy cleartext http:// server URLs to https://. Before HTTPS was
         // enforced these could be persisted; without migration they'd now fail to build a
@@ -867,9 +911,26 @@ final class CalendarService: ObservableObject {
         engagementSnapshot = meetingEngagementStats.snapshot(events: events, period: engagementPeriod, now: now)
     }
 
-    private func persistAccounts() {
-        if let data = try? JSONEncoder().encode(accounts) {
-            UserDefaults.standard.set(data, forKey: accountsKey)
+    @discardableResult
+    private func persistAccounts() -> Bool {
+        let saved = accountStore.save(accounts)
+        if !saved {
+            log.error("Failed to persist accounts to the encrypted store")
+            DiagnosticLog.event("Account persistence failed count=\(accounts.count)")
+        }
+        return saved
+    }
+}
+
+enum CalendarServiceError: Error, LocalizedError {
+    /// The encrypted account store could not be written — most likely the master key in the
+    /// Keychain is unavailable because the user declined the authorization prompt.
+    case accountPersistenceFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .accountPersistenceFailed:
+            "Could not save the account. Allow OWAWidget to access your keychain and try again."
         }
     }
 }

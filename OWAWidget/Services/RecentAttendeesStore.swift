@@ -7,26 +7,46 @@ struct AttendeeRecord: Codable, Identifiable, Sendable {
     var id: String { attendee.id }
 }
 
+/// Colleagues the user invites most often, kept for autocomplete in the compose window.
+///
+/// Names, addresses and job titles pulled from the corporate address book, so it is encrypted at
+/// rest like everything else. Callers pass a store explicitly or get the shared one; there is no
+/// `UserDefaults` parameter any more, which keeps tests from silently persisting through the
+/// production key.
 enum RecentAttendeesStore {
-    private static let key = "frequentMeetingAttendees"
-    private static let legacyKey = "recentMeetingAttendees"
+    typealias Store = SecureCodableStore<[AttendeeRecord]>
+
+    static let storageName = "recentAttendees"
+    static let legacyDefaultsKey = "frequentMeetingAttendees"
+    /// Even older shape: a bare `[ResolvedAttendee]` without usage counters.
+    static let olderLegacyDefaultsKey = "recentMeetingAttendees"
     private static let maxCount = 30
 
-    static func load(defaults: UserDefaults = .standard) -> [AttendeeRecord] {
-        migrate(defaults: defaults)
-        guard let data = defaults.data(forKey: key),
-              let list = try? JSONDecoder().decode([AttendeeRecord].self, from: data)
-        else { return [] }
-        return list.sorted { lhs, rhs in
-            lhs.useCount != rhs.useCount
-                ? lhs.useCount > rhs.useCount
-                : lhs.lastUsed > rhs.lastUsed
-        }
+    static let shared: Store = makeStore()
+
+    static func makeStore(
+        secureStore: SecureStore = .shared,
+        defaults: UserDefaults = .standard
+    ) -> Store {
+        // Fold the oldest format forward first, so the encrypted migration below sees a single
+        // legacy key regardless of how far back the install goes.
+        foldOlderLegacyKey(defaults: defaults)
+        return Store(
+            name: storageName,
+            legacyKey: legacyDefaultsKey,
+            store: secureStore,
+            defaults: defaults,
+            policy: .fallBackToLegacy
+        )
     }
 
-    static func record(_ attendees: [ResolvedAttendee], defaults: UserDefaults = .standard) {
+    static func load(store: Store = shared) -> [AttendeeRecord] {
+        sorted(store.load() ?? [])
+    }
+
+    static func record(_ attendees: [ResolvedAttendee], store: Store = shared) {
         guard !attendees.isEmpty else { return }
-        var current = load(defaults: defaults)
+        var current = load(store: store)
         let now = Date()
         for attendee in attendees {
             if let idx = current.firstIndex(where: { $0.attendee == attendee }) {
@@ -37,27 +57,27 @@ enum RecentAttendeesStore {
                 current.append(AttendeeRecord(attendee: attendee, useCount: 1, lastUsed: now))
             }
         }
-        current.sort { lhs, rhs in
+        store.save(Array(sorted(current).prefix(maxCount)))
+    }
+
+    private static func sorted(_ records: [AttendeeRecord]) -> [AttendeeRecord] {
+        records.sorted { lhs, rhs in
             lhs.useCount != rhs.useCount
                 ? lhs.useCount > rhs.useCount
                 : lhs.lastUsed > rhs.lastUsed
         }
-        let trimmed = Array(current.prefix(maxCount))
-        if let data = try? JSONEncoder().encode(trimmed) {
-            defaults.set(data, forKey: key)
-        }
     }
 
-    private static func migrate(defaults: UserDefaults) {
-        guard defaults.data(forKey: key) == nil,
-              let legacyData = defaults.data(forKey: legacyKey),
+    private static func foldOlderLegacyKey(defaults: UserDefaults) {
+        guard defaults.data(forKey: legacyDefaultsKey) == nil,
+              let legacyData = defaults.data(forKey: olderLegacyDefaultsKey),
               let legacy = try? JSONDecoder().decode([ResolvedAttendee].self, from: legacyData)
         else { return }
         let now = Date()
         let records = legacy.map { AttendeeRecord(attendee: $0, useCount: 1, lastUsed: now) }
         if let data = try? JSONEncoder().encode(records) {
-            defaults.set(data, forKey: key)
+            defaults.set(data, forKey: legacyDefaultsKey)
         }
-        defaults.removeObject(forKey: legacyKey)
+        defaults.removeObject(forKey: olderLegacyDefaultsKey)
     }
 }

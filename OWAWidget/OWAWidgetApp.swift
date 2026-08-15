@@ -113,6 +113,10 @@ struct OWAWidgetApp: App {
             calendarService.openJoinURL(for: item, source: .reminderNotification)
             PostJoinDismissController.shared.dismissAfterJoin(context: .notificationAction)
         }
+        Self.notificationDelegate.resolveReminderItems = { [calendarService] ids in
+            let byID = Dictionary(calendarService.events.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            return ids.compactMap { byID[$0] }.map(MeetingReminderItem.init(event:))
+        }
     }
 
     private func syncLocalization() {
@@ -214,8 +218,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - Notification delegate
 
+enum NotificationJoinAction: Equatable {
+    case join(MeetingReminderItem)
+    case choose([MeetingReminderItem])
+    case open(URL)
+    case unresolved
+}
+
 final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
     var onJoinFromNotification: ((MeetingReminderItem) -> Void)?
+    /// Turns the event identifiers carried in `userInfo` back into reminder items, reading from
+    /// the encrypted event cache. Always invoked on the main queue.
+    var resolveReminderItems: (([String]) -> [MeetingReminderItem])?
 
     // Called when user taps a notification or its action button
     func userNotificationCenter(
@@ -234,26 +248,53 @@ final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,
         guard handled else { return }
 
         let userInfo = response.notification.request.content.userInfo
-        if let items = Self.decodeItems(from: userInfo), !items.isEmpty {
-            DispatchQueue.main.async {
-                if items.count == 1, let item = items.first {
-                    self.onJoinFromNotification?(item)
-                    return
-                }
+        let eventIDs = Self.decodeEventIDs(from: userInfo)
+        let legacyItems = Self.decodeItems(from: userInfo)
+        let carriedURL = (userInfo["joinURL"] as? String).flatMap(URL.init(string:))
+
+        // One path for every payload shape. Notifications now carry identifiers rather than the
+        // meetings themselves, so resolution can come up empty — an unreadable event cache, or a
+        // meeting deleted server-side since the reminder was scheduled. That must not dead-end:
+        // fall back to whatever the notification carried, and failing that leave a trace, because
+        // a Join click that does nothing at all is indistinguishable from a broken app.
+        DispatchQueue.main.async {
+            let resolved = eventIDs.flatMap { self.resolveReminderItems?($0) } ?? []
+
+            switch Self.joinAction(resolved: resolved, legacy: legacyItems, carriedURL: carriedURL) {
+            case .join(let item):
+                self.onJoinFromNotification?(item)
+            case .choose(let items):
                 MeetingJoinSelectionController.shared.present(items: items) { selected in
                     self.onJoinFromNotification?(selected)
                 }
-            }
-            return
-        }
-
-        if let urlString = userInfo["joinURL"] as? String,
-           let url = URL(string: urlString) {
-            DispatchQueue.main.async {
+            case .open(let url):
                 guard MeetingURLOpener.open(url) else { return }
                 PostJoinDismissController.shared.dismissAfterJoin(context: .notificationAction)
+            case .unresolved:
+                DiagnosticLog.event(
+                    "Notification join unresolved ids=\(eventIDs?.count ?? 0) legacy=\(legacyItems?.count ?? 0) hasURL=\(carriedURL != nil)"
+                )
             }
         }
+    }
+
+    /// What a Join click should do, given what could be recovered from the notification.
+    ///
+    /// Split out from the handler so the fallback order is testable: identifiers resolved against
+    /// the cache win, then the payload embedded by a pre-update build, then any URL the
+    /// notification itself carried. `unresolved` is a real outcome, not an impossible one — the
+    /// cache can be empty or undecryptable — and it must stay visible in the diagnostics rather
+    /// than turning into a click that does nothing.
+    static func joinAction(
+        resolved: [MeetingReminderItem],
+        legacy: [MeetingReminderItem]?,
+        carriedURL: URL?
+    ) -> NotificationJoinAction {
+        let items = resolved.isEmpty ? (legacy ?? []) : resolved
+        if items.count == 1, let item = items.first { return .join(item) }
+        if items.count > 1 { return .choose(items) }
+        if let carriedURL { return .open(carriedURL) }
+        return .unresolved
     }
 
     // Show banner even when app is frontmost
@@ -263,6 +304,12 @@ final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound])
+    }
+
+    static func decodeEventIDs(from userInfo: [AnyHashable: Any]) -> [String]? {
+        guard let raw = userInfo[NotificationService.eventIDsUserInfoKey] as? String,
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([String].self, from: data)
     }
 
     static func decodeItems(from userInfo: [AnyHashable: Any]) -> [MeetingReminderItem]? {

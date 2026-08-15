@@ -14,33 +14,45 @@ struct EventCacheSnapshot: Codable, Sendable, Equatable {
     let events: [CalendarEvent]
 }
 
+/// Offline snapshot of the calendar, encrypted at rest.
+///
+/// This is the most sensitive thing the app persists — meeting titles, locations, attendee
+/// addresses, full agendas and join URLs that frequently embed conference secrets — so it moved
+/// out of the cleartext preferences plist into ``SecureStore``. The failure policy is
+/// `.treatAsEmpty`: an unreadable container costs a cold start with no cache and nothing more,
+/// because the next sync rebuilds it from the server.
 struct EventCacheStore: EventCacheStoring {
     private static let currentVersion = 1
+    static let storageName = "events"
+    static let legacyDefaultsKey = "cachedCalendarEventsV1"
 
-    private let userDefaults: UserDefaults
-    private let key: String
-    private let encoder: JSONEncoder
-    private let decoder: JSONDecoder
+    private let backing: SecureCodableStore<EventCacheSnapshot>
 
     init(
+        secureStore: SecureStore = .shared,
         userDefaults: UserDefaults = .standard,
-        key: String = "cachedCalendarEventsV1"
+        name: String = EventCacheStore.storageName,
+        legacyKey: String? = EventCacheStore.legacyDefaultsKey
     ) {
-        self.userDefaults = userDefaults
-        self.key = key
-
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
-        self.encoder = encoder
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
-        self.decoder = decoder
+
+        self.backing = SecureCodableStore(
+            name: name,
+            legacyKey: legacyKey,
+            store: secureStore,
+            defaults: userDefaults,
+            policy: .treatAsEmpty,
+            encoder: encoder,
+            decoder: decoder
+        )
     }
 
     func load() -> EventCacheSnapshot? {
-        guard let data = userDefaults.data(forKey: key) else { return nil }
-        guard let snapshot = try? decoder.decode(EventCacheSnapshot.self, from: data) else { return nil }
+        guard let snapshot = backing.load() else { return nil }
         guard snapshot.version == Self.currentVersion else { return nil }
         return snapshot
     }
@@ -53,11 +65,10 @@ struct EventCacheStore: EventCacheStoring {
             rangeEnd: rangeEnd,
             events: events
         )
-        guard let data = try? encoder.encode(snapshot) else { return }
-        userDefaults.set(data, forKey: key)
+        backing.save(snapshot)
     }
 
     func clear() {
-        userDefaults.removeObject(forKey: key)
+        backing.clear()
     }
 }

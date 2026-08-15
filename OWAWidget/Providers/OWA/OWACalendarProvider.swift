@@ -244,16 +244,9 @@ actor OWACalendarProvider: CalendarProvider {
 }
 
 #if DEBUG
-/// Appends a calendar-mapping trace to the user-private debug dir (0700/0600), never to
-/// /tmp (world-readable on macOS).
+/// Appends a calendar-mapping trace to the encrypted debug store — never to /tmp, which is
+/// world-readable on macOS, and no longer to a cleartext file either.
 private func appendCalendarMappingDebugLog(_ line: String) {
-    guard let url = DebugLogLocation.url(for: "calendar-mapping.log"),
-          let data = line.data(using: .utf8) else { return }
-    if let fh = try? FileHandle(forWritingTo: url) {
-        fh.seekToEndOfFile(); fh.write(data); try? fh.close()
-    } else {
-        try? data.write(to: url, options: .atomic)
-        DebugLogLocation.tightenPermissions(at: url)
-    }
+    DebugLogLocation.append(line, to: "calendar-mapping.log")
 }
 #endif
