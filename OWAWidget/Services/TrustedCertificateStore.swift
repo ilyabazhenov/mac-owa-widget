@@ -45,15 +45,6 @@ enum TrustedCertificateStore {
         cache = nil
     }
 
-    /// Pulls anything the previous build left in the Keychain into the encrypted store and
-    /// deletes the old items. Costs one authorization dialog on the first launch after the
-    /// update — the last one this data will ever ask for.
-    static func migrateLegacyItemsIfNeeded() {
-        lock.lock()
-        defer { lock.unlock() }
-        _ = loadedCache()
-    }
-
     /// Key for the store: host plus port, e.g. `mail.example.com:443`.
     static func key(host: String, port: Int) -> String {
         "\(host.lowercased()):\(port)"

@@ -36,10 +36,14 @@ enum SecureStoreMigrator {
     ///
     /// The event cache, accounts and engagement stats migrate on their own as `CalendarService`
     /// comes up, so they are deliberately absent here — reading them twice would be wasted work.
+    /// Trusted certificates are deliberately absent: their legacy copy lives in the Keychain, not
+    /// in cleartext on disk, and reading it needs an authorization dialog. Draining it from here
+    /// put that dialog seconds after launch with nothing on screen to explain it — and back every
+    /// launch until accepted. ``TrustedCertificateStore`` migrates itself on first use instead,
+    /// during TLS validation for the pinned host, where the prompt at least coincides with a sync.
     static func runPendingMigrations() {
         _ = RecentAttendeesStore.load()
         _ = RecentLocationsStore.load()
-        TrustedCertificateStore.migrateLegacyItemsIfNeeded()
 
         let remaining = migratedLegacyDefaultsKeys.filter {
             UserDefaults.standard.data(forKey: $0) != nil

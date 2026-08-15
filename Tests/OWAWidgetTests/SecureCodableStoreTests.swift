@@ -79,12 +79,27 @@ final class SecureCodableStoreTests: XCTestCase {
         XCTAssertEqual(makeStore().load(), newer)
     }
 
-    func testUndecodableLegacyDataIsNotMigrated() {
+    func testUndecodableLegacyDataIsStillDrainedFromCleartext() {
+        // The point of migrating is to get the plaintext off disk, and that has to hold even when
+        // the bytes no longer fit the current schema — say the type gained a field since they were
+        // written. Gating migration on a successful decode used to leave such a blob in the plist
+        // forever: neither migrated nor removed.
         defaults.set(Data("не json".utf8), forKey: legacyKey)
 
         let subject = makeStore()
-        XCTAssertNil(subject.load())
-        XCTAssertFalse(store.exists("payload"), "мусор из legacy не должен попадать в контейнер")
+        XCTAssertNil(subject.load(), "нечитаемое значение остаётся нечитаемым")
+        XCTAssertTrue(store.exists("payload"), "байты должны переехать в контейнер")
+        XCTAssertNil(defaults.data(forKey: legacyKey), "открытая копия должна исчезнуть")
+    }
+
+    func testUndecodableLegacyBytesArePreservedNotDestroyed() throws {
+        // Kept rather than deleted, so a later version able to read that shape still can.
+        let original = Data("схема из будущего".utf8)
+        defaults.set(original, forKey: legacyKey)
+
+        _ = makeStore().load()
+
+        XCTAssertEqual(try store.read("payload"), original)
     }
 
     func testMigrationIsAttemptedOnlyOncePerInstance() throws {

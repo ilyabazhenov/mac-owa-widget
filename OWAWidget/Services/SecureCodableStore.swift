@@ -95,9 +95,16 @@ final class SecureCodableStore<Value: Codable>: @unchecked Sendable {
 
         guard let legacyKey, !store.exists(name) else { return }
         guard let legacyData = defaults.data(forKey: legacyKey) else { return }
-        // Only migrate what still decodes. Garbage in the legacy key is dropped, not re-encrypted.
-        guard (try? decoder.decode(Value.self, from: legacyData)) != nil else { return }
 
+        // Migrated as raw bytes, without checking that they decode into `Value`.
+        //
+        // An earlier version gated this on a successful decode, which quietly defeated the whole
+        // feature: a blob written before a schema change fails to decode, so it was neither
+        // migrated nor removed and stayed in the cleartext plist forever. Moving the bytes across
+        // regardless removes the plaintext either way, and costs nothing when they turn out to be
+        // undecodable — `load()` already returns nil for a container it cannot decode, exactly as
+        // it did for the legacy key. Nothing is destroyed on the chance a later version can read
+        // the shape that this one cannot.
         do {
             try store.write(legacyData, name: name)
             // Verify by reading back through the real path before dropping the cleartext copy.

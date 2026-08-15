@@ -69,6 +69,19 @@ final class RecentAttendeesStoreTests: XCTestCase {
         )
     }
 
+    func testUndecodableOldestFormatIsStillDrainedFromCleartext() throws {
+        defaults.set(Data("не тот формат".utf8), forKey: RecentAttendeesStore.olderLegacyDefaultsKey)
+
+        let migrating = RecentAttendeesStore.makeStore(
+            secureStore: SecureStore(directory: directory, keyProvider: InMemorySecureStoreKeyProvider()),
+            defaults: defaults
+        )
+        _ = RecentAttendeesStore.load(store: migrating)
+
+        XCTAssertNil(defaults.data(forKey: RecentAttendeesStore.olderLegacyDefaultsKey))
+        XCTAssertNil(defaults.data(forKey: RecentAttendeesStore.legacyDefaultsKey))
+    }
+
     func testOldestFormatIsFoldedForwardThenEncrypted() throws {
         // Pre-counter shape: a bare [ResolvedAttendee] under the original key.
         let legacy = [ResolvedAttendee(displayName: "Старый", email: "old@x.com", jobTitle: nil)]

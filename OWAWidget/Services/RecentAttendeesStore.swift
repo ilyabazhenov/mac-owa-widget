@@ -70,13 +70,21 @@ enum RecentAttendeesStore {
 
     private static func foldOlderLegacyKey(defaults: UserDefaults) {
         guard defaults.data(forKey: legacyDefaultsKey) == nil,
-              let legacyData = defaults.data(forKey: olderLegacyDefaultsKey),
-              let legacy = try? JSONDecoder().decode([ResolvedAttendee].self, from: legacyData)
+              let legacyData = defaults.data(forKey: olderLegacyDefaultsKey)
         else { return }
-        let now = Date()
-        let records = legacy.map { AttendeeRecord(attendee: $0, useCount: 1, lastUsed: now) }
-        if let data = try? JSONEncoder().encode(records) {
-            defaults.set(data, forKey: legacyDefaultsKey)
+
+        // Convert what still decodes; hand anything else on as raw bytes rather than gating on a
+        // successful decode. Gating here had the same effect as it did in `SecureCodableStore`:
+        // a blob written in a shape this version cannot read was left sitting in the cleartext
+        // plist forever. Passing it through means the normal migration encrypts it either way.
+        if let legacy = try? JSONDecoder().decode([ResolvedAttendee].self, from: legacyData) {
+            let now = Date()
+            let records = legacy.map { AttendeeRecord(attendee: $0, useCount: 1, lastUsed: now) }
+            if let data = try? JSONEncoder().encode(records) {
+                defaults.set(data, forKey: legacyDefaultsKey)
+            }
+        } else {
+            defaults.set(legacyData, forKey: legacyDefaultsKey)
         }
         defaults.removeObject(forKey: olderLegacyDefaultsKey)
     }
