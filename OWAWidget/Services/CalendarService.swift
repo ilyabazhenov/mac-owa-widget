@@ -279,6 +279,14 @@ final class CalendarService: ObservableObject {
         Task { await rebuildProviders() }
     }
 
+    /// Note that a password change is *not* undone if persisting the account then fails: the
+    /// caller is told the update failed while the new password stays in the Keychain.
+    ///
+    /// Left that way deliberately. Rolling it back means reading the old password first, and the
+    /// thing that makes the write fail — the Keychain being unavailable — is exactly what would
+    /// make that read fail too, so the rollback would silently do nothing in its main case while
+    /// looking like a guarantee. The practical impact is small: a password is normally changed
+    /// here because it changed on the server, so the Keychain ends up holding the correct one.
     func updateAccount(_ account: CalendarAccount, newPassword: String?) throws {
         if let pwd = newPassword {
             try KeychainService.save(password: pwd, accountID: account.id)
