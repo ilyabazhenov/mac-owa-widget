@@ -150,9 +150,18 @@ final class SecureStore: @unchecked Sendable {
     /// Keychain would create live items and, once a rebuild changed the ad-hoc `cdhash`, block
     /// packaging behind a modal authorization dialog with nobody at the keyboard in CI. Injecting
     /// a store per test is the intended style; this is the backstop for the call site that forgets.
+    ///
+    /// Detection is by loaded class, not by environment. An earlier version checked only
+    /// `XCTestConfigurationFilePath` / `XCTestSessionIdentifier`, and SwiftPM's test runner sets
+    /// neither — so the backstop silently did nothing, the suite wrote into the real Application
+    /// Support, and the Keychain guard in ``TrustedCertificateStore`` never engaged. `XCTest` is
+    /// linked into the test host and absent from the shipped app, which makes this both reliable
+    /// and impossible to trip accidentally in production.
     static var isRunningTests: Bool {
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-            || ProcessInfo.processInfo.environment["XCTestSessionIdentifier"] != nil
+        if NSClassFromString("XCTestCase") != nil { return true }
+        let environment = ProcessInfo.processInfo.environment
+        return environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestSessionIdentifier"] != nil
     }
 
     private static func testFallbackDirectory() -> URL {
