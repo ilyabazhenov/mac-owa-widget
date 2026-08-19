@@ -5,6 +5,11 @@
     <!-- Outbound HTTPS to Exchange servers -->
     <key>com.apple.security.network.client</key>
     <true/>
-    <!-- Keep dev entitlements compatible with ad-hoc codesign in Makefile -->
+    <!-- Hardened runtime is on (see Makefile). It would also turn on library
+         validation, which refuses to load the ad-hoc signed Sparkle.framework.
+         Disabling library validation alone keeps the rest of hardened runtime,
+         notably that DYLD environment variables stay ignored. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
 </dict>
 </plist>

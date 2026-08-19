@@ -69,13 +69,16 @@ bundle: build
 	@rm -rf "$(APP_PATH)/Contents/Frameworks/Sparkle.framework"
 	@ditto "$(SPARKLE_FRAMEWORK)" "$(APP_PATH)/Contents/Frameworks/Sparkle.framework"
 	@# Sign nested helpers + framework first, then the app, all with the same identity.
-	@# Note: hardened runtime (--options runtime) is intentionally NOT used here.
-	@# With ad-hoc identities (CODE_SIGN_IDENTITY=-) hardened runtime enables
-	@# library validation, which then refuses to load Sparkle.framework because
-	@# its embedded ad-hoc signature has no Team ID matching the host process.
-	@codesign --sign "$(CODE_SIGN_IDENTITY)" --force --deep \
+	@# Hardened runtime (--options runtime) is enabled even for ad-hoc identities.
+	@# It would normally turn on library validation, which refuses to load
+	@# Sparkle.framework (its ad-hoc signature carries no matching Team ID) — so the
+	@# entitlements file disables *library validation* specifically. Everything else
+	@# hardened runtime provides stays on; most importantly DYLD_* environment
+	@# variables are ignored, so DYLD_INSERT_LIBRARIES can no longer inject code into
+	@# this process to reach its Keychain items.
+	@codesign --sign "$(CODE_SIGN_IDENTITY)" --force --deep --options runtime \
 	  "$(APP_PATH)/Contents/Frameworks/Sparkle.framework"
-	codesign --sign "$(CODE_SIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) --force --deep $(APP_PATH)
+	codesign --sign "$(CODE_SIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) --force --deep --options runtime $(APP_PATH)
 	@echo "✓ Bundle ready: $(APP_PATH)"
 
 ## Release .app bundle: universal binary (Apple Silicon + Intel)
