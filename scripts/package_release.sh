@@ -4,15 +4,18 @@
 # with Sparkle's `sign_update`, and emit `dist/appcast.xml` with the resulting
 # signature/length so Sparkle clients can verify and install the update.
 #
-# Outputs (printed at the end, parsed by the GitHub Actions workflow):
+# Outputs (printed at the end, parsed by the caller):
 #   VERSION=<x.y.z>
 #   ARCHIVE_PATH=<path/to/zip>
 #   APPCAST_PATH=<path/to/appcast.xml>
 #
 # Signing key resolution order:
-#   1. SPARKLE_ED_PRIVATE_KEY env var (preferred for CI). Read via
-#      `sign_update --ed-key-file -` so the secret never lands on disk.
-#   2. Login Keychain entry written by `generate_keys` (default for local dev).
+#   1. Login Keychain entry written by `generate_keys`. This is the normal path:
+#      releases are built and published locally.
+#   2. SPARKLE_ED_PRIVATE_KEY env var, as an escape hatch for signing from a
+#      machine where the key is not in the Keychain (restored from the password
+#      manager backup). Read via `sign_update --ed-key-file -` so the secret
+#      never lands on disk. See docs/sparkle-key-backup.md.
 #
 # When neither source produces a valid signature, the script aborts so we
 # never publish a release that existing clients cannot install.
@@ -155,6 +158,18 @@ else
 fi
 
 cp "${TMP_APPCAST_DIR}/appcast.xml" "${APPCAST_PATH}"
+
+# `generate_appcast` exits 0 even when it cannot reach the signing key, silently
+# writing an appcast with no signature. Sparkle clients reject unsigned updates,
+# so a successful exit code is not evidence that the release is installable —
+# check the artifact itself.
+if ! grep -q 'sparkle:edSignature="' "${APPCAST_PATH}"; then
+  echo "appcast.xml carries no sparkle:edSignature — the EdDSA key was unavailable." >&2
+  echo "Clients would reject this update. Check the login Keychain entry" >&2
+  echo "https://sparkle-project.org / ed25519, or set SPARKLE_ED_PRIVATE_KEY." >&2
+  echo "Recovery procedure: docs/sparkle-key-backup.md" >&2
+  exit 1
+fi
 
 echo "✓ Release package ready: ${ARCHIVE_PATH}" >&2
 echo "✓ Appcast generated:    ${APPCAST_PATH}" >&2

@@ -12,8 +12,7 @@
 #      The private key never touches the repo or any build artifact.
 #   4. Prints the PUBLIC key (base64) -- paste it into Info.plist as SUPublicEDKey.
 #   5. Prints the PRIVATE key (base64) ONCE in a loud banner so you can copy it
-#      into a GitHub Actions Secret named SPARKLE_ED_PRIVATE_KEY and into your
-#      password manager / cold backup.
+#      into your password manager / cold backup.
 #
 # IMPORTANT:
 #   - Run this script in a TRUSTED interactive Terminal only.
@@ -102,14 +101,13 @@ cat <<'EOF'
 #  PRIVATE KEY -- BACK UP NOW. THIS WILL NOT BE SHOWN AGAIN.     #
 #  Copy this value to ALL of the following:                      #
 #                                                                 #
-#    1. GitHub Actions Secret named: SPARKLE_ED_PRIVATE_KEY       #
-#       Repo Settings -> Secrets and variables -> Actions         #
-#                                                                 #
-#    2. Your password manager (1Password / Bitwarden / iCloud     #
+#    1. Your password manager (1Password / Bitwarden / iCloud     #
 #       Keychain) under name:                                     #
 #       "OWAWidget Sparkle EdDSA private key"                     #
+#       Save the PUBLIC key alongside it: without it you cannot   #
+#       verify a restored key is the right one.                   #
 #                                                                 #
-#    3. (Optional) Encrypted external storage / hardware token.   #
+#    2. (Optional) Encrypted external storage / hardware token.   #
 #                                                                 #
 #  Losing this key means you cannot ship updates that already     #
 #  installed clients will accept. Their public key is baked into  #
@@ -131,7 +129,7 @@ The private key remains in your login Keychain. To re-export later:
 
 Next steps:
   1. Paste the PUBLIC key into OWAWidget/Info.plist -> SUPublicEDKey
-  2. Paste the PRIVATE key into GitHub Actions Secret SPARKLE_ED_PRIVATE_KEY
-  3. Save a backup copy of the PRIVATE key in your password manager.
+  2. Save a backup copy of the PRIVATE key in your password manager.
+     Backup and restore procedure: docs/sparkle-key-backup.md
 
 EOF

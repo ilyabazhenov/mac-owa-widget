@@ -126,7 +126,7 @@ This command builds a **universal** `.build/OWAWidget.app` (Apple Silicon `arm64
 
 Local dev (`make run`, `make build`) still compiles for the host architecture only for faster iteration.
 
-The signing key is read from the login Keychain entry `https://sparkle-project.org` / account `ed25519` by default, or from the `SPARKLE_ED_PRIVATE_KEY` environment variable in CI.
+The signing key is read from the login Keychain entry `https://sparkle-project.org` / account `ed25519`. The `SPARKLE_ED_PRIVATE_KEY` environment variable overrides it, as an escape hatch for signing from a machine where the key is not in the Keychain.
 
 To generate the keypair the first time:
 
@@ -137,24 +137,22 @@ bash scripts/generate_sparkle_keys.sh
 The script prints:
 
 - the public key, which goes into `OWAWidget/Info.plist` as `SUPublicEDKey`;
-- the private key, which must be backed up in a password manager and added as the GitHub Actions secret `SPARKLE_ED_PRIVATE_KEY`.
+- the private key, which must be backed up in a password manager.
 
-Losing the private key means existing clients can no longer install updates signed by a new key.
+Losing the private key means existing clients can no longer install updates signed by a new key. Backup and restore procedure: [docs/sparkle-key-backup.md](docs/sparkle-key-backup.md).
 
-## GitHub Release Flow
+## Release Flow
 
-A manual GitHub Actions workflow is available at `.github/workflows/release.yml`.
+Releases are built and published **locally only**. There is no CI release workflow: the GitHub runner ships an Xcode version incompatible with the `KeyboardShortcuts` dependency, and keeping a copy of the signing key in GitHub Actions Secrets is an unnecessary exposure.
 
 1. Update `VERSION`.
 2. Update `RELEASE_NOTES.md`.
-3. Push changes to GitHub.
-4. Open **Actions -> Release -> Run workflow**.
+3. Run `make release-package`.
+4. Publish with `gh release create v<version> dist/OWAWidget-v<version>-macos.zip dist/appcast.xml --title "v<version>" --notes-file dist/release-notes-v<version>.md`.
 
-Reusing an existing version updates the same `v<version>` release tag instead of creating a new one.
+`make release-package` builds the universal app, creates the zip archive, signs it through Sparkle, and generates `appcast.xml`. It aborts if the archive or the appcast ends up unsigned, so an unsigned build that installed clients would reject can never be published.
 
-The workflow builds the app, creates the zip archive, signs it through Sparkle, generates `appcast.xml`, and creates or updates a GitHub Release with tag `v<version>`. Both the zip and `appcast.xml` are uploaded as release assets so `https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml` resolves to the latest published update feed.
-
-The CI job requires `SPARKLE_ED_PRIVATE_KEY`. Without this secret, the workflow aborts to avoid shipping an unsigned build that installed clients would reject.
+Both the zip and `appcast.xml` must be uploaded as release assets so `https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml` resolves to the latest published update feed. Reusing an existing version updates the same `v<version>` tag instead of creating a new one.
 
 ## Agent Release Semantics
 
