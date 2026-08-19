@@ -163,7 +163,9 @@ cp "${TMP_APPCAST_DIR}/appcast.xml" "${APPCAST_PATH}"
 # writing an appcast with no signature. Sparkle clients reject unsigned updates,
 # so a successful exit code is not evidence that the release is installable —
 # check the artifact itself.
-if ! grep -q 'sparkle:edSignature="' "${APPCAST_PATH}"; then
+# The `[^"]` matters: an empty `sparkle:edSignature=""` would satisfy a bare
+# prefix match and let an unsigned release through the very check meant to stop it.
+if ! grep -q 'sparkle:edSignature="[^"]' "${APPCAST_PATH}"; then
   echo "appcast.xml carries no sparkle:edSignature — the EdDSA key was unavailable." >&2
   echo "Clients would reject this update. Check the login Keychain entry" >&2
   echo "https://sparkle-project.org / ed25519, or set SPARKLE_ED_PRIVATE_KEY." >&2

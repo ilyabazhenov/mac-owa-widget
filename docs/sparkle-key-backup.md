@@ -36,27 +36,34 @@ WPYI42Z1jbfBdFNmyBey6tOcbWyU1x6GGVlmn/nNY/I=
 Оба способа выводят приватный ключ. Выполняй их сам, в своём терминале, и не
 вставляй результат в чаты, тикеты и историю команд.
 
-### Способ A — штатный экспорт Sparkle (рекомендуется)
-
-```bash
-.build/artifacts/sparkle/Sparkle/bin/generate_keys -x ~/Desktop/sparkle-owawidget-private.key
-```
-
-Keychain может спросить разрешение на доступ — это нормально, надо разрешить.
-Файл появится на рабочем столе. Перенеси его содержимое в менеджер паролей и
-затем удали файл:
-
-```bash
-rm -P ~/Desktop/sparkle-owawidget-private.key
-```
-
-### Способ B — напрямую из Keychain
+### Способ A — без файла на диске (рекомендуется)
 
 ```bash
 security find-generic-password -s "https://sparkle-project.org" -a ed25519 -w
 ```
 
-Печатает base64-строку приватного ключа в терминал, без промежуточного файла.
+Печатает base64-строку приватного ключа прямо в терминал. Скопируй её в менеджер
+паролей и очисти scrollback терминала. На диске не остаётся ничего — поэтому этот
+способ основной.
+
+### Способ B — экспорт в файл (только если нужен именно файл)
+
+**Не пиши ключ на обычный диск.** На APFS с copy-on-write `rm`, включая `rm -P`,
+не гарантирует уничтожение содержимого: перезапись идёт в новые блоки, а старые
+остаются жить до тех пор, пока их не займёт что-то другое. Используй RAM-диск —
+он исчезает целиком при отключении:
+
+```bash
+DISK=$(hdiutil attach -nomount ram://2048 | tr -d '[:space:]')
+diskutil eraseVolume HFS+ keyexport "$DISK"
+.build/artifacts/sparkle/Sparkle/bin/generate_keys -x /Volumes/keyexport/sparkle.key
+# перенести содержимое в менеджер паролей, затем:
+hdiutil detach "$DISK"
+```
+
+Keychain может спросить разрешение на доступ — надо разрешить. `tr -d '[:space:]'`
+обязателен: `hdiutil` дописывает к пути устройства пробелы, и без обрезки
+`diskutil` его не найдёт.
 
 ## Куда класть бэкап
 
@@ -92,19 +99,27 @@ Keychain, с тем, что зашит в приложение:
    swift package resolve
    ```
 
-3. Положи приватный ключ из менеджера паролей во временный файл, например
-   `~/Desktop/restore.key`, одной строкой без лишних переводов строки.
-
-4. Импортируй его в login Keychain:
+3. `generate_keys -f` читает только из файла, поэтому создай RAM-диск: он
+   исчезает целиком при отключении, в отличие от файла на APFS, который
+   `rm -P` надёжно не стирает.
 
    ```bash
-   .build/artifacts/sparkle/Sparkle/bin/generate_keys -f ~/Desktop/restore.key
+   DISK=$(hdiutil attach -nomount ram://2048 | tr -d '[:space:]')
+   diskutil eraseVolume HFS+ keyrestore "$DISK"
    ```
 
-5. Удали временный файл:
+4. Положи приватный ключ из менеджера паролей в
+   `/Volumes/keyrestore/restore.key` одной строкой без лишних переводов строки
+   и импортируй в login Keychain:
 
    ```bash
-   rm -P ~/Desktop/restore.key
+   .build/artifacts/sparkle/Sparkle/bin/generate_keys -f /Volumes/keyrestore/restore.key
+   ```
+
+5. Отключи RAM-диск:
+
+   ```bash
+   hdiutil detach "$DISK"
    ```
 
 ## Проверить восстановление
