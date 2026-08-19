@@ -25,9 +25,9 @@ make run
 swift build
 ```
 
-Если нужен Xcode-проект, генерируй его через `xcodegen generate` из `project.yml`.
+Xcode-проекта нет. Для работы в Xcode открывай пакет: `open Package.swift`.
 
 ## Ограничения агентов
 
 - Никогда не используй `isolation: "worktree"` при вызове Agent tool. Worktree изоляция запрещена.
-- Релиз собирается и публикуется **только локально** (`make release-package` + `gh release create`). Не запускай GitHub Actions workflow `release.yml` — раннер с Xcode 16.4 несовместим с зависимостью `KeyboardShortcuts`. Подробности — в `AGENTS.md`, раздел «Релизный процесс».
+- Релиз собирается и публикуется **только локально** (`make release-package` + `gh release create`). Релизного GitHub Actions workflow в репозитории нет, и заводить его не нужно. Подробности — в `AGENTS.md`, раздел «Релизный процесс».

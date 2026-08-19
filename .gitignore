@@ -6,6 +6,8 @@ dist/
 DerivedData/
 
 # Xcode
+# Created when Xcode opens Package.swift, which is now the way to work in Xcode.
+.swiftpm/
 *.xccheckout
 *.moved-aside
 *.pbxuser
@@ -18,9 +20,6 @@ DerivedData/
 !default.perspectivev3
 xcuserdata/
 *.xcscmblueprint
-
-# Generated (recreate with: make generate)
-OWAWidget.xcodeproj/
 
 # Temporary files and local notes (may contain sensitive data)
 tmp/

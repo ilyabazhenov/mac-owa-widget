@@ -128,7 +128,7 @@ open ~/Library/Application\ Support/OWAWidget/diagnostic.log
 
 ## Разработка
 
-Информация для разработчиков вынесена в [DEVELOPMENT.md](DEVELOPMENT.md): сборка из исходников, XcodeGen, архитектура, релизная упаковка и GitHub release flow.
+Информация для разработчиков вынесена в [DEVELOPMENT.md](DEVELOPMENT.md): сборка из исходников, архитектура, релизная упаковка и публикация релиза.
 
 ## English
 
@@ -253,7 +253,7 @@ Attach the contents to your bug report — usually enough to pinpoint what stage
 
 ### Development
 
-Developer documentation lives in [DEVELOPMENT.md](DEVELOPMENT.md): source builds, XcodeGen, architecture, release packaging, and the GitHub release flow.
+Developer documentation lives in [DEVELOPMENT.md](DEVELOPMENT.md): source builds, architecture, release packaging, and publishing a release.
 
 ## License
 

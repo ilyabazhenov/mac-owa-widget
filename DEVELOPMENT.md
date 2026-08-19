@@ -12,7 +12,6 @@ This document is for contributors and maintainers. User-facing installation and 
 
 Optional tools:
 
-- **XcodeGen** - generate `OWAWidget.xcodeproj` from `project.yml` (`brew install xcodegen`)
 - **fswatch** - run `make watch` auto-rebuilds (`brew install fswatch`)
 - **xcbeautify** - prettier build output (`brew install xcbeautify`)
 
@@ -34,16 +33,17 @@ Quick compile check without bundling:
 swift build
 ```
 
-## Xcode Project
+## Xcode
 
-`OWAWidget.xcodeproj` is generated and must not be committed. Generate it from `project.yml` when needed:
+There is no `.xcodeproj`. The build is driven by SwiftPM and the `Makefile`, which is the only supported path: it embeds `Sparkle.framework`, patches `Info.plist`, copies localizations, and signs the bundle.
+
+To edit or debug in Xcode, open the package itself:
 
 ```bash
-xcodegen generate
-open OWAWidget.xcodeproj
+open Package.swift
 ```
 
-Set your **Development Team** in the project's Signing & Capabilities tab to enable code signing.
+Do not add an Xcode project alongside it. A second build path would have to duplicate everything the `Makefile` does and would drift out of sync.
 
 ## Architecture
 

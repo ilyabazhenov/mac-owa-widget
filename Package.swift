@@ -24,7 +24,6 @@ let package = Package(
             // Exclude non-Swift files so SPM doesn't try to bundle them
             exclude: [
                 "Info.plist",
-                "OWAWidget.entitlements",
                 "OWAWidget-dev.entitlements",
                 // Localizations are copied to app bundle by Makefile.
                 // Keeping them out of SPM resources avoids runtime dependency
