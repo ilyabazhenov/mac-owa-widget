@@ -34,6 +34,16 @@ final class SettingsViewModel: ObservableObject {
         let host: String
         let port: Int
         let fingerprint: String
+        let details: ServerCertificateDetails?
+        /// Fingerprints already pinned for this host when the prompt was raised.
+        ///
+        /// Non-empty means the certificate *changed*, which is a different event from trusting a
+        /// server for the first time: either a routine renewal, or someone sitting between the
+        /// user and the server right now. The prompt has to say which question it is asking.
+        let previousFingerprints: Set<String>
+
+        var isReplacingKnownCertificate: Bool { !previousFingerprints.isEmpty }
+
         var id: String { "\(host):\(port):\(fingerprint)" }
     }
 
@@ -96,8 +106,13 @@ final class SettingsViewModel: ObservableObject {
             } catch {
                 if let cert = OWAError.untrustedCertificateInfo(from: error) {
                     // Offer to trust this specific server certificate instead of a generic failure.
+                    let key = TrustedCertificateStore.key(host: cert.host, port: cert.port)
                     pendingCertTrust = PendingCertificateTrust(
-                        host: cert.host, port: cert.port, fingerprint: cert.fingerprint
+                        host: cert.host,
+                        port: cert.port,
+                        fingerprint: cert.fingerprint,
+                        details: cert.details,
+                        previousFingerprints: TrustedCertificateStore.trustedFingerprints(forKey: key)
                     )
                     testResult = nil
                 } else {
@@ -113,7 +128,13 @@ final class SettingsViewModel: ObservableObject {
     func confirmCertificateTrust(localization: LocalizationService) {
         guard let pending = pendingCertTrust else { return }
         let key = TrustedCertificateStore.key(host: pending.host, port: pending.port)
-        TrustedCertificateStore.trust(fingerprint: pending.fingerprint, forKey: key)
+        if pending.isReplacingKnownCertificate {
+            // Keeping the old fingerprint alongside would leave the previous certificate trusted
+            // forever, including one rotated because it leaked.
+            TrustedCertificateStore.replace(fingerprint: pending.fingerprint, forKey: key)
+        } else {
+            TrustedCertificateStore.trust(fingerprint: pending.fingerprint, forKey: key)
+        }
         pendingCertTrust = nil
         testResult = localization.tr("settings.account.certificate.trusted")
         testConnection(localization: localization)

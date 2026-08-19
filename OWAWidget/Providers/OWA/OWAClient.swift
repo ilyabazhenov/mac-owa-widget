@@ -6,7 +6,7 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
     private let lock = NSLock()
     private var _cookies: [HTTPCookie] = []
     private var _redirectChain: [String] = []
-    private var _pendingUntrusted: (host: String, port: Int, fingerprint: String)?
+    private var _pendingUntrusted: UntrustedCertificate?
     private var _authRejected = false
 
     /// Credentials for Integrated Windows Auth (NTLM/Negotiate). Username is expected in
@@ -39,7 +39,7 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
     /// Returns and clears the most recent rejected (untrusted) certificate, if any.
     /// Set when the server presented a certificate that failed system validation and
     /// was not in the user's manual trust store.
-    func takePendingUntrusted() -> (host: String, port: Int, fingerprint: String)? {
+    func takePendingUntrusted() -> UntrustedCertificate? {
         lock.lock(); defer { lock.unlock() }
         let value = _pendingUntrusted
         _pendingUntrusted = nil
@@ -143,10 +143,14 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
         // 3. Untrusted — record for the UI ("trust this server?") and refuse.
         if let fingerprint {
             lock.lock()
-            _pendingUntrusted = (
+            _pendingUntrusted = UntrustedCertificate(
                 host: challenge.protectionSpace.host,
                 port: challenge.protectionSpace.port,
-                fingerprint: fingerprint
+                fingerprint: fingerprint,
+                // Read here because this is the only place holding the `SecTrust`. The prompt
+                // shows these next to the fingerprint: a hash is not something a person can
+                // check, an issuer and a name are.
+                details: TrustedCertificateStore.leafDetails(from: trust)
             )
             lock.unlock()
         }
@@ -211,11 +215,7 @@ actor OWAClient {
             return try await session.data(for: request)
         } catch {
             if let pending = sessionDelegate.takePendingUntrusted() {
-                throw OWAError.untrustedCertificate(
-                    host: pending.host,
-                    port: pending.port,
-                    fingerprint: pending.fingerprint
-                )
+                throw OWAError.untrustedCertificate(pending)
             }
             // The NTLM/Negotiate handshake declined our credentials. This arrives as a generic
             // `NSURLErrorCancelled` (-999); the delegate flag is what distinguishes a real

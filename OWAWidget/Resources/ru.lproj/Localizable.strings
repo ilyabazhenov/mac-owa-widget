@@ -42,7 +42,13 @@
 "settings.account.save.failed" = "Не удалось сохранить: %@";
 "settings.account.connection.auth.failed" = "Не удалось подключиться к OWA. Проверьте адрес сервера, логин и пароль.";
 "settings.account.certificate.untrusted.title" = "Недоверенный сертификат сервера";
-"settings.account.certificate.untrusted.message" = "Сервер %@ предъявил сертификат, которому система не доверяет.\n\nОтпечаток SHA-256:\n%@\n\nДоверяйте серверу только если вы узнаёте этот отпечаток.";
+"settings.account.certificate.untrusted.message" = "Сервер %1$@ предъявил сертификат, которому система не доверяет.\n\n%2$@Отпечаток SHA-256:\n%3$@\n\nДоверяйте серверу, только если узнаёте эти данные. Если сомневаетесь, сверьте отпечаток с администраторами.";
+"settings.account.certificate.changed.title" = "Сертификат сервера изменился";
+"settings.account.certificate.changed.message" = "Сервер %1$@ предъявил сертификат, отличный от того, которому вы доверились раньше.\n\n%2$@Прежний отпечаток:\n%3$@\n\nНовый отпечаток:\n%4$@\n\nТак выглядит и плановая замена сертификата, и попытка перехвата соединения. Соглашайтесь, только если знаете о замене: прежний сертификат перестанет быть доверенным.";
+"settings.account.certificate.changed.trust" = "Заменить сертификат";
+"settings.account.certificate.subject" = "Кому выдан:";
+"settings.account.certificate.issuer" = "Кем выдан:";
+"settings.account.certificate.valid.until" = "Действует до:";
 "settings.account.certificate.trust" = "Доверять этому серверу";
 "settings.account.certificate.trusted" = "Сертификат сервера добавлен в доверенные. Повторная проверка…";
 

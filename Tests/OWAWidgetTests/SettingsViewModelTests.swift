@@ -195,6 +195,70 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(vm.hasUnsavedChanges)
     }
 
+    // MARK: - Certificate trust
+
+    // Trusting a server for the first time and accepting a certificate that *changed* under a
+    // host we already pinned are different events. The second one must not leave the previous
+    // certificate trusted: a pin that never forgets keeps honouring a certificate that may have
+    // been rotated precisely because it leaked.
+
+    private func isolateCertificateStore() {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("settingsvm-certs-\(UUID().uuidString)", isDirectory: true)
+        TrustedCertificateStore.replaceStoreForTesting(
+            TrustedCertificateStore.makeStore(
+                secureStore: SecureStore(
+                    directory: directory,
+                    keyProvider: InMemorySecureStoreKeyProvider()
+                ),
+                defaults: UserDefaults(suiteName: "settingsvm.certs.\(UUID().uuidString)")!
+            )
+        )
+    }
+
+    private func pending(
+        fingerprint: String,
+        previous: Set<String>
+    ) -> SettingsViewModel.PendingCertificateTrust {
+        SettingsViewModel.PendingCertificateTrust(
+            host: "mail.example.com",
+            port: 443,
+            fingerprint: fingerprint,
+            details: nil,
+            previousFingerprints: previous
+        )
+    }
+
+    func testFirstTimeTrustIsNotTreatedAsAReplacement() {
+        XCTAssertFalse(pending(fingerprint: "aa11", previous: []).isReplacingKnownCertificate)
+        XCTAssertTrue(pending(fingerprint: "bb22", previous: ["aa11"]).isReplacingKnownCertificate)
+    }
+
+    func testConfirmingAnUnknownCertificatePinsIt() {
+        isolateCertificateStore()
+        let (_, vm, _) = makeSUT()
+        let key = TrustedCertificateStore.key(host: "mail.example.com", port: 443)
+
+        vm.pendingCertTrust = pending(fingerprint: "aa11", previous: [])
+        vm.confirmCertificateTrust(localization: LocalizationService())
+
+        XCTAssertEqual(TrustedCertificateStore.trustedFingerprints(forKey: key), ["aa11"])
+        XCTAssertNil(vm.pendingCertTrust)
+    }
+
+    func testConfirmingAChangedCertificateDropsThePreviousPin() {
+        isolateCertificateStore()
+        let (_, vm, _) = makeSUT()
+        let key = TrustedCertificateStore.key(host: "mail.example.com", port: 443)
+        TrustedCertificateStore.trust(fingerprint: "aa11", forKey: key)
+
+        vm.pendingCertTrust = pending(fingerprint: "bb22", previous: ["aa11"])
+        vm.confirmCertificateTrust(localization: LocalizationService())
+
+        XCTAssertEqual(TrustedCertificateStore.trustedFingerprints(forKey: key), ["bb22"])
+        XCTAssertFalse(TrustedCertificateStore.isTrusted(fingerprint: "aa11", forKey: key))
+    }
+
     private func makeSUT() -> (CalendarService, SettingsViewModel, FakeLaunchAtLoginManager) {
         let service = CalendarService(
             providers: [],

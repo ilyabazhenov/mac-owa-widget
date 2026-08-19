@@ -42,7 +42,13 @@
 "settings.account.save.failed" = "Save failed: %@";
 "settings.account.connection.auth.failed" = "Could not connect to OWA. Check the server address, login, and password.";
 "settings.account.certificate.untrusted.title" = "Untrusted server certificate";
-"settings.account.certificate.untrusted.message" = "The server %@ presented a certificate that is not trusted by the system.\n\nSHA-256 fingerprint:\n%@\n\nOnly trust this server if you recognize this fingerprint.";
+"settings.account.certificate.untrusted.message" = "The server %1$@ presented a certificate that is not trusted by the system.\n\n%2$@SHA-256 fingerprint:\n%3$@\n\nOnly trust this server if you recognise these details. If unsure, check the fingerprint with your administrators.";
+"settings.account.certificate.changed.title" = "Server certificate changed";
+"settings.account.certificate.changed.message" = "The server %1$@ presented a different certificate from the one you trusted before.\n\n%2$@Previous fingerprint:\n%3$@\n\nNew fingerprint:\n%4$@\n\nA routine renewal looks exactly like an attempt to intercept the connection. Only accept if you know about the change: the previous certificate will stop being trusted.";
+"settings.account.certificate.changed.trust" = "Replace Certificate";
+"settings.account.certificate.subject" = "Issued to:";
+"settings.account.certificate.issuer" = "Issued by:";
+"settings.account.certificate.valid.until" = "Valid until:";
 "settings.account.certificate.trust" = "Trust This Server";
 "settings.account.certificate.trusted" = "Server certificate trusted. Testing again…";
 

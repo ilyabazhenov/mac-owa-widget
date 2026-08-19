@@ -293,7 +293,7 @@ enum OWAError: LocalizedError {
     /// The server presented a certificate that failed system validation and that the
     /// user has not explicitly trusted. Carries the host, port and the leaf SHA-256
     /// fingerprint so the UI can offer a "trust this server" action.
-    case untrustedCertificate(host: String, port: Int, fingerprint: String)
+    case untrustedCertificate(UntrustedCertificate)
 
     var errorDescription: String? {
         switch self {
@@ -304,17 +304,17 @@ enum OWAError: LocalizedError {
         case .httpError(let c, let m):     Self.describeHTTPError(statusCode: c, responseBody: m)
         case .encodingFailed:              "Failed to encode request"
         case .ewsError(let code):          "Exchange error: \(code)"
-        case .untrustedCertificate(let host, _, _): "Untrusted server certificate for \(host)"
+        case .untrustedCertificate(let cert): "Untrusted server certificate for \(cert.host)"
         }
     }
 
     /// Extracts the untrusted-certificate details, if this error is one.
-    var untrustedCertificateInfo: (host: String, port: Int, fingerprint: String)? {
-        guard case .untrustedCertificate(let host, let port, let fingerprint) = self else { return nil }
-        return (host, port, fingerprint)
+    var untrustedCertificateInfo: UntrustedCertificate? {
+        guard case .untrustedCertificate(let cert) = self else { return nil }
+        return cert
     }
 
-    static func untrustedCertificateInfo(from error: Error) -> (host: String, port: Int, fingerprint: String)? {
+    static func untrustedCertificateInfo(from error: Error) -> UntrustedCertificate? {
         (error as? OWAError)?.untrustedCertificateInfo
     }
 

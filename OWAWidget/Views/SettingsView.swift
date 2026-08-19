@@ -186,25 +186,71 @@ struct SettingsView: View {
         }
         .frame(width: 420, height: 380)
         .alert(
-            localization.tr("settings.account.certificate.untrusted.title"),
+            certificateAlertTitle,
             isPresented: Binding(
                 get: { vm.pendingCertTrust != nil },
                 set: { if !$0 { vm.cancelCertificateTrust() } }
             ),
             presenting: vm.pendingCertTrust
-        ) { _ in
-            Button(localization.tr("settings.account.certificate.trust")) {
+        ) { pending in
+            Button(
+                localization.tr(
+                    pending.isReplacingKnownCertificate
+                        ? "settings.account.certificate.changed.trust"
+                        : "settings.account.certificate.trust"
+                ),
+                // A certificate that changed under a host we already pinned is the one case here
+                // where the safe answer is "no": make the user reach for that button on purpose.
+                role: pending.isReplacingKnownCertificate ? .destructive : nil
+            ) {
                 vm.confirmCertificateTrust(localization: localization)
             }
             Button(localization.tr("settings.account.cancel"), role: .cancel) {
                 vm.cancelCertificateTrust()
             }
         } message: { pending in
-            Text(localization.tr(
-                "settings.account.certificate.untrusted.message",
-                pending.host,
-                pending.fingerprint
-            ))
+            Text(certificateAlertMessage(for: pending))
         }
+    }
+
+    private var certificateAlertTitle: String {
+        localization.tr(
+            vm.pendingCertTrust?.isReplacingKnownCertificate == true
+                ? "settings.account.certificate.changed.title"
+                : "settings.account.certificate.untrusted.title"
+        )
+    }
+
+    private func certificateAlertMessage(
+        for pending: SettingsViewModel.PendingCertificateTrust
+    ) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        formatter.locale = localization.locale
+
+        let lines = pending.details?.summaryLines(
+            subjectLabel: localization.tr("settings.account.certificate.subject"),
+            issuerLabel: localization.tr("settings.account.certificate.issuer"),
+            validUntilLabel: localization.tr("settings.account.certificate.valid.until"),
+            dateFormatter: formatter
+        ) ?? []
+        let detailsBlock = lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n\n"
+
+        if pending.isReplacingKnownCertificate {
+            return localization.tr(
+                "settings.account.certificate.changed.message",
+                pending.host,
+                detailsBlock,
+                pending.previousFingerprints.sorted().joined(separator: "\n"),
+                pending.fingerprint
+            )
+        }
+        return localization.tr(
+            "settings.account.certificate.untrusted.message",
+            pending.host,
+            detailsBlock,
+            pending.fingerprint
+        )
     }
 }

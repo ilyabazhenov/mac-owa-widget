@@ -59,6 +59,74 @@ enum TrustedCertificateStore {
         return SHA256.hash(data: der).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Issuer, subject and validity of the leaf certificate, for the trust prompt to show
+    /// alongside the fingerprint. Best effort: any field the certificate does not carry, or that
+    /// this parser does not recognise, comes back `nil` rather than failing the whole read.
+    static func leafDetails(from trust: SecTrust) -> ServerCertificateDetails? {
+        guard let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+              let leaf = chain.first else { return nil }
+        return details(of: leaf)
+    }
+
+    static func details(of certificate: SecCertificate) -> ServerCertificateDetails {
+        var issuer: String?
+        var notBefore: Date?
+        var notAfter: Date?
+
+        let keys = [
+            kSecOIDX509V1IssuerName,
+            kSecOIDX509V1ValidityNotBefore,
+            kSecOIDX509V1ValidityNotAfter
+        ] as CFArray
+        if let values = SecCertificateCopyValues(certificate, keys, nil) as? [CFString: Any] {
+            issuer = commonName(inSection: values[kSecOIDX509V1IssuerName])
+            notBefore = date(from: values[kSecOIDX509V1ValidityNotBefore])
+            notAfter = date(from: values[kSecOIDX509V1ValidityNotAfter])
+        }
+
+        return ServerCertificateDetails(
+            subject: SecCertificateCopySubjectSummary(certificate) as String?,
+            issuer: issuer,
+            notBefore: notBefore,
+            notAfter: notAfter
+        )
+    }
+
+    /// A distinguished name arrives as a property whose `value` is an array of `{label, value}`
+    /// components, one per attribute. We want the common name; everything else is noise here.
+    private static func commonName(inSection section: Any?) -> String? {
+        guard let property = section as? [CFString: Any],
+              let components = property[kSecPropertyKeyValue] as? [[CFString: Any]] else { return nil }
+        for component in components
+        where component[kSecPropertyKeyLabel] as? String == (kSecOIDCommonName as String) {
+            if let value = component[kSecPropertyKeyValue] as? String { return value }
+        }
+        return nil
+    }
+
+    /// Validity dates come back as seconds since the reference date (2001-01-01), not as `Date`.
+    private static func date(from section: Any?) -> Date? {
+        guard let property = section as? [CFString: Any] else { return nil }
+        if let number = property[kSecPropertyKeyValue] as? NSNumber {
+            return Date(timeIntervalSinceReferenceDate: number.doubleValue)
+        }
+        return property[kSecPropertyKeyValue] as? Date
+    }
+
+    /// Replaces every fingerprint pinned for a host with this one.
+    ///
+    /// Used when a host that already had a pinned certificate presents a different one. Adding
+    /// the new fingerprint next to the old would leave the previous certificate trusted forever,
+    /// including one that was rotated *because* it was compromised — a pin that never forgets is
+    /// weaker than it looks.
+    static func replace(fingerprint: String, forKey key: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        var current = loadedCache()
+        current[key] = [fingerprint]
+        persist(current)
+    }
+
     static func trustedFingerprints(forKey key: String) -> Set<String> {
         lock.lock()
         defer { lock.unlock() }
