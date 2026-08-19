@@ -141,6 +141,19 @@ The script prints:
 
 Losing the private key means existing clients can no longer install updates signed by a new key. Backup and restore procedure: [docs/sparkle-key-backup.md](docs/sparkle-key-backup.md).
 
+## Testing an Update Locally
+
+`make release-package` proves the archive and the appcast are signed. It does not prove that the version already installed on a user's machine can *apply* the update: the install is carried out by `Autoupdate` and the XPC services inside `Sparkle.framework`, so anything that changes signing or bundle layout can break updating without breaking the build. A broken updater is silent — users simply stop receiving versions.
+
+Run the full cycle on localhost before releasing whenever signing, entitlements, or bundle contents changed:
+
+```bash
+make bundle
+bash scripts/test_update_locally.sh
+```
+
+It serves a locally generated appcast, launches the previously published build against it, and installs the update. Nothing is published: the feed and archive exist only on localhost, and the test app runs under its own bundle identifier so it cannot touch your working copy's accounts or cache. `--clean` removes every trace.
+
 ## Release Flow
 
 Releases are built and published **locally only**. There is no CI release workflow: the GitHub runner ships an Xcode version incompatible with the `KeyboardShortcuts` dependency, and keeping a copy of the signing key in GitHub Actions Secrets is an unnecessary exposure.
