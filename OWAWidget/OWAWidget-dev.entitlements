@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- ASCII ONLY. codesign parses this file with AMFIUnserializeXML, which
+         rejects non-ASCII bytes even inside comments and fails the build with
+         "AMFIUnserializeXML: syntax error near line N". `plutil -lint` accepts
+         such a file, so it will not warn you. Keep dashes and quotes plain. -->
     <!-- Outbound HTTPS to Exchange servers -->
     <key>com.apple.security.network.client</key>
     <true/>
