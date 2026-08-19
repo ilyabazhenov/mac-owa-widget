@@ -150,6 +150,8 @@
 "popover.quit" = "Выйти";
 "popover.no.accounts.title" = "Аккаунты не настроены";
 "popover.no.accounts.subtitle" = "Откройте настройки, чтобы добавить Exchange-аккаунт.";
+"popover.accounts.unreadable.title" = "Не удалось прочитать аккаунты";
+"popover.accounts.unreadable.subtitle" = "Данные на месте, но приложение не получило доступ к связке ключей. Разрешите доступ и нажмите «Повторить». Не добавляйте аккаунт заново — это перезапишет сохранённые.";
 "popover.open.settings" = "Открыть настройки";
 "popover.retry" = "Повторить";
 "popover.retry.help" = "Повторить синхронизацию без повторного ввода пароля";

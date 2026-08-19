@@ -195,7 +195,13 @@ struct PopoverView: View {
     private var content: some View {
         Group {
             if service.accounts.isEmpty {
-                noAccountState
+                // An unreadable store is not an empty one, and must never offer "add an account":
+                // that would persist a fresh list over the accounts still sitting on disk.
+                if service.accountStoreUnreadable {
+                    unreadableAccountStoreState
+                } else {
+                    noAccountState
+                }
             } else if SyncPresentationPolicy.shouldShowErrorState(
                 syncStatus: service.syncStatus,
                 eventsCount: service.events.count
@@ -459,6 +465,32 @@ struct PopoverView: View {
     }
 
     // MARK: - Error / empty states
+
+    private var unreadableAccountStoreState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "lock.trianglebadge.exclamationmark")
+                .font(.system(size: 28))
+                .foregroundStyle(.secondary)
+            Text(localization.tr("popover.accounts.unreadable.title"))
+                .font(.system(size: 13, weight: .medium))
+            Text(localization.tr("popover.accounts.unreadable.subtitle"))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button { service.retryLoadingAccounts() } label: {
+                Text(localization.tr("popover.retry"))
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Color.accentColor)
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity)
+    }
 
     private var noAccountState: some View {
         VStack(spacing: 10) {

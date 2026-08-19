@@ -61,6 +61,48 @@ final class CalendarServiceAccountPersistenceTests: XCTestCase {
         defaults.set(try JSONEncoder().encode([makeAccount()]), forKey: legacyAccountsKey)
     }
 
+    private func seedEncryptedAccount() {
+        let writable = SecureStore(directory: directory, keyProvider: InMemorySecureStoreKeyProvider())
+        let store = CalendarService.makeAccountStore(secureStore: writable, defaults: defaults)
+        XCTAssertTrue(store.save([makeAccount()]))
+    }
+
+    // MARK: - Distinguishing "no accounts" from "cannot read accounts"
+
+    // The popover shows an invitation to add an account when `accounts` is empty. If it did that
+    // for a store it merely failed to read, the obvious next step — adding the account again —
+    // would persist a one-element list over the accounts still on disk. So the two states have to
+    // stay distinguishable at the service level.
+
+    func testAccountStoreUnreadableIsFalseOnCleanInstall() {
+        let service = makeService(keyAvailable: true)
+
+        XCTAssertTrue(service.accounts.isEmpty)
+        XCTAssertFalse(service.accountStoreUnreadable, "чистая установка — не ошибка чтения")
+    }
+
+    func testAccountStoreUnreadableIsTrueWhenContainerCannotBeRead() {
+        seedEncryptedAccount()
+
+        let service = makeService(keyAvailable: false)
+
+        XCTAssertTrue(service.accounts.isEmpty, "прочитать нечем")
+        XCTAssertTrue(
+            service.accountStoreUnreadable,
+            "аккаунты на диске есть — UI не должен предлагать завести их заново"
+        )
+    }
+
+    func testAccountStoreUnreadableIsFalseWhenLegacyCopyRescuesAccounts() throws {
+        seedEncryptedAccount()
+        try seedLegacyAccount()
+
+        let service = makeService(keyAvailable: false)
+
+        XCTAssertEqual(service.accounts.map(\.email), ["user@example.com"])
+        XCTAssertFalse(service.accountStoreUnreadable, "аккаунты доехали — предупреждать не о чем")
+    }
+
     // MARK: - Reading
 
     func testAccountsStillLoadFromLegacyCopyWhenKeyIsUnavailable() throws {

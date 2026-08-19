@@ -170,6 +170,82 @@ final class SecureCodableStoreTests: XCTestCase {
         XCTAssertEqual(subject.load(), legacy, "невосстановимые данные должны браться из legacy")
     }
 
+    // MARK: - Load outcome
+
+    // `load()` returning nil is ambiguous, and the ambiguity is dangerous: the UI that shows the
+    // first-run empty state for an unreadable store invites the user to re-enter data that is
+    // still on disk, and re-entering overwrites it. These pin down which nil is which.
+
+    func testLoadOutcomeIsOkWhenNothingStored() {
+        let subject = makeStore()
+        XCTAssertNil(subject.load())
+        XCTAssertEqual(subject.lastLoadOutcome, .ok, "пустое хранилище — не ошибка чтения")
+    }
+
+    func testLoadOutcomeIsOkAfterSuccessfulRead() {
+        XCTAssertTrue(makeStore().save(sample))
+        let subject = makeStore()
+        XCTAssertEqual(subject.load(), sample)
+        XCTAssertEqual(subject.lastLoadOutcome, .ok)
+    }
+
+    func testLoadOutcomeIsUnreadableWhenContainerCannotBeDecrypted() {
+        XCTAssertTrue(makeStore().save(sample))
+
+        let otherKey = SecureStore(directory: directory, keyProvider: InMemorySecureStoreKeyProvider())
+        let subject = makeStore(secureStore: otherKey)
+
+        XCTAssertNil(subject.load())
+        XCTAssertEqual(subject.lastLoadOutcome, .unreadable, "контейнер на месте, но не читается")
+    }
+
+    func testLoadOutcomeIsUnreadableWhenKeyProviderFails() throws {
+        XCTAssertTrue(makeStore().save(sample))
+
+        let broken = SecureStore(directory: directory, keyProvider: UnavailableSecureStoreKeyProvider())
+        let subject = makeStore(secureStore: broken)
+
+        XCTAssertNil(subject.load())
+        XCTAssertEqual(subject.lastLoadOutcome, .unreadable, "недоступный ключ — не пустое хранилище")
+    }
+
+    func testLoadOutcomeIsOkWhenLegacyCopyRescuesUnreadableContainer() throws {
+        XCTAssertTrue(makeStore().save(sample))
+        let legacy = Payload(title: "из legacy", count: 1)
+        defaults.set(try JSONEncoder().encode(legacy), forKey: legacyKey)
+
+        let otherKey = SecureStore(directory: directory, keyProvider: InMemorySecureStoreKeyProvider())
+        let subject = makeStore(secureStore: otherKey)
+
+        XCTAssertEqual(subject.load(), legacy)
+        XCTAssertEqual(subject.lastLoadOutcome, .ok, "значение уцелело — тревожить пользователя нечем")
+    }
+
+    func testLoadOutcomeIsUnreadableWhenContainerDoesNotDecode() throws {
+        // Decrypts fine, but the bytes are not a `Payload`: the shape a newer build would write.
+        try store.write(Data("{}".utf8), name: "payload")
+
+        let subject = makeStore()
+        XCTAssertNil(subject.load())
+        XCTAssertEqual(subject.lastLoadOutcome, .unreadable, "нерасшифровываемая схема — тоже не пусто")
+    }
+
+    func testTreatAsEmptyPolicyStillReportsUnreadableOutcome() {
+        XCTAssertTrue(makeStore().save(sample))
+
+        let otherKey = SecureStore(directory: directory, keyProvider: InMemorySecureStoreKeyProvider())
+        let subject = SecureCodableStore<Payload>(
+            name: "payload",
+            legacyKey: legacyKey,
+            store: otherKey,
+            defaults: defaults,
+            policy: .treatAsEmpty
+        )
+
+        XCTAssertNil(subject.load(), "кэш событий по-прежнему считается пустым")
+        XCTAssertEqual(subject.lastLoadOutcome, .unreadable, "но причина остаётся различимой")
+    }
+
     func testClearRemovesBothContainerAndLegacyKey() throws {
         XCTAssertTrue(makeStore().save(sample))
         defaults.set(try JSONEncoder().encode(sample), forKey: legacyKey)

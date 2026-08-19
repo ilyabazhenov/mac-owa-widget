@@ -150,6 +150,8 @@
 "popover.quit" = "Quit";
 "popover.no.accounts.title" = "No accounts configured";
 "popover.no.accounts.subtitle" = "Open Settings to add your Exchange account.";
+"popover.accounts.unreadable.title" = "Couldn't read your accounts";
+"popover.accounts.unreadable.subtitle" = "Your data is still here, but the app was not granted Keychain access. Allow it and press Try Again. Do not re-add the account — that would overwrite what is saved.";
 "popover.open.settings" = "Open Settings";
 "popover.retry" = "Retry";
 "popover.retry.help" = "Retry sync without re-entering the password";

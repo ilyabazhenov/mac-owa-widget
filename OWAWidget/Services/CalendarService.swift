@@ -29,6 +29,14 @@ final class CalendarService: ObservableObject {
     @Published private(set) var events: [CalendarEvent] = []
     @Published private(set) var syncStatus: SyncStatus = .idle
     @Published private(set) var accounts: [CalendarAccount] = []
+
+    /// `true` when the account store holds something this build could not read — most often a
+    /// Keychain the user has not authorised yet after an update changed the app's code signature.
+    ///
+    /// Kept apart from "no accounts" because the two need opposite UI: the first-run empty state
+    /// tells the user to add an account, and doing that writes a fresh list over the container
+    /// that is still on disk. See ``SecureCodableStore/LoadOutcome``.
+    @Published private(set) var accountStoreUnreadable = false
     @Published private(set) var engagementSnapshot: MeetingEngagementSnapshot = .empty
     @Published private(set) var engagementPeriod: MeetingEngagementPeriod = .today
 
@@ -890,8 +898,25 @@ final class CalendarService: ObservableObject {
 
     // MARK: - Persistence
 
+    /// Re-reads the account store, for the UI to offer after the user has granted Keychain access.
+    ///
+    /// Does nothing beyond re-reading while the store stays unreadable: the caller is meant to
+    /// keep showing the explanatory screen rather than fall through to "add an account".
+    func retryLoadingAccounts() {
+        loadAccounts()
+        guard !accountStoreUnreadable, !accounts.isEmpty else { return }
+        Task {
+            await rebuildProviders()
+            syncNow()
+        }
+    }
+
     private func loadAccounts() {
-        guard let decoded = accountStore.load() else { return }
+        guard let decoded = accountStore.load() else {
+            accountStoreUnreadable = accountStore.lastLoadOutcome == .unreadable
+            return
+        }
+        accountStoreUnreadable = false
 
         // Migrate legacy cleartext http:// server URLs to https://. Before HTTPS was
         // enforced these could be persisted; without migration they'd now fail to build a

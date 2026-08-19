@@ -26,6 +26,28 @@ final class SecureCodableStore<Value: Codable>: @unchecked Sendable {
     private let decoder: JSONDecoder
     private let lock = NSLock()
     private var migrationAttempted = false
+    private var storedLoadOutcome: LoadOutcome = .ok
+
+    /// Whether the last ``load()`` found the store readable, for call sites that must tell
+    /// "nothing stored yet" apart from "something is stored and we could not read it".
+    ///
+    /// The distinction is not cosmetic. Both cases return `nil`, but a UI that shows the
+    /// first-run empty state for the second one invites the user to re-enter what is still on
+    /// disk — and re-entering persists a fresh value over the container, turning a Keychain
+    /// prompt the user can still accept into actual data loss.
+    enum LoadOutcome: Equatable {
+        /// The store was read, or is genuinely empty.
+        case ok
+        /// A container exists but this build could not turn it back into a value: the master key
+        /// was unavailable, or the bytes were written by a schema it does not understand.
+        case unreadable
+    }
+
+    var lastLoadOutcome: LoadOutcome {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedLoadOutcome
+    }
 
     init(
         name: String,
@@ -51,15 +73,32 @@ final class SecureCodableStore<Value: Codable>: @unchecked Sendable {
         migrateIfNeeded()
 
         do {
-            guard let data = try store.read(name) else { return legacyValue() }
-            return try? decoder.decode(Value.self, from: data)
+            // No container at all: nothing has been stored yet under this name.
+            guard let data = try store.read(name) else { return record(.ok, legacyValue()) }
+            // Decrypts but does not decode — written by a schema this build cannot read. The
+            // bytes are still there, so this is emphatically not an empty store.
+            guard let decoded = try? decoder.decode(Value.self, from: data) else {
+                return record(.unreadable, nil)
+            }
+            return record(.ok, decoded)
         } catch {
             DiagnosticLog.event("SecureStore read failed store=\(name) policy=\(policy)")
             switch policy {
-            case .treatAsEmpty: return nil
-            case .fallBackToLegacy: return legacyValue()
+            case .treatAsEmpty:
+                return record(.unreadable, nil)
+            case .fallBackToLegacy:
+                // The cleartext copy still standing means the value survived after all.
+                guard let legacy = legacyValue() else { return record(.unreadable, nil) }
+                return record(.ok, legacy)
             }
         }
+    }
+
+    private func record(_ outcome: LoadOutcome, _ value: Value?) -> Value? {
+        lock.lock()
+        storedLoadOutcome = outcome
+        lock.unlock()
+        return value
     }
 
     @discardableResult
