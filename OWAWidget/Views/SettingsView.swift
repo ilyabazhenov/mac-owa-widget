@@ -185,39 +185,106 @@ struct SettingsView: View {
             .padding()
         }
         .frame(width: 420, height: 380)
+        // One alert, not two. Stacking `.alert` modifiers on the same view means SwiftUI
+        // presents whichever one it picks and silently drops the other — and the one it drops
+        // here would be the only way to approve a login host, leaving sync latched with no way
+        // out. Both prompts are mutually exclusive anyway, so they share the modifier.
         .alert(
-            certificateAlertTitle,
+            securityPromptTitle,
             isPresented: Binding(
-                get: { vm.pendingCertTrust != nil },
-                set: { if !$0 { vm.cancelCertificateTrust() } }
+                get: { securityPrompt != nil },
+                set: { if !$0 { dismissSecurityPrompt() } }
             ),
-            presenting: vm.pendingCertTrust
-        ) { pending in
-            Button(
-                localization.tr(
-                    pending.isReplacingKnownCertificate
-                        ? "settings.account.certificate.changed.trust"
-                        : "settings.account.certificate.trust"
-                ),
-                // A certificate that changed under a host we already pinned is the one case here
-                // where the safe answer is "no": make the user reach for that button on purpose.
-                role: pending.isReplacingKnownCertificate ? .destructive : nil
-            ) {
-                vm.confirmCertificateTrust(localization: localization)
+            presenting: securityPrompt
+        ) { prompt in
+            switch prompt {
+            case .certificate(let pending):
+                Button(
+                    localization.tr(
+                        pending.isReplacingKnownCertificate
+                            ? "settings.account.certificate.changed.trust"
+                            : "settings.account.certificate.trust"
+                    ),
+                    // A certificate that changed under a host we already pinned is the one case
+                    // here where the safe answer is "no": make the user reach for that button on
+                    // purpose.
+                    role: pending.isReplacingKnownCertificate ? .destructive : nil
+                ) {
+                    vm.confirmCertificateTrust(localization: localization)
+                }
+            case .loginHost:
+                // Destructive on purpose. Approving means the account credentials will be handed
+                // to a host the server chose, and the safe answer is "no" unless the user
+                // recognises it.
+                Button(localization.tr("settings.account.login.host.approve"), role: .destructive) {
+                    vm.confirmLoginHostApproval(localization: localization)
+                }
             }
             Button(localization.tr("settings.account.cancel"), role: .cancel) {
-                vm.cancelCertificateTrust()
+                dismissSecurityPrompt()
             }
-        } message: { pending in
-            Text(certificateAlertMessage(for: pending))
+        } message: { prompt in
+            switch prompt {
+            case .certificate(let pending): Text(certificateAlertMessage(for: pending))
+            case .loginHost(let pending): Text(loginHostAlertMessage(for: pending))
+            }
         }
     }
 
-    private var certificateAlertTitle: String {
-        localization.tr(
-            vm.pendingCertTrust?.isReplacingKnownCertificate == true
-                ? "settings.account.certificate.changed.title"
-                : "settings.account.certificate.untrusted.title"
+    /// The security question currently waiting on the user, if any. Certificate first: it is
+    /// raised earlier in the connection attempt, so if both were somehow pending it is the one
+    /// that has to be answered before the other can even be reached.
+    private enum SecurityPrompt: Identifiable {
+        case certificate(SettingsViewModel.PendingCertificateTrust)
+        case loginHost(SettingsViewModel.PendingLoginHostApproval)
+
+        var id: String {
+            switch self {
+            case .certificate(let pending): "cert:\(pending.id)"
+            case .loginHost(let pending): "loginHost:\(pending.id)"
+            }
+        }
+    }
+
+    private var securityPrompt: SecurityPrompt? {
+        if let pending = vm.pendingCertTrust { return .certificate(pending) }
+        if let pending = vm.pendingLoginHostApproval { return .loginHost(pending) }
+        return nil
+    }
+
+    private var securityPromptTitle: String {
+        switch securityPrompt {
+        case .certificate(let pending):
+            return localization.tr(
+                pending.isReplacingKnownCertificate
+                    ? "settings.account.certificate.changed.title"
+                    : "settings.account.certificate.untrusted.title"
+            )
+        case .loginHost:
+            return localization.tr("settings.account.login.host.title")
+        case nil:
+            return ""
+        }
+    }
+
+    private func dismissSecurityPrompt() {
+        vm.cancelCertificateTrust()
+        vm.cancelLoginHostApproval()
+    }
+
+    private func loginHostAlertMessage(
+        for pending: SettingsViewModel.PendingLoginHostApproval
+    ) -> String {
+        // The hops are what make the difference visible: a corporate ADFS chain reads as one, and
+        // a server quietly pointing the login somewhere else reads as the other.
+        let hops = pending.redirectChain.isEmpty
+            ? ""
+            : pending.redirectChain.joined(separator: "\n") + "\n\n"
+        return localization.tr(
+            "settings.account.login.host.message",
+            pending.configuredHost,
+            pending.loginHost,
+            hops
         )
     }
 

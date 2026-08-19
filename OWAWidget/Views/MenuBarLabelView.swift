@@ -120,12 +120,17 @@ struct MenuBarLabelView: View {
         return isHappeningNow
     }
 
-    /// True for sync states that need the user to act (re-enter password, re-trust the server)
-    /// or that hard-failed with no data. Soft states like `.offlineCached` are intentionally
-    /// excluded — they already surface in the popover footer and shouldn't alarm the menu bar.
+    /// True for sync states that need the user to act (re-enter password, re-trust the server,
+    /// approve a login host) or that hard-failed with no data. Soft states like `.offlineCached`
+    /// are intentionally excluded — they already surface in the popover footer and shouldn't
+    /// alarm the menu bar.
+    ///
+    /// Asks `blocksSync` rather than naming the cases. Spelling them out here once let a newly
+    /// added blocking status suspend sync while the menu bar carried on showing a plain calendar
+    /// icon, because nothing makes an `if case` chain fail when a case is added.
     private var hasSyncProblem: Bool {
         let status = service.syncStatus
-        return status.isAuthenticationRequired || status.isCertificateTrustRequired || status.isError
+        return status.blocksSync || status.isError
     }
 
     private var isHappeningNow: Bool {

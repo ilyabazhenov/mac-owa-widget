@@ -120,6 +120,8 @@ final class LocalizationService: ObservableObject {
             return tr("sync.status.auth.required")
         case .certificateTrustRequired:
             return tr("sync.status.certificate.untrusted")
+        case .loginHostApprovalRequired:
+            return tr("sync.status.login.host.approval")
         }
     }
 

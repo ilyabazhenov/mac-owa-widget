@@ -13,6 +13,9 @@ enum SyncStatus: Sendable {
     /// Sync is suspended because the server presented an untrusted certificate
     /// (e.g. a self-signed cert rotated). Resumes after the user re-trusts the server.
     case certificateTrustRequired(host: String, fingerprint: String)
+    /// Sync is suspended because the login flow was redirected at a host the user has not approved
+    /// for this server. Resumes once the user approves that host (or fixes the server URL).
+    case loginHostApprovalRequired(configuredHost: String, loginHost: String)
 
     var displayText: String {
         switch self {
@@ -32,6 +35,8 @@ enum SyncStatus: Sendable {
             return NSLocalizedString("sync.status.auth.required", comment: "")
         case .certificateTrustRequired:
             return NSLocalizedString("sync.status.certificate.untrusted", comment: "")
+        case .loginHostApprovalRequired:
+            return NSLocalizedString("sync.status.login.host.approval", comment: "")
         }
     }
 
@@ -60,9 +65,15 @@ enum SyncStatus: Sendable {
         return false
     }
 
-    /// True when sync is suspended pending explicit user action (re-enter password or
-    /// re-trust the server). Used by the circuit breaker to stop retrying.
+    var isLoginHostApprovalRequired: Bool {
+        if case .loginHostApprovalRequired = self { return true }
+        return false
+    }
+
+    /// True when sync is suspended pending explicit user action (re-enter password, re-trust the
+    /// server, or approve the host the login was redirected to). Used by the circuit breaker to
+    /// stop retrying.
     var blocksSync: Bool {
-        isAuthenticationRequired || isCertificateTrustRequired
+        isAuthenticationRequired || isCertificateTrustRequired || isLoginHostApprovalRequired
     }
 }

@@ -50,7 +50,6 @@
 "settings.account.certificate.issuer" = "Кем выдан:";
 "settings.account.certificate.valid.until" = "Действует до:";
 "settings.account.certificate.trust" = "Доверять этому серверу";
-"settings.account.certificate.trusted" = "Сертификат сервера добавлен в доверенные. Повторная проверка…";
 
 "preferences.shortcuts.section" = "Горячие клавиши";
 "preferences.shortcuts.createMeeting" = "Новая встреча";
@@ -238,8 +237,13 @@
 "sync.status.offline.cached" = "Офлайн: показываю кэшированные встречи (%@)";
 "sync.status.error" = "Ошибка: %@";
 "error.owa.unreachable" = "Не удалось подключиться к серверу";
+"error.owa.loginHostApprovalRequired" = "Вход перенаправлен на «%@». Пароль не отправлен: этот хост не подтверждён для вашего сервера.";
 "sync.status.auth.required" = "Неверный пароль — обновите в Настройках";
 "sync.status.certificate.untrusted" = "Недоверенный сертификат сервера — подтвердите в Настройках";
+"sync.status.login.host.approval" = "Вход перенаправлен — подтвердите хост в настройках";
+"settings.account.login.host.title" = "Вход перенаправлен на другой хост";
+"settings.account.login.host.approve" = "Подтвердить хост";
+"settings.account.login.host.message" = "Сервер %1$@ перенаправил форму входа на %2$@, и пароль туда не отправлен.\n\n%3$@Так выглядит корпоративная федерация (ADFS, единый вход) — и точно так же выглядит кража учётных данных. Подтверждайте, только если узнаёте этот хост как сервер входа вашей организации.";
 
 "date.today" = "Сегодня";
 "date.tomorrow" = "Завтра";

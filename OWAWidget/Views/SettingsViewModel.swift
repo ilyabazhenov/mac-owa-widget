@@ -29,6 +29,7 @@ final class SettingsViewModel: ObservableObject {
     /// Set when a connection test hit an untrusted server certificate; drives the
     /// "trust this server?" confirmation. Nil otherwise.
     @Published var pendingCertTrust: PendingCertificateTrust?
+    @Published var pendingLoginHostApproval: PendingLoginHostApproval?
 
     struct PendingCertificateTrust: Identifiable, Equatable {
         let host: String
@@ -45,6 +46,17 @@ final class SettingsViewModel: ObservableObject {
         var isReplacingKnownCertificate: Bool { !previousFingerprints.isEmpty }
 
         var id: String { "\(host):\(port):\(fingerprint)" }
+    }
+
+    /// The login flow was redirected at a host the user has not approved for this server, and the
+    /// password was withheld. Federated sign-in and credential theft look identical from here, so
+    /// the prompt names both hosts, shows the hops between them, and lets the user decide.
+    struct PendingLoginHostApproval: Identifiable, Equatable {
+        let configuredHost: String
+        let loginHost: String
+        let redirectChain: [String]
+
+        var id: String { "\(configuredHost)->\(loginHost)" }
     }
 
     private let service: CalendarService
@@ -96,6 +108,7 @@ final class SettingsViewModel: ObservableObject {
         isTesting = true
         testResult = nil
         pendingCertTrust = nil
+        pendingLoginHostApproval = nil
 
         let pwd = editingPassword
         Task {
@@ -113,6 +126,16 @@ final class SettingsViewModel: ObservableObject {
                         fingerprint: cert.fingerprint,
                         details: cert.details,
                         previousFingerprints: TrustedCertificateStore.trustedFingerprints(forKey: key)
+                    )
+                    testResult = nil
+                } else if let redirect = OWAError.loginHostApprovalInfo(from: error) {
+                    // Offer to approve this specific host instead of a generic failure — the same
+                    // shape as the certificate prompt, for the same reason: the user is the only
+                    // one who knows whether their organisation really signs in through that host.
+                    pendingLoginHostApproval = PendingLoginHostApproval(
+                        configuredHost: redirect.configuredHost,
+                        loginHost: redirect.loginHost,
+                        redirectChain: redirect.redirectChain
                     )
                     testResult = nil
                 } else {
@@ -136,12 +159,30 @@ final class SettingsViewModel: ObservableObject {
             TrustedCertificateStore.trust(fingerprint: pending.fingerprint, forKey: key)
         }
         pendingCertTrust = nil
-        testResult = localization.tr("settings.account.certificate.trusted")
+        // Same dead store as above: cleared by `testConnection` before SwiftUI draws a frame.
         testConnection(localization: localization)
     }
 
     func cancelCertificateTrust() {
         pendingCertTrust = nil
+    }
+
+    /// User confirmed that this host is where their organisation's sign-in really lives.
+    /// Records the approval and re-runs the connection test, which now gets as far as the POST.
+    func confirmLoginHostApproval(localization: LocalizationService) {
+        guard let pending = pendingLoginHostApproval else { return }
+        TrustedLoginHostStore.approve(
+            loginHost: pending.loginHost,
+            forKey: TrustedLoginHostStore.key(configuredHost: pending.configuredHost)
+        )
+        pendingLoginHostApproval = nil
+        // No interim "approved" message: `testConnection` clears `testResult` synchronously on
+        // the next line, so it would never reach the screen. The re-run reports the real outcome.
+        testConnection(localization: localization)
+    }
+
+    func cancelLoginHostApproval() {
+        pendingLoginHostApproval = nil
     }
 
     // MARK: - Account CRUD
@@ -178,6 +219,7 @@ final class SettingsViewModel: ObservableObject {
             editingAccount = nil
             editingPassword = ""
             pendingCertTrust = nil
+            pendingLoginHostApproval = nil
         } catch {
             testResult = localization.tr("settings.account.save.failed", error.localizedDescription)
         }
@@ -190,6 +232,7 @@ final class SettingsViewModel: ObservableObject {
         editingPassword = ""
         testResult = nil
         pendingCertTrust = nil
+        pendingLoginHostApproval = nil
         isAddingNew = false
     }
 

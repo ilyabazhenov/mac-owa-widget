@@ -562,3 +562,54 @@ enum OWACalendarFoldersParser {
         return []
     }
 }
+
+// MARK: - RespondToMeeting
+
+/// SOAP envelope for the EWS `CreateItem` that accepts, tentatively accepts or declines an
+/// invitation.
+///
+/// Pure function for the same reason ``OWACreateCalendarEventPayload/createItemSOAP(title:agenda:location:start:end:requiredAttendees:optionalAttendees:dateFormatter:)``
+/// is one: the escaping is the part worth testing, and it needs no network to test.
+enum OWARespondToMeetingPayload {
+
+    static func elementName(for action: MeetingResponseAction) -> String {
+        switch action {
+        case .accept:    "AcceptItem"
+        case .tentative: "TentativelyAcceptItem"
+        case .decline:   "DeclineItem"
+        }
+    }
+
+    /// - Parameters:
+    ///   - itemId: EWS item identifier, straight out of the server's own JSON.
+    ///   - changeKey: EWS change key, same provenance.
+    ///
+    /// Both are escaped. They are server-authored, which makes them attacker-controlled the moment
+    /// the server is, and an unescaped `"` in an attribute is all it takes to add elements to the
+    /// envelope this client signs its session to.
+    static func soap(itemId: String, changeKey: String, action: MeetingResponseAction) -> String {
+        let element = elementName(for: action)
+        let escapedItemId = OWACreateCalendarEventPayload.escapeXML(itemId)
+        let escapedChangeKey = OWACreateCalendarEventPayload.escapeXML(changeKey)
+
+        return """
+        <?xml version="1.0" encoding="utf-8"?>
+        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" \
+        xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" \
+        xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">
+          <soap:Header>
+            <t:RequestServerVersion Version="Exchange2013_SP1"/>
+          </soap:Header>
+          <soap:Body>
+            <m:CreateItem MessageDisposition="SendAndSaveCopy">
+              <m:Items>
+                <t:\(element)>
+                  <t:ReferenceItemId Id="\(escapedItemId)" ChangeKey="\(escapedChangeKey)"/>
+                </t:\(element)>
+              </m:Items>
+            </m:CreateItem>
+          </soap:Body>
+        </soap:Envelope>
+        """
+    }
+}

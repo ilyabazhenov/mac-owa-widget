@@ -8,22 +8,35 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
     private var _redirectChain: [String] = []
     private var _pendingUntrusted: UntrustedCertificate?
     private var _authRejected = false
+    private var _unapprovedLoginHost: UnapprovedLoginHost?
 
     /// Credentials for Integrated Windows Auth (NTLM/Negotiate). Username is expected in
     /// `DOMAIN\login` form (e.g. `MOSCOW\U_12345`).
     private let username: String
     private let password: String
+    /// Host of the account's configured server. Credentials are offered to this host and to
+    /// nothing else — see the guard in the challenge handler.
+    private let credentialHost: String
 
-    init(username: String, password: String) {
+    init(username: String, password: String, credentialHost: String) {
         self.username = username
         self.password = password
+        self.credentialHost = credentialHost
         super.init()
     }
 
     var allCookies: [HTTPCookie]    { lock.lock(); defer { lock.unlock() }; return _cookies }
     var redirectChain: [String]     { lock.lock(); defer { lock.unlock() }; return _redirectChain }
 
-    func reset() { lock.lock(); _cookies = []; _redirectChain = []; _pendingUntrusted = nil; _authRejected = false; lock.unlock() }
+    func reset() {
+        lock.lock()
+        _cookies = []
+        _redirectChain = []
+        _pendingUntrusted = nil
+        _authRejected = false
+        _unapprovedLoginHost = nil
+        lock.unlock()
+    }
 
     /// Returns and clears whether the last cancelled request was cancelled because the NTLM/
     /// Negotiate handshake declined our credentials (a confirmed wrong-password), as opposed to
@@ -33,6 +46,16 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
         lock.lock(); defer { lock.unlock() }
         let value = _authRejected
         _authRejected = false
+        return value
+    }
+
+    /// Returns and clears the host that asked for credentials it is not entitled to, if any.
+    /// Like `takeAuthRejected`, this exists because the refusal surfaces as a bare
+    /// `NSURLErrorCancelled` (-999) that carries no reason of its own.
+    func takeUnapprovedLoginHost() -> UnapprovedLoginHost? {
+        lock.lock(); defer { lock.unlock() }
+        let value = _unapprovedLoginHost
+        _unapprovedLoginHost = nil
         return value
     }
 
@@ -76,12 +99,62 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
         completionHandler(forwarded)
     }
 
+    /// Whether `host` may be handed the account's credentials: it is the configured server, or a
+    /// host the user has approved for that server.
+    private func isCredentialRecipientAllowed(_ host: String) -> Bool {
+        if OWACredentialHostPolicy.allowsCredentials(challengeHost: host, configuredHost: credentialHost) {
+            return true
+        }
+        return TrustedLoginHostStore.isApproved(
+            loginHost: host,
+            forKey: TrustedLoginHostStore.key(configuredHost: credentialHost)
+        )
+    }
+
     func urlSession(
         _ session: URLSession,
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
         let method = challenge.protectionSpace.authenticationMethod
+
+        // Credentials are bound to the account's own server and are offered nowhere else.
+        //
+        // Redirects are followed across hosts on purpose (federated/ADFS login depends on it), and
+        // the session delegate answers auth challenges for whatever host the request ends up on.
+        // Without this guard a front-end that redirects to `evil.example` and answers
+        // `401 WWW-Authenticate: NTLM` gets a full handshake with the domain account: the NTLMv2
+        // response that comes back is offline-crackable and relayable, and stripping the
+        // `Authorization` header on redirect does nothing to stop it, because URLSession runs the
+        // handshake itself.
+        //
+        // Server-trust challenges are deliberately exempt: that is TLS evaluation, not a
+        // credential, and the pin store is keyed by host so it stays correct wherever the request
+        // lands.
+        //
+        // A host the user has explicitly approved for this server passes too. Some perfectly
+        // ordinary deployments answer `/owa/` with a redirect to another internal node that then
+        // does the NTLM handshake, and a rule with no way to say yes would break them with nothing
+        // the user could do about it. Same store, same consent, same prompt as the forms-login
+        // path — the difference between a hash on the wire and a password in a form body is not a
+        // difference in who is allowed to ask for it.
+        if OWACredentialHostPolicy.carriesCredentials(method) {
+            let host = challenge.protectionSpace.host
+            if !isCredentialRecipientAllowed(host) {
+                // Read the chain before taking the lock: its accessor takes the same non-recursive
+                // lock, and `NSLock` would deadlock rather than tell us about it.
+                let chain = redirectChain
+                lock.lock()
+                _unapprovedLoginHost = UnapprovedLoginHost(
+                    configuredHost: credentialHost,
+                    loginHost: host,
+                    redirectChain: chain
+                )
+                lock.unlock()
+                completionHandler(.cancelAuthenticationChallenge, nil)
+                return
+            }
+        }
 
         // Integrated Windows Auth. OWA moved to SSO, so the server now answers every request with
         // `401 WWW-Authenticate: Negotiate, NTLM` instead of a forms-login page.
@@ -199,7 +272,11 @@ actor OWAClient {
         config.httpShouldSetCookies = true
         config.timeoutIntervalForRequest = 30
 
-        let delegate = OWASessionDelegate(username: username, password: password)
+        let delegate = OWASessionDelegate(
+            username: username,
+            password: password,
+            credentialHost: self.baseURL.host ?? ""
+        )
         self.sessionDelegate = delegate
         self.session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
         #if DEBUG
@@ -217,13 +294,25 @@ actor OWAClient {
             if let pending = sessionDelegate.takePendingUntrusted() {
                 throw OWAError.untrustedCertificate(pending)
             }
+            // A host other than the account's own server asked for the credentials and was
+            // refused. Like the rejection below this arrives as a bare `NSURLErrorCancelled`
+            // (-999), so the delegate's record is the only thing that explains it. Typed
+            // separately from `authenticationFailed` on purpose: the password is not wrong, so
+            // this must not latch the wrong-password breaker or invite the user to retype it.
+            if let pending = sessionDelegate.takeUnapprovedLoginHost() {
+                log.error("Refused to send credentials to \(pending.loginHost, privacy: .public) — not the configured server")
+                throw OWAError.loginHostApprovalRequired(pending)
+            }
             // The NTLM/Negotiate handshake declined our credentials. This arrives as a generic
             // `NSURLErrorCancelled` (-999); the delegate flag is what distinguishes a real
             // credential rejection from an ordinary task cancellation. Map it to the definitive
             // auth error so the wrong-password breaker latches immediately.
             if sessionDelegate.takeAuthRejected() {
                 throw OWAError.authenticationFailed(
-                    "Integrated auth (NTLM/Negotiate) rejected credentials for \(username)."
+                    // No username in the text: this error's description is logged at `.public` on
+                    // the sync paths and shown in the popover, and `DOMAIN\login` is the one half
+                    // of the credential that is not in the Keychain.
+                    "Integrated auth (NTLM/Negotiate) rejected the stored credentials."
                 )
             }
             throw error
@@ -296,13 +385,28 @@ actor OWAClient {
                 .replacingOccurrences(of: "\r", with: "")
                 .trimmingCharacters(in: .whitespaces)
                 .prefix(300)
-            let detail =
+            // Two strings on purpose. `verboseDetail` carries the response body and the URLs it
+            // travelled through — a logon page or an SSO interstitial, which can hold SAML blobs
+            // and session identifiers — so it is logged once at `.private` and goes nowhere else.
+            // `detail` is what rides along inside the thrown error, and errors here end up in the
+            // unified log at `.public` and in the popover status line, so it stays at shapes and
+            // counts: no body, no URLs.
+            let verboseDetail =
                 "No CANARY. " +
                 "FormAction: \(loginForm.action). " +
                 "AuthURL: \(authFinalURL) (HTTP \(authResponse.statusCode)). " +
                 "Redirects: \(sessionDelegate.redirectChain.joined(separator: "|")). " +
                 "Cookies: \(delegateCookies.map(\.name)). " +
                 "AuthBody[\(authData.count)]: \(bodyPreview ?? "?")"
+            let bodyKind = OWAError.diagnosticResponseKind(
+                from: String(data: authData.prefix(64_000), encoding: .isoLatin1) ?? ""
+            )
+            let detail =
+                "No CANARY (HTTP \(authResponse.statusCode), " +
+                "redirects=\(sessionDelegate.redirectChain.count), " +
+                "cookies=\(delegateCookies.count), " +
+                "body=\(bodyKind)[\(authData.count)B])"
+            log.debug("OWA auth diagnostic: \(verboseDetail, privacy: .private)")
 
             // We never reach this guard on success (a CANARY would be set), so "no CANARY" means
             // one of three things, classified on the response *content* rather than a bare status
@@ -337,7 +441,7 @@ actor OWAClient {
             // leaking into the UI. `isAuthError` ignores `URLError`, so the breaker treats this as
             // a transient/offline condition that self-heals once the network path is restored.
             log.warning(
-                "OWA auth got no CANARY without reaching an OWA logon page (status \(authResponse.statusCode, privacy: .public)) — treating as connectivity, not bad credentials. \(detail, privacy: .public)"
+                "OWA auth got no CANARY without reaching an OWA logon page — treating as connectivity, not bad credentials. \(detail, privacy: .public)"
             )
             throw URLError(
                 .cannotConnectToHost,
@@ -382,6 +486,9 @@ actor OWAClient {
         } catch let error as OWAError {
             if case .untrustedCertificate = error { throw error }
             if case .authenticationFailed = error { throw error }
+            // Folding this into the fallback form would march the flow on to POST the password at
+            // the very host the guard just refused to hand an NTLM response to.
+            if case .loginHostApprovalRequired = error { throw error }
             return fallback
         } catch let urlError as URLError {
             // Connectivity failure reaching the login page (host unreachable, DNS, timeout —
@@ -464,6 +571,20 @@ actor OWAClient {
     private func submitAuthForm(form: LoginForm) async throws -> (Data, HTTPURLResponse) {
         guard let authURL = URL(string: form.action) else { throw OWAError.invalidURL(form.action) }
 
+        // Last gate before the password leaves the machine in cleartext.
+        //
+        // `fetchLoginForm` already refuses an `action` pointing somewhere other than the page it
+        // came from, but that only stops the form being rewritten in place — it does nothing when
+        // the *page itself* arrived from another host, because `/owa/` redirected there. That is
+        // federated sign-in working as intended, and it is also how a server that has been taken
+        // over harvests the password: it picks the host the form posts to.
+        //
+        // So the host is checked against the account's own server, and anything else needs the
+        // user to have said yes to that specific host once, exactly like a self-signed
+        // certificate. NTLM is guarded the same way in the session delegate; a password in a form
+        // body deserves no weaker a rule than a hash on the wire.
+        try requireApprovedLoginHost(authURL)
+
         var request = URLRequest(url: authURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -487,6 +608,32 @@ actor OWAClient {
         let (data, response) = try await self.fetchData(request)
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
         return (data, http)
+    }
+
+    /// Throws unless `url`'s host is the configured server, or a host the user has approved for it.
+    private func requireApprovedLoginHost(_ url: URL) throws {
+        let configuredHost = baseURL.host ?? ""
+        let loginHost = url.host ?? ""
+
+        if OWACredentialHostPolicy.allowsCredentials(
+            challengeHost: loginHost,
+            configuredHost: configuredHost
+        ) { return }
+
+        let key = TrustedLoginHostStore.key(configuredHost: configuredHost)
+        if TrustedLoginHostStore.isApproved(loginHost: loginHost, forKey: key) {
+            log.info("Posting credentials to approved federation host \(loginHost, privacy: .private)")
+            return
+        }
+
+        log.error("Login form wants credentials on an unapproved host \(loginHost, privacy: .public)")
+        throw OWAError.loginHostApprovalRequired(
+            UnapprovedLoginHost(
+                configuredHost: configuredHost,
+                loginHost: loginHost,
+                redirectChain: sessionDelegate.redirectChain
+            )
+        )
     }
 
     private func fetchCanaryFromOWAPage() async throws {
@@ -1217,7 +1364,7 @@ actor OWAClient {
         addCommonHeaders(&request)
         request.httpBody = Data(soap.utf8)
 
-        log.info("EWS CreateItem → \(ewsURL.absoluteString, privacy: .public) subject=\(title, privacy: .private) required=\(requiredAttendees.count, privacy: .public) optional=\(optionalAttendees.count, privacy: .public) bodyBytes=\(soap.utf8.count, privacy: .public)")
+        log.info("EWS CreateItem → \(ewsURL.absoluteString, privacy: .private) subject=\(title, privacy: .private) required=\(requiredAttendees.count, privacy: .public) optional=\(optionalAttendees.count, privacy: .public) bodyBytes=\(soap.utf8.count, privacy: .public)")
 
         let (data, response): (Data, URLResponse)
         do {
@@ -1293,32 +1440,8 @@ actor OWAClient {
     }
 
     private func performEWSRespondRequest(itemId: String, changeKey: String, action: MeetingResponseAction) async throws {
-        let elementName: String
-        switch action {
-        case .accept:    elementName = "AcceptItem"
-        case .tentative: elementName = "TentativelyAcceptItem"
-        case .decline:   elementName = "DeclineItem"
-        }
-
-        let soap = """
-        <?xml version="1.0" encoding="utf-8"?>
-        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" \
-        xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" \
-        xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">
-          <soap:Header>
-            <t:RequestServerVersion Version="Exchange2013_SP1"/>
-          </soap:Header>
-          <soap:Body>
-            <m:CreateItem MessageDisposition="SendAndSaveCopy">
-              <m:Items>
-                <t:\(elementName)>
-                  <t:ReferenceItemId Id="\(itemId)" ChangeKey="\(changeKey)"/>
-                </t:\(elementName)>
-              </m:Items>
-            </m:CreateItem>
-          </soap:Body>
-        </soap:Envelope>
-        """
+        let elementName = OWARespondToMeetingPayload.elementName(for: action)
+        let soap = OWARespondToMeetingPayload.soap(itemId: itemId, changeKey: changeKey, action: action)
 
         let ewsURL = try url("/EWS/Exchange.asmx")
         var request = URLRequest(url: ewsURL, timeoutInterval: 15)
@@ -1333,7 +1456,7 @@ actor OWAClient {
         request.httpBody = Data(soap.utf8)
 
         log.info(
-            "EWS respondToMeeting itemId=\(String(itemId.prefix(40)), privacy: .public) action=\(elementName, privacy: .public)"
+            "EWS respondToMeeting itemId=\(String(itemId.prefix(40)), privacy: .private) action=\(elementName, privacy: .public)"
         )
 
         let (data, response) = try await sessionDataAllowingStaleReconnect(for: request)

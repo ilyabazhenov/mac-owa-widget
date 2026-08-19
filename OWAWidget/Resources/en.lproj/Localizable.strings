@@ -50,7 +50,6 @@
 "settings.account.certificate.issuer" = "Issued by:";
 "settings.account.certificate.valid.until" = "Valid until:";
 "settings.account.certificate.trust" = "Trust This Server";
-"settings.account.certificate.trusted" = "Server certificate trusted. Testing again…";
 
 "preferences.shortcuts.section" = "Shortcuts";
 "preferences.shortcuts.createMeeting" = "New Meeting";
@@ -238,8 +237,13 @@
 "sync.status.offline.cached" = "Offline, showing cached meetings (%@)";
 "sync.status.error" = "Error: %@";
 "error.owa.unreachable" = "Could not reach the server";
+"error.owa.loginHostApprovalRequired" = "Login was redirected to “%@”. The password was not sent: that host is not approved for your server.";
 "sync.status.auth.required" = "Invalid password — update in Settings";
 "sync.status.certificate.untrusted" = "Untrusted server certificate — re-confirm in Settings";
+"sync.status.login.host.approval" = "Login redirected — approve the host in Settings";
+"settings.account.login.host.title" = "Login redirected to another host";
+"settings.account.login.host.approve" = "Approve host";
+"settings.account.login.host.message" = "%1$@ redirected the login form to %2$@, and the password was not sent there.\n\n%3$@This is what corporate federation (ADFS, single sign-on) looks like — and it is also exactly what credential theft looks like. Approve only if you recognise this host as your organisation's sign-in server.";
 
 "date.today" = "Today";
 "date.tomorrow" = "Tomorrow";

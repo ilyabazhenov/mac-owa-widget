@@ -294,6 +294,13 @@ enum OWAError: LocalizedError {
     /// user has not explicitly trusted. Carries the host, port and the leaf SHA-256
     /// fingerprint so the UI can offer a "trust this server" action.
     case untrustedCertificate(UntrustedCertificate)
+    /// The login form wants the credentials posted to a host the user has not approved for this
+    /// server. Carries what the prompt needs to explain the choice.
+    ///
+    /// Like ``untrustedCertificate`` and unlike ``authenticationFailed``: nothing is wrong with the
+    /// stored password, so this must not latch the wrong-password breaker. It suspends sync until
+    /// the user answers.
+    case loginHostApprovalRequired(UnapprovedLoginHost)
 
     var errorDescription: String? {
         switch self {
@@ -305,6 +312,14 @@ enum OWAError: LocalizedError {
         case .encodingFailed:              "Failed to encode request"
         case .ewsError(let code):          "Exchange error: \(code)"
         case .untrustedCertificate(let cert): "Untrusted server certificate for \(cert.host)"
+        case .loginHostApprovalRequired(let redirect):
+            String(
+                format: NSLocalizedString(
+                    "error.owa.loginHostApprovalRequired",
+                    comment: "Shown when the login was redirected to a host the user has not approved"
+                ),
+                redirect.loginHost
+            )
         }
     }
 
@@ -318,6 +333,25 @@ enum OWAError: LocalizedError {
         (error as? OWAError)?.untrustedCertificateInfo
     }
 
+    /// Extracts the unapproved-login-host details, if this error is one.
+    var loginHostApprovalInfo: UnapprovedLoginHost? {
+        guard case .loginHostApprovalRequired(let redirect) = self else { return nil }
+        return redirect
+    }
+
+    static func loginHostApprovalInfo(from error: Error) -> UnapprovedLoginHost? {
+        (error as? OWAError)?.loginHostApprovalInfo
+    }
+
+    /// Human-readable form of an HTTP failure. This string is not just for humans: it is logged
+    /// at `.public` on several sync paths and shown in the popover status line, so it must never
+    /// carry response *content*.
+    ///
+    /// Exchange's own structured fault text is the exception, and stays. It is a bounded,
+    /// server-authored error string ("ErrorItemNotFound"), it is the one thing that makes a 500
+    /// diagnosable without a debug build, and it is not mailbox data. Everything else — an HTML
+    /// error page, a proxy interstitial, a JSON blob — is reduced to its shape, which is what
+    /// `diagnosticResponseKind` already reports on the request paths.
     private static func describeHTTPError(statusCode: Int, responseBody: String) -> String {
         let trimmed = responseBody.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "HTTP \(statusCode)" }
@@ -326,11 +360,7 @@ enum OWAError: LocalizedError {
             return "HTTP \(statusCode): \(message)"
         }
 
-        if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
-            return "HTTP \(statusCode): OWA service returned an error"
-        }
-
-        return "HTTP \(statusCode): \(trimmed)"
+        return "HTTP \(statusCode) (\(diagnosticResponseKind(from: trimmed)))"
     }
 
     private static func extractOWAErrorMessage(from responseBody: String) -> String? {

@@ -307,18 +307,44 @@ final class CalendarService: ObservableObject {
             accounts[idx] = previous
             throw CalendarServiceError.accountPersistenceFailed
         }
+        // Pointing the account at a different server invalidates every trust decision made for
+        // the old one. Done after the write, so a failed persist (which puts `previous` back)
+        // does not throw away decisions the account still depends on.
+        if serverHost(of: previous) != serverHost(of: account) {
+            revokeServerTrust(for: previous)
+        }
         Task { await rebuildProviders() }
+    }
+
+    /// Host an account's server URL resolves to, or `nil` for a URL this client cannot parse.
+    private func serverHost(of account: CalendarAccount) -> String? {
+        guard account.accountType == .owa,
+              let base = try? OWAClient.parseBaseURL(account.serverURL)
+        else { return nil }
+        return base.host.map { OWACredentialHostPolicy.normalizedHost($0) }
+    }
+
+    /// Drops the trust decisions scoped to this account's server: the pinned certificate and any
+    /// approved login hosts.
+    ///
+    /// Both answer the same question — "may this server have your credentials?" — and neither may
+    /// outlive the server it was given for. Left behind, they reapply in silence the moment that
+    /// host comes back: a pin for a certificate that may have been rotated precisely because it
+    /// leaked, or a federation host approved for an account that no longer exists.
+    private func revokeServerTrust(for account: CalendarAccount) {
+        guard account.accountType == .owa,
+              let base = try? OWAClient.parseBaseURL(account.serverURL),
+              let host = base.host
+        else { return }
+        TrustedCertificateStore.untrust(
+            forKey: TrustedCertificateStore.key(host: host, port: base.port ?? 443)
+        )
+        TrustedLoginHostStore.revoke(forKey: TrustedLoginHostStore.key(configuredHost: host))
     }
 
     func removeAccount(_ account: CalendarAccount) throws {
         try KeychainService.delete(accountID: account.id)
-        // Drop any pinned (manually trusted) certificate for this server so a stale
-        // fingerprint can't silently trust the host if the account is re-added later.
-        if account.accountType == .owa,
-           let base = try? OWAClient.parseBaseURL(account.serverURL),
-           let host = base.host {
-            TrustedCertificateStore.untrust(forKey: TrustedCertificateStore.key(host: host, port: base.port ?? 443))
-        }
+        revokeServerTrust(for: account)
         accounts.removeAll { $0.id == account.id }
         // No rollback here: the password and the pinned certificate are already gone, so putting
         // the account back would leave it unusable. Surface the failure instead — on the next
@@ -616,6 +642,12 @@ final class CalendarService: ObservableObject {
         if let cert = OWAError.untrustedCertificateInfo(from: error) {
             syncStatus = .certificateTrustRequired(host: cert.host, fingerprint: cert.fingerprint)
             log.error("\(context, privacy: .public) suspended sync: untrusted certificate for \(cert.host, privacy: .public)")
+        } else if let redirect = OWAError.loginHostApprovalInfo(from: error) {
+            syncStatus = .loginHostApprovalRequired(
+                configuredHost: redirect.configuredHost,
+                loginHost: redirect.loginHost
+            )
+            log.error("\(context, privacy: .public) suspended sync: login redirected to an unapproved host")
         } else if OWAError.isAuthError(error) {
             // Route through the shared breaker so a transient 401 on an action doesn't hard-latch
             // the whole app — an ambiguous 401/440 latches only at the threshold, while a confirmed
@@ -768,6 +800,13 @@ final class CalendarService: ObservableObject {
             return
         }
 
+        // Neither can an unapproved login host: the answer is a decision only the user can make,
+        // and retrying just re-runs a login that stops before it sends anything.
+        if syncStatus.isLoginHostApprovalRequired {
+            log.info("Sync \(syncID, privacy: .public) skipped: login host approval required")
+            return
+        }
+
         // An auth block may be transient (session blip, an AD lockout that has since
         // cleared), so don't retry on every scheduler tick — that risks a fresh lockout —
         // but do let a single probe through every `authProbeInterval` so it can recover on
@@ -841,6 +880,15 @@ final class CalendarService: ObservableObject {
                 // status so the user can re-trust the server (do NOT fail silently).
                 syncStatus = .certificateTrustRequired(host: certInfo.host, fingerprint: certInfo.fingerprint)
                 log.error("Sync \(syncID, privacy: .public) suspended: untrusted certificate for \(certInfo.host, privacy: .public)")
+            } else if let redirect = OWAError.loginHostApprovalInfo(from: error) {
+                // Same shape as the certificate case: suspend and surface something the user can
+                // act on, rather than retrying a login that deliberately refused to send the
+                // password.
+                syncStatus = .loginHostApprovalRequired(
+                    configuredHost: redirect.configuredHost,
+                    loginHost: redirect.loginHost
+                )
+                log.error("Sync \(syncID, privacy: .public) suspended: login redirected to an unapproved host")
             } else if OWAError.isAuthError(error) {
                 // Latching suspends the scheduler (preventing account lockout); a slow
                 // auto-probe and the manual "retry" action can still lift it without the user
