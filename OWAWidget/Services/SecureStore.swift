@@ -82,6 +82,12 @@ struct KeychainSecureStoreKeyProvider: SecureStoreKeyProviding {
             kSecAttrService: Self.service,
             kSecAttrAccount: Self.account,
             kSecValueData: data,
+            // Aspirational, not load-bearing — see the note in ``KeychainService/save(password:accountID:)``.
+            // This is the file-based login keychain, where `kSecAttrAccessible` has no effect.
+            //
+            // What the threat model above actually rests on is that the login keychain is itself
+            // encrypted under the login password: a backup or a second local account gets the
+            // sealed containers *and* a sealed key, and neither without that password.
             kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
         let status = SecItemAdd(query as CFDictionary, nil)

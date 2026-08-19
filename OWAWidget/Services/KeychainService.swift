@@ -17,8 +17,20 @@ struct KeychainService {
             kSecAttrService: service,
             kSecAttrAccount: accountID.uuidString,
             kSecValueData: data,
-            // AfterFirstUnlock: readable by background sync while the screen is locked.
-            // ThisDeviceOnly: never restored to another device via backup/migration.
+            // `AfterFirstUnlockThisDeviceOnly` is set for the day this app can use the
+            // data-protection keychain, and does almost nothing today.
+            //
+            // Without `kSecUseDataProtectionKeychain: true` this item goes into the file-based
+            // login keychain, where `kSecAttrAccessible` carries no weight: the keychain is
+            // unlocked with the login password and the whole `login.keychain-db` is copied by Time
+            // Machine and by Migration Assistant. So the `ThisDeviceOnly` half in particular is
+            // *not* the guarantee its name suggests — the password does travel with a restore.
+            //
+            // Turning the attribute into a real one means opting into the data-protection
+            // keychain, which needs a `keychain-access-groups` entitlement, which needs a
+            // provisioning profile and a Developer ID. The app is ad-hoc signed (see the Makefile),
+            // so that is not available yet; leaving the attribute in place costs nothing and makes
+            // the switch a one-line change when it is.
             kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
 
