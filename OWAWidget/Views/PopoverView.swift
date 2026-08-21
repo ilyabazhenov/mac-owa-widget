@@ -115,13 +115,15 @@ struct PopoverView: View {
                 .accessibilityLabel(localization.tr("popover.sync.now"))
             }
 
-            Button { openCreateMeeting() } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 13))
+            if service.supportsMeetingCreation {
+                Button { openCreateMeeting() } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 13))
+                }
+                .buttonStyle(.plain)
+                .help(localization.tr("popover.new.meeting"))
+                .accessibilityLabel(localization.tr("popover.new.meeting"))
             }
-            .buttonStyle(.plain)
-            .help(localization.tr("popover.new.meeting"))
-            .accessibilityLabel(localization.tr("popover.new.meeting"))
 
             Button { openSettings() } label: {
                 Image(systemName: "gearshape")

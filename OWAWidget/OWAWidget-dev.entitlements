@@ -9,6 +9,14 @@
     <!-- Outbound HTTPS to Exchange servers -->
     <key>com.apple.security.network.client</key>
     <true/>
+    <!-- Read access to the calendars macOS already syncs (EventKit accounts).
+         Required because the Makefile signs with hardened runtime: outside the
+         sandbox this key is what lets the process reach a TCC-protected resource
+         at all. Without it requestFullAccessToEvents() returns false in
+         milliseconds, the status stays notDetermined and no system prompt is
+         ever shown - verified on a probe build, 2026-08-22. -->
+    <key>com.apple.security.personal-information.calendars</key>
+    <true/>
     <!-- Hardened runtime is on (see Makefile). It would also turn on library
          validation, which refuses to load the ad-hoc signed Sparkle.framework.
          Disabling library validation alone keeps the rest of hardened runtime,

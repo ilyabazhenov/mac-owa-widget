@@ -1,4 +1,5 @@
 import AppKit
+import EventKit
 import Foundation
 import os.log
 
@@ -51,8 +52,13 @@ final class CalendarService: ObservableObject {
     var popoverSize: PopoverSize { popoverSizePreset.size }
 
     private var providers: [any CalendarProvider] = []
+    /// Live only while an EventKit account exists. Removed when the last one goes away, and never
+    /// torn down in `deinit`: the service is owned by the app and outlives every other object.
+    private var eventStoreChangeObserver: NSObjectProtocol?
+    private var eventStoreChangeDebounce: Task<Void, Never>?
     private let scheduler = SyncScheduler()
     private let notificationService: any NotificationServicing
+    private let eventKitStore: any EventKitStoring
     private let customMeetingReminders: any CustomMeetingReminderControlling
     private let eventCacheStore: any EventCacheStoring
     private let log = Logger(subsystem: "com.owawidget", category: "CalendarService")
@@ -226,6 +232,10 @@ final class CalendarService: ObservableObject {
         accountStore: SecureCodableStore<[CalendarAccount]> = CalendarService.makeAccountStore(),
         notificationService: any NotificationServicing = NotificationService(),
         customMeetingReminders: any CustomMeetingReminderControlling = CustomMeetingReminderController(),
+        // Injectable so tests can build EventKit-backed accounts without ever constructing an
+        // `EKEventStore` — which would put the system calendar prompt one call away from a suite
+        // that gates `make release-package`.
+        eventKitStore: any EventKitStoring = SystemEventKitStore.shared,
         initialNotificationLocalization: NotificationLocalization = .english,
         loadPersistedAccounts: Bool = true,
         startBackgroundTasks: Bool = true,
@@ -234,6 +244,7 @@ final class CalendarService: ObservableObject {
         self.providers = providers
         self.eventCacheStore = eventCacheStore
         self.accountStore = accountStore
+        self.eventKitStore = eventKitStore
         self.notificationService = notificationService
         self.customMeetingReminders = customMeetingReminders
         self.clock = clock
@@ -269,10 +280,26 @@ final class CalendarService: ObservableObject {
         }
     }
 
+    /// First account able to back the create-meeting window, or `nil` when none can.
+    ///
+    /// Read-only providers (EventKit today) answer `notSupported` to `createMeeting`, so the entry
+    /// points ask this before offering the action rather than letting a filled-in form fail on
+    /// submit. Picking the first *capable* account also stops an EventKit account that happens to
+    /// sort first from hijacking the window.
+    var meetingCreationAccount: CalendarAccount? {
+        accounts.first { $0.accountType.supportsMeetingCreation }
+    }
+
+    var supportsMeetingCreation: Bool { meetingCreationAccount != nil }
+
     // MARK: - Account management
 
-    func addAccount(_ account: CalendarAccount, password: String) throws {
-        try KeychainService.save(password: password, accountID: account.id)
+    /// `password` is `nil` for account types that hold no secret of their own — an EventKit
+    /// account is authorised once by the system calendar prompt, not by a credential we store.
+    func addAccount(_ account: CalendarAccount, password: String?) throws {
+        if let password, account.accountType.requiresPassword {
+            try KeychainService.save(password: password, accountID: account.id)
+        }
         accounts.append(account)
 
         // Writing to the encrypted store can genuinely fail — the master key lives in the
@@ -358,17 +385,23 @@ final class CalendarService: ObservableObject {
     // MARK: - Sync
 
     func syncNow() {
+        guard manualSyncAllowed() else { return }
+        Task { await performSync(trigger: "manual") }
+    }
+
+    /// Applies the request gate and records the attempt. Split out so the awaitable test
+    /// counterpart runs the same decision instead of a copy of it.
+    private func manualSyncAllowed() -> Bool {
         let now = Date()
         switch syncRequestGate.manualSyncDecision(now: now, hasActiveSync: !activeSyncIDs.isEmpty) {
         case .allow:
             syncRequestGate.recordSyncStarted(at: now)
             log.info("Manual sync requested")
+            return true
         case .reject(let reason):
             log.info("Manual sync ignored reason=\(String(describing: reason), privacy: .public)")
-            return
+            return false
         }
-
-        Task { await performSync(trigger: "manual") }
     }
 
     /// Lifts an authentication block on explicit user request (the footer "retry" action)
@@ -426,8 +459,17 @@ final class CalendarService: ObservableObject {
         Task { await rescheduleMeetingRemindersForCurrentEvents() }
     }
 
-    func performSyncForTests() async {
-        await performSync(trigger: "tests")
+    func performSyncForTests(limitedTo accountTypes: Set<AccountType>? = nil) async {
+        await performSync(trigger: "tests", limitedTo: accountTypes)
+    }
+
+    /// Awaitable counterpart of `syncNow()` for tests — applies the same request gate and runs the
+    /// sync inline. Returns whether the gate let it through.
+    @discardableResult
+    func syncNowForTests() async -> Bool {
+        guard manualSyncAllowed() else { return false }
+        await performSync(trigger: "manual")
+        return true
     }
 
     /// Awaitable counterpart of `retryAfterAuthBlock()` for tests — lifts the auth block and
@@ -733,12 +775,14 @@ final class CalendarService: ObservableObject {
     func rebuildProviders() async {
         var built: [any CalendarProvider] = []
         for account in accounts {
-            guard let password = try? KeychainService.load(accountID: account.id) else {
-                log.warning("No password in Keychain for account \(account.displayName) — skipping")
-                continue
-            }
             switch account.accountType {
             case .owa:
+                // Only credential-backed accounts need a Keychain entry, and a missing one is a
+                // real failure for them: the provider cannot authenticate without it.
+                guard let password = try? KeychainService.load(accountID: account.id) else {
+                    log.warning("No password in Keychain for account \(account.displayName) — skipping")
+                    continue
+                }
                 if let provider = try? OWACalendarProvider(account: account, password: password) {
                     built.append(provider)
                 } else {
@@ -746,9 +790,12 @@ final class CalendarService: ObservableObject {
                 }
             case .googleCalendar:
                 built.append(GoogleCalendarProvider(account: account))
+            case .eventKit:
+                built.append(EventKitCalendarProvider(account: account, store: eventKitStore))
             }
         }
         providers = built
+        updateEventStoreObservation()
         DiagnosticLog.event(
             "CalendarService providers rebuilt count=\(built.count) accounts=\(accounts.count)"
         )
@@ -762,6 +809,54 @@ final class CalendarService: ObservableObject {
         await performSync(trigger: "rebuildProviders")
     }
 
+    /// Subscribes to system calendar changes while at least one EventKit account exists.
+    ///
+    /// The poll interval is the wrong instrument here: EventKit is a local database, and the
+    /// system decides when it talks to Google. `EKEventStoreChanged` is the moment that database
+    /// actually changed, so accepting a meeting on the phone shows up here in seconds instead of
+    /// on the next tick.
+    private func updateEventStoreObservation() {
+        let needsObserver = accounts.contains { $0.accountType == .eventKit }
+
+        if needsObserver, eventStoreChangeObserver == nil {
+            eventStoreChangeObserver = NotificationCenter.default.addObserver(
+                forName: .EKEventStoreChanged,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                // The capture has to be on *this* closure. A `[weak self]` on the inner Task
+                // still needs the enclosing block to hold `self` to form it, and NotificationCenter
+                // owns that block — so the service would never deallocate.
+                Task { @MainActor in
+                    self?.scheduleEventStoreRefresh()
+                }
+            }
+            log.info("Subscribed to EKEventStoreChanged")
+        } else if !needsObserver, let observer = eventStoreChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            eventStoreChangeObserver = nil
+            eventStoreChangeDebounce?.cancel()
+            eventStoreChangeDebounce = nil
+            log.info("Unsubscribed from EKEventStoreChanged")
+        }
+    }
+
+    /// Debounced because a single sync pass in the Calendar daemon fires the notification
+    /// repeatedly — once per changed calendar — and each one would otherwise start a full sync.
+    private func scheduleEventStoreRefresh() {
+        eventStoreChangeDebounce?.cancel()
+        eventStoreChangeDebounce = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            // Only the EventKit providers. This trigger fires whenever the system Calendar
+            // daemon touches its database — several times an hour on an active account, and at
+            // times nobody here controls. Running a full sync would put a network request to the
+            // Exchange server behind every one of them, ignoring `syncInterval` and the request
+            // gate that exist precisely to keep that server unhammered.
+            await self?.performSync(trigger: "eventStoreChanged", limitedTo: [.eventKit])
+        }
+    }
+
     private func startScheduler() async {
         let interval = syncInterval
         await scheduler.start(interval: interval) { [weak self] in
@@ -769,12 +864,20 @@ final class CalendarService: ObservableObject {
         }
     }
 
-    private func performSync(trigger: String) async {
+    /// - Parameter limitedTo: when set, only providers of these account types are fetched.
+    ///   Events of the untouched accounts are preserved, not dropped.
+    private func performSync(trigger: String, limitedTo accountTypes: Set<AccountType>? = nil) async {
         nextSyncID += 1
         let syncID = nextSyncID
         let activeBefore = activeSyncIDs.count
         activeSyncIDs.insert(syncID)
-        syncRequestGate.recordSyncStarted(at: Date())
+        if accountTypes == nil {
+            // Only full syncs stamp the gate. It throttles manual refreshes to keep bursts from
+            // amplifying OWA faults, and a partial sync generates no OWA traffic to throttle —
+            // stamping it would silently turn the user's "sync now" into a no-op for 15 seconds
+            // because a system calendar change happened to fire.
+            syncRequestGate.recordSyncStarted(at: Date())
+        }
         log.info(
             "Sync \(syncID, privacy: .public) started trigger=\(trigger, privacy: .public) providers=\(self.providers.count, privacy: .public) activeBefore=\(activeBefore, privacy: .public)"
         )
@@ -791,6 +894,25 @@ final class CalendarService: ObservableObject {
             customMeetingReminders.cancelAll(closeActiveReminder: true)
             await notificationService.removeAllPendingMeetingNotifications()
             return
+        }
+
+        let activeProviders = accountTypes.map { allowed in
+            providers.filter { allowed.contains($0.account.accountType) }
+        } ?? providers
+
+        if accountTypes != nil {
+            guard !activeProviders.isEmpty else {
+                log.info("Sync \(syncID, privacy: .public) skipped: no providers of the requested kind")
+                return
+            }
+            // A partial sync must never speak for the accounts it did not touch. Letting one run
+            // while a block is latched would end with the success path resetting
+            // `consecutiveAuthFailures` — clearing an Exchange wrong-password latch because a
+            // local calendar read went fine, and handing the AD lockout risk straight back.
+            guard !syncStatus.blocksSync else {
+                log.info("Sync \(syncID, privacy: .public) skipped: partial sync while sync is blocked")
+                return
+            }
         }
 
         // Circuit breaker. A certificate-trust problem can't self-heal — it needs explicit
@@ -824,6 +946,9 @@ final class CalendarService: ObservableObject {
             log.info("Sync \(syncID, privacy: .public) auth-block probe attempt")
         }
 
+        // Kept because `.syncing` overwrites it a line below: a partial run that succeeds must be
+        // able to put a still-unresolved failure back rather than claim everything is fine.
+        let statusBeforeSync = syncStatus
         syncStatus = .syncing
 
         let now = Date()
@@ -837,38 +962,89 @@ final class CalendarService: ObservableObject {
         let end = calendar.date(byAdding: .day, value: 30, to: now) ?? now
 
         do {
-            var fetched: [CalendarEvent] = []
-            // KNOWN LIMITATION (multi-account): providers are fetched fail-fast — `for try await`
-            // rethrows the first provider's error and cancels the rest, so a single account's
-            // failure (e.g. a wrong password on one of two OWA accounts) aborts the whole cycle
-            // before `events` is assigned, discarding a healthy account's freshly fetched events.
-            // Combined with the app-wide `syncStatus`/breaker (one status for all accounts), one
-            // bad account can suspend sync for a good one. This is acceptable today because the
-            // dominant case is a single account (Google is a stub), so there is nothing to lose.
-            // A proper fix is per-account fetch results + per-account breaker/status (see the
-            // "#5" review note); intentionally deferred rather than half-built.
-            try await SyncDiagnostics.$syncID.withValue(syncID) {
-                try await withThrowingTaskGroup(of: [CalendarEvent].self) { group in
-                    for provider in providers {
-                        group.addTask { try await provider.fetchEvents(from: start, to: end) }
+            // Providers are fetched independently and their failures collected rather than
+            // rethrown on the spot. Fail-fast was harmless while OWA was the only real provider;
+            // with a second one a revoked calendar permission would abort the cycle mid-flight and
+            // throw away a healthy Exchange account's freshly fetched events.
+            //
+            // Still ONE app-wide `syncStatus` and one breaker: the first failure is rethrown below
+            // so the existing classification (certificate / login host / auth latching) runs
+            // unchanged. What changed is that it now runs *after* the surviving events are in
+            // place, so the catch block reports `offlineCached` over real data instead of `error`
+            // over nothing. Per-account status remains the deferred "#5" review item.
+            var fetchedByAccount: [UUID: [CalendarEvent]] = [:]
+            var failures: [Error] = []
+
+            await SyncDiagnostics.$syncID.withValue(syncID) {
+                await withTaskGroup(of: (UUID, Result<[CalendarEvent], Error>).self) { group in
+                    for provider in activeProviders {
+                        let accountID = provider.account.id
+                        group.addTask {
+                            do {
+                                return (accountID, .success(try await provider.fetchEvents(from: start, to: end)))
+                            } catch {
+                                return (accountID, .failure(error))
+                            }
+                        }
                     }
-                    for try await batch in group {
-                        fetched.append(contentsOf: batch)
+                    for await (accountID, result) in group {
+                        switch result {
+                        case .success(let batch): fetchedByAccount[accountID] = batch
+                        case .failure(let error): failures.append(error)
+                        }
                     }
                 }
             }
 
-            // Deduplicate by ID, then sort by start time
-            var seen = Set<String>()
-            events = fetched
-                .filter { seen.insert($0.id).inserted }
-                .sorted { $0.startDate < $1.startDate }
+            // Nothing came back at all: leave both the in-memory events and the cache exactly as
+            // they were. The catch block owns that case — it decides between showing what is
+            // already on screen and restoring the disk snapshot — and writing an empty set here
+            // would destroy the very snapshot it falls back to.
+            if !fetchedByAccount.isEmpty {
+                // Events are kept only for accounts that still have a provider and were not
+                // refreshed in this pass — one that failed, or one a partial sync did not touch.
+                //
+                // The membership test matters: keying off "not refreshed" alone would also match
+                // an account that no longer exists, and its meetings would then be merged back in
+                // on every sync and written to the cache, outliving the account that produced them.
+                let knownAccountIDs = Set(providers.map(\.account.id))
+                let refreshedAccountIDs = Set(fetchedByAccount.keys)
+                let retained = events.filter {
+                    knownAccountIDs.contains($0.accountID) && !refreshedAccountIDs.contains($0.accountID)
+                }
 
-            eventCacheStore.save(events: events, rangeStart: start, rangeEnd: end)
-            syncStatus = .lastSynced(Date())
-            consecutiveAuthFailures = 0
-            lastAuthProbeAt = nil
-            syncRequestGate.recordSyncSucceeded()
+                // Deduplicate by ID, then sort by start time
+                var seen = Set<String>()
+                events = (fetchedByAccount.values.flatMap { $0 } + retained)
+                    .filter { seen.insert($0.id).inserted }
+                    .sorted { $0.startDate < $1.startDate }
+
+                // Saved before any failure is surfaced: `events` already holds the complete
+                // picture, and a failure that persists would otherwise freeze the cache at the
+                // last fully clean sync — leaving the next launch to restore meetings from before
+                // the problem started.
+                eventCacheStore.save(events: events, rangeStart: start, rangeEnd: end)
+            }
+
+            if let failure = failures.first {
+                throw failure
+            }
+
+            if accountTypes == nil {
+                syncStatus = .lastSynced(Date())
+                consecutiveAuthFailures = 0
+                lastAuthProbeAt = nil
+                syncRequestGate.recordSyncSucceeded()
+            } else if statusBeforeSync.isError || statusBeforeSync.isOfflineCached {
+                // A partial run speaks only for the accounts it fetched. Reporting success here
+                // would paper over an account it never touched — and, worse, clearing the breaker
+                // would mean a local calendar read resets the counter that stops the app from
+                // retrying rejected Exchange credentials into an AD lockout. With a threshold of
+                // two, an interleaved partial sync would keep it at one forever.
+                syncStatus = statusBeforeSync
+            } else {
+                syncStatus = .lastSynced(Date())
+            }
             log.info("Sync \(syncID, privacy: .public) complete events=\(self.events.count, privacy: .public)")
             recalculateEngagementSnapshot()
 

@@ -21,6 +21,16 @@
     <string>OWAWidget</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <!--
+        Calendar access strings. Both keys are needed: macOS 13 reads
+        NSCalendarsUsageDescription, macOS 14+ reads the FullAccess variant.
+        A missing string is a crash at request time, not a denial. Localised
+        copies live in Resources/*.lproj/InfoPlist.strings.
+    -->
+    <key>NSCalendarsUsageDescription</key>
+    <string>Mac Owa Widget reads the calendars this Mac already syncs so it can show your next meeting and its join link.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Mac Owa Widget reads the calendars this Mac already syncs so it can show your next meeting and its join link.</string>
     <!-- Required for UNUserNotificationCenter -->
     <key>NSUserNotificationUsageDescription</key>
     <string>Mac Owa Widget notifies you before meetings start so you can join with one click.</string>

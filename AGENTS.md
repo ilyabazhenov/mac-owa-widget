@@ -31,7 +31,14 @@ OWAWidget - macOS menu bar приложение на Swift 6 и SwiftUI для �
 - `OWAWidget/Services/CalendarService.swift` - главный `@MainActor` источник состояния, аккаунтов, событий и синхронизации.
 - `OWAWidget/Providers/CalendarProvider.swift` - общий протокол календарных провайдеров.
 - `OWAWidget/Providers/OWA/` - интеграция с OWA: авторизация, CANARY token, запрос календаря и маппинг событий.
-- `OWAWidget/Providers/GoogleCalendar/` - заглушка будущего Google Calendar провайдера.
+- `OWAWidget/Providers/GoogleCalendar/` - заглушка будущего Google Calendar провайдера через прямой API (OAuth). Не используется: календари Google приезжают через EventKit.
+- `OWAWidget/Providers/EventKit/` - чтение календарей, которые macOS уже синхронизирует (Google, iCloud, локальные). Провайдер read-only: мутирующие методы `CalendarProvider` остаются `notSupported`.
+
+> **Доступ к календарям требует entitlement.** `Makefile` подписывает с `--options runtime`, а hardened runtime закрывает TCC-ресурсы без явного разрешения - даже вне песочницы. Без `com.apple.security.personal-information.calendars` в `OWAWidget-dev.entitlements` вызов `requestFullAccessToEvents` возвращает `false` за миллисекунды, статус остаётся `notDetermined`, и системный диалог не показывается вообще. Отладка такого молчания легко уходит в ложные версии - проверено на зонде 2026-08-22. `Info.plist` при этом обязан содержать обе строки: `NSCalendarsUsageDescription` (macOS 13) и `NSCalendarsFullAccessUsageDescription` (macOS 14+); отсутствие строки - это крэш в момент запроса, а не отказ.
+>
+> **Выданный доступ не переживает смену подписи.** TCC привязывает разрешение к подписи бандла, а подпись ad-hoc, поэтому статус возвращается в `notDetermined`, а синхронизация EventKit падает с "Calendar access has not been granted yet". Сбрасывает разрешение любое изменение подписанного содержимого - не только новый код: `make bundle` берёт `CFBundleVersion` из `git rev-list --count HEAD`, так что достаточно одного коммита, чтобы `Info.plist` изменился и подпись стала другой. Повторный `make run` без единого изменения, наоборот, доступ сохраняет: подпись ad-hoc детерминирована. У пользователей то же самое случается после каждого обновления через Sparkle. Это не баг в коде - не ищи его там. Приложение справляется само: `EventKitCalendarProvider.fetchEvents` вызывает `ensureReadAccess()`, и при статусе `notDetermined` система показывает диалог на первом же синке после обновления. Достаточно подтвердить его. Запрос не срабатывает у того, кто уже отказал: отказ - это тоже решение, и переспрашивать каждый синк значило бы донимать.
+
+> **Тесты не должны трогать реальный EventKit.** Причина та же, что у Keychain: `swift test` - обязательный гейт `make release-package`, а диалог доступа к календарям повесит упаковку. Всё, что пересекает границу `EventKitStoring`, - это `Sendable`-снимки (`EventKitSnapshots.swift`), а `EKEventStore` не покидает `SystemEventKitStore`. Инжектируй фейковый стор через `CalendarService(eventKitStore:)` или `EventKitCalendarProvider(account:store:)`.
 - `OWAWidget/Services/MeetingURLDetector.swift` - поиск ссылок на Teams, Zoom, Webex, Google Meet и другие платформы.
 - `OWAWidget/Services/NotificationService.swift` - локальные уведомления о встречах.
 - `OWAWidget/Services/KeychainService.swift` - хранение паролей в Keychain.
@@ -85,7 +92,7 @@ swift build
 - Не ослабляй TLS-проверки без явной настройки пользователя. Текущий OWA-клиент поддерживает локальные корпоративные Exchange-сценарии, но безопасность TLS нужно улучшать осторожно.
 - Учитывай строгую конкурентность Swift 6. Сохраняй границы акторов у сервисов и провайдеров.
 - Не включай `.build/`, `DerivedData/` и другие артефакты сборки в изменения.
-- При добавлении нового календарного провайдера реализуй `CalendarProvider`, добавь тип аккаунта в `CalendarAccount`, затем подключи провайдер в `CalendarService.rebuildProviders()`.
+- При добавлении нового календарного провайдера реализуй `CalendarProvider`, добавь тип аккаунта в `CalendarAccount`, затем подключи провайдер в `CalendarService.rebuildProviders()`. Заодно опиши возможности типа в `AccountType` (`requiresPassword`, `supportsMeetingCreation`): от них зависит, требуется ли запись в Keychain и показывать ли окно создания встречи. Read-only провайдеру не нужно ничего отключать в UI вручную - RSVP-кнопки скрываются сами, потому что завязаны на `changeKey`.
 - Для UI параллельных встреч придерживайся инварианта: даже в compact-карточке нужно показывать собственный интервал времени события.
 - Для проверки логики пересечений используй критерий полуинтервалов: `lhs.startDate < rhs.endDate && rhs.startDate < lhs.endDate`.
 - `CustomMeetingReminderController` использует архитектуру **live-update single panel**: в любой момент времени отображается не более одного `NSPanel`. Если при срабатывании нового напоминания панель уже открыта, вызывается `updateCurrentPanel(merging:)`, который мёрджит новые встречи в `currentDisplayedItems`, пересчитывает title/subtitle и заменяет `currentHostingView.rootView` (SwiftUI делает diff in-place). Очереди (`queue: [Payload]`) не существует — не добавляй её. `finishPresentation()` очищает `currentPanel`, `currentHostingView`, `currentDisplayedItems`, `currentAnchorStartDate`, `currentDismissDeadline` без вызова какого-либо «следующего» элемента. Автозакрытие по таймеру и ручное закрытие оба вызывают `finishPresentation()` / `closeCurrentPanelAndFinish()` без дополнительных флагов.
@@ -147,6 +154,7 @@ private func dlog(_ message: String) {
 |---|---|
 | `CustomMeetingReminderController` | `/tmp/owawidget_reminder.log` |
 | `CalendarService` | `/tmp/owawidget_calendar.log` |
+| `EventKitCalendarProvider` | `/tmp/owawidget_eventkit.log` |
 | Новый компонент `FooService` | `/tmp/owawidget_foo.log` |
 
 ### Как агент читает логи

@@ -1,3 +1,5 @@
 "NSUserNotificationUsageDescription" = "Mac Owa Widget уведомляет перед началом встреч, чтобы вы могли подключиться одним нажатием.";
 "CFBundleDisplayName" = "Mac Owa Widget";
 "CFBundleName" = "Mac Owa Widget";
+"NSCalendarsUsageDescription" = "Mac Owa Widget читает календари, которые этот Mac уже синхронизирует, чтобы показывать ближайшую встречу и ссылку на звонок.";
+"NSCalendarsFullAccessUsageDescription" = "Mac Owa Widget читает календари, которые этот Mac уже синхронизирует, чтобы показывать ближайшую встречу и ссылку на звонок.";

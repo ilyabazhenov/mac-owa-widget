@@ -172,13 +172,14 @@ final class CalendarServiceAccountPersistenceTests: XCTestCase {
 
 // MARK: - Doubles
 
-private final class EmptyEventCacheStore: EventCacheStoring {
+/// Shared across the CalendarService suites; not file-private for that reason.
+final class EmptyEventCacheStore: EventCacheStoring {
     func load() -> EventCacheSnapshot? { nil }
     func save(events: [CalendarEvent], rangeStart: Date, rangeEnd: Date) {}
     func clear() {}
 }
 
-private actor SilentNotificationService: NotificationServicing {
+actor SilentNotificationService: NotificationServicing {
     func setup(localization: NotificationLocalization) {}
     func requestAuthorization() async {}
     func removeAllPendingMeetingNotifications() async {}
@@ -186,7 +187,7 @@ private actor SilentNotificationService: NotificationServicing {
 }
 
 @MainActor
-private final class SilentMeetingReminderController: CustomMeetingReminderControlling {
+final class SilentMeetingReminderController: CustomMeetingReminderControlling {
     func cancelAll(closeActiveReminder: Bool) {}
     func reschedule(
         events: [CalendarEvent],

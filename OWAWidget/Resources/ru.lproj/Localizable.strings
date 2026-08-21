@@ -17,7 +17,7 @@
 "settings.tab.preferences" = "Настройки";
 "settings.tab.about" = "О приложении";
 "settings.accounts.empty.title" = "Аккаунтов пока нет";
-"settings.accounts.empty.subtitle" = "Нажмите +, чтобы добавить Exchange-аккаунт";
+"settings.accounts.empty.subtitle" = "Нажмите +, чтобы добавить аккаунт Exchange или Календарь macOS";
 "settings.accounts.remove" = "Удалить";
 "settings.accounts.remove.confirm.title" = "Удалить учётную запись?";
 "settings.accounts.remove.confirm.message" = "«%@» будет удалена, а сохранённый пароль — стёрт из Keychain. Это действие необратимо.";
@@ -50,6 +50,16 @@
 "settings.account.certificate.issuer" = "Кем выдан:";
 "settings.account.certificate.valid.until" = "Действует до:";
 "settings.account.certificate.trust" = "Доверять этому серверу";
+"settings.account.type.section" = "Тип аккаунта";
+"settings.account.type" = "Тип";
+"settings.account.calendars.section" = "Календари";
+"settings.account.calendars.request" = "Разрешить доступ…";
+"settings.account.calendars.request.hint" = "Mac Owa Widget нужно разрешение на чтение календарей, которые этот Mac уже синхронизирует.";
+"settings.account.calendars.denied" = "Доступ к календарям для Mac Owa Widget выключен. Включите его в Системных настройках, чтобы выбрать календари.";
+"settings.account.calendars.writeonly" = "Mac Owa Widget получил доступ к календарям только на запись — читать встречи так нельзя. Выдайте полный доступ в Системных настройках.";
+"settings.account.calendars.open.settings" = "Открыть Системные настройки";
+"settings.account.calendars.empty" = "Календари не найдены";
+"settings.account.calendars.hint" = "Добавьте аккаунт Google или iCloud в Системных настройках › Учётные записи Интернета. Mac Owa Widget покажет то, что macOS уже синхронизирует.";
 
 "preferences.shortcuts.section" = "Горячие клавиши";
 "preferences.shortcuts.createMeeting" = "Новая встреча";

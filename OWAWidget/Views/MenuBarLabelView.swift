@@ -46,6 +46,9 @@ struct MenuBarLabelView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openCreateMeetingShortcut)) { _ in
+            // The shortcut stays registered regardless: it is a global hotkey, and unregistering
+            // it per account state would leave the key silently bound to nothing elsewhere.
+            guard service.supportsMeetingCreation else { return }
             NSApp.activate(ignoringOtherApps: true)
             openWindow(id: "create-meeting")
         }
@@ -54,12 +57,14 @@ struct MenuBarLabelView: View {
     private func buildContextMenu() -> NSMenu {
         let menu = NSMenu()
 
-        menu.addItem(ClosureMenuItem(title: localization.tr("menu.new.meeting")) {
-            NSApp.activate(ignoringOtherApps: true)
-            openWindow(id: "create-meeting")
-        })
+        if service.supportsMeetingCreation {
+            menu.addItem(ClosureMenuItem(title: localization.tr("menu.new.meeting")) {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "create-meeting")
+            })
 
-        menu.addItem(.separator())
+            menu.addItem(.separator())
+        }
 
         menu.addItem(ClosureMenuItem(title: localization.tr("popover.sync.now")) {
             service.syncNow()

@@ -56,7 +56,7 @@ struct OWAWidgetApp: App {
 
         Window(localizationService.tr("window.create.meeting.title"), id: "create-meeting") {
             Group {
-                if let account = calendarService.accounts.first {
+                if let account = calendarService.meetingCreationAccount {
                     CreateMeetingView(calendarService: calendarService, accountID: account.id)
                         .environmentObject(localizationService)
                         .environmentObject(appearanceService)

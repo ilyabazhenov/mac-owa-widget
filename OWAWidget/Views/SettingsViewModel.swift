@@ -31,6 +31,14 @@ final class SettingsViewModel: ObservableObject {
     @Published var pendingCertTrust: PendingCertificateTrust?
     @Published var pendingLoginHostApproval: PendingLoginHostApproval?
 
+    // MARK: EventKit account edit state
+
+    @Published private(set) var eventKitAccess: EventKitAccessStatus = .notDetermined
+    @Published private(set) var eventKitCalendars: [EventKitCalendarSnapshot] = []
+    @Published private(set) var eventKitError: String?
+    @Published private(set) var isLoadingEventKit = false
+    @Published var selectedCalendarIdentifiers: Set<String> = []
+
     struct PendingCertificateTrust: Identifiable, Equatable {
         let host: String
         let port: Int
@@ -61,14 +69,17 @@ final class SettingsViewModel: ObservableObject {
 
     private let service: CalendarService
     private let launchAtLoginManager: any LaunchAtLoginManaging
+    private let eventKitStore: any EventKitStoring
     private var baselinePreferences: PreferencesSnapshot
 
     init(
         calendarService: CalendarService,
-        launchAtLoginManager: any LaunchAtLoginManaging = LaunchAtLoginService()
+        launchAtLoginManager: any LaunchAtLoginManaging = LaunchAtLoginService(),
+        eventKitStore: any EventKitStoring = SystemEventKitStore.shared
     ) {
         self.service = calendarService
         self.launchAtLoginManager = launchAtLoginManager
+        self.eventKitStore = eventKitStore
         self.accounts = calendarService.accounts
         self.syncInterval = calendarService.syncInterval
         self.notificationLeadMinutes = calendarService.notificationLeadMinutes
@@ -192,27 +203,63 @@ final class SettingsViewModel: ObservableObject {
         editingPassword = ""
         testResult = nil
         isAddingNew = true
+        resetEventKitEditState()
+    }
+
+    /// Switches the account type mid-form, discarding the state that belongs to the other kind.
+    func changeEditingAccountType(to type: AccountType) {
+        guard var account = editingAccount, account.accountType != type else { return }
+        account.accountType = type
+        account.serverURL = ""
+        account.email = ""
+        account.calendarIdentifiers = nil
+        account.sourceIdentifier = nil
+        editingAccount = account
+        editingPassword = ""
+        testResult = nil
+        pendingCertTrust = nil
+        pendingLoginHostApproval = nil
+        resetEventKitEditState()
+        if type == .eventKit {
+            Task { await refreshEventKitState() }
+        }
     }
 
     func beginEditAccount(_ account: CalendarAccount) {
         editingAccount = account
+        isAddingNew = false
+        testResult = nil
+        resetEventKitEditState()
+
+        guard account.accountType.requiresPassword else {
+            // No Keychain read at all: an EventKit account holds no secret, and reading one that
+            // does not exist would still raise the system keychain dialog for nothing.
+            editingPassword = ""
+            selectedCalendarIdentifiers = Set(account.calendarIdentifiers ?? [])
+            Task { await refreshEventKitState() }
+            return
+        }
+
         // Reading the password pops the system keychain-access dialog (drawn by
         // SecurityAgent). When it closes, focus stays with the system agent and the
         // settings window drops behind other apps. Re-activate ourselves so the
         // window — and the edit sheet about to open on it — comes back to the front.
         editingPassword = (try? KeychainService.load(accountID: account.id)) ?? ""
         NSApp.activate(ignoringOtherApps: true)
-        testResult = nil
-        isAddingNew = false
     }
 
     func saveAccount(localization: LocalizationService) {
-        guard let account = editingAccount else { return }
+        guard let account = editingAccount.map(normalizedForSaving) else { return }
         do {
             if isAddingNew {
-                try service.addAccount(account, password: editingPassword)
+                try service.addAccount(
+                    account,
+                    password: account.accountType.requiresPassword ? editingPassword : nil
+                )
             } else {
-                let pwd = editingPassword.isEmpty ? nil : editingPassword
+                let pwd = (editingPassword.isEmpty || !account.accountType.requiresPassword)
+                    ? nil
+                    : editingPassword
                 try service.updateAccount(account, newPassword: pwd)
             }
             accounts = service.accounts
@@ -220,6 +267,7 @@ final class SettingsViewModel: ObservableObject {
             editingPassword = ""
             pendingCertTrust = nil
             pendingLoginHostApproval = nil
+            resetEventKitEditState()
         } catch {
             testResult = localization.tr("settings.account.save.failed", error.localizedDescription)
         }
@@ -234,6 +282,129 @@ final class SettingsViewModel: ObservableObject {
         pendingCertTrust = nil
         pendingLoginHostApproval = nil
         isAddingNew = false
+        resetEventKitEditState()
+    }
+
+    // MARK: - EventKit accounts
+
+    /// Calendars grouped by the account they come from, in a stable order.
+    ///
+    /// Built from the calendars themselves, which is what keeps the picker readable: this Mac
+    /// reports several sources that hold no event calendars at all, and they would otherwise
+    /// show up as empty headers.
+    var eventKitCalendarGroups: [(source: String, calendars: [EventKitCalendarSnapshot])] {
+        let grouped = Dictionary(grouping: eventKitCalendars, by: \.sourceTitle)
+        return grouped
+            .map { (source: $0.key, calendars: $0.value.sorted { $0.title < $1.title }) }
+            .sorted { $0.source < $1.source }
+    }
+
+    var canSaveAccount: Bool {
+        guard let account = editingAccount else { return false }
+        switch account.accountType {
+        case .owa, .googleCalendar:
+            return !account.serverURL.isEmpty
+                && !account.email.isEmpty
+                && !(isAddingNew && editingPassword.isEmpty)
+        case .eventKit:
+            return eventKitAccess.canRead && !selectedCalendarIdentifiers.isEmpty
+        }
+    }
+
+    func refreshEventKitState() async {
+        isLoadingEventKit = true
+        defer { isLoadingEventKit = false }
+        eventKitAccess = await eventKitStore.authorizationStatus()
+        guard eventKitAccess.canRead else {
+            eventKitCalendars = []
+            return
+        }
+        await loadCalendars()
+    }
+
+    /// Raises the system prompt. Only meaningful once — afterwards the user has to change the
+    /// decision in System Settings, which is what the UI says when access is denied.
+    func requestCalendarAccess() async {
+        isLoadingEventKit = true
+        defer { isLoadingEventKit = false }
+        do {
+            eventKitAccess = try await eventKitStore.requestAccess()
+            eventKitError = nil
+        } catch {
+            eventKitAccess = await eventKitStore.authorizationStatus()
+            eventKitError = error.localizedDescription
+            return
+        }
+        guard eventKitAccess.canRead else { return }
+        await loadCalendars()
+    }
+
+    func setCalendar(_ identifier: String, selected: Bool) {
+        if selected {
+            selectedCalendarIdentifiers.insert(identifier)
+        } else {
+            selectedCalendarIdentifiers.remove(identifier)
+        }
+    }
+
+    func openCalendarPrivacySettings() {
+        guard let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"
+        ) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func loadCalendars() async {
+        do {
+            eventKitCalendars = try await eventKitStore.calendars()
+            eventKitError = nil
+            // Drop selections whose calendar has since disappeared, so a stale identifier cannot
+            // sit in the saved account forever, matching nothing.
+            let known = Set(eventKitCalendars.map(\.identifier))
+            selectedCalendarIdentifiers.formIntersection(known)
+        } catch {
+            eventKitCalendars = []
+            eventKitError = error.localizedDescription
+        }
+    }
+
+    private func resetEventKitEditState() {
+        selectedCalendarIdentifiers = []
+        eventKitCalendars = []
+        eventKitError = nil
+        isLoadingEventKit = false
+    }
+
+    /// Fills in what the form does not ask for directly before the account is persisted.
+    private func normalizedForSaving(_ account: CalendarAccount) -> CalendarAccount {
+        guard account.accountType == .eventKit else { return account }
+        var result = account
+        let selected = selectedCalendarIdentifiers.sorted()
+        result.calendarIdentifiers = selected
+        let sources = Set(
+            eventKitCalendars
+                .filter { selectedCalendarIdentifiers.contains($0.identifier) }
+                .map(\.sourceIdentifier)
+        )
+        // Only meaningful when every selected calendar comes from one account; a mixed selection
+        // has no single source to record.
+        result.sourceIdentifier = sources.count == 1 ? sources.first : nil
+        if result.displayName.trimmingCharacters(in: .whitespaces).isEmpty {
+            result.displayName = defaultEventKitDisplayName(for: selected)
+        }
+        result.serverURL = ""
+        result.email = ""
+        return result
+    }
+
+    private func defaultEventKitDisplayName(for selected: [String]) -> String {
+        let titles = Set(
+            eventKitCalendars
+                .filter { selected.contains($0.identifier) }
+                .map(\.sourceTitle)
+        )
+        if titles.count == 1, let only = titles.first { return only }
+        return AccountType.eventKit.displayName
     }
 
     func deleteAccount(_ account: CalendarAccount) {

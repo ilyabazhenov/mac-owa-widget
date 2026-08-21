@@ -17,7 +17,7 @@
 "settings.tab.preferences" = "Preferences";
 "settings.tab.about" = "About";
 "settings.accounts.empty.title" = "No accounts yet";
-"settings.accounts.empty.subtitle" = "Click + to add your Exchange account";
+"settings.accounts.empty.subtitle" = "Click + to add an Exchange or macOS Calendar account";
 "settings.accounts.remove" = "Remove";
 "settings.accounts.remove.confirm.title" = "Remove account?";
 "settings.accounts.remove.confirm.message" = "“%@” will be removed and its saved password deleted from the Keychain. This cannot be undone.";
@@ -50,6 +50,16 @@
 "settings.account.certificate.issuer" = "Issued by:";
 "settings.account.certificate.valid.until" = "Valid until:";
 "settings.account.certificate.trust" = "Trust This Server";
+"settings.account.type.section" = "Account Type";
+"settings.account.type" = "Type";
+"settings.account.calendars.section" = "Calendars";
+"settings.account.calendars.request" = "Allow Access…";
+"settings.account.calendars.request.hint" = "Mac Owa Widget needs permission to read the calendars this Mac already syncs.";
+"settings.account.calendars.denied" = "Calendar access is turned off for Mac Owa Widget. Turn it on in System Settings to choose calendars.";
+"settings.account.calendars.writeonly" = "Mac Owa Widget was granted write-only calendar access, which cannot show meetings. Grant full access in System Settings.";
+"settings.account.calendars.open.settings" = "Open System Settings";
+"settings.account.calendars.empty" = "No calendars found";
+"settings.account.calendars.hint" = "Add a Google or iCloud account in System Settings › Internet Accounts. Mac Owa Widget shows whatever macOS already syncs.";
 
 "preferences.shortcuts.section" = "Shortcuts";
 "preferences.shortcuts.createMeeting" = "New Meeting";

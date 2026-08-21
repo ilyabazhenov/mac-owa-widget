@@ -152,6 +152,7 @@ struct SettingsView: View {
 
             if vm.editingAccount != nil {
                 AccountSettingsView(
+                    vm: vm,
                     account: Binding(
                         get: { vm.editingAccount ?? CalendarAccount(displayName: "", serverURL: "", email: "") },
                         // При закрытии окна editingAccount становится nil, но поля при потере
@@ -178,9 +179,7 @@ struct SettingsView: View {
                     vm.saveAccount(localization: localization)
                 }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(vm.editingAccount?.serverURL.isEmpty == true ||
-                              vm.editingAccount?.email.isEmpty == true ||
-                              (vm.isAddingNew && vm.editingPassword.isEmpty))
+                    .disabled(!vm.canSaveAccount)
             }
             .padding()
         }
