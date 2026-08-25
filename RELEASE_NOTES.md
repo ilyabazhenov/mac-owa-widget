@@ -1,3 +1,53 @@
+## v1.0.49 - 2026-08-25
+
+### RU
+
+#### Что изменилось
+
+- Виджет показывает встречи из календарей, которые Mac уже синхронизирует, — Google, iCloud, локальные. Добавьте такой аккаунт в настройках, и встречи появятся рядом с встречами из OWA, вместе со ссылкой на звонок, если она есть в описании. Эти календари доступны только для чтения: ответить на приглашение и создать встречу можно в аккаунте OWA. При первом запуске после обновления macOS спросит доступ к Календарю — без него системные календари прочитать нельзя; если вы пользуетесь только OWA, разрешение не требуется. Система может переспросить после следующего обновления приложения — достаточно подтвердить снова.
+- Синхронизация устойчива к сбою отдельного аккаунта: если один календарь недоступен, встречи из остальных продолжают приходить и остаются на экране.
+- Данные приложения на диске хранятся в зашифрованном виде: список аккаунтов, кэш встреч и история участников. Ключ шифрования лежит в связке ключей macOS.
+- Учётные данные передаются только тому серверу, который вы настроили. Если вход перенаправляется на другой адрес, приложение спросит подтверждение — так же, как при доверии самоподписанному сертификату.
+- Отдельное предупреждение при смене сертификата сервера. Если у сервера, которому вы уже доверились, сменился сертификат, приложение покажет прежний и новый отпечаток и спросит подтверждение, чтобы плановую замену можно было отличить от подмены соединения. В диалоге доверия теперь видно, кому и кем выдан сертификат и до какого числа он действует.
+- Если список аккаунтов временно недоступен — например, приложение ещё не получило доступ к связке ключей, — оно прямо сообщает об этом и предлагает повторить, вместо пустого экрана.
+- Многодневные встречи (отпуск, командировка, блок на неделю) показываются в днях и часах: «2 д 5 ч» в баннере и `2d` в меню-баре.
+- Служебное: приложение подписывается с hardened runtime; диагностические журналы не содержат учётных данных и ответов сервера.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- The widget shows meetings from the calendars your Mac already syncs — Google, iCloud, local ones. Add such an account in settings and its meetings appear next to your OWA meetings, along with the join link when the description contains one. These calendars are read-only: replying to invitations and creating meetings happen in the OWA account. On the first launch after this update macOS asks for Calendar access — system calendars cannot be read without it; if you only use OWA, no permission is needed. The system may ask again after a later update — simply confirm it once more.
+- Sync tolerates a single failing account: if one calendar is unavailable, meetings from the others keep arriving and stay on screen.
+- App data on disk is stored encrypted: the account list, the meeting cache and the attendee history. The encryption key lives in the macOS Keychain.
+- Credentials are sent only to the server you configured. If the sign-in is redirected to a different address, the app asks for confirmation — the same way it does when trusting a self-signed certificate.
+- A distinct warning when a server certificate changes. If a server you already trusted presents a different certificate, the app shows both the old and the new fingerprint and asks for confirmation, so a planned replacement can be told apart from an intercepted connection. The trust dialog now also shows who the certificate was issued to, who issued it and when it expires.
+- When the account list is temporarily unavailable — for example, the app has not been granted Keychain access yet — it says so and offers to retry, instead of showing an empty screen.
+- Multi-day meetings (vacation, a trip, a week-long block) are shown in days and hours: "2 d 5 h" in the banner and `2d` in the menu bar.
+- Under the hood: the app is signed with the hardened runtime, and diagnostic logs contain no credentials or server responses.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove the quarantine attributes (only needed on the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates install automatically via the "Install" button inside the app.
+
 ## v1.0.48 - 2026-08-11
 
 ### RU
