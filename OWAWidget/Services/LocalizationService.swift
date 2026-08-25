@@ -85,6 +85,25 @@ final class LocalizationService: ObservableObject {
         plural(key: "unit.hours.short", count: count)
     }
 
+    func daysShort(_ count: Int) -> String {
+        plural(key: "unit.days.short", count: count)
+    }
+
+    /// Компактная длительность для countdown-строк: «45 мин», «3 ч 20 мин», «2 д 5 ч».
+    /// Многодневная встреча (отпуск, командировка) иначе печаталась бы как «2 464 мин».
+    func compactDuration(minutes: Int) -> String {
+        switch CompactDuration.breakdown(minutes: minutes) {
+        case .minutes(let value):
+            return minutesShort(value)
+        case .hoursMinutes(let hours, let restMinutes):
+            guard restMinutes > 0 else { return hoursShort(hours) }
+            return "\(hoursShort(hours)) \(minutesShort(restMinutes))"
+        case .daysHours(let days, let restHours):
+            guard restHours > 0 else { return daysShort(days) }
+            return "\(daysShort(days)) \(hoursShort(restHours))"
+        }
+    }
+
     func meetings(_ count: Int) -> String {
         plural(key: "unit.meetings", count: count)
     }

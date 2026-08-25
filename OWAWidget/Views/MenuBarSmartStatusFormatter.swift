@@ -143,8 +143,11 @@ enum MenuBarSmartStatusFormatter {
         max(0, Int(ceil(target.timeIntervalSince(now) / 60)))
     }
 
+    /// Компактная метка меню-бара. Многодневная встреча (отпуск, командировка) иначе
+    /// показывалась бы как "42h" — для суток и больше переходим на дни, как в `.relativeDays`.
     private static func compact(_ minutes: Int) -> String {
         if minutes < 60 { return "\(minutes)m" }
-        return "\(Int(ceil(Double(minutes) / 60)))h"
+        if minutes < 24 * 60 { return "\(Int(ceil(Double(minutes) / 60)))h" }
+        return "\(Int(ceil(Double(minutes) / (24 * 60))))d"
     }
 }

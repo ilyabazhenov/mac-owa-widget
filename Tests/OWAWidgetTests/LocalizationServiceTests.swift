@@ -264,4 +264,29 @@ final class LocalizationServiceTests: XCTestCase {
             "Keys present in ru but missing in en"
         )
     }
+
+    func testCompactDurationSwitchesUnitsInRussian() {
+        let service = LocalizationService(
+            selectedLanguage: .russian,
+            preferredLanguages: ["en-US"]
+        )
+
+        XCTAssertEqual(service.compactDuration(minutes: 45), "45 мин")
+        XCTAssertEqual(service.compactDuration(minutes: 120), "2 ч")
+        XCTAssertEqual(service.compactDuration(minutes: 200), "3 ч 20 мин")
+        // Отпуск на неделю: раньше здесь печаталось «2 464 мин».
+        XCTAssertEqual(service.compactDuration(minutes: 2_464), "1 д 17 ч")
+        XCTAssertEqual(service.compactDuration(minutes: 2 * 24 * 60), "2 д")
+    }
+
+    func testCompactDurationSwitchesUnitsInEnglish() {
+        let service = LocalizationService(
+            selectedLanguage: .english,
+            preferredLanguages: ["ru-RU"]
+        )
+
+        XCTAssertEqual(service.compactDuration(minutes: 45), "45 min")
+        XCTAssertEqual(service.compactDuration(minutes: 200), "3 h 20 min")
+        XCTAssertEqual(service.compactDuration(minutes: 2_464), "1 d 17 h")
+    }
 }

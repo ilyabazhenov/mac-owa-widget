@@ -23,6 +23,21 @@ final class MenuBarSmartStatusFormatterTests: XCTestCase {
         XCTAssertEqual(p.tooltip, .inMeeting(remainingMinutes: 18, hasJoinURL: true))
     }
 
+    /// Многодневная встреча (отпуск): метка «41h» нечитаема — с суток и больше показываем дни.
+    func testMultiDayMeetingShowsRemainingInDays() {
+        let now = makeDate(hour: 0, minute: 56)
+        let vacation = makeEvent(
+            start: now.addingTimeInterval(-3 * 24 * 3600),
+            end: now.addingTimeInterval(2_464 * 60)
+        )
+
+        let p = MenuBarSmartStatusFormatter.presentation(events: [vacation], now: now, calendar: calendar)
+
+        XCTAssertEqual(p.category, .engaged)
+        XCTAssertEqual(p.content, .duration("2d"))
+        XCTAssertEqual(p.tooltip, .inMeeting(remainingMinutes: 2_464, hasJoinURL: false))
+    }
+
     func testOverlappingMeetingsFoldIntoSoonestRemainingWithOverlapTooltip() {
         let now = makeDate(hour: 10, minute: 0)
         let first = makeEvent(startHour: 9, startMinute: 0, endHour: 10, endMinute: 20, id: "a")

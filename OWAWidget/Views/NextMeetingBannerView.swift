@@ -191,12 +191,12 @@ struct NextMeetingBannerView: View {
 
     private func countdownLabel(_ event: CalendarEvent, now: Date) -> String {
         let m = minsUntilStart(event, now: now)
-        return m == 0 ? localization.tr("meeting.starting.now") : localization.tr("meeting.in.minutes", localization.minutesShort(m))
+        return m == 0 ? localization.tr("meeting.starting.now") : localization.tr("meeting.in.minutes", localization.compactDuration(minutes: m))
     }
 
     private func remainingLabel(_ event: CalendarEvent, now: Date) -> String {
         let m = minsRemaining(event, now: now)
-        return m == 0 ? localization.tr("meeting.happening.now") : localization.tr("meeting.remaining.minutes", localization.minutesShort(m))
+        return m == 0 ? localization.tr("meeting.happening.now") : localization.tr("meeting.remaining.minutes", localization.compactDuration(minutes: m))
     }
 
     private func a11yBannerLabel(_ event: CalendarEvent, now: Date) -> String {

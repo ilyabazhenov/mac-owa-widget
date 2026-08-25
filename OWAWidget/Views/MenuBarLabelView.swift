@@ -180,7 +180,7 @@ struct MenuBarLabelView: View {
         let noLink = localization.tr("menubar.smart.tip.no.link")
         switch tooltip {
         case .inMeeting(let remaining, let hasJoinURL):
-            let base = localization.tr("menubar.smart.tip.in.meeting", localization.minutes(remaining))
+            let base = localization.tr("menubar.smart.tip.in.meeting", localization.compactDuration(minutes: remaining))
             return hasJoinURL ? base : "\(base) · \(noLink)"
         case .overlap(let count):
             return localization.tr("menubar.smart.tip.overlap", localization.meetings(count))
