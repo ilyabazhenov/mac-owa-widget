@@ -1,3 +1,39 @@
+## v1.0.50 - 2026-09-03
+
+### RU
+
+#### Что изменилось
+
+- Правка в отрисовке кнопки «Присоединиться». У части пользователей значок и подпись на кнопке звонка иногда появлялись вверх ногами — и в баннере ближайшей встречи, и в карточке встречи. Шрифт и цвет теперь задаются самим значку и тексту, а не наследуются от контейнера: это единственное, чем эта кнопка отличалась от остальных кнопок приложения, где перевёрнутой отрисовки никто не видел. Внешне кнопка осталась прежней. Если перевёрнутая кнопка встретится снова — напишите, значит причина в другом.
+
+#### Установка
+
+1. Переместите `OWAWidget.app` в `/Applications`.
+2. Снимите quarantine-атрибуты (нужно только при первой установке):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- A fix for how the "Join" button is drawn. For some users the icon and label on the join button occasionally appeared upside down — both in the next-meeting banner and in the meeting card. Font and colour are now set on the icon and the text themselves instead of being inherited from their container: that was the only thing setting this button apart from the app's other buttons, where nobody has seen flipped rendering. The button looks exactly as before. If you run into a flipped button again, please let us know — it would mean the cause lies elsewhere.
+
+#### Installation
+
+1. Move `OWAWidget.app` to `/Applications`.
+2. Remove the quarantine attributes (only needed on the first install):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OWAWidget.app
+```
+
+3. All subsequent updates install automatically via the "Install" button inside the app.
+
 ## v1.0.49 - 2026-08-25
 
 ### RU
