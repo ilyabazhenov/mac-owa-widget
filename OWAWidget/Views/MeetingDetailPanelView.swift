@@ -470,15 +470,18 @@ private struct MeetingDetailActionsView: View {
                         PostJoinDismissController.shared.dismissAfterJoin(context: .detailPanel)
                     } label: {
                         HStack(spacing: 5) {
+                            // See NextMeetingBannerView: font/colour pinned per child rather
+                            // than inherited from the HStack.
                             Image(systemName: "arrow.right.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white)
                             Text(localization.tr("meeting.join"))
-                                .fontWeight(.semibold)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white)
                         }
-                        .font(.system(size: 12))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
                         .background(event.isHappeningNow ? Color.orange : meetingAccentColor(for: event))
-                        .foregroundStyle(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .buttonStyle(.plain)

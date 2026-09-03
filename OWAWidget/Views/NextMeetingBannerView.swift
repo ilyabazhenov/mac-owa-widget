@@ -87,15 +87,21 @@ struct NextMeetingBannerView: View {
                             PostJoinDismissController.shared.dismissAfterJoin(context: .popoverContent)
                         } label: {
                             HStack(spacing: 4) {
+                                // Font and colour are pinned on each child instead of the
+                                // enclosing HStack: the inherited-font path is the only thing
+                                // these join buttons do differently from the ones in the meeting
+                                // list, and it is the shared trait of the buttons users report
+                                // rendering upside down. Visually identical either way.
                                 Image(systemName: "arrow.right.circle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.white)
                                 Text(localization.tr("meeting.join"))
-                                    .fontWeight(.semibold)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.white)
                             }
-                            .font(.system(size: 12))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
                             .background(happening ? Color.orange : meetingAccentColor(for: event))
-                            .foregroundStyle(.white)
                             .clipShape(RoundedRectangle(cornerRadius: 7))
                         }
                         .buttonStyle(.plain)
