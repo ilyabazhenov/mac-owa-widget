@@ -183,6 +183,7 @@
 "a11y.meeting.has.join" = "Has join link";
 "a11y.meeting.join" = "Join meeting: %@";
 "a11y.meeting.copy.link.hint" = "Copies the meeting link to the clipboard";
+"a11y.meeting.copy.title.hint" = "Copies the meeting title to the clipboard";
 
 "meeting.no.upcoming" = "No upcoming meetings";
 "meeting.join" = "Join";
@@ -192,6 +193,9 @@
 "join.selection.header" = "Meetings starting now";
 "join.hotkey.noMeeting" = "No meeting starting now";
 "meeting.copy.link" = "Copy join link";
+"meeting.copy.title" = "Copy title";
+"meeting.copy.summary" = "Copy title, time and link";
+"meeting.copy.summary.nolink" = "Copy title and time";
 "meeting.attendees.expand" = "Show attendees";
 "meeting.attendees.collapse" = "Hide attendees";
 "meeting.now" = "now";

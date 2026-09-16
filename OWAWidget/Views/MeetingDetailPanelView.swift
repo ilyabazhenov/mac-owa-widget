@@ -8,6 +8,8 @@ struct MeetingDetailPanelView: View {
     @EnvironmentObject private var localization: LocalizationService
     @AccessibilityFocusState private var closeButtonFocused: Bool
     @State private var contentHeight: CGFloat = 0
+    @State private var isHoveringTitle = false
+    @State private var didCopyTitle = false
 
     private let headerHeight: CGFloat = 48
     private let dividerHeight: CGFloat = 1
@@ -80,18 +82,27 @@ struct MeetingDetailPanelView: View {
             .accessibilityFocused($closeButtonFocused)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(event.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color(nsColor: event.isEffectivelyCancelled ? .secondaryLabelColor : .labelColor))
-                    .strikethrough(event.isEffectivelyCancelled)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                HStack(spacing: 4) {
+                    Text(event.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color(nsColor: event.isEffectivelyCancelled ? .secondaryLabelColor : .labelColor))
+                        .strikethrough(event.isEffectivelyCancelled)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        // The header has room for one line only; the tooltip is where a long title is readable.
+                        .help(event.title)
+
+                    copyTitleButton
+                }
 
                 Text("\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                     .lineLimit(1)
             }
+            .contentShape(Rectangle())
+            .onHover { isHoveringTitle = $0 }
+            .meetingCopyContextMenu(event, localization: localization)
 
             Spacer(minLength: 8)
 
@@ -104,6 +115,28 @@ struct MeetingDetailPanelView: View {
         }
         .padding(.horizontal, 12)
         .frame(height: headerHeight)
+    }
+
+    /// Hidden until the title is hovered, but always laid out (opacity, not `if`): toggling its
+    /// presence would re-truncate the title under the cursor, and keyboard / VoiceOver users reach
+    /// it without hovering at all.
+    private var copyTitleButton: some View {
+        Button {
+            MeetingClipboard.copyTitle(of: event)
+            didCopyTitle = true
+            Task { try? await Task.sleep(for: .seconds(1.5)); didCopyTitle = false }
+        } label: {
+            Image(systemName: didCopyTitle ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(isHoveringTitle || didCopyTitle ? 1 : 0)
+        .help(localization.tr("meeting.copy.title"))
+        .accessibilityLabel(localization.tr("meeting.copy.title"))
+        .accessibilityHint(localization.tr("a11y.meeting.copy.title.hint"))
     }
 }
 
@@ -489,8 +522,7 @@ private struct MeetingDetailActionsView: View {
                     .accessibilityHint(localization.tr("meeting.join.help", event.platform.displayName(localization: localization)))
 
                     Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        MeetingClipboard.copy(url.absoluteString)
                         didCopy = true
                         Task { try? await Task.sleep(for: .seconds(1.5)); didCopy = false }
                     } label: {

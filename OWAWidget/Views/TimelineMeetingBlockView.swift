@@ -67,8 +67,7 @@ struct TimelineMeetingBlockView: View {
                 HStack(alignment: .top, spacing: 4) {
                     if !compact {
                         Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                            MeetingClipboard.copy(url.absoluteString)
                             didCopy = true
                             Task { try? await Task.sleep(for: .seconds(1.5)); didCopy = false }
                         } label: {
@@ -115,6 +114,7 @@ struct TimelineMeetingBlockView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .opacity((calendarService.dimPastMeetingsOnTimeline && event.isPast) ? 0.58 : 1.0)
+        .meetingCopyContextMenu(event, localization: localization)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(a11yEventSummary)
     }

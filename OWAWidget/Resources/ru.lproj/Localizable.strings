@@ -183,6 +183,7 @@
 "a11y.meeting.has.join" = "Есть ссылка для подключения";
 "a11y.meeting.join" = "Подключиться к встрече: %@";
 "a11y.meeting.copy.link.hint" = "Копирует ссылку на встречу в буфер обмена";
+"a11y.meeting.copy.title.hint" = "Копирует название встречи в буфер обмена";
 
 "meeting.no.upcoming" = "Нет предстоящих встреч";
 "meeting.join" = "Подключиться";
@@ -192,6 +193,9 @@
 "join.selection.header" = "Встречи, которые начинаются сейчас";
 "join.hotkey.noMeeting" = "Сейчас нет встречи для подключения";
 "meeting.copy.link" = "Скопировать ссылку";
+"meeting.copy.title" = "Скопировать название";
+"meeting.copy.summary" = "Скопировать название, время и ссылку";
+"meeting.copy.summary.nolink" = "Скопировать название и время";
 "meeting.attendees.expand" = "Показать участников";
 "meeting.attendees.collapse" = "Скрыть участников";
 "meeting.now" = "сейчас";

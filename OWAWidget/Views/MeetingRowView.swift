@@ -73,8 +73,7 @@ struct MeetingRowView: View {
 
                 if let url = event.joinURLForActions {
                     Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        MeetingClipboard.copy(url.absoluteString)
                         didCopy = true
                         Task { try? await Task.sleep(for: .seconds(1.5)); didCopy = false }
                     } label: {
@@ -131,6 +130,7 @@ struct MeetingRowView: View {
                     .padding(.trailing, joinTrailingInset)
             }
         }
+        .meetingCopyContextMenu(event, localization: localization)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(a11yEventSummary)
     }
