@@ -136,7 +136,9 @@ final class SettingsViewModel: ObservableObject {
         let pwd = editingPassword
         Task {
             do {
-                let provider = try OWACalendarProvider(account: account, password: pwd)
+                // Through the factory, so the test exercises the same provider the sync loop
+                // will build. Constructing one directly here is how the two used to drift.
+                let provider = try CalendarProviderFactory.make(account: account, password: pwd)
                 try await provider.validateCredentials()
                 testResult = "✓ \(localization.tr("settings.account.connected"))"
             } catch {
@@ -314,10 +316,14 @@ final class SettingsViewModel: ObservableObject {
     var canSaveAccount: Bool {
         guard let account = editingAccount else { return false }
         switch account.accountType {
-        case .owa, .googleCalendar:
+        case .owa, .eas:
+            // The device profile needs no validation: empty fields fall back to defaults in
+            // `EASDeviceProfile.normalized`, so a blank one cannot produce a malformed request.
             return !account.serverURL.isEmpty
                 && !account.email.isEmpty
                 && !(isAddingNew && editingPassword.isEmpty)
+        case .googleCalendar:
+            return !account.serverURL.isEmpty && !account.email.isEmpty
         case .eventKit:
             return eventKitAccess.canRead && !selectedCalendarIdentifiers.isEmpty
         }

@@ -389,3 +389,15 @@
 "preferences.colleagues.cache" = "Availability cache";
 "preferences.colleagues.rows" = "Rows in the section";
 "preferences.colleagues.hint" = "Availability is read from Exchange in a single request for the whole list and shows only free or busy, never meeting subjects. Between refreshes the status is recomputed locally. The section is hidden for accounts macOS syncs.";
+
+/* ActiveSync device profile — what the client tells the server it is. Visible to the
+   Exchange administrator in Get-MobileDevice. */
+"settings.account.eas.advanced" = "Advanced";
+"settings.account.eas.deviceType" = "Device type";
+"settings.account.eas.userAgent" = "User agent";
+"settings.account.eas.model" = "Model";
+"settings.account.eas.friendlyName" = "Device name";
+"settings.account.eas.os" = "Operating system";
+"settings.account.eas.deviceId" = "Device ID";
+"settings.account.eas.deviceId.pending" = "generated on first connection";
+"settings.account.eas.advanced.help" = "These values identify the client to Exchange and appear in Get-MobileDevice. Your organization can quarantine or block this device under its access rules. Change them only if the server requires a specific device profile.";

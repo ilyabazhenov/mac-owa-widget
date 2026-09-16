@@ -389,3 +389,15 @@
 "preferences.colleagues.cache" = "Кэш занятости";
 "preferences.colleagues.rows" = "Строк в разделе";
 "preferences.colleagues.hint" = "Занятость читается через Exchange одним запросом на всех коллег и показывает только «свободен или занят», без тем встреч. Между обновлениями статус пересчитывается локально. Для аккаунтов, которые синхронизирует macOS, раздел не показывается.";
+
+/* The ActiveSync device profile is how the client identifies itself to the server.
+   Exchange administrators see these values in Get-MobileDevice. */
+"settings.account.eas.advanced" = "Дополнительно";
+"settings.account.eas.deviceType" = "Тип устройства";
+"settings.account.eas.userAgent" = "User-Agent";
+"settings.account.eas.model" = "Модель";
+"settings.account.eas.friendlyName" = "Имя устройства";
+"settings.account.eas.os" = "Операционная система";
+"settings.account.eas.deviceId" = "Идентификатор устройства";
+"settings.account.eas.deviceId.pending" = "будет создан при первом подключении";
+"settings.account.eas.advanced.help" = "Этими значениями клиент представляется серверу Exchange; они видны администратору в Get-MobileDevice. Правила организации могут поместить устройство в карантин или заблокировать его. Меняйте их, только если сервер требует определённый профиль устройства.";

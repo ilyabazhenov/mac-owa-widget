@@ -19,7 +19,7 @@ WATCH_DEBOUNCE ?= 2
 SPARKLE_ARTIFACTS_DIR := .build/artifacts/sparkle/Sparkle
 SPARKLE_FRAMEWORK     := $(SPARKLE_ARTIFACTS_DIR)/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework
 
-.PHONY: build bundle release-bundle validate-release-notes test release-package run kill clean watch logs help
+.PHONY: diag build bundle release-bundle validate-release-notes test release-package run kill clean watch logs help
 
 ## Validate latest release notes structure (RU/EN)
 validate-release-notes:
@@ -141,9 +141,20 @@ watch: run
 	    fi; \
 	done
 
+## Show the cleartext diagnostic log — the one that is actually readable
+##
+## `make logs` reads the unified log, which on macOS does not persist `.info` level to
+## disk: `log show` finds nothing after the fact. Use `make logs` only with a live
+## `log stream`. This target reads the file the app writes itself.
+diag:
+	@printf '=== current session ===\n'
+	@cat "$$HOME/Library/Application Support/OWAWidget/diagnostic.log" 2>/dev/null || echo "(no log yet)"
+	@printf '\n=== previous session ===\n'
+	@tail -40 "$$HOME/Library/Application Support/OWAWidget/diagnostic.previous.log" 2>/dev/null || true
+
 ## Show recent diagnostic logs
 logs:
-	/usr/bin/log show --info --style compact --last 20m --predicate 'subsystem == "com.owawidget" && (category == "CalendarService" || category == "OWACalendarProvider" || category == "OWAClient")'
+	/usr/bin/log show --info --style compact --last 20m --predicate 'subsystem == "com.owawidget" && (category == "CalendarService" || category == "OWACalendarProvider" || category == "OWAClient" || category == "EASClient" || category == "EASCalendarProvider" || category == "EASAccountSession")'
 
 help:
 	@echo "make build   — compile Swift sources"

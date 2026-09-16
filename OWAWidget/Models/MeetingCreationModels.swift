@@ -21,8 +21,8 @@ struct FreeSlot: Identifiable, Sendable {
     let id: UUID
     let start: Date
     let end: Date
-    /// 0.0–1.0; 1.0 — слот раньше в дне (9:00), 0.0 — позже (18:00).
-    /// Используется как фактор ранжирования и для окраски в heat-map.
+    /// 0.0–1.0; 1.0 is earlier in the day (9:00), 0.0 is later (18:00).
+    /// Used as a ranking factor and to colour the heat map.
     let score: Double
 
     init(start: Date, end: Date, score: Double = 0.0) {
@@ -53,8 +53,21 @@ enum SlotAvailabilityState: Sendable {
     case busy
     case outOfOffice
 
+    /// The worst status among attendees.
+    ///
+    /// `4` means “no data” (`[MS-OXWAVLS]`), not a busy level, so it must be removed
+    /// **before** taking the maximum. Otherwise it breaks the result: lexically, `"4" > "3" > "2"`,
+    /// so one attendee without published availability could override genuinely busy attendees
+    /// and colour the slot green as “Free”. Exchange routinely sends fours for mailboxes whose
+    /// availability it does not expose, so this occurred before the ActiveSync provider existed.
+    ///
+    /// Slot selection was unaffected: `MeetingFreeSlotCalculator` requires exactly `"0"` and
+    /// does not consider unknown availability free. Only the grid rendering was affected.
     static func aggregate(from chars: [Character]) -> SlotAvailabilityState {
-        guard let worst = chars.max() else { return .free(score: 0) }
+        let known = chars.filter { $0 != "4" }
+        // Empty means no participant has published availability. The cell stays non-clickable:
+        // the calculator will not offer such a slot.
+        guard let worst = known.max() else { return .free(score: 0) }
         switch worst {
         case "3": return .outOfOffice
         case "2": return .busy
@@ -64,7 +77,7 @@ enum SlotAvailabilityState: Sendable {
     }
 }
 
-/// Позиция строки внутри многострочного свободного слота.
+/// A row position inside a multi-line free slot.
 enum FreeSlotPosition: Sendable {
     case single   // 30-мин слот — одна строка, скругление со всех сторон
     case start    // первая строка многострочного слота — скругление сверху
@@ -75,16 +88,16 @@ enum FreeSlotPosition: Sendable {
 struct CellAvailability: Sendable {
     let state: SlotAvailabilityState
     let attendeeStatuses: [AttendeeSlotStatus]
-    /// Статусы необязательных участников в этой ячейке. На `state`/цвет ячейки НЕ влияют —
-    /// показываются только в hover-тултипе, чтобы организатор видел, кто из «опциональных»
-    /// занят в потенциально подходящем слоте.
+    /// Optional-attendee statuses for this cell. They do NOT affect the cell `state` or colour;
+    /// they appear only in the hover tooltip, so the organizer can see which optional attendees
+    /// are busy in an otherwise suitable slot.
     let optionalAttendeeStatuses: [AttendeeSlotStatus]
-    /// Non-nil → ячейка соответствует свободному слоту и кликабельна.
+    /// Non-nil means the cell represents a free slot and is clickable.
     let freeSlot: FreeSlot?
     var slotPosition: FreeSlotPosition = .single
-    /// Свободная ячейка входит в непрерывное окно достаточной длины для выбранной
-    /// длительности встречи. Если `false` — все свободны, но полноценный слот сюда не
-    /// помещается (короткая «дырка»), и грид показывает её приглушённо, без «Свободно».
+    /// The free cell belongs to a continuous window long enough for the selected meeting
+    /// duration. If `false`, everyone is free but no full slot fits here (a short gap), so the
+    /// grid renders it muted without “Free”.
     var fitsDuration: Bool = true
 }
 
@@ -99,13 +112,13 @@ struct MeetingDraft: Sendable {
     var location: String = ""
     var requiredAttendees: [ResolvedAttendee] = []
     var optionalAttendees: [ResolvedAttendee] = []
-    /// Понедельник (startOfDay) выбранной недели. Поиск слотов идёт по Mon–Fri этой недели.
+    /// Monday (`startOfDay`) of the selected week. Slot search covers that week's Mon–Fri.
     var selectedWeekStart: Date = MeetingDraft.mondayOfWeek(containing: Date())
-    /// Желаемая длительность встречи в минутах. Поиск ищет окна именно такой длины
-    /// (`MeetingFreeSlotCalculator` берёт ceil(duration/30) смежных свободных ячеек).
+    /// Desired meeting duration in minutes. Search looks for windows of exactly that length
+    /// (`MeetingFreeSlotCalculator` takes ceil(duration/30) adjacent free cells).
     var durationMinutes: Int = 30
 
-    /// Доступные пресеты длительности для чипов в окне создания.
+    /// Available duration presets for chips in the create-meeting window.
     static let durationPresets = [30, 60, 90, 120]
 
     var allAttendees: [ResolvedAttendee] {
@@ -127,18 +140,18 @@ struct MeetingDraft: Sendable {
             + "|d\(durationMinutes)"
     }
 
-    /// Stable key для инвалидации `CreateMeetingViewModel.cellMatrix`.
-    /// Включает обе группы участников (optional влияет на tooltip в гриде) и выбранную неделю.
-    /// title / agenda / location НЕ входят — они не влияют на содержимое матрицы.
+    /// Stable key for invalidating `CreateMeetingViewModel.cellMatrix`.
+    /// Includes both attendee groups (optional attendees affect the grid tooltip) and the selected week.
+    /// title / agenda / location are NOT included because they do not affect matrix contents.
     var cellMatrixSignature: String {
         let req = requiredAttendees.map(\.email).sorted().joined(separator: ",")
         let opt = optionalAttendees.map(\.email).sorted().joined(separator: ",")
         return "\(req)|\(opt)|\(Int(selectedWeekStart.timeIntervalSince1970))|d\(durationMinutes)"
     }
 
-    /// Поиск слотов: Mon 00:00 → Fri 18:00 выбранной недели. Для **текущей** недели
-    /// (`referenceNow` лежит между Mon и Fri 18:00) старт обрезается до `referenceNow`,
-    /// чтобы не предлагать прошедшие слоты. После окончания пятницы — пустой интервал.
+    /// Slot-search interval: Mon 00:00 → Fri 18:00 of the selected week. For the **current** week
+    /// (`referenceNow` falls between Monday and Friday at 18:00), its start is clamped to
+    /// `referenceNow` to avoid offering past slots. The interval is empty after Friday ends.
     func dateInterval(referenceNow: Date = Date()) -> DateInterval {
         let cal = MeetingDraft.weekCalendar
         let monday = cal.startOfDay(for: selectedWeekStart)
@@ -147,17 +160,17 @@ struct MeetingDraft: Sendable {
         else {
             return DateInterval(start: monday, duration: 0)
         }
-        // Для прошлых недель — пустой интервал (нечего искать в прошлом).
+        // Past weeks have an empty interval; there is nothing to search in the past.
         if dayEnd <= referenceNow {
             return DateInterval(start: dayEnd, duration: 0)
         }
-        // Для текущей недели — стартуем не раньше referenceNow.
+        // For the current week, do not start before referenceNow.
         let rawStart = max(monday, referenceNow)
         let start = min(rawStart, dayEnd)
         return DateInterval(start: start, end: dayEnd)
     }
 
-    /// Календарная неделя (Mon–Sun) выбранной даты — служит сеткой колонок Mon–Fri.
+    /// Calendar week (Mon–Sun) containing the selected date; it provides the Mon–Fri column grid.
     func slotGridWeekInterval(referenceNow: Date = Date()) -> DateInterval {
         let cal = MeetingDraft.weekCalendar
         let monday = cal.startOfDay(for: selectedWeekStart)
@@ -167,7 +180,7 @@ struct MeetingDraft: Sendable {
         return DateInterval(start: monday, end: weekEnd)
     }
 
-    /// Понедельник (startOfDay) недели, содержащей дату.
+    /// Monday (`startOfDay`) of the week containing the date.
     static func mondayOfWeek(containing date: Date) -> Date {
         let cal = weekCalendar
         if let week = cal.dateInterval(of: .weekOfYear, for: date) {
@@ -176,7 +189,7 @@ struct MeetingDraft: Sendable {
         return cal.startOfDay(for: date)
     }
 
-    /// Сдвиг на N недель вперёд/назад от выбранной (отрицательно — назад).
+    /// Move N weeks forward/backward from the selected week (negative moves backward).
     func weekStartOffset(by weeks: Int) -> Date {
         let cal = MeetingDraft.weekCalendar
         let monday = cal.startOfDay(for: selectedWeekStart)

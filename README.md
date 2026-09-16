@@ -17,6 +17,8 @@
 - Распознает Teams, Zoom, Webex, Google Meet, KTalk и другие платформы.
 - Показывает локальные уведомления до начала встречи.
 - Поддерживает несколько Exchange / OWA аккаунтов.
+- Поддерживает Exchange ActiveSync для серверов, где опубликован только
+  `/Microsoft-Server-ActiveSync`.
 - Хранит пароли только в macOS Keychain.
 - Устанавливает последующие обновления внутри приложения через Sparkle.
 
@@ -65,6 +67,14 @@ https://outlook.company.com
 ```
 
 Если Exchange доступен только из внутренней сети, перед синхронизацией подключитесь к корпоративному VPN.
+
+### Exchange ActiveSync
+
+Для аккаунта **Microsoft Exchange (ActiveSync)** приложение регистрируется на Exchange как
+устройство `OWAWidget` / `Mac`. Эти значения, включая идентификатор устройства, видны
+администратору в `Get-MobileDevice`. Политики организации могут заблокировать такое устройство
+или поместить его в карантин; при необходимости IT-отдел может подсказать допустимый профиль,
+который можно указать в разделе **Дополнительно** аккаунта.
 
 ## Обновления
 
@@ -142,6 +152,8 @@ open ~/Library/Application\ Support/OWAWidget/diagnostic.log
 - Platform recognition for Teams, Zoom, Webex, Google Meet, KTalk, and more.
 - Local notifications before meetings start.
 - Multiple Exchange / OWA accounts.
+- Exchange ActiveSync support for servers that publish only
+  `/Microsoft-Server-ActiveSync`.
 - Password storage in macOS Keychain.
 - In-app automatic updates through Sparkle.
 
@@ -190,6 +202,14 @@ https://outlook.company.com
 ```
 
 If Exchange is only available inside the corporate network, connect to VPN before syncing.
+
+### Exchange ActiveSync
+
+For a **Microsoft Exchange (ActiveSync)** account, the app registers with Exchange as an
+`OWAWidget` / `Mac` device. These values, including the device identifier, are visible to the
+administrator in `Get-MobileDevice`. Organization access rules can block or quarantine the device;
+if needed, your IT department can provide an allowed profile to enter under the account's
+**Advanced** section.
 
 ### Updates
 

@@ -16,8 +16,21 @@ import os.log
 /// Messages must be non-PII (no event titles, attendee emails, server URLs). Only lifecycle
 /// metadata and counts.
 enum DiagnosticLog {
+    /// The test process must not write to the user's log.
+    ///
+    /// Otherwise `swift test` overwrites the real app's `diagnostic.log` along with the context
+    /// it was written to preserve. Worse, the test binary cannot access the app's Keychain, so
+    /// every test access to `SecureStore` fails and writes `SecureStore write failed` after dozens
+    /// of attempts to read the master key. This looks like a serious app failure although it is
+    /// merely a runner artifact, and investigating such a “failure” has already wasted time.
+    private static let isRunningTests: Bool =
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
+        || NSClassFromString("XCTestCase") != nil
+
     /// Records a lifecycle event. Safe to call from any thread.
     static func event(_ message: String) {
+        guard !isRunningTests else { return }
         Store.shared.write(message)
     }
 
