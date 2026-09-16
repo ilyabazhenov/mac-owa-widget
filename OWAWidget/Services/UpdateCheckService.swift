@@ -232,7 +232,10 @@ final class UpdateCheckService: NSObject, ObservableObject {
 /// Also conforms to ``SPUStandardUserDriverDelegate`` so we can bring Sparkle's
 /// update windows to the front. The app runs as an accessory (LSUIElement), so
 /// without an explicit activation Sparkle's "new version available" / install
-/// progress windows open *behind* other apps' windows.
+/// progress windows open *behind* other apps' windows. On top of activation we
+/// pin those windows to the `.floating` level (see ``SparkleWindowElevator``)
+/// so they stay above other apps' windows for the whole update session and the
+/// user does not lose track of a half-finished update.
 final class SparkleUpdaterDelegateBridge: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDelegate, @unchecked Sendable {
     weak var owner: UpdateCheckService?
 
@@ -268,11 +271,110 @@ final class SparkleUpdaterDelegateBridge: NSObject, SPUUpdaterDelegate, SPUStand
         Self.bringAppToFront()
     }
 
+    /// The update session is over (dismissed, skipped, failed, or installed):
+    /// stop watching for Sparkle windows.
+    nonisolated func standardUserDriverWillFinishUpdateSession() {
+        Task { @MainActor in
+            SparkleWindowElevator.shared.stop()
+        }
+    }
+
     private nonisolated static func bringAppToFront() {
         // Sparkle invokes its user-driver delegate on the main thread, but hop
         // explicitly to satisfy strict concurrency and guard against edge cases.
         Task { @MainActor in
             NSApp.activate(ignoringOtherApps: true)
+            SparkleWindowElevator.shared.start()
         }
     }
+}
+
+// MARK: - Sparkle window elevation
+
+/// Keeps Sparkle's update windows (the "new version available" alert and the
+/// download / install progress window) above all other apps' windows.
+///
+/// Sparkle creates those windows privately inside the framework and offers no
+/// delegate hook for the progress window, so we cannot set the level up front.
+/// Instead, while an update session is active we listen for
+/// `NSWindow.didUpdateNotification`, which fires for every visible window once
+/// per run-loop pass, and raise any Sparkle-owned window to `.floating` the
+/// first time we see it. The check is cheap (an `ObjectIdentifier` set lookup
+/// plus a bundle comparison) and the observer is removed as soon as the session
+/// finishes.
+@MainActor
+final class SparkleWindowElevator {
+    static let shared = SparkleWindowElevator()
+
+    private let log = Logger(subsystem: "com.owawidget", category: "SparkleWindowElevator")
+    private var observer: NSObjectProtocol?
+    private var elevated = Set<ObjectIdentifier>()
+
+    private init() {}
+
+    /// Idempotent: a second `start()` during the same session is a no-op.
+    func start() {
+        guard observer == nil else {
+            elevateExistingWindows()
+            return
+        }
+        observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.didUpdateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let window = notification.object as? NSWindow else { return }
+            // `queue: .main` guarantees the main thread; assume main actor for the mutation.
+            MainActor.assumeIsolated {
+                self?.elevateIfSparkleWindow(window)
+            }
+        }
+        log.debug("started watching for Sparkle windows")
+        elevateExistingWindows()
+    }
+
+    func stop() {
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+            self.observer = nil
+            log.debug("stopped watching for Sparkle windows")
+        }
+        elevated.removeAll()
+    }
+
+    private func elevateExistingWindows() {
+        NSApp.windows.forEach(elevateIfSparkleWindow)
+    }
+
+    private func elevateIfSparkleWindow(_ window: NSWindow) {
+        let id = ObjectIdentifier(window)
+        guard !elevated.contains(id), Self.isSparkleWindow(window) else { return }
+        elevated.insert(id)
+        window.level = .floating
+        // Ordering front again after the level change makes the new level take
+        // effect immediately instead of on the next order operation.
+        if window.isVisible {
+            window.orderFrontRegardless()
+        }
+        let ownerClass = String(describing: type(of: window.windowController ?? window))
+        log.debug("elevated Sparkle window owned by \(ownerClass, privacy: .public)")
+    }
+
+    /// A window "belongs to Sparkle" when its window controller, delegate, or
+    /// content view controller is a class defined in Sparkle.framework.
+    static func isSparkleWindow(_ window: NSWindow) -> Bool {
+        let candidates: [AnyObject?] = [
+            window.windowController,
+            window.delegate,
+            window.contentViewController,
+        ]
+        for case let object? in candidates {
+            if Bundle(for: type(of: object)).bundleIdentifier == sparkleBundleIdentifier {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static let sparkleBundleIdentifier = Bundle(for: SPUUpdater.self).bundleIdentifier
 }
