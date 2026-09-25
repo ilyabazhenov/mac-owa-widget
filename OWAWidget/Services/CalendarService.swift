@@ -41,6 +41,13 @@ final class CalendarService: ObservableObject {
     @Published private(set) var engagementSnapshot: MeetingEngagementSnapshot = .empty
     @Published private(set) var engagementPeriod: MeetingEngagementPeriod = .today
 
+    /// A meeting the popover should show as soon as it is on screen — set by "Open" on the
+    /// invitation panel, consumed (and cleared) by `PopoverView`.
+    @Published private(set) var eventFocusRequest: EventFocusRequest?
+
+    /// New invitations still waiting for an answer — what the badge and the popover list show.
+    @Published private(set) var unhandledInvitationIDs: Set<String> = []
+
     /// Selected popover size preset. Published so the popover frame and the footer
     /// quick-switcher update live; persisted on every change. Storing the preset (not a
     /// raw size) guarantees the popover is always one of the offered sizes.
@@ -61,6 +68,9 @@ final class CalendarService: ObservableObject {
     private let eventKitStore: any EventKitStoring
     private let customMeetingReminders: any CustomMeetingReminderControlling
     private let eventCacheStore: any EventCacheStoring
+    private let invitationTracker: any MeetingInvitationTracking
+    private let invitationAlerts: any MeetingInvitationAlertPresenting
+    private var invitationLocalization: MeetingInvitationLocalization = .english
     private let log = Logger(subsystem: "com.owawidget", category: "CalendarService")
     private let meetingEngagementStats = MeetingEngagementStatsService()
     private var notificationLocalization: NotificationLocalization
@@ -137,6 +147,8 @@ final class CalendarService: ObservableObject {
     private let menuBarDisplayModeKey = "menuBarDisplayMode"
     private let dimPastMeetingsOnTimelineKey = "dimPastMeetingsOnTimeline"
     private let globalJoinHotkeyEnabledKey = "globalJoinHotkeyEnabled"
+    private let invitationAlertsEnabledKey = "invitationAlertsEnabled"
+    private let invitationMenuBarBadgeEnabledKey = "invitationMenuBarBadgeEnabled"
     private let colleaguesSectionEnabledKey = "colleaguesSectionEnabled"
     private let colleaguesRefreshOnPopoverOpenKey = "colleaguesRefreshOnPopoverOpen"
     private let colleaguesCacheMinutesKey = "colleaguesCacheMinutes"
@@ -270,6 +282,47 @@ final class CalendarService: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: globalJoinHotkeyEnabledKey) }
     }
 
+    /// When `true`, new invitations, moved and cancelled meetings raise the invitation panel, and
+    /// the menu bar and popover show what still awaits an answer. Off by default: anyone who
+    /// already hears Outlook's new-mail sound would get the same news twice.
+    var invitationAlertsEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: invitationAlertsEnabledKey) }
+        set { UserDefaults.standard.set(newValue, forKey: invitationAlertsEnabledKey) }
+    }
+
+    /// When `true` (default), the menu bar label carries "✉︎N" for new invitations awaiting an
+    /// answer. The panel and the popover list do not depend on it: this only turns off the one
+    /// indicator that is always in sight.
+    var invitationMenuBarBadgeEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: invitationMenuBarBadgeEnabledKey) == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: invitationMenuBarBadgeEnabledKey)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: invitationMenuBarBadgeEnabledKey) }
+    }
+
+    /// Count for the menu bar label; zero while either setting is off.
+    var menuBarInvitationCount: Int {
+        guard invitationMenuBarBadgeEnabled else { return 0 }
+        return pendingInvitationGroups.count
+    }
+
+    /// New invitations still awaiting an answer, series folded together. Empty while the feature
+    /// is off. Deliberately not "everything unanswered": see `MeetingInvitationTrackerState`.
+    var pendingInvitationGroups: [MeetingInvitationGroup] {
+        guard invitationAlertsEnabled, !unhandledInvitationIDs.isEmpty else { return [] }
+        let ids = unhandledInvitationIDs
+        return MeetingInvitationPolicy.pendingGroups(in: events.filter { ids.contains($0.id) }, now: Date())
+    }
+
+    /// Takes invitations off the badge without answering them.
+    func dismissInvitations(eventIDs: [String]) {
+        invitationTracker.dismiss(eventIDs: eventIDs)
+        unhandledInvitationIDs = invitationTracker.unhandledEventIDs
+    }
+
     /// Display timezone used for all UI rendering and day boundaries (see `AppTimeZone`).
     /// Defaults to Moscow when unset, preserving the app's original behavior.
     var displayTimeZoneOption: DisplayTimeZoneOption {
@@ -283,6 +336,8 @@ final class CalendarService: ObservableObject {
         accountStore: SecureCodableStore<[CalendarAccount]> = CalendarService.makeAccountStore(),
         notificationService: any NotificationServicing = NotificationService(),
         customMeetingReminders: any CustomMeetingReminderControlling = CustomMeetingReminderController(),
+        invitationTracker: any MeetingInvitationTracking = MeetingInvitationTracker(),
+        invitationAlerts: any MeetingInvitationAlertPresenting = MeetingInvitationAlertController(),
         // Injectable so tests can build EventKit-backed accounts without ever constructing an
         // `EKEventStore` — which would put the system calendar prompt one call away from a suite
         // that gates `make release-package`.
@@ -298,6 +353,8 @@ final class CalendarService: ObservableObject {
         self.eventKitStore = eventKitStore
         self.notificationService = notificationService
         self.customMeetingReminders = customMeetingReminders
+        self.invitationTracker = invitationTracker
+        self.invitationAlerts = invitationAlerts
         self.clock = clock
         self.notificationLocalization = initialNotificationLocalization
         self.engagementPeriod = meetingEngagementStats.defaultPeriod
@@ -306,6 +363,24 @@ final class CalendarService: ObservableObject {
                 self?.openJoinURL(for: item, source: .inAppReminder)
                 PostJoinDismissController.shared.dismissAfterJoin(context: .inAppReminder)
             }
+        }
+        if let invitationController = invitationAlerts as? MeetingInvitationAlertController {
+            invitationController.onRespond = { [weak self] eventID, action in
+                guard let self, let event = self.events.first(where: { $0.id == eventID }) else {
+                    throw CalendarProviderError.notSupported
+                }
+                try await self.respondToMeeting(event, action: action)
+            }
+            invitationController.onOpen = { [weak self] eventID in
+                self?.requestEventFocus(eventID)
+                MenuBarPopoverOpener.open()
+            }
+            invitationController.onHide = { [weak self] eventIDs in
+                self?.dismissInvitations(eventIDs: eventIDs)
+            }
+        }
+        if invitationAlertsEnabled {
+            unhandledInvitationIDs = invitationTracker.unhandledEventIDs
         }
         if loadPersistedAccounts {
             loadAccounts()
@@ -498,6 +573,19 @@ final class CalendarService: ObservableObject {
         return true
     }
 
+    func setInvitationLocalization(_ localization: MeetingInvitationLocalization) {
+        invitationLocalization = localization
+    }
+
+    /// Asks the popover to show this meeting: the right day, with its detail card open.
+    func requestEventFocus(_ eventID: String) {
+        eventFocusRequest = EventFocusRequest(eventID: eventID)
+    }
+
+    func clearEventFocusRequest() {
+        eventFocusRequest = nil
+    }
+
     func setNotificationLocalization(_ localization: NotificationLocalization) {
         guard notificationLocalization != localization else { return }
         notificationLocalization = localization
@@ -507,6 +595,11 @@ final class CalendarService: ObservableObject {
     /// Call after saving preferences from Settings (style, lead time, etc.).
     func applySavedPreferences() {
         objectWillChange.send()
+        if !invitationAlertsEnabled {
+            invitationTracker.reset()
+            invitationAlerts.dismissAll()
+            unhandledInvitationIDs = []
+        }
         Task { await rescheduleMeetingRemindersForCurrentEvents() }
     }
 
@@ -742,6 +835,12 @@ final class CalendarService: ObservableObject {
     private func applyResponseType(_ type: MeetingResponseType, to eventID: String) {
         guard let idx = events.firstIndex(where: { $0.id == eventID }) else { return }
         events[idx] = events[idx].withResponseType(type)
+        // An answer given from the detail card settles the matching row on the panel too.
+        invitationAlerts.reconcile(with: events)
+        if invitationAlertsEnabled {
+            invitationTracker.refreshUnhandled(events: events, now: clock())
+            unhandledInvitationIDs = invitationTracker.unhandledEventIDs
+        }
     }
 
     /// Maps a request error onto a blocking sync status so the circuit breaker engages and
@@ -833,6 +932,36 @@ final class CalendarService: ObservableObject {
             let lead = notificationLeadMinutes
             let sound = meetingReminderSound
             customMeetingReminders.reschedule(events: [event], leadMinutes: lead, localization: loc, sound: sound)
+        }
+    }
+
+    /// Shows the invitation panel for the first meetings on the calendar, to check its layout
+    /// without waiting for a real invitation. RSVP buttons act on real events, so they are only
+    /// offered where the meeting genuinely awaits an answer.
+    func debugPresentTestInvitations() {
+        let now = clock()
+        let upcoming = events.filter { $0.endDate > now && !$0.isAllDay }.prefix(3)
+        let alerts = upcoming.enumerated().map { index, event in
+            MeetingInvitationAlert(
+                change: index == 1
+                    ? .rescheduled(previousStart: event.startDate.addingTimeInterval(-3600), previousEnd: event.endDate.addingTimeInterval(-3600))
+                    : (index == 2 ? .cancelled : .invited),
+                eventIDs: [event.id],
+                accountID: event.accountID,
+                title: event.title,
+                organizer: event.organizer,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                isAllDay: event.isAllDay
+            )
+        }
+        invitationAlerts.present(alerts, events: events, localization: invitationLocalization, sound: meetingReminderSound)
+        // Preview the badge too, in memory only: the tracker's persisted state stays untouched.
+        for alert in alerts where alert.change == .invited {
+            if let event = events.first(where: { $0.id == alert.representativeEventID }),
+               MeetingInvitationPolicy.isAwaitingResponse(event, now: now) {
+                unhandledInvitationIDs.insert(event.id)
+            }
         }
     }
     #endif
@@ -1091,6 +1220,8 @@ final class CalendarService: ObservableObject {
                 // last fully clean sync — leaving the next launch to restore meetings from before
                 // the problem started.
                 eventCacheStore.save(events: events, rangeStart: start, rangeEnd: end)
+
+                processInvitationChanges(refreshedAccountIDs: Set(fetchedByAccount.keys))
             }
 
             if let failure = failures.first {
@@ -1177,6 +1308,28 @@ final class CalendarService: ObservableObject {
         }
     }
 
+    /// Compares the fresh calendar against the previous sync and raises the invitation panel for
+    /// what changed. Runs only for accounts that were actually fetched, so a failed account never
+    /// looks like a calendar where every meeting vanished and then reappeared.
+    private func processInvitationChanges(refreshedAccountIDs: Set<UUID>) {
+        guard invitationAlertsEnabled else { return }
+        let alerts = invitationTracker.process(
+            events: events,
+            refreshedAccountIDs: refreshedAccountIDs,
+            now: clock()
+        )
+        unhandledInvitationIDs = invitationTracker.unhandledEventIDs
+        invitationAlerts.reconcile(with: events)
+        guard !alerts.isEmpty else { return }
+        log.info("Invitation changes detected alerts=\(alerts.count, privacy: .public)")
+        invitationAlerts.present(
+            alerts,
+            events: events,
+            localization: invitationLocalization,
+            sound: meetingReminderSound
+        )
+    }
+
     private func rescheduleMeetingRemindersForCurrentEvents() async {
         let currentEvents = events
         let lead = notificationLeadMinutes
@@ -1244,6 +1397,12 @@ final class CalendarService: ObservableObject {
         }
         return saved
     }
+}
+
+struct EventFocusRequest: Equatable, Sendable {
+    let eventID: String
+    /// Distinguishes two requests for the same meeting, so opening it twice in a row still fires.
+    let token = UUID()
 }
 
 enum CalendarServiceError: Error, LocalizedError {

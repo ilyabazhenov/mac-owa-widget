@@ -133,6 +133,10 @@ struct PopoverView: View {
         .accessibilityLabel(localization.tr("app.name"))
         .onAppear {
             colleagues.popoverDidAppear()
+            applyEventFocusRequest()
+        }
+        .onChange(of: service.eventFocusRequest) { _ in
+            applyEventFocusRequest()
         }
         .onDisappear {
             resetMeetingDetailState()
@@ -295,6 +299,16 @@ struct PopoverView: View {
                         horizontalPadding: contentHorizontalPadding
                     )
                     if updateCheck.availableUpdate != nil {
+                        Divider()
+                    }
+                    let pendingInvitations = service.pendingInvitationGroups
+                    if !pendingInvitations.isEmpty {
+                        PendingInvitationsSectionView(
+                            groups: pendingInvitations,
+                            horizontalPadding: contentHorizontalPadding,
+                            onSelect: focus(on:),
+                            onDismiss: { service.dismissInvitations(eventIDs: $0.events.map(\.id)) }
+                        )
                         Divider()
                     }
                     // Both days are on screen for the length of the slide, so they are stacked
@@ -528,6 +542,29 @@ struct PopoverView: View {
         withAnimation(.easeInOut(duration: 0.18)) {
             selectedEvent = event
         }
+    }
+
+    /// Shows a meeting that may lie on another day: moves the timeline there and opens its card.
+    private func focus(on event: CalendarEvent) {
+        let calendar = AppTimeZone.calendar
+        let today = calendar.startOfDay(for: Date())
+        let day = calendar.startOfDay(for: event.startDate)
+        let offset = calendar.dateComponents([.day], from: today, to: day).day ?? 0
+        if isSearchBarPresented { closeSearch() }
+        let target = min(max(offset, minDayOffset), maxDayOffset)
+        if target != selectedDayOffset {
+            isPagingForward = target > selectedDayOffset
+            selectedDayOffset = target
+        }
+        selectEvent(event)
+    }
+
+    /// Consumes a request raised outside the popover — "Open" on the invitation panel.
+    private func applyEventFocusRequest() {
+        guard let request = service.eventFocusRequest else { return }
+        service.clearEventFocusRequest()
+        guard let event = service.events.first(where: { $0.id == request.eventID }) else { return }
+        focus(on: event)
     }
 
     private func resetMeetingDetailState() {

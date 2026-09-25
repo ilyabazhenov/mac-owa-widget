@@ -11,6 +11,8 @@ final class SettingsViewModel: ObservableObject {
     @Published var meetingEngagementDefaultPeriod: MeetingEngagementPeriod { didSet { updateUnsavedChanges() } }
     @Published var notificationScreenPolicy: NotificationScreenPolicy { didSet { updateUnsavedChanges() } }
     @Published var notificationPosition: NotificationPosition { didSet { updateUnsavedChanges() } }
+    @Published var invitationAlertsEnabled: Bool { didSet { updateUnsavedChanges() } }
+    @Published var invitationMenuBarBadgeEnabled: Bool { didSet { updateUnsavedChanges() } }
     @Published var menuBarDisplayMode: MenuBarDisplayMode { didSet { updateUnsavedChanges() } }
     @Published var popoverSizePreset: PopoverSize.Preset { didSet { updateUnsavedChanges() } }
     @Published var dimPastMeetingsOnTimeline: Bool { didSet { updateUnsavedChanges() } }
@@ -92,6 +94,8 @@ final class SettingsViewModel: ObservableObject {
         self.meetingEngagementDefaultPeriod = calendarService.engagementPeriod
         self.notificationScreenPolicy = calendarService.notificationScreenPolicy
         self.notificationPosition = calendarService.notificationPosition
+        self.invitationAlertsEnabled = calendarService.invitationAlertsEnabled
+        self.invitationMenuBarBadgeEnabled = calendarService.invitationMenuBarBadgeEnabled
         self.menuBarDisplayMode = calendarService.menuBarDisplayMode
         self.popoverSizePreset = calendarService.popoverSizePreset
         self.dimPastMeetingsOnTimeline = calendarService.dimPastMeetingsOnTimeline
@@ -111,6 +115,8 @@ final class SettingsViewModel: ObservableObject {
             meetingEngagementDefaultPeriod: calendarService.engagementPeriod,
             notificationScreenPolicy: calendarService.notificationScreenPolicy,
             notificationPosition: calendarService.notificationPosition,
+            invitationAlertsEnabled: calendarService.invitationAlertsEnabled,
+            invitationMenuBarBadgeEnabled: calendarService.invitationMenuBarBadgeEnabled,
             menuBarDisplayMode: calendarService.menuBarDisplayMode,
             popoverSizePreset: calendarService.popoverSizePreset,
             dimPastMeetingsOnTimeline: calendarService.dimPastMeetingsOnTimeline,
@@ -436,6 +442,8 @@ final class SettingsViewModel: ObservableObject {
         service.meetingReminderSound = meetingReminderSound
         service.notificationScreenPolicy = notificationScreenPolicy
         service.notificationPosition = notificationPosition
+        service.invitationAlertsEnabled = invitationAlertsEnabled
+        service.invitationMenuBarBadgeEnabled = invitationMenuBarBadgeEnabled
         service.menuBarDisplayMode = menuBarDisplayMode
         // Only write the popover preset if the user actually changed it here. The footer
         // quick-switcher can change `service.popoverSizePreset` while this (Save-gated)
@@ -494,6 +502,8 @@ final class SettingsViewModel: ObservableObject {
         let meetingEngagementDefaultPeriod: MeetingEngagementPeriod
         let notificationScreenPolicy: NotificationScreenPolicy
         let notificationPosition: NotificationPosition
+        let invitationAlertsEnabled: Bool
+        let invitationMenuBarBadgeEnabled: Bool
         let menuBarDisplayMode: MenuBarDisplayMode
         let popoverSizePreset: PopoverSize.Preset
         let dimPastMeetingsOnTimeline: Bool
@@ -514,6 +524,8 @@ final class SettingsViewModel: ObservableObject {
             meetingEngagementDefaultPeriod: meetingEngagementDefaultPeriod,
             notificationScreenPolicy: notificationScreenPolicy,
             notificationPosition: notificationPosition,
+            invitationAlertsEnabled: invitationAlertsEnabled,
+            invitationMenuBarBadgeEnabled: invitationMenuBarBadgeEnabled,
             menuBarDisplayMode: menuBarDisplayMode,
             popoverSizePreset: popoverSizePreset,
             dimPastMeetingsOnTimeline: dimPastMeetingsOnTimeline,
@@ -533,6 +545,10 @@ final class SettingsViewModel: ObservableObject {
     #if DEBUG
     func triggerTestReminderNow() {
         service.triggerTestReminderNow()
+    }
+
+    func presentTestInvitations() {
+        service.debugPresentTestInvitations()
     }
 
     func debugForceAuthBlock() {

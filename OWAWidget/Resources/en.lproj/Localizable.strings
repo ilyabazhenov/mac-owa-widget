@@ -393,3 +393,26 @@
 "preferences.colleagues.cache" = "Availability cache";
 "preferences.colleagues.rows" = "Rows in the section";
 "preferences.colleagues.hint" = "Availability is read from Exchange in a single request for the whole list and shows only free or busy, never meeting subjects. Between refreshes the status is recomputed locally. The section is hidden for accounts macOS syncs.";
+
+/* Invitations */
+"preferences.invitations.menuBarBadge" = "Show the ✉︎ count in the menu bar";
+"preferences.invitations.enabled" = "Tell me about new invitations";
+"preferences.invitations.hint" = "New Exchange invitations, moved and cancelled meetings appear in a panel that stays on screen until you close it. A cancellation is reported only for meetings you accepted. Until you answer, an invitation is counted by the ✉︎ badge in the menu bar and listed under “New invitations” in the popover. “Hide” removes it from there without answering.";
+"invitations.panel.title.single" = "New invitation";
+"invitations.panel.title.multiple" = "New invitations · %d";
+"invitations.panel.title.updates" = "Calendar changes";
+"invitations.kind.invited" = "Invitation";
+"invitations.kind.rescheduled" = "Rescheduled";
+"invitations.kind.cancelled" = "Cancelled";
+"invitations.organizer" = "from %@";
+"invitations.previous.time" = "was: %@";
+"invitations.series" = "Series (%d)";
+"invitations.all.day" = "all day";
+"invitations.action.open" = "Open";
+"invitations.action.hide" = "Hide";
+"invitations.more" = "%d more";
+"invitations.pending.title" = "New invitations";
+"invitations.pending.a11y" = "New invitations: %d";
+"invitations.pending.series.help" = "Series, meetings in the next 30 days: %d";
+"invitations.pending.organizer" = "Organizer: %@";
+"menubar.invitations.pending" = "New invitations awaiting response: %d";

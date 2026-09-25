@@ -161,6 +161,21 @@ struct PreferencesView: View {
             }
 
             Section(localization.tr("preferences.notifications.section")) {
+                Toggle(
+                    localization.tr("preferences.invitations.enabled"),
+                    isOn: $vm.invitationAlertsEnabled
+                )
+                Toggle(
+                    localization.tr("preferences.invitations.menuBarBadge"),
+                    isOn: $vm.invitationMenuBarBadgeEnabled
+                )
+                .disabled(!vm.invitationAlertsEnabled)
+                .padding(.leading, 16)
+                Text(localization.tr("preferences.invitations.hint"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 Picker(localization.tr("preferences.notifications.remind"), selection: $vm.notificationLeadMinutes) {
                     ForEach(leadOptions, id: \.value) { opt in
                         Text(localization.tr("preferences.notifications.before", localization.minutes(opt.minutes))).tag(opt.value)
@@ -247,6 +262,10 @@ struct PreferencesView: View {
 
                 Button(localization.tr("preferences.debug.reminder.trigger")) {
                     vm.triggerTestReminderNow()
+                }
+
+                Button("Show test invitation panel") {
+                    vm.presentTestInvitations()
                 }
 
                 Button("Force auth block") {

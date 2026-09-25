@@ -393,3 +393,26 @@
 "preferences.colleagues.cache" = "Кэш занятости";
 "preferences.colleagues.rows" = "Строк в разделе";
 "preferences.colleagues.hint" = "Занятость читается через Exchange одним запросом на всех коллег и показывает только «свободен или занят», без тем встреч. Между обновлениями статус пересчитывается локально. Для аккаунтов, которые синхронизирует macOS, раздел не показывается.";
+
+/* Invitations */
+"preferences.invitations.menuBarBadge" = "Показывать счётчик ✉︎ в строке меню";
+"preferences.invitations.enabled" = "Сообщать о новых приглашениях";
+"preferences.invitations.hint" = "Новые приглашения, переносы и отмены встреч из Exchange показываются в панели, которая остаётся на экране, пока вы её не закроете. Об отмене сообщается, только если вы принимали встречу. Пока на приглашение нет ответа, оно учитывается в счётчике ✉︎ в строке меню и в разделе «Новые приглашения» в поповере. «Скрыть» убирает приглашение оттуда без ответа.";
+"invitations.panel.title.single" = "Новое приглашение";
+"invitations.panel.title.multiple" = "Новые приглашения · %d";
+"invitations.panel.title.updates" = "Изменения в календаре";
+"invitations.kind.invited" = "Приглашение";
+"invitations.kind.rescheduled" = "Перенесена";
+"invitations.kind.cancelled" = "Отменена";
+"invitations.organizer" = "от %@";
+"invitations.previous.time" = "было: %@";
+"invitations.series" = "Серия (%d)";
+"invitations.all.day" = "весь день";
+"invitations.action.open" = "Открыть";
+"invitations.action.hide" = "Скрыть";
+"invitations.more" = "И ещё %d";
+"invitations.pending.title" = "Новые приглашения";
+"invitations.pending.a11y" = "Новых приглашений: %d";
+"invitations.pending.series.help" = "Серия, встреч в ближайшие 30 дней: %d";
+"invitations.pending.organizer" = "Организатор: %@";
+"menubar.invitations.pending" = "Новых приглашений без ответа: %d";

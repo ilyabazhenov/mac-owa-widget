@@ -123,6 +123,30 @@ final class LocalizationService: ObservableObject {
         )
     }
 
+    var invitationLocalization: MeetingInvitationLocalization {
+        MeetingInvitationLocalization(
+            localeIdentifier: effectiveLanguageCode,
+            titleSingle: tr("invitations.panel.title.single"),
+            titleMultipleFormat: tr("invitations.panel.title.multiple"),
+            titleUpdates: tr("invitations.panel.title.updates"),
+            kindInvited: tr("invitations.kind.invited"),
+            kindRescheduled: tr("invitations.kind.rescheduled"),
+            kindCancelled: tr("invitations.kind.cancelled"),
+            organizerFormat: tr("invitations.organizer"),
+            previousTimeFormat: tr("invitations.previous.time"),
+            seriesFormat: tr("invitations.series"),
+            allDay: tr("invitations.all.day"),
+            acceptTitle: tr("meeting.rsvp.accept"),
+            tentativeTitle: tr("meeting.rsvp.tentative"),
+            declineTitle: tr("meeting.rsvp.decline"),
+            openTitle: tr("invitations.action.open"),
+            hideTitle: tr("invitations.action.hide"),
+            closeTitle: tr("notification.action.dismiss"),
+            sendFailed: tr("meeting.rsvp.error.send.failed"),
+            moreFormat: tr("invitations.more")
+        )
+    }
+
     func syncStatusText(_ status: SyncStatus, relativeTo now: Date = Date()) -> String {
         switch status {
         case .idle:

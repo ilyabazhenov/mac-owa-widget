@@ -127,6 +127,7 @@ struct OWAWidgetApp: App {
 
     private func syncLocalization() {
         calendarService.setNotificationLocalization(localizationService.notificationLocalization)
+        calendarService.setInvitationLocalization(localizationService.invitationLocalization)
     }
 
     private func setupGlobalHotkeyJoin() {

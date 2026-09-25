@@ -14,12 +14,15 @@ struct MenuBarLabelView: View {
         // Compute the smart-mode presentation once per render; icon/label/pulse/tooltip all derive
         // from it, so recomputing per accessor would run the formatter several times each tick.
         let smart = self.smart
+        let pendingInvitations = service.menuBarInvitationCount
 
         HStack(spacing: 4) {
             Image(systemName: iconName(smart))
                 .imageScale(.medium)
 
-            if let label = label(for: smart) {
+            // The invitation count rides inside the one Text: a status item renders a single image
+            // and a single text, and silently drops any further view put in the label.
+            if let label = Self.composedLabel(label(for: smart), pendingInvitations: pendingInvitations) {
                 Text(label)
                     .font(.system(size: 12, weight: .medium))
                     .monospacedDigit()
@@ -38,7 +41,7 @@ struct MenuBarLabelView: View {
                 withAnimation { pulseOpacity = 1.0 }
             }
         }
-        .help(helpText(for: smart))
+        .help(helpText(for: smart, pendingInvitations: pendingInvitations))
         .onAppear {
             logAppearance()
             KeyboardShortcuts.onKeyUp(for: .createMeeting) {
@@ -158,6 +161,21 @@ struct MenuBarLabelView: View {
             shortTimeFormatter: localization.shortTime,
             calendar: AppTimeZone.calendar
         )
+    }
+
+    /// Appends "✉︎N" for new invitations awaiting an answer. The variation selector keeps the
+    /// envelope a monochrome text glyph, so it takes the menu bar's tint like the rest of the label.
+    static func composedLabel(_ label: String?, pendingInvitations: Int) -> String? {
+        guard pendingInvitations > 0 else { return label }
+        let badge = "\u{2709}\u{FE0E}\(pendingInvitations)"
+        guard let label, !label.isEmpty else { return badge }
+        return "\(label) \(badge)"
+    }
+
+    private func helpText(for smart: MenuBarSmartStatusFormatter.Presentation?, pendingInvitations: Int) -> String {
+        let base = helpText(for: smart)
+        guard pendingInvitations > 0 else { return base }
+        return "\(base)\n\(localization.tr("menubar.invitations.pending", pendingInvitations))"
     }
 
     private func helpText(for smart: MenuBarSmartStatusFormatter.Presentation?) -> String {
