@@ -28,13 +28,6 @@ struct SlotSuggestionsView: View {
     let selectedSlot: FreeSlot?
     let onSelect: (FreeSlot) -> Void
 
-    private static let dayFmt: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "EEE, d MMM"
-        f.timeZone = AppTimeZone.zone
-        return f
-    }()
-
     private static let timeFmt: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
@@ -70,7 +63,7 @@ struct SlotSuggestionsView: View {
         // `selectSlot` создаёт новый FreeSlot со свежим UUID, поэтому сравниваем
         // по времени слота, а не по id (иначе подсветка выбора не срабатывает).
         let isSelected = selectedSlot.map { $0.start == slot.start && $0.end == slot.end } ?? false
-        let day = Self.dayFmt.string(from: slot.start).capitalized
+        let day = localization.formatDate(slot.start, format: "EEE, d MMM").capitalized(with: localization.locale)
         let timeRange = "\(Self.timeFmt.string(from: slot.start)) – \(Self.timeFmt.string(from: slot.end))"
         let reason = localization.tr(SlotRanker.reasonKey(for: slot))
 

@@ -122,5 +122,25 @@
             <string>%d д</string>
         </dict>
     </dict>
+    <key>create.meeting.success.autoclose</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@seconds@</string>
+        <key>seconds</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>Закроется через %d сек</string>
+            <key>few</key>
+            <string>Закроется через %d сек</string>
+            <key>many</key>
+            <string>Закроется через %d сек</string>
+            <key>other</key>
+            <string>Закроется через %d сек</string>
+        </dict>
+    </dict>
 </dict>
 </plist>

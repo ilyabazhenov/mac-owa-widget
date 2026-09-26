@@ -500,7 +500,7 @@ struct CreateMeetingView: View {
                 Button {
                     vm.setDuration(minutes)
                 } label: {
-                    Text(Self.durationLabel(minutes))
+                    Text(durationLabel(minutes))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(isActive ? Color.white : Color(nsColor: .labelColor))
                         .padding(.horizontal, 8)
@@ -517,13 +517,13 @@ struct CreateMeetingView: View {
     }
 
     /// «30м», «1ч», «1.5ч», «2ч» — компактная подпись для чипа длительности.
-    private static func durationLabel(_ minutes: Int) -> String {
-        if minutes < 60 { return "\(minutes)м" }
+    private func durationLabel(_ minutes: Int) -> String {
+        if minutes < 60 { return localization.tr("create.meeting.duration.chip.minutes", minutes) }
         let hours = Double(minutes) / 60.0
         let str = hours == hours.rounded()
             ? String(Int(hours))
             : String(format: "%.1f", hours)
-        return "\(str)ч"
+        return localization.tr("create.meeting.duration.chip.hours", str)
     }
 
     private var slotConflictWarning: some View {
@@ -647,7 +647,7 @@ struct CreateMeetingView: View {
         let cal = MeetingDraft.weekCalendar
         let monday = cal.startOfDay(for: vm.draft.selectedWeekStart)
         guard let friday = cal.date(byAdding: .day, value: 4, to: monday) else {
-            return Self.fullDateFmt.string(from: monday)
+            return localization.formatDate(monday, format: Self.fullDateFormat)
         }
         let monYear = cal.component(.year, from: monday)
         let friYear = cal.component(.year, from: friday)
@@ -655,11 +655,11 @@ struct CreateMeetingView: View {
         let friMonth = cal.component(.month, from: friday)
 
         if monYear != friYear {
-            return "\(Self.fullDateFmt.string(from: monday)) – \(Self.fullDateFmt.string(from: friday))"
+            return "\(localization.formatDate(monday, format: Self.fullDateFormat)) – \(localization.formatDate(friday, format: Self.fullDateFormat))"
         } else if monMonth != friMonth {
-            return "\(Self.dayMonthFmt.string(from: monday)) – \(Self.fullDateFmt.string(from: friday))"
+            return "\(localization.formatDate(monday, format: Self.dayMonthFormat)) – \(localization.formatDate(friday, format: Self.fullDateFormat))"
         } else {
-            return "\(Self.dayFmt.string(from: monday)) – \(Self.fullDateFmt.string(from: friday))"
+            return "\(localization.formatDate(monday, format: Self.dayFormat)) – \(localization.formatDate(friday, format: Self.fullDateFormat))"
         }
     }
 
@@ -679,26 +679,9 @@ struct CreateMeetingView: View {
         return String(format: localization.tr("create.meeting.week.n.ago"), -weeks)
     }
 
-    private static let dayFmt: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "d"
-        f.timeZone = AppTimeZone.zone
-        return f
-    }()
-
-    private static let dayMonthFmt: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "d MMM"
-        f.timeZone = AppTimeZone.zone
-        return f
-    }()
-
-    private static let fullDateFmt: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "d MMM yyyy"
-        f.timeZone = AppTimeZone.zone
-        return f
-    }()
+    private static let dayFormat = "d"
+    private static let dayMonthFormat = "d MMM"
+    private static let fullDateFormat = "d MMM yyyy"
 
     // MARK: - Bottom bar
 
@@ -782,6 +765,7 @@ struct CreateMeetingView: View {
 private struct MeetingCreatedOverlay: View {
     let title: String
     let onDismiss: () -> Void
+    @EnvironmentObject private var localization: LocalizationService
     @State private var countdown = 5
     @State private var timer: Timer?
 
@@ -798,11 +782,11 @@ private struct MeetingCreatedOverlay: View {
                     .font(.system(size: 18, weight: .semibold))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
-                Text("Закроется через \(countdown) сек")
+                Text(localization.plural(key: "create.meeting.success.autoclose", count: countdown))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
-                Button("Закрыть") { onDismiss() }
+                Button(localization.tr("create.meeting.success.close")) { onDismiss() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             }
@@ -1296,19 +1280,13 @@ struct WeekGridSlotView: View {
     /// перетаскивание нескольких строк задаёт длительность вручную.
     let slotDurationMinutes: Int
 
+    @EnvironmentObject private var localization: LocalizationService
     @State private var hoveredInfo: HoveredInfo? = nil
     @State private var mousePosition: CGPoint = .zero
     @State private var dragPreview: DragPreview? = nil
     @State private var firstDataRowOriginY: CGFloat = 32
 
     private static let timeRows: [TimeKey] = Array(stride(from: 540, to: 1080, by: 30))
-
-    private static let weekdayFmt: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "EEE"
-        f.timeZone = AppTimeZone.zone
-        return f
-    }()
 
     private static let dayNumFmt: DateFormatter = {
         let f = DateFormatter()
@@ -1355,7 +1333,7 @@ struct WeekGridSlotView: View {
 
     private func columnHeader(for day: DayKey) -> some View {
         VStack(spacing: 1) {
-            Text(Self.weekdayFmt.string(from: day).capitalized)
+            Text(localization.formatDate(day, format: "EEE").capitalized(with: localization.locale))
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
             Text(Self.dayNumFmt.string(from: day))
@@ -1550,7 +1528,11 @@ struct WeekGridSlotView: View {
                         RoundedRectangle(cornerRadius: 5)
                             .fill(Color.accentColor)
                         if let slot = od.confirmedSlot {
-                            Text("Выбрано: \(WeekGridSlotView.selFmt.string(from: slot.start)) – \(WeekGridSlotView.selFmt.string(from: slot.end))")
+                            Text(localization.tr(
+                                "create.meeting.grid.selected",
+                                WeekGridSlotView.selFmt.string(from: slot.start),
+                                WeekGridSlotView.selFmt.string(from: slot.end)
+                            ))
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .multilineTextAlignment(.center)
@@ -1589,6 +1571,7 @@ private struct AvailabilityCell: View {
 
     @State private var isHovered = false
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var localization: LocalizationService
 
     private var isSelectable: Bool { cell != nil && !isPast }
 
@@ -1617,11 +1600,13 @@ private struct AvailabilityCell: View {
         guard !isSelected else { return nil }
         switch cell.state {
         case .free:
-            return cell.fitsDuration ? "Свободно" : nil
+            return cell.fitsDuration ? localization.tr("create.meeting.grid.cell.free") : nil
         case .tentative, .busy, .outOfOffice:
             let blocked = cell.attendeeStatuses.filter { $0.rawChar != "0" }
             guard !blocked.isEmpty else { return nil }
-            let first = Self.abbreviate(blocked[0].displayName)
+            let first = blocked[0].isCurrentUser
+                ? localization.tr("create.meeting.attendee.you")
+                : Self.abbreviate(blocked[0].displayName)
             return blocked.count == 1 ? first : "\(first) +\(blocked.count - 1)"
         }
     }
@@ -1735,13 +1720,6 @@ private struct CellTooltipView: View {
         return f
     }()
 
-    private static let dayTimeFmt: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "EEE, HH:mm"
-        f.timeZone = AppTimeZone.zone
-        return f
-    }()
-
     private func statusColor(for ch: Character) -> Color {
         switch ch {
         case "0": return Color(hue: 0.420, saturation: 0.72, brightness: 0.65)
@@ -1754,17 +1732,17 @@ private struct CellTooltipView: View {
 
     private func statusLabel(for ch: Character) -> String {
         switch ch {
-        case "0": return "свободен"
-        case "1": return "под вопросом"
-        case "2": return "занят"
-        case "3": return "вне офиса"
+        case "0": return localization.tr("create.meeting.tooltip.status.free")
+        case "1": return localization.tr("create.meeting.tooltip.status.tentative")
+        case "2": return localization.tr("create.meeting.tooltip.status.busy")
+        case "3": return localization.tr("create.meeting.tooltip.status.oof")
         default:  return "—"
         }
     }
 
     private var slotQualityNote: String? {
         guard case .free(let score) = cell.state, cell.freeSlot != nil else { return nil }
-        return score >= 0.55 ? "Хороший слот — утро" : "Приемлемо — вечер"
+        return localization.tr(score >= 0.55 ? "create.meeting.tooltip.quality.good" : "create.meeting.tooltip.quality.fair")
     }
 
     @ViewBuilder
@@ -1774,7 +1752,7 @@ private struct CellTooltipView: View {
                 Circle()
                     .fill(statusColor(for: status.rawChar))
                     .frame(width: 8, height: 8)
-                Text(status.displayName)
+                Text(status.isCurrentUser ? localization.tr("create.meeting.attendee.you") : status.displayName)
                     .font(.system(size: 11))
                     .lineLimit(1)
                 Spacer()
@@ -1796,7 +1774,7 @@ private struct CellTooltipView: View {
     var body: some View {
         let cellEnd = cell.freeSlot?.end ?? cellStart.addingTimeInterval(30 * 60)
         VStack(alignment: .leading, spacing: 5) {
-            Text("\(Self.dayTimeFmt.string(from: cellStart)) – \(Self.timeFmt.string(from: cellEnd))")
+            Text("\(localization.formatDate(cellStart, format: "EEE, HH:mm")) – \(Self.timeFmt.string(from: cellEnd))")
                 .font(.system(size: 11, weight: .semibold))
             Divider()
             ForEach(cell.attendeeStatuses.indices, id: \.self) { idx in

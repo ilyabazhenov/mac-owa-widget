@@ -194,7 +194,7 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
             organizerEvents: [makeCalendarEvent(dayOffset: 0, startHour: 10, endHour: 11, title: "Standup")]
         )
         guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
-        XCTAssertEqual(cell.attendeeStatuses.first?.displayName, "Вы", "organizer row должен идти первым")
+        XCTAssertEqual(cell.attendeeStatuses.first?.isCurrentUser, true, "organizer row должен идти первым")
         XCTAssertEqual(cell.attendeeStatuses.first?.eventTitles, ["Standup"])
     }
 
@@ -205,7 +205,7 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
             organizerEvents: [makeCalendarEvent(dayOffset: 0, startHour: 10, endHour: 11, title: "Standup")]
         )
         guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 14) else { XCTFail(); return }
-        XCTAssertEqual(cell.attendeeStatuses.first?.displayName, "Вы")
+        XCTAssertEqual(cell.attendeeStatuses.first?.isCurrentUser, true)
         XCTAssertEqual(cell.attendeeStatuses.first?.eventTitles, [])
     }
 
@@ -219,7 +219,7 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
             ]
         )
         guard let cell = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
-        XCTAssertEqual(cell.attendeeStatuses.first?.displayName, "Вы")
+        XCTAssertEqual(cell.attendeeStatuses.first?.isCurrentUser, true)
         XCTAssertEqual(cell.attendeeStatuses.first?.eventTitles, ["Standup", "1:1 with Bob"])
     }
 
@@ -238,7 +238,7 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
         XCTAssertEqual(vm.cellMatrix.count, 5, "self-only режим всё ещё должен покрывать Mon–Fri")
         guard let busy = cell(in: vm.cellMatrix, dayOffset: 0, hour: 10) else { XCTFail(); return }
         if case .busy = busy.state {} else { XCTFail("ячейка с busy организатора должна быть .busy, got \(busy.state)") }
-        XCTAssertEqual(busy.attendeeStatuses.first?.displayName, "Вы", "в self-only единственная строка — организатор")
+        XCTAssertEqual(busy.attendeeStatuses.first?.isCurrentUser, true, "в self-only единственная строка — организатор")
         XCTAssertEqual(busy.attendeeStatuses.count, 1, "никаких посторонних строк в self-only")
     }
 
@@ -250,7 +250,7 @@ final class CreateMeetingCellMatrixTests: XCTestCase {
             organizerEvents: [makeCalendarEvent(dayOffset: 1, startHour: 14, endHour: 15, title: "Design review")]
         )
         guard let conflict = cell(in: vm.cellMatrix, dayOffset: 1, hour: 14) else { XCTFail(); return }
-        XCTAssertEqual(conflict.attendeeStatuses.first?.displayName, "Вы")
+        XCTAssertEqual(conflict.attendeeStatuses.first?.isCurrentUser, true)
         XCTAssertEqual(conflict.attendeeStatuses.first?.eventTitles, ["Design review"])
     }
 

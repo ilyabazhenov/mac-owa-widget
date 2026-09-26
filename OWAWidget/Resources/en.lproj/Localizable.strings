@@ -335,6 +335,18 @@
 "create.meeting.legend.busy" = "Busy";
 "create.meeting.legend.oof" = "Out of office";
 "create.meeting.tooltip.optional" = "Optional";
+"create.meeting.tooltip.status.free" = "free";
+"create.meeting.tooltip.status.tentative" = "tentative";
+"create.meeting.tooltip.status.busy" = "busy";
+"create.meeting.tooltip.status.oof" = "out of office";
+"create.meeting.tooltip.quality.good" = "Good slot — morning";
+"create.meeting.tooltip.quality.fair" = "Acceptable — evening";
+"create.meeting.attendee.you" = "You";
+"create.meeting.grid.cell.free" = "Free";
+"create.meeting.grid.selected" = "Selected: %@ – %@";
+"create.meeting.duration.chip.minutes" = "%dm";
+"create.meeting.duration.chip.hours" = "%@h";
+"create.meeting.success.close" = "Close";
 
 "popover.search" = "Search meetings";
 "search.placeholder" = "Search by title, people, location";

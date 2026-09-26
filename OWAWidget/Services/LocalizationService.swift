@@ -29,6 +29,7 @@ final class LocalizationService: ObservableObject {
     private let userDefaults: UserDefaults
     private let preferredLanguagesProvider: () -> [String]
     private let resourceBundle: Bundle
+    private var dateFormatterCache: [String: DateFormatter] = [:]
 
     var effectiveLanguageCode: String {
         switch selectedLanguage {
@@ -187,6 +188,24 @@ final class LocalizationService: ObservableObject {
         return formatter.string(from: date)
     }
 
+    /// Formats `date` with a fixed `dateFormat` pattern (e.g. `EEE`, `EEEE, d MMMM`) using the
+    /// app's selected language, so weekday and month names follow the in-app language instead of
+    /// the system one. The display timezone is re-applied on every call because it can change at runtime.
+    func formatDate(_ date: Date, format: String) -> String {
+        let key = "\(effectiveLanguageCode)|\(format)"
+        let formatter: DateFormatter
+        if let cached = dateFormatterCache[key] {
+            formatter = cached
+        } else {
+            formatter = DateFormatter()
+            formatter.locale = locale
+            formatter.dateFormat = format
+            dateFormatterCache[key] = formatter
+        }
+        formatter.timeZone = AppTimeZone.zone
+        return formatter.string(from: date)
+    }
+
     func shortTime(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
@@ -209,7 +228,8 @@ final class LocalizationService: ObservableObject {
         return tr("sync.elapsed.ago", hoursShort(hours))
     }
 
-    private func plural(key: String, count: Int) -> String {
+    /// Resolves a `Localizable.stringsdict` plural entry for `count`.
+    func plural(key: String, count: Int) -> String {
         let format = localizedString(forKey: key)
         return String.localizedStringWithFormat(format, count)
     }

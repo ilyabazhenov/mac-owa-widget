@@ -574,7 +574,10 @@ final class CreateMeetingViewModel: ObservableObject {
                     let conflictTitles = organizerEvents
                         .filter { ev in ev.startDate < cellEnd && ev.endDate > cellStart }
                         .map(\.title)
-                    statusList.insert(AttendeeSlotStatus(displayName: "Вы", rawChar: ch, eventTitles: conflictTitles), at: 0)
+                    statusList.insert(
+                        AttendeeSlotStatus(displayName: "", rawChar: ch, eventTitles: conflictTitles, isCurrentUser: true),
+                        at: 0
+                    )
                 }
 
                 // Optional attendees feed ONLY the tooltip — their chars are intentionally

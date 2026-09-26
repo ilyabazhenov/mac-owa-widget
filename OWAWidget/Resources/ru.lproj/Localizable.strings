@@ -335,6 +335,18 @@
 "create.meeting.legend.busy" = "Занято";
 "create.meeting.legend.oof" = "Вне офиса";
 "create.meeting.tooltip.optional" = "Опциональные";
+"create.meeting.tooltip.status.free" = "свободен";
+"create.meeting.tooltip.status.tentative" = "под вопросом";
+"create.meeting.tooltip.status.busy" = "занят";
+"create.meeting.tooltip.status.oof" = "вне офиса";
+"create.meeting.tooltip.quality.good" = "Хороший слот — утро";
+"create.meeting.tooltip.quality.fair" = "Приемлемо — вечер";
+"create.meeting.attendee.you" = "Вы";
+"create.meeting.grid.cell.free" = "Свободно";
+"create.meeting.grid.selected" = "Выбрано: %@ – %@";
+"create.meeting.duration.chip.minutes" = "%dм";
+"create.meeting.duration.chip.hours" = "%@ч";
+"create.meeting.success.close" = "Закрыть";
 
 "popover.search" = "Поиск встреч";
 "search.placeholder" = "Название, участники, место";

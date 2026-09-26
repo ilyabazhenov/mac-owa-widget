@@ -4,13 +4,7 @@ struct SlotListView: View {
     let slots: [FreeSlot]
     let selectedSlot: FreeSlot?
     let onSelect: (FreeSlot) -> Void
-
-    private static let dayHeaderFmt: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "EEEE, d MMMM"
-        f.timeZone = AppTimeZone.zone
-        return f
-    }()
+    @EnvironmentObject private var localization: LocalizationService
 
     private static let timeFmt: DateFormatter = {
         let f = DateFormatter()
@@ -25,7 +19,7 @@ struct SlotListView: View {
         return dict
             .sorted { $0.key < $1.key }
             .map { day, list in
-                let header = Self.dayHeaderFmt.string(from: day).capitalized
+                let header = localization.formatDate(day, format: "EEEE, d MMMM").capitalized(with: localization.locale)
                 let sorted = list.sorted { $0.start < $1.start }
                 return (day: day, header: header, slots: sorted)
             }

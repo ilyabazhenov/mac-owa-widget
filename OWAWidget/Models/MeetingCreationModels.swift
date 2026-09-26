@@ -39,11 +39,15 @@ struct AttendeeSlotStatus: Sendable {
     /// Titles of all overlapping events. Multiple meetings can land in the same 30-min
     /// cell — keep them all so the tooltip can list every conflict, not just the first.
     let eventTitles: [String]
+    /// The organizer's own row. Views render a localized "You" label instead of `displayName`,
+    /// because the view model has no access to the selected app language.
+    let isCurrentUser: Bool
 
-    init(displayName: String, rawChar: Character, eventTitles: [String] = []) {
+    init(displayName: String, rawChar: Character, eventTitles: [String] = [], isCurrentUser: Bool = false) {
         self.displayName = displayName
         self.rawChar = rawChar
         self.eventTitles = eventTitles
+        self.isCurrentUser = isCurrentUser
     }
 }
 

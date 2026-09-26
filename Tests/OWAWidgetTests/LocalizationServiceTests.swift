@@ -289,4 +289,40 @@ final class LocalizationServiceTests: XCTestCase {
         XCTAssertEqual(service.compactDuration(minutes: 200), "3 h 20 min")
         XCTAssertEqual(service.compactDuration(minutes: 2_464), "1 d 17 h")
     }
+
+    func testFormatDateFollowsSelectedLanguageNotSystem() {
+        // Friday, 25 Sep 2026, 12:00 UTC — mid-day, so any display timezone keeps the same date.
+        let date = Date(timeIntervalSince1970: 1_790_337_600)
+        let english = LocalizationService(selectedLanguage: .english, preferredLanguages: ["ru-RU"])
+        let russian = LocalizationService(selectedLanguage: .russian, preferredLanguages: ["en-US"])
+
+        XCTAssertEqual(english.formatDate(date, format: "EEE"), "Fri")
+        XCTAssertEqual(english.formatDate(date, format: "EEEE, d MMMM"), "Friday, 25 September")
+        XCTAssertEqual(russian.formatDate(date, format: "EEE").capitalized(with: russian.locale), "Пт")
+        XCTAssertEqual(russian.formatDate(date, format: "EEEE, d MMMM"), "пятница, 25 сентября")
+    }
+
+    func testCreateMeetingAutoClosePlurals() {
+        let english = LocalizationService(selectedLanguage: .english, preferredLanguages: ["ru-RU"])
+        let russian = LocalizationService(selectedLanguage: .russian, preferredLanguages: ["en-US"])
+
+        XCTAssertEqual(english.plural(key: "create.meeting.success.autoclose", count: 1), "Closes in 1 second")
+        XCTAssertEqual(english.plural(key: "create.meeting.success.autoclose", count: 5), "Closes in 5 seconds")
+        XCTAssertEqual(russian.plural(key: "create.meeting.success.autoclose", count: 1), "Закроется через 1 сек")
+        XCTAssertEqual(russian.plural(key: "create.meeting.success.autoclose", count: 5), "Закроется через 5 сек")
+    }
+
+    func testCreateMeetingGridStringsAreLocalized() {
+        let english = LocalizationService(selectedLanguage: .english, preferredLanguages: ["ru-RU"])
+        let russian = LocalizationService(selectedLanguage: .russian, preferredLanguages: ["en-US"])
+
+        XCTAssertEqual(english.tr("create.meeting.grid.selected", "10:00", "10:30"), "Selected: 10:00 – 10:30")
+        XCTAssertEqual(russian.tr("create.meeting.grid.selected", "10:00", "10:30"), "Выбрано: 10:00 – 10:30")
+        XCTAssertEqual(english.tr("create.meeting.duration.chip.minutes", 30), "30m")
+        XCTAssertEqual(russian.tr("create.meeting.duration.chip.minutes", 30), "30м")
+        XCTAssertEqual(english.tr("create.meeting.duration.chip.hours", "1.5"), "1.5h")
+        XCTAssertEqual(russian.tr("create.meeting.duration.chip.hours", "1.5"), "1.5ч")
+        XCTAssertEqual(russian.tr("create.meeting.tooltip.status.oof"), "вне офиса")
+        XCTAssertEqual(english.tr("create.meeting.attendee.you"), "You")
+    }
 }
