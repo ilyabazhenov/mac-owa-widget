@@ -183,7 +183,7 @@ make mockups                              # render every page in EN and RU
 ./scripts/render_mockups.sh popover hero  # render selected pages
 ```
 
-Rendering uses headless Google Chrome at 2x and writes `docs/images/<page>-<lang>.png` (dark app theme, used by the README) and `docs/images/<page>-light-<lang>.png` (light app theme; the landing page swaps the two with its own light/dark theme). Preview a page in a browser with `docs/mockups/<page>.html?lang=ru`. After changing `hero`, copy `hero-en.png` to `github-social-preview.png` and upload it in the repository settings (Social preview). When the UI changes, update the matching mockup in the same change.
+Rendering uses headless Google Chrome at 2x and writes `docs/images/<page>-<lang>.png` (dark app theme) and `docs/images/<page>-light-<lang>.png` (light app theme). The README and the landing page show the variant that matches the reader's theme. Preview a page in a browser with `docs/mockups/<page>.html?lang=ru`. After changing `hero`, copy `hero-light-en.png` to `github-social-preview.png` and upload it in the repository settings (Social preview). When the UI changes, update the matching mockup in the same change.
 
 ## Contributing
 

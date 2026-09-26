@@ -25,6 +25,7 @@ PAGES=(
   "menubar:1100:530:en ru:light"
   "settings:1080:700:en ru:light"
   "hero:1280:640:en ru"
+  "hero:1280:640:en ru:light"
 )
 
 want() { [[ $# -eq 0 ]] && return 0; for p in "${SELECTED[@]}"; do [[ "$p" == "$1" ]] && return 0; done; return 1; }
