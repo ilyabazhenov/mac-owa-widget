@@ -19,7 +19,7 @@ WATCH_DEBOUNCE ?= 2
 SPARKLE_ARTIFACTS_DIR := .build/artifacts/sparkle/Sparkle
 SPARKLE_FRAMEWORK     := $(SPARKLE_ARTIFACTS_DIR)/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework
 
-.PHONY: build bundle release-bundle validate-release-notes test release-package run kill clean watch logs help
+.PHONY: build bundle release-bundle validate-release-notes test release-package run kill clean watch logs mockups help
 
 ## Validate latest release notes structure (RU/EN)
 validate-release-notes:
@@ -145,12 +145,17 @@ watch: run
 logs:
 	/usr/bin/log show --info --style compact --last 20m --predicate 'subsystem == "com.owawidget" && (category == "CalendarService" || category == "OWACalendarProvider" || category == "OWAClient")'
 
+## Render README / landing mockups (docs/mockups → docs/images)
+mockups:
+	@./scripts/render_mockups.sh
+
 help:
 	@echo "make build   — compile Swift sources"
 	@echo "make release-package — universal (arm64+x86_64) zip + appcast from VERSION"
 	@echo "make run     — build, bundle and launch"
 	@echo "make watch   — auto-rebuild on file changes"
 	@echo "make logs    — show recent diagnostic logs"
+	@echo "make mockups — render README screenshots from docs/mockups"
 	@echo "make clean   — remove build artifacts"
 	@echo "make kill    — stop running instance"
 	@echo "Local dev bundle id: $(APP_BUNDLE_ID_DEV)"

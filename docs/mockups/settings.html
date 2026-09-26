@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Settings mockup</title>
+<link rel="stylesheet" href="mock.css">
+<style>
+body{width:1080px;height:700px}.stage{width:100%;height:100%;gap:28px;align-items:flex-start;padding-top:40px}
+.lcol{display:flex;flex-direction:column;gap:24px}
+.cb{display:inline-block;width:14px;height:14px;border-radius:4px;background:var(--accent);position:relative;flex:none}
+.cb.off{background:var(--ctl);box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--fg) 30%,transparent)}
+.radio{width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:inset 0 0 0 4px var(--accent),inset 0 0 0 7px #fff;flex:none}
+.radio.off{background:var(--ctl);box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--fg) 30%,transparent)}
+.tabs{display:flex;justify-content:center;padding:6px 0 12px}
+.list{margin:0 20px;border-radius:8px;background:var(--ctl);box-shadow:inset 0 0 0 .5px var(--sep);overflow:hidden}
+.acc{padding:8px 12px;gap:10px}
+.acc .n{font-size:13px;font-weight:500}.acc .u{font-size:11px;color:var(--fg2);min-height:14px}
+.type{font-size:10px;color:var(--fg2);padding:2px 6px;border-radius:99px;background:color-mix(in srgb,var(--fg2) 15%,transparent);white-space:nowrap}
+.sect{margin:0 20px 14px}
+.sect h5{font-size:12px;font-weight:600;color:var(--fg2);margin:0 0 6px 8px}
+.box{border-radius:8px;background:color-mix(in srgb,var(--fg) 4%,transparent);box-shadow:inset 0 0 0 .5px var(--sep)}
+.fr{display:flex;align-items:center;gap:10px;padding:8px 10px;font-size:13px;min-height:36px}
+.fr + .fr{border-top:1px solid var(--sep)}
+.pop{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--fg);padding:2px 4px 2px 8px;border-radius:6px}
+.pop .ch{display:inline-flex;flex-direction:column;background:var(--accent);border-radius:4px;padding:1px 2px}
+.hint{font-size:11px;color:var(--fg2);padding:0 10px 8px;margin-top:-4px}
+.save{padding:12px 20px;display:flex;justify-content:flex-end;background:color-mix(in srgb,var(--win) 85%,transparent)}
+</style>
+</head><body><div class="stage" id="s"></div>
+<script src="mock.js"></script>
+<script>
+const tabs = (on) => `<div class="tabs"><span class="seg">${[L('Аккаунты', 'Accounts'), L('Настройки', 'Preferences'), L('О приложении', 'About')]
+  .map((t, i) => `<span class="${i === on ? 'on' : ''}">${t}</span>`).join('')}</span></div>`;
+const chev = `<span class="ch">${icon('chevU', 7, '#fff', 3.4)}${icon('chevD', 7, '#fff', 3.4)}</span>`;
+const pop = (v) => `<span class="pop">${v}${chev}</span>`;
+const fr = (label, ctl, indent = 0) => `<div class="fr" style="padding-left:${10 + indent}px"><span>${label}</span><span class="spacer"></span>${ctl}</div>`;
+
+const acc = (n, u, type) => `<div class="row acc"><span class="col" style="flex:1;min-width:0"><span class="n">${n}</span><span class="u">${u}</span></span>
+  <span class="type">${type}</span><span style="margin-left:4px">${icon('pencil', 13, 'var(--fg2)')}</span>${icon('trash', 13, C.red)}</div>`;
+const OWA = 'Microsoft Exchange (OWA)', MAC = 'macOS Calendar';
+
+const accounts = `<div class="window" style="width:480px;height:310px">
+  <div class="titlebar"><span class="traffic"><i></i><i></i><i></i></span>${L('Настройки', 'Settings')}</div>
+  ${tabs(0)}
+  <div class="list">
+    ${acc(L('Работа', 'Work'), 'https://mail.company.com', OWA)}<div class="divider"></div>
+    ${acc(L('Проект «Север»', 'Project North'), 'https://owa.partner-corp.com', OWA)}<div class="divider"></div>
+    ${acc('Google', '', MAC)}<div class="divider"></div>
+    ${acc('iCloud', '', MAC)}
+    <div class="divider"></div>
+    <div class="row" style="gap:6px;padding:8px 12px;font-size:13px">${icon('plus', 12, 'var(--fg)', 2.4)}${L('Добавить аккаунт', 'Add Account')}</div>
+  </div>
+</div>`;
+
+const prefs = `<div class="window" style="width:480px;height:620px">
+  <div class="titlebar"><span class="traffic"><i></i><i></i><i></i></span>${L('Настройки', 'Settings')}</div>
+  ${tabs(1)}
+  <div style="flex:1;overflow:hidden">
+    <div class="sect"><h5>${L('Строка меню', 'Menu Bar')}</h5><div class="box">${fr(L('Отображение в строке меню', 'Menu bar display'), pop(L('Умный', 'Smart')))}</div></div>
+    <div class="sect"><h5>${L('Окно', 'Window')}</h5><div class="box">${fr(L('Размер окна', 'Window size'), pop(L('Средний', 'Medium')))}</div></div>
+    <div class="sect"><h5>${L('Оформление', 'Appearance')}</h5><div class="box">${fr(L('Тема приложения', 'App theme'), pop(L('Системная', 'System')))}</div></div>
+    <div class="sect"><h5>${L('Часовой пояс', 'Time Zone')}</h5><div class="box">${fr(L('Пояс отображения', 'Display zone'), pop(L('Москва · UTC+3', 'Moscow · UTC+3')))}
+      <div class="hint">${L('Время встреч, дни и countdown показываются в этом поясе.', 'Meeting times, days, and the countdown are shown in this zone.')}</div></div></div>
+    <div class="sect"><h5>${L('Горячие клавиши', 'Shortcuts')}</h5><div class="box">${fr(L('Подключиться к встрече', 'Join meeting'), '<span class="toggle on"></span>')}
+      <div class="hint">${L('Хоткей: Ctrl+Option+J', 'Hotkey: Ctrl+Option+J')}</div></div></div>
+    <div class="sect"><h5>${L('Уведомления', 'Notifications')}</h5><div class="box">
+      ${fr(L('Сообщать о новых приглашениях', 'Tell me about new invitations'), '<span class="toggle on"></span>')}
+      ${fr(L('Показывать счётчик ✉︎ в строке меню', 'Show the ✉︎ count in the menu bar'), '<span class="toggle on"></span>', 16)}
+      ${fr(L('Напоминать', 'Remind me'), pop(L('за 1 мин', '1 min before')))}
+      ${fr(L('Позиция', 'Position'), pop(L('Сверху справа', 'Top right')))}
+    </div></div>
+  </div>
+  <div class="divider"></div>
+  <div class="save"><span class="btn primary" style="opacity:.45">${L('Сохранить настройки', 'Save Preferences')}</span></div>
+</div>`;
+
+const cb = (t, on = true) => `<div class="row" style="gap:7px;font-size:13px;padding:3px 0">${on ? `<span class="cb">${icon('check', 14, '#fff', 3)}</span>` : '<span class="cb off"></span>'}${t}</div>`;
+const sheet = `<div class="window" style="width:480px;height:286px">
+  <div style="text-align:center;font-size:13px;font-weight:600;padding:14px 0 10px">${L('Добавить аккаунт', 'Add Account')}</div>
+  <div class="sect"><h5>${L('Тип аккаунта', 'Account Type')}</h5><div class="box"><div class="fr"><span>${L('Тип', 'Type')}</span><span class="spacer"></span>
+    <span class="row" style="gap:6px"><span class="radio off"></span>Microsoft Exchange (OWA)</span><span class="row" style="gap:6px;margin-left:10px"><span class="radio"></span>macOS Calendar</span></div></div></div>
+  <div class="sect"><h5>${L('Календари', 'Calendars')}</h5><div class="box" style="padding:8px 12px;display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+    <div><div class="sec" style="font-size:11px;font-weight:600;margin-bottom:2px">Google</div>${cb(L('Работа', 'Work'))}${cb(L('Личное', 'Personal'))}</div>
+    <div><div class="sec" style="font-size:11px;font-weight:600;margin-bottom:2px">iCloud</div>${cb(L('Семья', 'Family'))}${cb(L('Дни рождения', 'Birthdays'), false)}</div>
+  </div></div>
+  <div class="spacer"></div><div class="row" style="justify-content:flex-end;gap:8px;padding:0 20px 16px"><span class="btn">${L('Отмена', 'Cancel')}</span><span class="btn primary">${L('Добавить', 'Add')}</span></div>
+</div>`;
+document.getElementById('s').innerHTML = `<div class="lcol">${accounts}${sheet}</div>` + prefs;
+</script>
+</body></html>

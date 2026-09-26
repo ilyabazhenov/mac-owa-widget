@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Hero banner</title>
+<link rel="stylesheet" href="mock.css">
+<style>
+body{width:1280px;height:640px}
+.hero{position:relative;width:1280px;height:640px;overflow:hidden;color:#fff;
+  background:radial-gradient(70% 90% at 12% 0%,#2c4a9a 0%,transparent 60%),radial-gradient(60% 80% at 100% 100%,#6a3a78 0%,transparent 65%),linear-gradient(150deg,#161b2e,#0f1220)}
+.mbar{position:absolute;left:0;right:0;top:0;height:30px;display:flex;align-items:center;gap:20px;padding:0 18px;font-size:14px;background:rgba(10,12,22,.45);backdrop-filter:blur(20px)}
+.mitem{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:5px;background:rgba(255,255,255,.2);font-size:13px;font-weight:500;font-variant-numeric:tabular-nums}
+.popwrap{position:absolute;left:70px;top:40px;transform:scale(.86);transform-origin:top left}
+.copy{position:absolute;left:560px;top:96px;right:56px}
+.copy img{width:112px;height:112px;filter:drop-shadow(0 14px 30px rgba(0,0,0,.45))}
+.copy h1{font-size:76px;line-height:1;font-weight:800;letter-spacing:-2px;margin:22px 0 14px}
+.copy .sub{font-size:27px;line-height:1.25;font-weight:600;color:rgba(255,255,255,.92)}
+.copy .sub2{font-size:20px;color:rgba(255,255,255,.62);margin-top:8px}
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:30px}
+.chips span{font-size:16px;font-weight:600;padding:8px 14px;border-radius:99px;background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);display:inline-flex;align-items:center;gap:8px}
+.chips i{width:8px;height:8px;border-radius:50%;display:inline-block}
+</style>
+</head><body><div class="hero" id="h"></div>
+<script src="mock.js"></script>
+<script>
+const feats = [
+  [L('Таймлайн дня', 'Day timeline'), C.blue], [L('Подключение в один клик', 'One-click join'), C.orange],
+  [L('Ответы на приглашения', 'RSVP'), C.green], [L('Создание встреч', 'Create meetings'), C.purple],
+  [L('Поиск', 'Search'), C.teal], ['Google & iCloud', C.pink], [L('Умный статус', 'Smart menu bar'), C.yellow],
+];
+document.getElementById('h').innerHTML = `
+  <div class="mbar"><b>&#63743;</b><b>Finder</b><span style="opacity:.85">${L('Файл', 'File')}</span><span style="opacity:.85">${L('Правка', 'Edit')}</span><span class="spacer"></span></div>
+  <div class="mbar" style="left:0;right:auto;width:560px;background:none;backdrop-filter:none;justify-content:flex-end;padding-right:228px">
+    <span class="mitem">${icon('calendar', 15, '#fff')}12m ✉︎2</span></div>
+  <div class="popwrap">${popover({ w: 480, h: 700 })}</div>
+  <div class="copy">
+    <img src="../../OWAWidget/Resources/AppIcon.iconset/icon_256x256@2x.png" alt="">
+    <h1>OWA Widget</h1>
+    <div class="sub">${L('Встречи из Exchange / OWA —<br>прямо в строке меню macOS', 'Your Exchange / OWA meetings,<br>right in the macOS menu bar')}</div>
+    <div class="sub2">Teams · Zoom · Webex · Google Meet · KTalk</div>
+    <div class="chips">${feats.map(([t, c]) => `<span><i style="background:${c}"></i>${t}</span>`).join('')}</div>
+  </div>`;
+</script>
+</body></html>

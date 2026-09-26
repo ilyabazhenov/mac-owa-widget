@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Menu bar mockup</title>
+<link rel="stylesheet" href="mock.css">
+<style>
+body{width:1100px;height:530px}.stage{width:100%;height:100%}
+.desk{position:relative;width:1060px;height:490px;border-radius:14px;overflow:hidden;
+  background:radial-gradient(120% 90% at 85% 10%,#3b4f8f 0%,transparent 55%),radial-gradient(90% 90% at 10% 100%,#6b3f7a 0%,transparent 60%),linear-gradient(160deg,#1c2238,#141726);
+  box-shadow:0 30px 70px -20px rgba(0,0,0,.55),0 0 0 .5px rgba(255,255,255,.12)}
+.mbar{height:26px;display:flex;align-items:center;gap:18px;padding:0 14px;font-size:13px;color:#fff;
+  background:rgba(20,22,34,.55);backdrop-filter:blur(20px)}
+.mbar b{font-weight:700}
+.mitem{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:5px;font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;white-space:pre}
+.mitem.on{background:rgba(255,255,255,.2)}
+.modes{position:absolute;left:28px;top:58px;width:430px;display:flex;flex-direction:column;gap:12px}
+.mode{border-radius:12px;padding:14px 16px;background:rgba(30,30,32,.72);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.12);color:#fff;backdrop-filter:blur(30px)}
+.mode h4{font-size:13px;font-weight:600;margin-bottom:2px}
+.mode p{font-size:11px;color:rgba(255,255,255,.6);margin-bottom:10px}
+.strip{display:flex;gap:10px;flex-wrap:wrap}
+.pillbar{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:6px;background:rgba(0,0,0,.35);font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;white-space:pre;color:#fff}
+.cap{font-size:10px;color:rgba(255,255,255,.55);margin-top:4px;text-align:center}
+.tip{display:inline-block;margin-top:8px;font-size:11px;padding:4px 8px;border-radius:6px;background:rgba(60,60,64,.95);box-shadow:0 0 0 .5px rgba(255,255,255,.15),0 4px 12px rgba(0,0,0,.3);color:#fff}
+.stack{position:absolute;right:16px;top:42px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.rsvp{white-space:nowrap;display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 7px;border-radius:6px;background:var(--ctl);box-shadow:inset 0 0 0 1px var(--sep)}
+</style>
+</head><body><div class="stage" id="s"></div>
+<script src="mock.js"></script>
+<script>
+const clock = (sz, c = '#fff') => `<svg class="ico" width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><rect x="3" y="4.5" width="15" height="15" rx="2.5"/><path d="M3 9.5h15M7.5 2.5v4M13.5 2.5v4"/><circle cx="18" cy="17" r="5" fill="#1a1d2c"/><path d="M18 14.5V17l1.6 1"/></svg>`;
+const cal = (sz = 14) => icon('calendar', sz, '#fff');
+const inv = '✉︎2';
+
+const reminder = `<div class="panel" style="width:340px;background:linear-gradient(${a(C.orange, .12)},${a(C.orange, .12)}),var(--ctl);box-shadow:inset 0 0 0 1px ${a(C.orange, .22)},0 3px 8px rgba(0,0,0,.16)">
+  <div style="font-size:13px;font-weight:600;padding:10px 12px 0">${DAY_MEETINGS[3].t}</div>
+  <div class="sec" style="font-size:11px;padding:4px 12px 10px">${L('Встреча начнётся через 12 минут, в 11:00. Нажмите «Подключиться».', 'Your meeting starts in 12 minutes at 11:00. Tap Join.')}</div>
+  <div class="row" style="gap:8px;padding:0 12px 10px;font-size:11px"><span style="width:14px;display:inline-flex;justify-content:center;--jc:var(--ctl)">${platformIcon('zoom', 10, C.orange)}</span>
+    <span class="sec" style="width:84px;font-weight:500">11:00–11:45</span><span class="nowrap" style="flex:1">${DAY_MEETINGS[3].t}</span><b style="color:${C.orange};font-weight:600">${L('Подключиться', 'Join')}</b></div>
+  <div class="divider" style="opacity:.7"></div>
+  <div class="sec" style="font-size:12px;font-weight:500;padding:8px 12px">${L('Закрыть', 'Dismiss')}</div>
+</div>`;
+
+const invRow = (kind, kc, org, title, when, extra = '', rsvp = true, strike = false) => `<div class="col" style="gap:4px;padding:8px 12px">
+  <div class="row" style="gap:4px;font-size:10px"><b style="color:${kc};font-weight:600">${kind}</b><span class="sec">· ${L('от', 'from')} ${org}</span><span class="spacer"></span><span class="sec">${L('Скрыть', 'Hide')}</span></div>
+  <div style="font-size:12px;font-weight:600;${strike ? 'text-decoration:line-through;color:var(--fg2)' : ''}">${title}</div>
+  <div class="sec" style="font-size:11px">${when}${extra}</div>
+  ${rsvp ? `<div class="row" style="gap:6px;margin-top:2px"><span class="rsvp">${icon('check', 9, C.green, 3.2)}${L('Принять', 'Accept')}</span><span class="rsvp">${icon('question', 9, C.orange, 2.8)}${L('Под вопросом', 'Tentative')}</span><span class="rsvp">${icon('xmark', 9, C.red, 3.2)}${L('Отклонить', 'Decline')}</span><span class="spacer"></span><b style="font-size:11px;font-weight:600;color:${C.accent}">${L('Открыть', 'Open')}</b></div>` : ''}
+</div>`;
+
+const invitations = `<div class="panel" style="width:360px;background:linear-gradient(${a(C.accent, .10)},${a(C.accent, .10)}),var(--ctl);box-shadow:inset 0 0 0 1px ${a(C.accent, .22)},0 3px 8px rgba(0,0,0,.16)">
+  <div class="row" style="gap:6px;padding:10px 12px 8px">${icon('envelope', 12, C.accent, 2.6)}<b style="font-size:13px;font-weight:600">${L('Изменения в календаре', 'Calendar changes')}</b><span class="spacer"></span>${icon('xmark', 10, 'var(--fg2)', 3)}</div>
+  ${invRow(L('Приглашение', 'Invitation'), C.accent, PEOPLE.olga, L('Воркшоп по метрикам продукта', 'Product metrics workshop'), L('чт, 8 окт. · 15:00–16:30', 'Thu, Oct 8 · 15:00–16:30'))}
+  <div class="divider" style="margin:0 12px"></div>
+  ${invRow(L('Перенесена', 'Rescheduled'), C.orange, PEOPLE.alex, L('Синк с мобильной командой', 'Mobile team sync'), L('ср, 7 окт. · 12:00–12:30', 'Wed, Oct 7 · 12:00–12:30'), `<br>${L('было: вт, 6 окт. · 12:00–12:30', 'was: Tue, Oct 6 · 12:00–12:30')}`, false)}
+  <div class="divider" style="margin:0 12px"></div>
+  ${invRow(L('Отменена', 'Cancelled'), C.red, PEOPLE.sergey, L('Разбор инцидента', 'Incident review'), L('вт, 6 окт. · 15:30–16:30', 'Tue, Oct 6 · 15:30–16:30'), '', false, true)}
+</div>`;
+
+const mode = (title, sub, items, tip = '') => `<div class="mode"><h4>${title}</h4><p>${sub}</p>
+  <div class="strip">${items.map(([ic, txt, cap]) => `<div class="col" style="align-items:center"><span class="pillbar">${ic}${txt}</span><span class="cap">${cap}</span></div>`).join('')}</div>${tip}</div>`;
+
+document.getElementById('s').innerHTML = `<div class="desk">
+  <div class="mbar"><b>&#63743;</b><b>Finder</b><span>${L('Файл', 'File')}</span><span>${L('Правка', 'Edit')}</span><span>${L('Вид', 'View')}</span><span class="spacer"></span>
+    <span class="mitem on">${clock(15)}12m ${inv}</span>${icon('search', 13, '#fff')}<span>${L('Вт 6 окт.', 'Tue Oct 6')}&nbsp;&nbsp;10:48</span></div>
+  <div class="modes">
+    ${mode(L('Умный статус', 'Smart status'), L('Иконка и короткая подпись; пульсирует, когда пора подключаться', 'Icon plus a short label; pulses when it is time to join'), [
+      [clock(14), '12m', L('скоро встреча', 'starting soon')], [clock(14), '25m', L('идёт, до конца', 'in progress, left')], [cal(), '14:30', L('следующая', 'next up')], [cal(), ' 2d', L('через 2 дня', 'in 2 days')]],
+      `<span class="tip">${L('следующая в 11:00', 'Next at 11:00')}<br>${L('Новых приглашений без ответа: 2', 'New invitations awaiting response: 2')}</span>`)}
+    ${mode(L('Обратный отсчёт', 'Countdown'), L('Сколько осталось до ближайшей встречи', 'Time until your next meeting'), [
+      [cal(), ' 5m', L('сегодня', 'today')], [cal(), ' 3h', L('сегодня', 'today')], [cal(), '09:30', L('завтра', 'tomorrow')], [cal(), ` 5m ${inv}`, L('с приглашениями', 'with invitations')]])}
+    ${mode(L('Статус', 'Status'), 'Next / Now / Free', [
+      [cal(), 'Next 5m', ''], [clock(14), 'Now 25m', ''], [cal(), 'Free 40m', '']])}
+  </div>
+  <div class="stack">${reminder}${invitations}</div>
+</div>`;
+</script>
+</body></html>

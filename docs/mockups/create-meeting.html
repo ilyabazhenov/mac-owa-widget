@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Create meeting mockup</title>
+<link rel="stylesheet" href="mock.css">
+<style>
+body{width:1080px;height:760px}.stage{width:100%;height:100%}
+.cm{display:flex;flex:1;min-height:0}
+.form{width:400px;padding:20px;display:flex;flex-direction:column;gap:16px;overflow:hidden;flex:none}
+.frow{display:flex;gap:10px;align-items:flex-start}
+.flabel{width:96px;text-align:right;font-size:12px;font-weight:500;color:var(--fg2);flex:none;padding-top:9px}
+.fbox{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--ctl);border-radius:8px;box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--fg) 16%,transparent);font-size:13px;padding:8px 10px;flex:1;min-width:0}
+.dp{display:inline-flex;align-items:center;gap:6px;background:var(--ctl);border-radius:6px;padding:4px 4px 4px 8px;font-size:12px;box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--fg) 16%,transparent)}
+.stp{display:flex;flex-direction:column;gap:0;color:var(--fg2)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0 106px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 7px 2px 2px;border-radius:99px;font-size:11px;font-weight:500;
+  background:color-mix(in srgb,var(--fg) 12%,transparent);box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--fg) 16%,transparent)}
+.chip.opt{background:color-mix(in srgb,var(--fg) 6%,transparent);box-shadow:none;outline:1px dashed color-mix(in srgb,var(--fg) 35%,transparent);outline-offset:-1px;color:var(--fg2)}
+.recent{display:grid;grid-template-columns:1fr 1fr;gap:6px;flex:1}
+.rc{display:flex;align-items:center;gap:6px;padding:5px 7px;border-radius:8px;background:var(--ctl);box-shadow:inset 0 0 0 .5px var(--sep)}
+.rc .n{font-size:11px;font-weight:500;line-height:1.2}.rc .f{font-size:10px;color:var(--fg2);line-height:1.2}
+.rc.on{background:${'var(--acc8)'};box-shadow:inset 0 0 0 .5px var(--acc30);color:var(--accent)}
+.vsep{width:1px;background:var(--sep);flex:none}
+.right{flex:1;display:flex;flex-direction:column;min-width:0;background:color-mix(in srgb,var(--ctl) 50%,transparent)}
+.weeknav{margin:14px 20px;display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;background:var(--ctl);box-shadow:inset 0 0 0 .5px var(--sep)}
+.sq{width:24px;height:24px;border-radius:5px;display:grid;place-items:center;background:color-mix(in srgb,var(--fg) 10%,transparent)}
+.rcontent{padding:16px 20px 0;display:flex;flex-direction:column;gap:14px;overflow:hidden;flex:1}
+.sh{font-size:11px;font-weight:600;color:var(--fg2);text-transform:uppercase;letter-spacing:.3px;gap:5px}
+.sug{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;background:var(--ctl);box-shadow:inset 0 0 0 .5px var(--sep);font-size:12px}
+.sug.on{background:var(--acc8);box-shadow:inset 0 0 0 1px var(--acc40)}
+.reason{font-size:10px;font-weight:500;padding:3px 7px;border-radius:99px;background:color-mix(in srgb,var(--fg) 8%,transparent);color:var(--fg2)}
+.sug.on .reason{background:var(--acc12);color:var(--accent)}
+.dur{font-size:10px;font-weight:500;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,var(--fg) 12%,transparent)}
+.dur.on{background:var(--accent);color:#fff}
+.grid{position:relative}
+.gh{position:absolute;top:0;height:28px;text-align:center}
+.gh .d{font-size:10px;font-weight:500;color:var(--fg2);line-height:1.1}.gh .n{font-size:12px;font-weight:600;line-height:1.2}
+.gt{position:absolute;left:0;width:40px;text-align:right}
+.cell{position:absolute;border-radius:5px;font-size:8.5px;font-weight:500;padding-left:5px;display:flex;align-items:center;white-space:nowrap;overflow:hidden}
+.selbox{position:absolute;border-radius:5px;background:var(--accent);color:#fff;font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 4px;line-height:1.25;box-shadow:0 2px 8px rgba(10,132,255,.35)}
+.bottom{padding:12px 20px;display:flex;align-items:center;justify-content:flex-end;flex:none}
+</style>
+</head><body><div class="stage" id="s"></div>
+<script src="mock.js"></script>
+<script>
+document.documentElement.style.setProperty('--acc8', a(C.accent, .08));
+document.documentElement.style.setProperty('--acc12', a(C.accent, .12));
+document.documentElement.style.setProperty('--acc30', a(C.accent, .3));
+document.documentElement.style.setProperty('--acc40', a(C.accent, .4));
+
+const stepper = `<span class="stp">${icon('chevU', 7, 'var(--fg2)', 3)}${icon('chevD', 7, 'var(--fg2)', 3)}</span>`;
+const surname = (n) => { const [f, l] = n.split(' '); return `${l} ${f[0]}.`; };
+const chip = (n, c, opt) => `<span class="chip${opt ? ' opt' : ''}">${avatar(n, 18, c)}${n}${icon(opt ? 'question' : 'person', 9, 'var(--fg2)', 2.4)}${icon('xmark', 7, 'var(--fg2)', 3.4)}</span>`;
+const rc = (n, c, cnt, on) => { const [f, l] = n.split(' ');
+  return `<div class="rc${on ? ' on' : ''}">${avatar(n, 26, c)}<span class="col" style="min-width:0;flex:1"><span class="n">${f}</span><span class="f">${l}</span></span><span class="ter" style="font-size:9px">×${cnt}</span></div>`; };
+
+const form = `<div class="form">
+  <div class="frow"><span class="flabel">${L('Название', 'Title')}</span><div class="fbox" style="font-size:14px;min-height:36px">${L('Ретро по релизу 1.2', 'Release 1.2 retrospective')}</div></div>
+  <div class="col" style="gap:8px">
+    <div class="frow"><span class="flabel" style="padding-top:5px">${L('Начало', 'Start')}</span><span class="dp" style="min-width:116px">${L('7 окт. 2026 г.', 'Oct 7, 2026')}<span class="spacer"></span>${stepper}</span><span class="dp" style="min-width:70px">11:00<span class="spacer"></span>${stepper}</span></div>
+    <div class="frow"><span class="flabel" style="padding-top:5px">${L('Конец', 'End')}</span><span class="dp" style="min-width:116px">${L('7 окт. 2026 г.', 'Oct 7, 2026')}<span class="spacer"></span>${stepper}</span><span class="dp" style="min-width:70px">12:00<span class="spacer"></span>${stepper}</span></div>
+  </div>
+  <div>
+    <div class="frow"><span class="flabel">${L('Обязательные', 'Required')}</span><div class="fbox row ter" style="gap:8px">${icon('search', 13, 'var(--fg3)')}${L('Добавить обязательного…', 'Add required…')}</div></div>
+    <div class="chips">${chip(PEOPLE.maria, C.blue)}${chip(PEOPLE.dmitry, C.green)}${chip(PEOPLE.kate, C.pink)}</div>
+  </div>
+  <div>
+    <div class="frow"><span class="flabel">${L('Опциональные', 'Optional')}</span><div class="fbox row ter" style="gap:8px">${icon('search', 13, 'var(--fg3)')}${L('Добавить опционального…', 'Add optional…')}</div></div>
+    <div class="chips">${chip(PEOPLE.alex, C.purple, true)}</div>
+  </div>
+  <div class="frow"><span class="flabel">${L('Недавние', 'Recent')}</span><div class="recent">${rc(PEOPLE.maria, C.blue, 14, true)}${rc(PEOPLE.irina, C.pink, 9)}${rc(PEOPLE.dmitry, C.green, 7, true)}${rc(PEOPLE.sergey, C.indigo, 5)}</div></div>
+  <div class="frow"><span class="flabel">${L('Расположение', 'Location')}</span><div class="fbox row" style="gap:6px">${icon('link', 12, 'var(--fg2)')}<span class="nowrap">https://zoom.us/j/84512093317</span></div></div>
+  <div class="frow"><span class="flabel">${L('Повестка', 'Agenda')}</span><div class="fbox" style="height:100px;font-size:13px;line-height:1.45;white-space:normal">${L('Что получилось, что нет, что меняем в процессе к следующему релизу.', 'What went well, what did not, and what we change in the process for the next release.')}</div></div>
+</div>`;
+
+// Availability grid: Mon–Fri, 09:00–18:00 in 30-min rows.
+const days = LANG === 'ru' ? ['Пн', 'Вт', 'Ср', 'Чт', 'Пт'] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+const nums = [5, 6, 7, 8, 9];
+// Status per [day][row]: f free, b busy, t tentative, o out of office.
+const pattern = [
+  'bbfffbbbffttffbbff',
+  'bbbttbffbbffffbfff',
+  'fbbffffbbfffbbffoo',
+  'ffffbbffffbbtfffff',
+  'bbffffbffbbffffooo',
+];
+const who = [PEOPLE.maria, PEOPLE.dmitry, PEOPLE.kate];
+const FILL = DARK ? { f: '#50C78E', t: '#E0AE38', b: '#A62E44', o: '#5D44C2' } : { f: '#99E0AF', t: '#F7C194', b: '#E695A1', o: '#B2A5E6' };
+const TXT = DARK ? { f: 'rgba(8,48,26,.85)', t: 'rgba(60,40,0,.85)', b: 'rgba(255,255,255,.85)', o: 'rgba(255,255,255,.85)' } : { f: 'rgba(27,89,46,.85)', t: 'rgba(110,60,10,.85)', b: 'rgba(110,20,35,.85)', o: 'rgba(50,30,110,.85)' };
+const selDay = 2, selRow = 4, selLen = 2; // Wed 11:00–12:00
+function grid(width) {
+  const tw = 44, hh = 28, rh = 24, gap = 2, cw = (width - tw) / 5;
+  let g = '';
+  days.forEach((d, i) => { g += `<div class="gh" style="left:${tw + i * cw}px;width:${cw}px"><div class="d">${d}</div><div class="n" style="${i === 1 ? `color:${C.accent}` : ''}">${nums[i]}</div></div>`; });
+  for (let r = 0; r < 18; r++) {
+    const y = hh + r * (rh + gap), min = 9 * 60 + r * 30, full = r % 2 === 0;
+    g += `<div class="gt" style="top:${y + 6}px;font-size:${full ? 9 : 8}px;font-weight:${full ? 500 : 400};color:${full ? 'var(--fg2)' : 'var(--fg3)'}">${fmt(min)}</div>`;
+    for (let i = 0; i < 5; i++) {
+      const st = pattern[i][r];
+      const past = i === 0 || (i === 1 && min + 30 <= NOW);
+      // Free gaps shorter than the selected duration are greyed out.
+      const lone = st === 'f' && pattern[i][r - 1] !== 'f' && pattern[i][r + 1] !== 'f';
+      const bg = lone ? a(DARK ? '#ffffff' : '#000000', .07) : FILL[st];
+      let label = '';
+      if (!lone) {
+        if (st === 'f') label = L('Свободно', 'Free');
+        else if (st === 'o') label = L('Вне офиса', 'Out of office');
+        else label = surname(who[(i + r) % 3]) + ((i + r) % 4 === 0 ? ' +1' : '');
+      }
+      g += `<div class="cell" style="left:${tw + i * cw + 2}px;top:${y}px;width:${cw - 4}px;height:${rh}px;background:${bg};opacity:${past ? .55 * .9 : .9};color:${lone ? 'var(--fg3)' : TXT[st]}">${label}</div>`;
+    }
+  }
+  const sy = hh + selRow * (rh + gap);
+  g += `<div class="selbox" style="left:${tw + selDay * cw + 2}px;top:${sy}px;width:${cw - 4}px;height:${selLen * rh + (selLen - 1) * gap}px">${L('Выбрано:', 'Selected:')}<br>11:00 – 12:00</div>`;
+  return `<div class="grid" style="height:${hh + 18 * (rh + gap)}px">${g}</div>`;
+}
+
+const sug = (d, t, reason, on) => `<div class="sug${on ? ' on' : ''}">${on ? `<span style="--jc:${DARK ? '#1e1e20' : '#fff'}">${icon('checkCircle', 13, C.accent)}</span>` : icon('circle', 13, 'none').replace('fill="none"', 'fill="none" stroke="var(--fg3)" stroke-width="1.6"')}
+  <b style="font-weight:600">${d}</b><span class="ter">·</span><span style="font-weight:${on ? 600 : 400}">${t}</span><span class="spacer"></span><span class="reason">${reason}</span></div>`;
+
+const right = `<div class="right">
+  <div class="weeknav"><span class="sq">${icon('chevL', 11, 'var(--fg)', 2.8)}</span><span class="spacer"></span>
+    <span class="col" style="align-items:center"><b style="font-size:12px;font-weight:600">${L('5 – 9 окт. 2026', 'Oct 5 – 9, 2026')}</b><span class="sec" style="font-size:10px">${L('Текущая неделя', 'This week')}</span></span>
+    <span class="spacer"></span><span class="sq">${icon('chevR', 11, 'var(--fg)', 2.8)}</span><span class="sq">${icon('refresh', 10, 'var(--fg)', 2.6)}</span></div>
+  <div class="divider"></div>
+  <div class="rcontent">
+    <div class="col" style="gap:4px">
+      <div class="row sh" style="margin-bottom:4px">${icon('sparkles', 11, C.accent, 2)}${L('Лучшие варианты', 'Best options')}</div>
+      ${sug(L('Ср, 7 окт.', 'Wed, Oct 7'), '11:00 – 12:00', L('Утро', 'Morning'), true)}
+      ${sug(L('Чт, 8 окт.', 'Thu, Oct 8'), '09:00 – 10:00', L('Раннее утро', 'Early morning'))}
+      ${sug(L('Пт, 9 окт.', 'Fri, Oct 9'), '14:00 – 15:00', L('После обеда', 'Afternoon'))}
+    </div>
+    <div class="row" style="gap:8px">
+      <span class="row sh">${L('Доступные слоты', 'Available slots')}</span>
+      <span class="dur">${L('30м', '30m')}</span><span class="dur on">${L('1ч', '1h')}</span><span class="dur">${L('1.5ч', '1.5h')}</span><span class="dur">${L('2ч', '2h')}</span>
+      <span class="spacer"></span>
+      <span class="seg" style="width:120px"><span class="on" style="flex:1;display:grid;place-items:center">${icon('grid', 12, 'var(--fg)')}</span><span style="flex:1;display:grid;place-items:center">${icon('list', 12, 'var(--fg2)')}</span></span>
+    </div>
+    ${grid(559)}
+  </div>
+</div>`;
+
+document.getElementById('s').innerHTML = `<div class="window" style="width:1000px;height:680px">
+  <div class="titlebar"><span class="traffic"><i></i><i></i><i></i></span>${L('Новая встреча', 'New Meeting')}</div>
+  <div class="cm">${form}<div class="vsep"></div>${right}</div>
+  <div class="divider"></div>
+  <div class="bottom"><span class="btn primary" style="font-size:13px;font-weight:500;padding:7px 16px;gap:6px">${L('Создать встречу', 'Create meeting')}${icon('arrowR', 11, '#fff', 3)}</span></div>
+</div>`;
+</script>
+</body></html>

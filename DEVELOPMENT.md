@@ -174,6 +174,17 @@ For AI agents working in this repository:
 - A request like "выпусти новый релиз" means full release publication: update `VERSION`, update `RELEASE_NOTES.md`, run `make release-package`, publish with `gh release create`.
 - A request like "подготовь релиз" means prepare only: update `VERSION`, update `RELEASE_NOTES.md`, run `make release-package`, without GitHub publication unless explicitly requested.
 
+## README Screenshots
+
+The images in `docs/images/` are HTML mockups, not live screenshots, so no real calendar data can leak into the repository. Each screen lives in `docs/mockups/<page>.html` and shares `mock.css` (macOS tokens) and `mock.js` (icons, fictional demo data, popover builder). Sizes, colors and strings mirror the SwiftUI code in `OWAWidget/Views`.
+
+```bash
+make mockups                              # render every page in EN and RU
+./scripts/render_mockups.sh popover hero  # render selected pages
+```
+
+Rendering uses headless Google Chrome at 2x and writes `docs/images/<page>-<lang>.png`. Preview a page in a browser with `docs/mockups/<page>.html?lang=ru`. After changing `hero`, copy `hero-en.png` to `github-social-preview.png` and upload it in the repository settings (Social preview). When the UI changes, update the matching mockup in the same change.
+
 ## Contributing
 
 Pull requests are welcome. For major changes, open an issue first to discuss the change.

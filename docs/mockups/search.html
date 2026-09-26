@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Search mockup</title>
+<link rel="stylesheet" href="mock.css">
+<style>body{width:500px;height:640px}.stage{width:100%;height:100%}
+.res{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.hl{background:color-mix(in srgb,#ffd60a 38%,transparent);border-radius:2px}</style>
+</head><body><div class="stage" id="s"></div>
+<script src="mock.js"></script>
+<script>
+const q = L('ревью', 'review');
+const mark = (t) => t.replace(new RegExp(q, 'i'), (x) => `<span>${x}</span>`);
+const groups = [
+  { d: L('5 окт. 2026 г.', 'Oct 5, 2026'), past: true, items: [
+    { s: '16:00', e: '17:00', t: L('Ревью архитектуры платежей', 'Payments architecture review'), p: 'teams', org: PEOPLE.dmitry } ] },
+  { d: TODAY_LABEL, items: [
+    { s: '11:00', e: '11:45', t: L('Дизайн-ревью: новый онбординг', 'Design review: new onboarding'), p: 'zoom', org: PEOPLE.irina, sel: true },
+    { s: '15:30', e: '16:30', t: L('Разбор инцидента', 'Incident review'), p: 'zoom', org: PEOPLE.sergey } ] },
+  { d: L('Завтра', 'Tomorrow'), items: [
+    { s: '10:00', e: '10:30', t: L('Код-ревью мобильного клиента', 'Mobile client code review'), p: 'meet', org: PEOPLE.alex },
+    { s: '14:00', e: '15:00', t: L('Ревью квартальных целей', 'Quarterly goals review'), p: 'teams', org: PEOPLE.maria } ] },
+  { d: L('9 окт. 2026 г.', 'Oct 9, 2026'), items: [
+    { s: '12:00', e: '13:00', t: L('Ревью бэклога с продуктом', 'Backlog review with product'), p: 'ktalk', org: PEOPLE.pavel } ] },
+];
+const row = (m, past) => {
+  const col = C[m.p];
+  return `<div style="padding:2px 12px"><div class="row mrow" style="border-radius:8px;${m.sel ? `background:${a(C.accent, .12)};` : ''}opacity:${past ? .5 : 1}">
+    <span class="time"><div class="s">${m.s}</div><div class="e">${m.e}</div></span>
+    <span class="bar" style="background:${a(col, .7)}"></span>
+    <span class="col" style="min-width:0;flex:1"><span class="ttl nowrap">${m.t}</span><span class="org">${m.org}</span></span>
+    <span class="row cl">${platformIcon(m.p, 14)}${icon('copy', 12, 'var(--fg2)')}<span style="--jc:${DARK ? '#29292b' : '#fff'}">${icon('joinCircle', 16, col)}</span></span></div></div>`;
+};
+const body = `<div class="res">${groups.map((g) => `<div class="sticky-day">${g.d}</div>${g.items.map((m) => row(m, g.past)).join('')}`).join('')}
+  <div class="row ter" style="justify-content:center;gap:4px;font-size:10px;margin:10px 0 12px">${icon('info', 9, 'var(--fg3)')}${L('Поиск только среди загруженных встреч', 'Searching loaded meetings only')}</div></div>`;
+document.getElementById('s').innerHTML = popover({ w: 420, h: 560, mode: 'search', colleagues: 'none', searchBody: body });
+</script>
+</body></html>
