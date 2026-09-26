@@ -1221,7 +1221,7 @@ final class CalendarService: ObservableObject {
                 // the problem started.
                 eventCacheStore.save(events: events, rangeStart: start, rangeEnd: end)
 
-                processInvitationChanges(refreshedAccountIDs: Set(fetchedByAccount.keys))
+                processInvitationChanges(refreshedAccountIDs: Set(fetchedByAccount.keys), windowEnd: end)
             }
 
             if let failure = failures.first {
@@ -1311,11 +1311,12 @@ final class CalendarService: ObservableObject {
     /// Compares the fresh calendar against the previous sync and raises the invitation panel for
     /// what changed. Runs only for accounts that were actually fetched, so a failed account never
     /// looks like a calendar where every meeting vanished and then reappeared.
-    private func processInvitationChanges(refreshedAccountIDs: Set<UUID>) {
+    private func processInvitationChanges(refreshedAccountIDs: Set<UUID>, windowEnd: Date) {
         guard invitationAlertsEnabled else { return }
         let alerts = invitationTracker.process(
             events: events,
             refreshedAccountIDs: refreshedAccountIDs,
+            windowEnd: windowEnd,
             now: clock()
         )
         unhandledInvitationIDs = invitationTracker.unhandledEventIDs

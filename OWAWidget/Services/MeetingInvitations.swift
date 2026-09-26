@@ -95,17 +95,24 @@ struct MeetingInvitationTrackerState: Codable, Sendable, Equatable {
     /// not "everything unanswered", is what the badge counts: people who never answer recurring
     /// or forwarded meetings would otherwise carry a permanent badge of forty.
     var unhandledEventIDs: Set<String> = []
+    /// End of the sync window each account was last fetched with. The window rolls forward with
+    /// the clock, so every day it uncovers meetings nobody just sent — above all the next
+    /// occurrence of every recurring series, each with an identifier of its own. A meeting that
+    /// starts past this point is "entering the window", not news.
+    var windowEndByAccount: [UUID: Date] = [:]
 
     static let empty = MeetingInvitationTrackerState()
 
     init(
         baselinedAccountIDs: Set<UUID> = [],
         fingerprints: [String: MeetingInvitationFingerprint] = [:],
-        unhandledEventIDs: Set<String> = []
+        unhandledEventIDs: Set<String> = [],
+        windowEndByAccount: [UUID: Date] = [:]
     ) {
         self.baselinedAccountIDs = baselinedAccountIDs
         self.fingerprints = fingerprints
         self.unhandledEventIDs = unhandledEventIDs
+        self.windowEndByAccount = windowEndByAccount
     }
 
     init(from decoder: Decoder) throws {
@@ -113,6 +120,7 @@ struct MeetingInvitationTrackerState: Codable, Sendable, Equatable {
         baselinedAccountIDs = try c.decodeIfPresent(Set<UUID>.self, forKey: .baselinedAccountIDs) ?? []
         fingerprints = try c.decodeIfPresent([String: MeetingInvitationFingerprint].self, forKey: .fingerprints) ?? [:]
         unhandledEventIDs = try c.decodeIfPresent(Set<String>.self, forKey: .unhandledEventIDs) ?? []
+        windowEndByAccount = try c.decodeIfPresent([UUID: Date].self, forKey: .windowEndByAccount) ?? [:]
     }
 }
 
@@ -181,11 +189,13 @@ enum MeetingInvitationPolicy {
     ///     that were not refreshed this time.
     ///   - refreshedAccountIDs: accounts fetched successfully in this pass. They become baselined;
     ///     an account's meetings only raise alerts once it was baselined *before* this pass.
+    ///   - windowEnd: end of the range this pass fetched. Recorded per refreshed account.
     /// - Returns: alerts to show and the state to persist for the next comparison.
     static func diff(
         previous: MeetingInvitationTrackerState,
         events: [CalendarEvent],
         refreshedAccountIDs: Set<UUID>,
+        windowEnd: Date,
         now: Date
     ) -> (alerts: [MeetingInvitationAlert], next: MeetingInvitationTrackerState) {
         let tracked = events.filter { isTracked($0) && $0.endDate > now }
@@ -205,7 +215,8 @@ enum MeetingInvitationPolicy {
                     changes.append((.rescheduled(previousStart: known.startDate, previousEnd: known.endDate), event))
                 }
             } else if previous.baselinedAccountIDs.contains(event.accountID),
-                      isAwaitingResponse(event, now: now) {
+                      isAwaitingResponse(event, now: now),
+                      !isEnteringWindow(event, previousWindowEnd: previous.windowEndByAccount[event.accountID]) {
                 changes.append((.invited, event))
             }
         }
@@ -213,8 +224,15 @@ enum MeetingInvitationPolicy {
         var next = MeetingInvitationTrackerState(
             baselinedAccountIDs: previous.baselinedAccountIDs.union(refreshedAccountIDs),
             fingerprints: [:],
-            unhandledEventIDs: previous.unhandledEventIDs
+            unhandledEventIDs: previous.unhandledEventIDs,
+            windowEndByAccount: previous.windowEndByAccount
         )
+        // Per account, so a pass in which Exchange failed does not move Exchange's boundary: its
+        // next successful sync would otherwise treat the skipped strip as "entering" and swallow
+        // genuine invitations there.
+        for accountID in refreshedAccountIDs {
+            next.windowEndByAccount[accountID] = windowEnd
+        }
         // Anything the panel now asks an answer for joins the badge; a move resets the answer on
         // Exchange, so a rescheduled meeting that awaits one counts as news too.
         for (change, event) in changes where change != .cancelled && isAwaitingResponse(event, now: now) {
@@ -231,6 +249,14 @@ enum MeetingInvitationPolicy {
         }
 
         return (alerts(from: changes), next)
+    }
+
+    /// Starts beyond the range the account was last fetched with, so it could not have been seen
+    /// before whether or not anyone just sent it. Unknown boundary (state written before it was
+    /// recorded) — no filtering, the pre-existing behaviour.
+    static func isEnteringWindow(_ event: CalendarEvent, previousWindowEnd: Date?) -> Bool {
+        guard let previousWindowEnd else { return false }
+        return event.startDate >= previousWindowEnd
     }
 
     /// Drops invitations that were answered (here or anywhere else), cancelled, ended, or are no
@@ -283,6 +309,7 @@ protocol MeetingInvitationTracking: AnyObject {
     func process(
         events: [CalendarEvent],
         refreshedAccountIDs: Set<UUID>,
+        windowEnd: Date,
         now: Date
     ) -> [MeetingInvitationAlert]
     /// Invitations the badge counts. See ``MeetingInvitationTrackerState/unhandledEventIDs``.
@@ -346,6 +373,7 @@ final class MeetingInvitationTracker: MeetingInvitationTracking {
     func process(
         events: [CalendarEvent],
         refreshedAccountIDs: Set<UUID>,
+        windowEnd: Date,
         now: Date
     ) -> [MeetingInvitationAlert] {
         let previous = currentState
@@ -353,6 +381,7 @@ final class MeetingInvitationTracker: MeetingInvitationTracking {
             previous: previous,
             events: events,
             refreshedAccountIDs: refreshedAccountIDs,
+            windowEnd: windowEnd,
             now: now
         )
         commit(result.next)

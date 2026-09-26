@@ -5,6 +5,8 @@ final class MeetingInvitationPolicyTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
     private let exchange = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
     private let other = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+    /// Far enough out that the rolling-window rule never interferes unless a test is about it.
+    private var windowEnd: Date { now.addingTimeInterval(60 * 86_400) }
 
     private func event(
         _ id: String,
@@ -42,6 +44,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: .empty,
             events: events,
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         ).next
     }
@@ -70,6 +73,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: .empty,
             events: [event("a"), event("b")],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -85,6 +89,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: [event("a"), event("new", title: "Planning")],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -102,6 +107,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: [event("accepted", response: .accepted), event("mine", isOrganizer: true)],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -116,6 +122,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: [event("a"), event("x", account: other)],
             refreshedAccountIDs: [exchange, other],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -132,6 +139,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: [event("x", account: other)],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -148,6 +156,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: [moved],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -163,6 +172,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: [event("a", hoursFromNow: 30, response: .declined)],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -177,12 +187,14 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: [cancelled],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
         let second = MeetingInvitationPolicy.diff(
             previous: first.next,
             events: [cancelled],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -198,6 +210,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: [event("a", title: "Отменено: Sync", response: .accepted)],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -208,12 +221,13 @@ final class MeetingInvitationPolicyTests: XCTestCase {
     func testCancellationOfUnansweredInvitationIsSilentAndLeavesBadge() {
         let previous = baselined([])
         let invited = MeetingInvitationPolicy.diff(
-            previous: previous, events: [event("a", title: "Test")], refreshedAccountIDs: [exchange], now: now
+            previous: previous, events: [event("a", title: "Test")], refreshedAccountIDs: [exchange], windowEnd: windowEnd, now: now
         )
         let cancelled = MeetingInvitationPolicy.diff(
             previous: invited.next,
             events: [event("a", title: "Отменено: Test", isCancelled: true)],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -231,6 +245,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: [event("a", isCancelled: true)],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -244,6 +259,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: [event("a", title: "Отменено: Sync", response: .accepted)],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -263,6 +279,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
                 event("new", hoursFromNow: 48),
             ],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -278,8 +295,8 @@ final class MeetingInvitationPolicyTests: XCTestCase {
     func testSameInvitationIsNotRepeatedOnNextSync() {
         let previous = baselined([])
         let invite = event("new")
-        let first = MeetingInvitationPolicy.diff(previous: previous, events: [invite], refreshedAccountIDs: [exchange], now: now)
-        let second = MeetingInvitationPolicy.diff(previous: first.next, events: [invite], refreshedAccountIDs: [exchange], now: now)
+        let first = MeetingInvitationPolicy.diff(previous: previous, events: [invite], refreshedAccountIDs: [exchange], windowEnd: windowEnd, now: now)
+        let second = MeetingInvitationPolicy.diff(previous: first.next, events: [invite], refreshedAccountIDs: [exchange], windowEnd: windowEnd, now: now)
 
         XCTAssertEqual(first.alerts.count, 1)
         XCTAssertTrue(second.alerts.isEmpty)
@@ -290,10 +307,77 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: .empty,
             events: [event("past", hoursFromNow: -3), event("future")],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
         XCTAssertEqual(Set(result.next.fingerprints.keys), ["future"])
+    }
+
+    // MARK: - Rolling sync window
+
+    /// The window moves forward every day and uncovers the next occurrence of every series. That
+    /// occurrence has a fresh identifier but nobody just sent it.
+    func testOccurrenceEnteringTheWindowIsNotAnInvitation() {
+        let firstEnd = now.addingTimeInterval(30 * 86_400)
+        let first = MeetingInvitationPolicy.diff(
+            previous: .empty,
+            events: [event("w1", title: "Weekly", hoursFromNow: 24 * 27)],
+            refreshedAccountIDs: [exchange],
+            windowEnd: firstEnd,
+            now: now
+        )
+        let nextDay = now.addingTimeInterval(86_400)
+        let second = MeetingInvitationPolicy.diff(
+            previous: first.next,
+            events: [
+                event("w1", title: "Weekly", hoursFromNow: 24 * 27),
+                event("w2", title: "Weekly", hoursFromNow: 24 * 30 + 12),
+            ],
+            refreshedAccountIDs: [exchange],
+            windowEnd: nextDay.addingTimeInterval(30 * 86_400),
+            now: nextDay
+        )
+
+        XCTAssertTrue(second.alerts.isEmpty)
+        XCTAssertNotNil(second.next.fingerprints["w2"], "recorded, so it is known from now on")
+        XCTAssertTrue(second.next.unhandledEventIDs.isEmpty)
+    }
+
+    func testInvitationInsideThePreviousWindowIsStillAnnounced() {
+        let firstEnd = now.addingTimeInterval(30 * 86_400)
+        let first = MeetingInvitationPolicy.diff(
+            previous: .empty, events: [], refreshedAccountIDs: [exchange], windowEnd: firstEnd, now: now
+        )
+        let second = MeetingInvitationPolicy.diff(
+            previous: first.next,
+            events: [event("new", hoursFromNow: 24 * 29)],
+            refreshedAccountIDs: [exchange],
+            windowEnd: firstEnd.addingTimeInterval(300),
+            now: now.addingTimeInterval(300)
+        )
+
+        XCTAssertEqual(second.alerts.map(\.eventIDs), [["new"]])
+    }
+
+    /// A pass that did not reach Exchange must not move Exchange's boundary.
+    func testWindowBoundaryMovesOnlyForRefreshedAccounts() {
+        let exchangeEnd = now.addingTimeInterval(30 * 86_400)
+        let previous = MeetingInvitationTrackerState(
+            baselinedAccountIDs: [exchange, other],
+            windowEndByAccount: [exchange: exchangeEnd]
+        )
+
+        let result = MeetingInvitationPolicy.diff(
+            previous: previous,
+            events: [],
+            refreshedAccountIDs: [other],
+            windowEnd: exchangeEnd.addingTimeInterval(86_400),
+            now: now
+        )
+
+        XCTAssertEqual(result.next.windowEndByAccount[exchange], exchangeEnd)
+        XCTAssertEqual(result.next.windowEndByAccount[other], exchangeEnd.addingTimeInterval(86_400))
     }
 
     // MARK: - Unhandled invitations (badge)
@@ -304,12 +388,14 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: [event("old"), event("new")],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
         let answered = MeetingInvitationPolicy.diff(
             previous: first.next,
             events: [event("old"), event("new", response: .accepted)],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -324,6 +410,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: [event("a", hoursFromNow: 30, response: .accepted), event("b", response: .accepted, isCancelled: true)],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -339,6 +426,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: [event("a", hoursFromNow: 30)],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -371,6 +459,7 @@ final class MeetingInvitationPolicyTests: XCTestCase {
             previous: previous,
             events: occurrences.reversed() + [event("solo", title: "Review", hoursFromNow: 48)],
             refreshedAccountIDs: [exchange],
+            windowEnd: windowEnd,
             now: now
         )
 
@@ -448,20 +537,20 @@ final class MeetingInvitationTrackerTests: XCTestCase {
     /// An invitation that arrives while the app is closed must still be reported after relaunch.
     func testStateSurvivesRelaunch() {
         let first = MeetingInvitationTracker(secureStore: secureStore)
-        XCTAssertTrue(first.process(events: [invite("a")], refreshedAccountIDs: [account], now: Date()).isEmpty)
+        XCTAssertTrue(first.process(events: [invite("a")], refreshedAccountIDs: [account], windowEnd: Date().addingTimeInterval(60 * 86_400), now: Date()).isEmpty)
 
         let relaunched = MeetingInvitationTracker(secureStore: secureStore)
-        let alerts = relaunched.process(events: [invite("a"), invite("b")], refreshedAccountIDs: [account], now: Date())
+        let alerts = relaunched.process(events: [invite("a"), invite("b")], refreshedAccountIDs: [account], windowEnd: Date().addingTimeInterval(60 * 86_400), now: Date())
 
         XCTAssertEqual(alerts.map(\.eventIDs), [["b"]])
     }
 
     func testResetStartsAFreshSilentBaseline() {
         let tracker = MeetingInvitationTracker(secureStore: secureStore)
-        _ = tracker.process(events: [invite("a")], refreshedAccountIDs: [account], now: Date())
+        _ = tracker.process(events: [invite("a")], refreshedAccountIDs: [account], windowEnd: Date().addingTimeInterval(60 * 86_400), now: Date())
 
         tracker.reset()
-        let afterReset = tracker.process(events: [invite("a"), invite("b")], refreshedAccountIDs: [account], now: Date())
+        let afterReset = tracker.process(events: [invite("a"), invite("b")], refreshedAccountIDs: [account], windowEnd: Date().addingTimeInterval(60 * 86_400), now: Date())
 
         XCTAssertTrue(afterReset.isEmpty)
     }
@@ -483,8 +572,8 @@ final class CalendarServiceInvitationTests: XCTestCase {
 
     private final class InMemoryTracker: MeetingInvitationTracking {
         private var state = MeetingInvitationTrackerState.empty
-        func process(events: [CalendarEvent], refreshedAccountIDs: Set<UUID>, now: Date) -> [MeetingInvitationAlert] {
-            let result = MeetingInvitationPolicy.diff(previous: state, events: events, refreshedAccountIDs: refreshedAccountIDs, now: now)
+        func process(events: [CalendarEvent], refreshedAccountIDs: Set<UUID>, windowEnd: Date, now: Date) -> [MeetingInvitationAlert] {
+            let result = MeetingInvitationPolicy.diff(previous: state, events: events, refreshedAccountIDs: refreshedAccountIDs, windowEnd: windowEnd, now: now)
             state = result.next
             return result.alerts
         }
