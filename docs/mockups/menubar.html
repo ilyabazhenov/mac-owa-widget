@@ -5,7 +5,7 @@
 body{width:1100px;height:530px}.stage{width:100%;height:100%}
 .desk{position:relative;width:1060px;height:490px;border-radius:14px;overflow:hidden;
   background:radial-gradient(120% 90% at 85% 10%,#3b4f8f 0%,transparent 55%),radial-gradient(90% 90% at 10% 100%,#6b3f7a 0%,transparent 60%),linear-gradient(160deg,#1c2238,#141726);
-  box-shadow:0 30px 70px -20px rgba(0,0,0,.55),0 0 0 .5px rgba(255,255,255,.12)}
+  box-shadow:0 12px 24px -8px rgba(0,0,0,.45),0 0 0 .5px rgba(255,255,255,.12)}
 .mbar{height:26px;display:flex;align-items:center;gap:18px;padding:0 14px;font-size:13px;color:#fff;
   background:rgba(20,22,34,.55);backdrop-filter:blur(20px)}
 .mbar b{font-weight:700}
@@ -21,12 +21,21 @@ body{width:1100px;height:530px}.stage{width:100%;height:100%}
 .tip{display:inline-block;margin-top:8px;font-size:11px;padding:4px 8px;border-radius:6px;background:rgba(60,60,64,.95);box-shadow:0 0 0 .5px rgba(255,255,255,.15),0 4px 12px rgba(0,0,0,.3);color:#fff}
 .stack{position:absolute;right:16px;top:42px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 .rsvp{white-space:nowrap;display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 7px;border-radius:6px;background:var(--ctl);box-shadow:inset 0 0 0 1px var(--sep)}
+/* Light theme: a light wallpaper and light mode cards. */
+html:not(.dark) .desk{background:radial-gradient(120% 90% at 85% 10%,#c9d8f5 0%,transparent 55%),radial-gradient(90% 90% at 10% 100%,#ecd3ea 0%,transparent 60%),linear-gradient(160deg,#eef1f8,#e4e6ef);box-shadow:0 12px 24px -8px rgba(0,0,0,.25),0 0 0 .5px rgba(0,0,0,.12)}
+html:not(.dark) .mbar{background:rgba(255,255,255,.55);color:#1d1d1f}
+html:not(.dark) .mitem.on{background:rgba(0,0,0,.12)}
+html:not(.dark) .mode{background:rgba(255,255,255,.75);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.1),0 2px 8px rgba(0,0,0,.06);color:#1d1d1f}
+html:not(.dark) .mode p,html:not(.dark) .cap{color:rgba(0,0,0,.5)}
+html:not(.dark) .pillbar{background:rgba(0,0,0,.07);color:#1d1d1f}
+html:not(.dark) .tip{background:rgba(250,250,250,.97);box-shadow:0 0 0 .5px rgba(0,0,0,.15),0 4px 12px rgba(0,0,0,.12);color:#1d1d1f}
 </style>
 </head><body><div class="stage" id="s"></div>
 <script src="mock.js"></script>
 <script>
-const clock = (sz, c = '#fff') => `<svg class="ico" width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><rect x="3" y="4.5" width="15" height="15" rx="2.5"/><path d="M3 9.5h15M7.5 2.5v4M13.5 2.5v4"/><circle cx="18" cy="17" r="5" fill="#1a1d2c"/><path d="M18 14.5V17l1.6 1"/></svg>`;
-const cal = (sz = 14) => icon('calendar', sz, '#fff');
+const MB = DARK ? '#fff' : '#1d1d1f';
+const clock = (sz, c = MB) => `<svg class="ico" width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><rect x="3" y="4.5" width="15" height="15" rx="2.5"/><path d="M3 9.5h15M7.5 2.5v4M13.5 2.5v4"/><circle cx="18" cy="17" r="5" fill="${DARK ? '#1a1d2c' : '#e9ebf2'}"/><path d="M18 14.5V17l1.6 1"/></svg>`;
+const cal = (sz = 14) => icon('calendar', sz, MB);
 const inv = '✉︎2';
 
 const reminder = `<div class="panel" style="width:340px;background:linear-gradient(${a(C.orange, .12)},${a(C.orange, .12)}),var(--ctl);box-shadow:inset 0 0 0 1px ${a(C.orange, .22)},0 3px 8px rgba(0,0,0,.16)">
@@ -59,7 +68,7 @@ const mode = (title, sub, items, tip = '') => `<div class="mode"><h4>${title}</h
 
 document.getElementById('s').innerHTML = `<div class="desk">
   <div class="mbar"><b>&#63743;</b><b>Finder</b><span>${L('Файл', 'File')}</span><span>${L('Правка', 'Edit')}</span><span>${L('Вид', 'View')}</span><span class="spacer"></span>
-    <span class="mitem on">${clock(15)}12m ${inv}</span>${icon('search', 13, '#fff')}<span>${L('Вт 6 окт.', 'Tue Oct 6')}&nbsp;&nbsp;10:48</span></div>
+    <span class="mitem on">${clock(15)}12m ${inv}</span>${icon('search', 13, MB)}<span>${L('Вт 6 окт.', 'Tue Oct 6')}&nbsp;&nbsp;10:48</span></div>
   <div class="modes">
     ${mode(L('Умный статус', 'Smart status'), L('Иконка и короткая подпись; пульсирует, когда пора подключаться', 'Icon plus a short label; pulses when it is time to join'), [
       [clock(14), '12m', L('скоро встреча', 'starting soon')], [clock(14), '25m', L('идёт, до конца', 'in progress, left')], [cal(), '14:30', L('следующая', 'next up')], [cal(), ' 2d', L('через 2 дня', 'in 2 days')]],
