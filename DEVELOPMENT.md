@@ -56,6 +56,9 @@ CalendarService (@MainActor, ObservableObject)
     |-- CalendarProvider actors
     |       |-- OWACalendarProvider
     |       |       `-- OWAClient  (auth + REST API)
+    |       |-- EASCalendarProvider
+    |       |       `-- EASSessionRegistry -> EASAccountSession -> EASClient
+    |       |-- EventKitCalendarProvider
     |       `-- GoogleCalendarProvider  (stub)
     |
     |-- SyncScheduler
@@ -73,10 +76,16 @@ The project uses Swift 6 strict concurrency (`SWIFT_STRICT_CONCURRENCY = complet
 | `OWAWidget/Providers/CalendarProvider.swift` | Calendar provider protocol |
 | `OWAWidget/Providers/OWA/OWAClient.swift` | OWA auth, cookies, CANARY token, calendar REST API |
 | `OWAWidget/Providers/OWA/OWACalendarProvider.swift` | Maps OWA response to `CalendarEvent` |
+| `OWAWidget/Providers/CalendarProviderFactory.swift` | The single place an account becomes a provider |
+| `OWAWidget/Providers/EAS/` | Exchange ActiveSync provider — works without the VPN. See [docs/eas-provider.md](docs/eas-provider.md) |
 | `OWAWidget/Services/MeetingURLDetector.swift` | Regex-based join URL detection |
 | `OWAWidget/Services/NotificationService.swift` | Local notification scheduling |
 | `OWAWidget/Services/UpdateCheckService.swift` | Sparkle update controller wrapper |
 | `OWAWidget/Views/` | SwiftUI popover and settings views |
+
+The ActiveSync provider reaches the same mailbox over the one endpoint Exchange publishes to
+the internet, so it keeps working with the VPN off. Its protocol, invariants and known limits
+are documented separately: [docs/eas-provider.md](docs/eas-provider.md).
 
 ## Adding a Calendar Provider
 

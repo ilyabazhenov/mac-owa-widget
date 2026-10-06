@@ -31,6 +31,8 @@ OWAWidget - macOS menu bar приложение на Swift 6 и SwiftUI для �
 - `OWAWidget/Services/CalendarService.swift` - главный `@MainActor` источник состояния, аккаунтов, событий и синхронизации.
 - `OWAWidget/Providers/CalendarProvider.swift` - общий протокол календарных провайдеров.
 - `OWAWidget/Providers/OWA/` - интеграция с OWA: авторизация, CANARY token, запрос календаря и маппинг событий.
+- `OWAWidget/Providers/CalendarProviderFactory.swift` - единственное место, где аккаунт превращается в провайдер. Два места конструирования расходились бы: проверка соединения собирала бы провайдер иначе, чем цикл синхронизации.
+- `OWAWidget/Providers/EAS/` - провайдер Exchange ActiveSync: тот же ящик, что у OWA, но через единственный опубликованный наружу путь `/Microsoft-Server-ActiveSync`, поэтому работает без VPN. Протокол, инварианты и ограничения расписаны в `docs/eas-provider.md` - **читай этот документ перед правками в этой папке**: там объяснено, почему сессия живёт в реестре, почему `SyncKey` и элементы пишутся атомарно и почему первый `401` латчит клиента намертво.
 - `OWAWidget/Providers/GoogleCalendar/` - заглушка будущего Google Calendar провайдера через прямой API (OAuth). Не используется: календари Google приезжают через EventKit.
 - `OWAWidget/Providers/EventKit/` - чтение календарей, которые macOS уже синхронизирует (Google, iCloud, локальные). Провайдер read-only: мутирующие методы `CalendarProvider` остаются `notSupported`.
 
