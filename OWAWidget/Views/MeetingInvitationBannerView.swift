@@ -18,6 +18,8 @@ struct MeetingInvitationLocalization: Sendable, Equatable {
     /// `%d` = occurrences folded into the row.
     let seriesFormat: String
     let allDay: String
+    let today: String
+    let tomorrow: String
     let acceptTitle: String
     let tentativeTitle: String
     let declineTitle: String
@@ -40,6 +42,8 @@ struct MeetingInvitationLocalization: Sendable, Equatable {
         previousTimeFormat: "was %@",
         seriesFormat: "Series (%d)",
         allDay: "All day",
+        today: "Today",
+        tomorrow: "Tomorrow",
         acceptTitle: "Accept",
         tentativeTitle: "Tentative",
         declineTitle: "Decline",
@@ -50,21 +54,44 @@ struct MeetingInvitationLocalization: Sendable, Equatable {
         moreFormat: "%d more"
     )
 
-    /// "Fri, 26 Sep · 14:00–15:00" in the display time zone.
-    func dateLine(start: Date, end: Date, isAllDay: Bool) -> String {
+    /// "Today · 14:00–15:00", "Tomorrow · 9:30–10:00", "Fri, 26 Sep · 14:00–15:00" in the
+    /// display time zone — the same day words as the popover's invitation section.
+    /// `midSentence` lowercases the day word for use inside a phrase ("was: today · …").
+    func dateLine(start: Date, end: Date, isAllDay: Bool, now: Date, midSentence: Bool = false) -> String {
         let locale = Locale(identifier: localeIdentifier)
-        let day = DateFormatter()
-        day.locale = locale
-        day.timeZone = AppTimeZone.zone
-        day.setLocalizedDateFormatFromTemplate("EEEdMMM")
-        guard !isAllDay else { return "\(day.string(from: start)) · \(allDay)" }
+        let calendar = AppTimeZone.calendar
+        let dayLabel: String
+        if calendar.isDate(start, inSameDayAs: now) {
+            dayLabel = midSentence ? today.lowercased(with: locale) : today
+        } else if let nextDay = calendar.date(byAdding: .day, value: 1, to: now),
+                  calendar.isDate(start, inSameDayAs: nextDay) {
+            dayLabel = midSentence ? tomorrow.lowercased(with: locale) : tomorrow
+        } else {
+            let day = DateFormatter()
+            day.locale = locale
+            day.timeZone = AppTimeZone.zone
+            day.setLocalizedDateFormatFromTemplate("EEEdMMM")
+            dayLabel = day.string(from: start)
+        }
+        guard !isAllDay else { return "\(dayLabel) · \(allDay)" }
 
         let time = DateFormatter()
         time.locale = locale
         time.timeZone = AppTimeZone.zone
         time.dateStyle = .none
         time.timeStyle = .short
-        return "\(day.string(from: start)) · \(time.string(from: start))–\(time.string(from: end))"
+        return "\(dayLabel) · \(time.string(from: start))–\(time.string(from: end))"
+    }
+
+    /// The row's date line, plus the series size and, for a moved meeting, the previous time.
+    func detailLine(for alert: MeetingInvitationAlert, now: Date) -> String {
+        var line = dateLine(start: alert.startDate, end: alert.endDate, isAllDay: alert.isAllDay, now: now)
+        if alert.occurrenceCount > 1 {
+            line += " · " + String(format: seriesFormat, alert.occurrenceCount)
+        }
+        guard case .rescheduled(let previousStart, let previousEnd) = alert.change else { return line }
+        let previous = dateLine(start: previousStart, end: previousEnd, isAllDay: alert.isAllDay, now: now, midSentence: true)
+        return line + "\n" + String(format: previousTimeFormat, previous)
     }
 
     func title(for alerts: [MeetingInvitationAlert]) -> String {
@@ -91,6 +118,8 @@ struct MeetingInvitationBannerView: View {
     let rows: [MeetingInvitationRow]
     let hiddenRowCount: Int
     let localization: MeetingInvitationLocalization
+    /// What "today" and "tomorrow" are measured against.
+    let now: Date
     let onRespond: (MeetingInvitationRow, MeetingResponseAction) -> Void
     let onOpen: (MeetingInvitationRow) -> Void
     let onHide: (MeetingInvitationRow) -> Void
@@ -191,7 +220,7 @@ struct MeetingInvitationBannerView: View {
 
             // Without RSVP buttons "Open" shares the date line instead of taking a row of its own.
             HStack(alignment: .lastTextBaseline, spacing: 6) {
-                Text(detailLine(alert))
+                Text(localization.detailLine(for: alert, now: now))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -284,15 +313,5 @@ struct MeetingInvitationBannerView: View {
         case .rescheduled: .orange
         case .cancelled: .red
         }
-    }
-
-    private func detailLine(_ alert: MeetingInvitationAlert) -> String {
-        var line = localization.dateLine(start: alert.startDate, end: alert.endDate, isAllDay: alert.isAllDay)
-        if alert.occurrenceCount > 1 {
-            line += " · " + String(format: localization.seriesFormat, alert.occurrenceCount)
-        }
-        guard case .rescheduled(let previousStart, let previousEnd) = alert.change else { return line }
-        let previous = localization.dateLine(start: previousStart, end: previousEnd, isAllDay: alert.isAllDay)
-        return line + "\n" + String(format: localization.previousTimeFormat, previous)
     }
 }

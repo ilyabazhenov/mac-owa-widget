@@ -356,7 +356,7 @@ final class CalendarService: ObservableObject {
         notificationService: any NotificationServicing = NotificationService(),
         customMeetingReminders: any CustomMeetingReminderControlling = CustomMeetingReminderController(),
         invitationTracker: any MeetingInvitationTracking = MeetingInvitationTracker(),
-        invitationAlerts: any MeetingInvitationAlertPresenting = MeetingInvitationAlertController(),
+        invitationAlerts: (any MeetingInvitationAlertPresenting)? = nil,
         // Injectable so tests can build EventKit-backed accounts without ever constructing an
         // `EKEventStore` — which would put the system calendar prompt one call away from a suite
         // that gates `make release-package`.
@@ -373,7 +373,7 @@ final class CalendarService: ObservableObject {
         self.notificationService = notificationService
         self.customMeetingReminders = customMeetingReminders
         self.invitationTracker = invitationTracker
-        self.invitationAlerts = invitationAlerts
+        self.invitationAlerts = invitationAlerts ?? MeetingInvitationAlertController(clock: clock)
         self.clock = clock
         self.notificationLocalization = initialNotificationLocalization
         self.engagementPeriod = meetingEngagementStats.defaultPeriod

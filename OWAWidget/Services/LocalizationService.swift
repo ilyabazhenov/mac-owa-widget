@@ -137,6 +137,8 @@ final class LocalizationService: ObservableObject {
             previousTimeFormat: tr("invitations.previous.time"),
             seriesFormat: tr("invitations.series"),
             allDay: tr("invitations.all.day"),
+            today: tr("date.today"),
+            tomorrow: tr("date.tomorrow"),
             acceptTitle: tr("meeting.rsvp.accept"),
             tentativeTitle: tr("meeting.rsvp.tentative"),
             declineTitle: tr("meeting.rsvp.decline"),

@@ -504,6 +504,63 @@ final class MeetingInvitationPolicyTests: XCTestCase {
         XCTAssertEqual(loc.title(for: [invite, invite]), "New invitations · 2")
         XCTAssertEqual(loc.title(for: [invite, cancelled]), "Calendar changes")
     }
+
+    /// Pins the display time zone for one test and restores the user's choice afterwards.
+    private func withDisplayTimeZone(_ identifier: String, _ body: () throws -> Void) rethrows {
+        let original = UserDefaults.standard.string(forKey: AppTimeZone.storageKey)
+        UserDefaults.standard.set(identifier, forKey: AppTimeZone.storageKey)
+        defer { UserDefaults.standard.set(original, forKey: AppTimeZone.storageKey) }
+        try body()
+    }
+
+    private func moscow(_ day: Int, _ hour: Int, _ minute: Int = 0) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/Moscow")!
+        return calendar.date(from: DateComponents(year: 2026, month: 10, day: day, hour: hour, minute: minute))!
+    }
+
+    func testDateLineNamesTodayAndTomorrowByCalendarDay() {
+        let loc = MeetingInvitationLocalization.english
+        let now = moscow(6, 12)
+        func line(_ start: Date, allDay: Bool = false) -> String {
+            loc.dateLine(start: start, end: start.addingTimeInterval(3600), isAllDay: allDay, now: now)
+        }
+
+        withDisplayTimeZone("Europe/Moscow") {
+            XCTAssertTrue(line(moscow(6, 23, 30)).hasPrefix("Today · "))
+            // Less than 24 hours away, but on the next calendar day.
+            XCTAssertTrue(line(moscow(7, 0, 30)).hasPrefix("Tomorrow · "))
+            XCTAssertEqual(line(moscow(7, 0), allDay: true), "Tomorrow · All day")
+            XCTAssertTrue(line(moscow(14, 15)).hasPrefix("Wed, Oct 14 · "))
+        }
+    }
+
+    func testDateLineCountsDaysInDisplayTimeZone() {
+        let loc = MeetingInvitationLocalization.english
+        // 23:00 in Moscow on the 6th is already 05:00 on the 7th in Tokyo.
+        let start = moscow(6, 23)
+
+        withDisplayTimeZone("Asia/Tokyo") {
+            let line = loc.dateLine(start: start, end: start.addingTimeInterval(3600), isAllDay: false, now: moscow(6, 12))
+            XCTAssertTrue(line.hasPrefix("Tomorrow · "), line)
+        }
+    }
+
+    func testRescheduledLineKeepsDayWordLowercaseInsidePhrase() {
+        let loc = MeetingInvitationLocalization.english
+        let alert = MeetingInvitationAlert(
+            change: .rescheduled(previousStart: moscow(6, 15), previousEnd: moscow(6, 16)),
+            eventIDs: ["a"], accountID: exchange, title: "A",
+            organizer: nil, startDate: moscow(7, 15), endDate: moscow(7, 16), isAllDay: false
+        )
+
+        withDisplayTimeZone("Europe/Moscow") {
+            let lines = loc.detailLine(for: alert, now: moscow(6, 12)).components(separatedBy: "\n")
+            XCTAssertEqual(lines.count, 2)
+            XCTAssertTrue(lines[0].hasPrefix("Tomorrow · "), lines[0])
+            XCTAssertTrue(lines[1].hasPrefix("was today · "), lines[1])
+        }
+    }
 }
 
 @MainActor

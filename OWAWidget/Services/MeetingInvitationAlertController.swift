@@ -43,7 +43,13 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
     private var hostingView: InvitationFirstMouseHostingView<MeetingInvitationBannerView>?
     private var rows: [MeetingInvitationRow] = []
     private var localization: MeetingInvitationLocalization = .english
+    /// The same clock as `CalendarService`, so "today" on the panel matches the rest of the app.
+    private let clock: () -> Date
     private let log = Logger(subsystem: "com.owawidget", category: "InvitationAlert")
+
+    init(clock: @escaping () -> Date = { Date() }) {
+        self.clock = clock
+    }
 
     func present(
         _ alerts: [MeetingInvitationAlert],
@@ -87,7 +93,7 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
     func reconcile(with events: [CalendarEvent]) {
         guard !rows.isEmpty else { return }
         let byID = Self.index(events)
-        let now = Date()
+        let now = clock()
         rows = rows.compactMap { row in
             // Leave a row alone while its answer is in flight: the optimistic update has already
             // flipped the event, and dropping the row here would swallow a failure message.
@@ -171,6 +177,7 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
             rows: visible,
             hiddenRowCount: rows.count - visible.count,
             localization: localization,
+            now: clock(),
             onRespond: { [weak self] row, action in self?.respond(row, action: action) },
             onOpen: { [weak self] row in self?.open(row) },
             onHide: { [weak self] row in self?.hide(row) },
