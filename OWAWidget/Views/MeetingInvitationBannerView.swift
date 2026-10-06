@@ -55,42 +55,49 @@ struct MeetingInvitationLocalization: Sendable, Equatable {
     )
 
     /// "Today · 14:00–15:00", "Tomorrow · 9:30–10:00", "Fri, 26 Sep · 14:00–15:00" in the
-    /// display time zone — the same day words as the popover's invitation section.
-    /// `midSentence` lowercases the day word for use inside a phrase ("was: today · …").
-    func dateLine(start: Date, end: Date, isAllDay: Bool, now: Date, midSentence: Bool = false) -> String {
+    /// display time zone (`calendar`) — the same day words as the popover's invitation section.
+    /// `midSentence` lowercases the day for use inside a phrase ("was: today · …", "было: вт, 6 окт.").
+    func dateLine(
+        start: Date,
+        end: Date,
+        isAllDay: Bool,
+        now: Date,
+        calendar: Calendar = AppTimeZone.calendar,
+        midSentence: Bool = false
+    ) -> String {
         let locale = Locale(identifier: localeIdentifier)
-        let calendar = AppTimeZone.calendar
-        let dayLabel: String
+        var dayLabel: String
         if calendar.isDate(start, inSameDayAs: now) {
-            dayLabel = midSentence ? today.lowercased(with: locale) : today
+            dayLabel = today
         } else if let nextDay = calendar.date(byAdding: .day, value: 1, to: now),
                   calendar.isDate(start, inSameDayAs: nextDay) {
-            dayLabel = midSentence ? tomorrow.lowercased(with: locale) : tomorrow
+            dayLabel = tomorrow
         } else {
             let day = DateFormatter()
             day.locale = locale
-            day.timeZone = AppTimeZone.zone
+            day.timeZone = calendar.timeZone
             day.setLocalizedDateFormatFromTemplate("EEEdMMM")
             dayLabel = day.string(from: start)
         }
+        if midSentence { dayLabel = dayLabel.lowercased(with: locale) }
         guard !isAllDay else { return "\(dayLabel) · \(allDay)" }
 
         let time = DateFormatter()
         time.locale = locale
-        time.timeZone = AppTimeZone.zone
+        time.timeZone = calendar.timeZone
         time.dateStyle = .none
         time.timeStyle = .short
         return "\(dayLabel) · \(time.string(from: start))–\(time.string(from: end))"
     }
 
     /// The row's date line, plus the series size and, for a moved meeting, the previous time.
-    func detailLine(for alert: MeetingInvitationAlert, now: Date) -> String {
-        var line = dateLine(start: alert.startDate, end: alert.endDate, isAllDay: alert.isAllDay, now: now)
+    func detailLine(for alert: MeetingInvitationAlert, now: Date, calendar: Calendar = AppTimeZone.calendar) -> String {
+        var line = dateLine(start: alert.startDate, end: alert.endDate, isAllDay: alert.isAllDay, now: now, calendar: calendar)
         if alert.occurrenceCount > 1 {
             line += " · " + String(format: seriesFormat, alert.occurrenceCount)
         }
         guard case .rescheduled(let previousStart, let previousEnd) = alert.change else { return line }
-        let previous = dateLine(start: previousStart, end: previousEnd, isAllDay: alert.isAllDay, now: now, midSentence: true)
+        let previous = dateLine(start: previousStart, end: previousEnd, isAllDay: alert.isAllDay, now: now, calendar: calendar, midSentence: true)
         return line + "\n" + String(format: previousTimeFormat, previous)
     }
 

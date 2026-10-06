@@ -505,61 +505,77 @@ final class MeetingInvitationPolicyTests: XCTestCase {
         XCTAssertEqual(loc.title(for: [invite, cancelled]), "Calendar changes")
     }
 
-    /// Pins the display time zone for one test and restores the user's choice afterwards.
-    private func withDisplayTimeZone(_ identifier: String, _ body: () throws -> Void) rethrows {
-        let original = UserDefaults.standard.string(forKey: AppTimeZone.storageKey)
-        UserDefaults.standard.set(identifier, forKey: AppTimeZone.storageKey)
-        defer { UserDefaults.standard.set(original, forKey: AppTimeZone.storageKey) }
-        try body()
+    private func zone(_ identifier: String) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: identifier)!
+        return calendar
     }
 
     private func moscow(_ day: Int, _ hour: Int, _ minute: Int = 0) -> Date {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Europe/Moscow")!
-        return calendar.date(from: DateComponents(year: 2026, month: 10, day: day, hour: hour, minute: minute))!
+        zone("Europe/Moscow").date(from: DateComponents(year: 2026, month: 10, day: day, hour: hour, minute: minute))!
+    }
+
+    /// The weekday-and-date label as the panel formats it, without pinning one ICU release's output.
+    private func dayLabel(_ date: Date, locale: String, calendar: Calendar) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: locale)
+        formatter.timeZone = calendar.timeZone
+        formatter.setLocalizedDateFormatFromTemplate("EEEdMMM")
+        return formatter.string(from: date)
     }
 
     func testDateLineNamesTodayAndTomorrowByCalendarDay() {
         let loc = MeetingInvitationLocalization.english
+        let calendar = zone("Europe/Moscow")
         let now = moscow(6, 12)
         func line(_ start: Date, allDay: Bool = false) -> String {
-            loc.dateLine(start: start, end: start.addingTimeInterval(3600), isAllDay: allDay, now: now)
+            loc.dateLine(start: start, end: start.addingTimeInterval(3600), isAllDay: allDay, now: now, calendar: calendar)
         }
 
-        withDisplayTimeZone("Europe/Moscow") {
-            XCTAssertTrue(line(moscow(6, 23, 30)).hasPrefix("Today · "))
-            // Less than 24 hours away, but on the next calendar day.
-            XCTAssertTrue(line(moscow(7, 0, 30)).hasPrefix("Tomorrow · "))
-            XCTAssertEqual(line(moscow(7, 0), allDay: true), "Tomorrow · All day")
-            XCTAssertTrue(line(moscow(14, 15)).hasPrefix("Wed, Oct 14 · "))
-        }
+        XCTAssertTrue(line(moscow(6, 23, 30)).hasPrefix("Today · "))
+        // Less than 24 hours away, but on the next calendar day.
+        XCTAssertTrue(line(moscow(7, 0, 30)).hasPrefix("Tomorrow · "))
+        XCTAssertEqual(line(moscow(7, 0), allDay: true), "Tomorrow · All day")
+        let later = moscow(14, 15)
+        XCTAssertTrue(line(later).hasPrefix(dayLabel(later, locale: "en", calendar: calendar) + " · "))
     }
 
     func testDateLineCountsDaysInDisplayTimeZone() {
         let loc = MeetingInvitationLocalization.english
         // 23:00 in Moscow on the 6th is already 05:00 on the 7th in Tokyo.
         let start = moscow(6, 23)
-
-        withDisplayTimeZone("Asia/Tokyo") {
-            let line = loc.dateLine(start: start, end: start.addingTimeInterval(3600), isAllDay: false, now: moscow(6, 12))
-            XCTAssertTrue(line.hasPrefix("Tomorrow · "), line)
+        func line(in identifier: String) -> String {
+            loc.dateLine(start: start, end: start.addingTimeInterval(3600), isAllDay: false, now: moscow(6, 12), calendar: zone(identifier))
         }
+
+        XCTAssertTrue(line(in: "Europe/Moscow").hasPrefix("Today · "))
+        XCTAssertTrue(line(in: "Asia/Tokyo").hasPrefix("Tomorrow · "))
     }
 
-    func testRescheduledLineKeepsDayWordLowercaseInsidePhrase() {
-        let loc = MeetingInvitationLocalization.english
-        let alert = MeetingInvitationAlert(
-            change: .rescheduled(previousStart: moscow(6, 15), previousEnd: moscow(6, 16)),
-            eventIDs: ["a"], accountID: exchange, title: "A",
-            organizer: nil, startDate: moscow(7, 15), endDate: moscow(7, 16), isAllDay: false
-        )
-
-        withDisplayTimeZone("Europe/Moscow") {
-            let lines = loc.detailLine(for: alert, now: moscow(6, 12)).components(separatedBy: "\n")
-            XCTAssertEqual(lines.count, 2)
-            XCTAssertTrue(lines[0].hasPrefix("Tomorrow · "), lines[0])
-            XCTAssertTrue(lines[1].hasPrefix("was today · "), lines[1])
+    @MainActor
+    func testRescheduledLineInRussianKeepsPreviousDayLowercase() {
+        let loc = LocalizationService(selectedLanguage: .russian, preferredLanguages: ["en-US"]).invitationLocalization
+        let calendar = zone("Europe/Moscow")
+        func moved(from previous: Date, to start: Date) -> [String] {
+            let alert = MeetingInvitationAlert(
+                change: .rescheduled(previousStart: previous, previousEnd: previous.addingTimeInterval(3600)),
+                eventIDs: ["a"], accountID: exchange, title: "A",
+                organizer: nil, startDate: start, endDate: start.addingTimeInterval(3600), isAllDay: false
+            )
+            return loc.detailLine(for: alert, now: moscow(6, 12), calendar: calendar).components(separatedBy: "\n")
         }
+
+        XCTAssertEqual(moved(from: moscow(6, 15), to: moscow(7, 15)), [
+            "Завтра · 15:00–16:00",
+            "было: сегодня · 15:00–16:00",
+        ])
+
+        let farAway = moscow(14, 11)
+        let farLabel = dayLabel(farAway, locale: "ru", calendar: calendar).lowercased(with: Locale(identifier: "ru"))
+        XCTAssertEqual(moved(from: farAway, to: moscow(6, 15)), [
+            "Сегодня · 15:00–16:00",
+            "было: \(farLabel) · 11:00–12:00",
+        ])
     }
 }
 
