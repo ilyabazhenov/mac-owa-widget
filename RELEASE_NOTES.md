@@ -1,3 +1,35 @@
+## v1.0.55 - 2026-10-07
+
+### RU
+
+#### Что изменилось
+
+- OWA Widget теперь подключается к AI-ассистентам по протоколу MCP. Ассистент видит ваши встречи, ищет их по времени, участникам и названию, находит коллег в адресной книге Exchange и общее свободное время. Включается в **«Настройки» → «AI (MCP)»**, там же готовая строка подключения для вашего MCP-клиента.
+- По умолчанию ассистент только читает календарь. Создание встреч включается отдельным переключателем, и каждая встреча проходит через окно подтверждения в приложении: **«Отправить»**, **«Отменить»** или **«Изменить…»**. Последнее открывает обычное окно создания встречи с заполненными полями.
+- Включённый ассистент получает названия, места, описания и участников встреч. Эти данные уходят AI-сервису, которым вы пользуетесь, поэтому проверьте, разрешает ли это политика вашей компании.
+- В окне приглашений ближайшие дни теперь называются словами: «Сегодня · 15:00–16:00», «Завтра · весь день».
+
+#### Установка
+
+1. Скачайте `.zip`, распакуйте и перенесите `OWAWidget.app` в `/Applications`.
+2. Запустите приложение — дополнительных шагов не нужно.
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- OWA Widget now connects to AI assistants over MCP. The assistant sees your meetings, finds them by time, attendees and title, looks up colleagues in the Exchange address book and finds shared free time. Turn it on in **Settings → AI (MCP)**, where you can also copy the ready-made connection line for your MCP client.
+- By default the assistant only reads your calendar. Creating meetings has its own switch, and every meeting goes through a confirmation window in the app: **Send**, **Cancel** or **Edit…**. The last one opens the regular New Meeting window with the fields filled in.
+- Once you turn the assistant on, meeting titles, locations, descriptions and attendees go to the AI service you use, so check that your company's policy allows it.
+- The invitations window now names the nearest days in words: "Today · 15:00–16:00", "Tomorrow · all day".
+
+#### Installation
+
+1. Download the `.zip`, unzip it and move `OWAWidget.app` to `/Applications`.
+2. Launch the app — no extra steps needed.
+3. All subsequent updates install automatically via the "Install" button inside the app.
+
 ## v1.0.54 - 2026-10-05
 
 ### RU
