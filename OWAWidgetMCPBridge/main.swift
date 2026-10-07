@@ -18,9 +18,12 @@ import OWAWidgetMCPShared
 //   as a child of this process it would inherit the client as its "responsible process", and
 //   calendar (TCC) and Keychain prompts would be attributed to the client app.
 // - stdout carries MCP messages only. Diagnostics go to stderr.
+// - stdio is written with POSIX `write`, never `FileHandle.write(_:)`: that one raises an
+//   Objective-C exception on EPIPE, which Swift cannot catch. A client that closed our stdout is
+//   gone, so the bridge exits with 0.
 
 private func logStderr(_ message: String) {
-    FileHandle.standardError.write(Data("owawidget-mcp: \(message)\n".utf8))
+    MCPUnixSocket.writeAll(STDERR_FILENO, Data("owawidget-mcp: \(message)\n".utf8))
 }
 
 /// The enclosing `.app`, when this binary sits at `X.app/Contents/Helpers/owawidget-mcp`.
@@ -200,7 +203,13 @@ final class Bridge: @unchecked Sendable {
     }
 
     private func writeStdout(_ line: Data) {
-        FileHandle.standardOutput.write(line + Data([0x0A]))
+        guard MCPUnixSocket.writeAll(STDOUT_FILENO, line + Data([0x0A])) else {
+            // Nobody reads our answers any more. Called with the lock held, so close the socket
+            // directly rather than through `shutdown()`.
+            logStderr("stdout is closed (\(String(cString: strerror(errno)))), exiting")
+            closeSocketLocked()
+            exit(0)
+        }
     }
 }
 

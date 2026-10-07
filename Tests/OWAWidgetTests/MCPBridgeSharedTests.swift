@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import OWAWidgetMCPShared
 
@@ -102,5 +103,23 @@ final class MCPBridgeStateTests: XCTestCase {
         let hello = MCPBridgeHello(parentPID: 42, parentPath: "/Applications/Claude.app/Contents/MacOS/Claude")
         XCTAssertEqual(MCPBridgeHello.decode(hello.encodedLine()), hello)
         XCTAssertNil(MCPBridgeHello.decode(line(#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)))
+    }
+}
+
+final class MCPUnixSocketWriteTests: XCTestCase {
+    /// The bridge's stdout: a pipe the client may close while an answer is on its way.
+    /// `FileHandle.write(_:)` raised an uncatchable exception here and crashed the bridge.
+    func testWriteToPipeWithClosedReaderFailsInsteadOfCrashing() {
+        var fds: [Int32] = [0, 0]
+        XCTAssertEqual(pipe(&fds), 0)
+        defer { close(fds[1]) }
+        // The bridge ignores SIGPIPE process-wide; the test process must not die either.
+        XCTAssertEqual(fcntl(fds[1], F_SETNOSIGPIPE, 1), 0)
+
+        XCTAssertTrue(MCPUnixSocket.writeAll(fds[1], Data("first\n".utf8)))
+        close(fds[0])
+
+        XCTAssertFalse(MCPUnixSocket.writeAll(fds[1], Data(#"{"jsonrpc":"2.0","id":2,"result":{}}"#.utf8)))
+        XCTAssertEqual(errno, EPIPE)
     }
 }
