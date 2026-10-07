@@ -332,7 +332,7 @@ extension MCPMeetingProposal {
 
 /// Lets a borderless window be dragged by its empty areas. Sits behind the content, so buttons
 /// and selectable text keep their clicks.
-private struct WindowDragArea: NSViewRepresentable {
+struct WindowDragArea: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { DragView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
 

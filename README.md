@@ -90,7 +90,15 @@ OWA Widget connects to AI assistants over MCP. The assistant sees your meetings,
 - Read-only by default; creating meetings is a separate switch.
 - Every meeting goes through a confirmation window: **Send**, **Cancel**, or **Edit** in the regular New Meeting window.
 - The assistant knows who you are and tells you apart from namesakes.
-- Turn it on in **Settings → AI (MCP)** and copy the ready-made connection line for your MCP client.
+- Turn it on in **Settings → AI (MCP)** and copy the ready-made connection line for your MCP client. For example:
+
+  ```bash
+  claude mcp add owa-widget -- "/Applications/OWAWidget.app/Contents/Helpers/owawidget-mcp"
+  codex mcp add owa-widget -- "/Applications/OWAWidget.app/Contents/Helpers/owawidget-mcp"
+  ```
+
+  Any stdio MCP client works the same way: the command is the path to `owawidget-mcp`, with no arguments.
+- A new client reads nothing until you allow it in OWA Widget's window. Settings list every client with its name, path and access. OWA Widget works out who connected itself instead of taking the client's word for it.
 
 `16:00–16:15 · search`
 

@@ -2,8 +2,9 @@ import Foundation
 
 /// First line the bridge writes to the app's socket, before any MCP traffic.
 ///
-/// Not a security mechanism — anyone can start the bridge or open the socket directly. It only
-/// labels the connection in the settings journal ("Claude", "Cursor", "claude").
+/// A hint for the app's debug log, nothing more: anyone can open the socket and write this line.
+/// The app identifies the client itself, from the socket's peer process, the bridge's code
+/// signature and the bridge's parent (`MCPClientIdentifier` in the app target).
 public struct MCPBridgeHello: Codable, Equatable, Sendable {
     public static let marker = "owawidget_bridge"
 

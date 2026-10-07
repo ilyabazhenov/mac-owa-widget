@@ -143,9 +143,22 @@ final class MCPConfirmationPanel: MCPConfirmationPresenting {
             onEdit: onEdit
         )
         .environment(\.locale, localization.locale)
+        self.panel = MCPFloatingPanel.present(view, width: 420)
+    }
 
+    func close() {
+        panel?.close()
+        panel = nil
+    }
+}
+
+/// The borderless floating panel both MCP questions use: the meeting confirmation and the new
+/// client question. Centred, above other windows, key without activating the app.
+@MainActor
+enum MCPFloatingPanel {
+    static func present<Content: View>(_ view: Content, width: CGFloat) -> NSPanel {
         let panel = KeyablePanel(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 240),
+            contentRect: NSRect(x: 0, y: 0, width: width, height: 240),
             styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -165,7 +178,7 @@ final class MCPConfirmationPanel: MCPConfirmationPresenting {
         panel.contentView = hosting
         hosting.layoutSubtreeIfNeeded()
         let fitting = hosting.fittingSize
-        panel.setContentSize(NSSize(width: max(420, fitting.width), height: max(160, fitting.height)))
+        panel.setContentSize(NSSize(width: max(width, fitting.width), height: max(160, fitting.height)))
 
         // Centre of the screen, like the join picker: this one is waiting for a decision.
         if let screen = NotificationScreenPolicy.current.resolve() {
@@ -173,15 +186,10 @@ final class MCPConfirmationPanel: MCPConfirmationPresenting {
             let frame = panel.frame
             panel.setFrameOrigin(NSPoint(x: visible.midX - frame.width / 2, y: visible.midY - frame.height / 2))
         }
-        self.panel = panel
         panel.orderFrontRegardless()
         // Key without activating the app, so Esc reaches the Cancel button.
         panel.makeKey()
-    }
-
-    func close() {
-        panel?.close()
-        panel = nil
+        return panel
     }
 }
 

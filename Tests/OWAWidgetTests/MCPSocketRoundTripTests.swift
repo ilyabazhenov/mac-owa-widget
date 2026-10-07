@@ -34,7 +34,7 @@ final class MCPSocketRoundTripTests: XCTestCase {
         let handler = MCPProtocolHandler(serverName: "owa-widget", serverTitle: "OWA Widget", serverVersion: "test",
                                          instructions: "", tools: EchoToolbox().tools)
         let listener = MCPSocketListener(path: path) { channel in
-            let connection = MCPConnection(channel: channel, handler: handler, tools: EchoToolbox()) { _ in }
+            let connection = MCPConnection(channel: channel, handler: handler, tools: EchoToolbox(), clientLabel: "Verified client") { _ in }
             Task { await connection.run() }
         }
         try listener.start()
@@ -81,7 +81,26 @@ final class MCPSocketRoundTripTests: XCTestCase {
         let call = readLine(fd)
         XCTAssertEqual(call?["id"], 2)
         XCTAssertEqual(call?["result"]?["structuredContent"]?["arguments"], ["x": 1])
-        XCTAssertEqual(call?["result"]?["structuredContent"]?["client"], "Claude")
+        // The hello names Claude, but only the server's own lookup labels the connection.
+        XCTAssertEqual(call?["result"]?["structuredContent"]?["client"], "Verified client")
+    }
+
+    func testPeerCredentialsNameTheConnectingProcess() throws {
+        let path = directory.appendingPathComponent("p.sock").path
+        let accepted = expectation(description: "accepted")
+        nonisolated(unsafe) var credentials: MCPPeerCredentials?
+        let listener = MCPSocketListener(path: path) { channel in
+            credentials = channel.peerCredentials()
+            accepted.fulfill()
+        }
+        try listener.start()
+        self.listener = listener
+
+        let fd = try connect(path)
+        defer { close(fd) }
+        wait(for: [accepted], timeout: 5)
+        XCTAssertEqual(credentials?.pid, getpid())
+        XCTAssertNotNil(credentials?.auditToken)
     }
 
     func testSecondListenerDoesNotStealALiveSocket() throws {

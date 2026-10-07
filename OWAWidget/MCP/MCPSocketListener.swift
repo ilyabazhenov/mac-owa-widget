@@ -139,6 +139,11 @@ final class MCPSocketChannel: @unchecked Sendable {
         self.fd = fd
     }
 
+    /// Who connected, from the kernel. Read it before the peer has a chance to exit.
+    func peerCredentials() -> MCPPeerCredentials? {
+        MCPPeerCredentials.read(fd: fd)
+    }
+
     /// Starts the reader thread. Call once.
     func lines() -> AsyncStream<Data> {
         AsyncStream { continuation in

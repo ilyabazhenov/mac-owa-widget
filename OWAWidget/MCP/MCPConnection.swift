@@ -1,18 +1,33 @@
 import Foundation
 import OWAWidgetMCPShared
 
+/// What a connection reports to `MCPServerService` besides tool calls.
+enum MCPConnectionEvent: Sendable {
+    /// The first MCP message arrived. A connection that never sends one (a second copy of the app
+    /// probing whether the socket is alive) is not a client. Carries the name the client gave
+    /// itself in that message, so the question panel can show it.
+    case firstMessage(declaredName: String?)
+    /// The client's name for itself changed after the first message. A claim, not an identity.
+    case declaredName(String)
+    /// The bridge's first line: who it says its parent is. A claim as well; logged for comparison.
+    case bridgeHello(MCPBridgeHello)
+}
+
 /// One client connection: reads lines, runs them through `MCPProtocolHandler` in order, and runs
 /// tool calls concurrently so a slow network tool does not hold up `tools/list`.
 actor MCPConnection {
     private let channel: MCPSocketChannel
     private let handler: MCPProtocolHandler
     private let tools: any MCPToolProviding
-    private let onClientIdentified: @Sendable (String) -> Void
+    /// Who the server found on the other end (`MCPClientIdentifier`), for the journal and the
+    /// confirmation window. Nothing the client sends can change it.
+    private let clientLabel: String?
+    private let onEvent: @Sendable (MCPConnectionEvent) -> Void
 
     private var session = MCPSessionState()
     private var isFirstLine = true
-    private var clientLabel: String?
-    private var labelFromProtocol = false
+    private var sawMessage = false
+    private var declaredName: String?
     /// Running tool calls by the canonical JSON of their request id. Removing an entry is what
     /// cancels a call's answer: `finish` only replies for ids still present.
     private var running: [String: Task<Void, Never>] = [:]
@@ -21,12 +36,14 @@ actor MCPConnection {
         channel: MCPSocketChannel,
         handler: MCPProtocolHandler,
         tools: any MCPToolProviding,
-        onClientIdentified: @escaping @Sendable (String) -> Void
+        clientLabel: String?,
+        onEvent: @escaping @Sendable (MCPConnectionEvent) -> Void
     ) {
         self.channel = channel
         self.handler = handler
         self.tools = tools
-        self.onClientIdentified = onClientIdentified
+        self.clientLabel = clientLabel?.isEmpty == false ? clientLabel : nil
+        self.onEvent = onEvent
     }
 
     func run() async {
@@ -42,17 +59,24 @@ actor MCPConnection {
         if isFirstLine {
             isFirstLine = false
             if let hello = MCPBridgeHello.decode(line) {
-                identify(Self.label(forParentPath: hello.parent_path), fromProtocol: false)
+                onEvent(.bridgeHello(hello))
                 return
             }
         }
+        let message = JSONLine.decode(line)
+        let name = message.flatMap(Self.clientName(in:))
+        if !sawMessage {
+            sawMessage = true
+            declaredName = name
+            onEvent(.firstMessage(declaredName: name))
+        } else if let name, name != declaredName {
+            declaredName = name
+            onEvent(.declaredName(name))
+        }
 
-        guard let message = JSONLine.decode(line) else {
+        guard let message else {
             channel.send(JSONLine.encode(JSONRPC.error(id: .null, code: JSONRPCErrorCode.parseError, message: "Parse error")))
             return
-        }
-        if let name = Self.clientName(in: message) {
-            identify(name, fromProtocol: true)
         }
 
         switch handler.handle(message, session: &session) {
@@ -82,14 +106,6 @@ actor MCPConnection {
         channel.send(JSONLine.encode(response))
     }
 
-    private func identify(_ label: String, fromProtocol: Bool) {
-        // The MCP client name (from initialize / _meta) beats the parent-process guess.
-        guard !label.isEmpty, !(labelFromProtocol && !fromProtocol), label != clientLabel else { return }
-        clientLabel = label
-        labelFromProtocol = fromProtocol
-        onClientIdentified(label)
-    }
-
     // MARK: - Labels
 
     static func clientName(in message: JSONValue) -> String? {
@@ -98,15 +114,5 @@ actor MCPConnection {
         let title = info?["title"]?.stringValue
         let name = info?["name"]?.stringValue
         return (title?.isEmpty == false ? title : name).flatMap { $0.isEmpty ? nil : $0 }
-    }
-
-    /// "/Applications/Claude.app/Contents/MacOS/Claude" -> "Claude"; "/usr/local/bin/claude" -> "claude".
-    static func label(forParentPath path: String?) -> String {
-        guard let path, !path.isEmpty else { return "" }
-        let components = URL(fileURLWithPath: path).pathComponents
-        if let app = components.first(where: { $0.hasSuffix(".app") }) {
-            return String(app.dropLast(4))
-        }
-        return components.last ?? ""
     }
 }

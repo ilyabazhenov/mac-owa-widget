@@ -244,6 +244,8 @@ final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         defer { completionHandler() }
+        // "New MCP client" carries no meeting; there is nothing to join.
+        guard !response.notification.request.identifier.hasPrefix(MCPServerService.notificationIdentifierPrefix) else { return }
         let handled = removeDeliveredForJoinAction(
             actionIdentifier: response.actionIdentifier,
             requestIdentifier: response.notification.request.identifier,
