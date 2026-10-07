@@ -113,12 +113,28 @@ echo "== Старая сторона: $(basename "${OLD_ARCHIVE}") =="
 ditto -x -k "${OLD_ARCHIVE}" "${WORK_DIR}/old"
 OLD_APP="${WORK_DIR}/old/OWAWidget.app"
 [[ -d "${OLD_APP}" ]] || { echo "В архиве нет OWAWidget.app" >&2; exit 1; }
+# Начиная с v1.0.54 релизы подписаны Developer ID, и library validation в них включена: ad-hoc
+# подпись без Team ID под ней не загрузит Sparkle.framework (dyld: «different Team IDs»).
+# Такую старую сторону переподписываем сертификатом новой стороны; более ранние — ad-hoc.
+OLD_IDENTITY="-"
+# Через переменную, не `codesign | grep -q`: при pipefail ранний выход grep обрывает codesign
+# SIGPIPE-ом, и проверка молча ложна.
+OLD_SIGNATURE="$(codesign -dvv "${OLD_APP}" 2>&1 || true)"
+if [[ "${OLD_SIGNATURE}" == *$'\nAuthority=Developer ID Application:'* ]]; then
+  [[ "${NEW_IDENTITY}" != "-" ]] || {
+    echo "Старая сторона подписана Developer ID: нужен сертификат, --identity - не подойдёт." >&2
+    exit 1
+  }
+  OLD_IDENTITY="${NEW_IDENTITY}"
+fi
 patch_plist "${OLD_APP}"
 # Правка Info.plist ломает подпись, поэтому переподписываем — но с entitlements и флагами
 # (hardened runtime) самого архива, у каждого вложенного компонента свои: так старая сторона
 # остаётся тем, что стоит у людей, а не тем, как мы подписываем сейчас.
-codesign --sign - --force --deep --preserve-metadata=entitlements,flags "${OLD_APP}" >/dev/null 2>&1
-echo "   подпись: $(codesign -dv "${OLD_APP}" 2>&1 | grep -o 'flags=[^ ]*')"
+codesign --sign "${OLD_IDENTITY}" --force --deep --timestamp=none \
+  --preserve-metadata=entitlements,flags "${OLD_APP}" >/dev/null 2>&1
+codesign --verify --strict --deep "${OLD_APP}"
+echo "   подпись: $(codesign -dvv "${OLD_APP}" 2>&1 | grep -m1 -E '^(Authority|Signature)=') $(codesign -dv "${OLD_APP}" 2>&1 | grep -o 'flags=[^ ]*')"
 
 echo "== Новая сторона: текущая сборка =="
 ditto "${BUILT_APP}" "${WORK_DIR}/new/OWAWidget.app"
