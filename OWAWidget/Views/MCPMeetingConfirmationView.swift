@@ -57,6 +57,13 @@ struct MCPMeetingConfirmationView: View {
     // MARK: - Sections
 
     private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            MCPPanelBrandBar(localization: localization) { EmptyView() }
+            title
+        }
+    }
+
+    private var title: some View {
         HStack(spacing: 8) {
             Image(systemName: "calendar.badge.plus")
                 .font(.system(size: 15))

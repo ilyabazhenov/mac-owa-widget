@@ -497,7 +497,8 @@
 "mcp.clients.ask.off" = "New clients get access at once and you get a notification. Clients denied in the list stay denied.";
 "mcp.clients.access.denied" = "denied";
 "mcp.clients.access.pending" = "waiting for you";
-"mcp.approve.title" = "A new client wants access to your calendar";
+"mcp.approve.title" = "“%@” wants access to your calendar";
+"mcp.panel.brand" = "OWA Widget · AI (MCP)";
 "mcp.approve.scope" = "It will be able to read your meetings from the last 7 days and the next 30, search the address book and find free time.";
 "mcp.approve.scopeWithMeetings" = "It will be able to read your meetings from the last 7 days and the next 30, search the address book, find free time and propose meetings, each of which you confirm separately.";
 "mcp.approve.hint" = "OWA Widget found the name and path itself, from the process, not from what the client says. If you did not start this program, deny access. You can change the decision in Settings → AI (MCP).";

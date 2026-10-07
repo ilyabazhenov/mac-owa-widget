@@ -156,7 +156,8 @@ final class MCPConfirmationPanel: MCPConfirmationPresenting {
 /// client question. Centred, above other windows, key without activating the app.
 @MainActor
 enum MCPFloatingPanel {
-    static func present<Content: View>(_ view: Content, width: CGFloat) -> NSPanel {
+    /// `hiddenFromScreenSharing` keeps the panel out of screen recordings and shared screens.
+    static func present<Content: View>(_ view: Content, width: CGFloat, hiddenFromScreenSharing: Bool = false) -> NSPanel {
         let panel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: 240),
             styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
@@ -171,6 +172,9 @@ enum MCPFloatingPanel {
         panel.hasShadow = false
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
+        if hiddenFromScreenSharing {
+            panel.sharingType = .none
+        }
 
         let hosting = ConfirmationFirstMouseHostingView(rootView: view)
         hosting.wantsLayer = true
@@ -190,6 +194,27 @@ enum MCPFloatingPanel {
         // Key without activating the app, so Esc reaches the Cancel button.
         panel.makeKey()
         return panel
+    }
+}
+
+/// Whose window this is. Both MCP panels float over other apps without a title bar, and a
+/// question about calendar access that names no app is exactly the kind not to trust.
+struct MCPPanelBrandBar<Trailing: View>: View {
+    let localization: LocalizationService
+    @ViewBuilder let trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 16, height: 16)
+            Text(localization.tr("mcp.panel.brand"))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            trailing()
+        }
     }
 }
 

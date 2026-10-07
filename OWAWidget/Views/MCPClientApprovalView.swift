@@ -4,13 +4,19 @@ import SwiftUI
 /// Deny / Allow. Shown by `MCPClientApprovalController`; the client gets nothing before Allow.
 struct MCPClientApprovalView: View {
     static let urgentSeconds: TimeInterval = 10
+    /// Buttons come alive this long after the panel appears. Once a question is answered, the
+    /// next client's question takes its place, and the second click of a double click would
+    /// otherwise allow a client nobody read about.
+    static let armingDelay: Duration = .milliseconds(800)
 
     let request: MCPClientApprovalRequest
+    let clientIcon: NSImage?
     let shownAt: Date
     let deadline: Date
     let localization: LocalizationService
     let onAllow: () -> Void
     let onDeny: () -> Void
+    @State private var armed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -44,18 +50,15 @@ struct MCPClientApprovalView: View {
                 .stroke(Color.accentColor.opacity(0.3), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        .task(id: request.key) {
+            armed = false
+            try? await Task.sleep(for: Self.armingDelay)
+            armed = true
+        }
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "lock.shield")
-                .font(.system(size: 15))
-                .foregroundStyle(Color.accentColor)
-            Text(localization.tr("mcp.approve.title"))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        MCPPanelBrandBar(localization: localization) {
             TimelineView(.animation(minimumInterval: 0.25)) { context in
                 let remaining = remaining(at: context.date)
                 Text(localization.tr("mcp.confirm.countdown", Int(remaining.rounded(.up))))
@@ -68,10 +71,21 @@ struct MCPClientApprovalView: View {
     }
 
     private var client: some View {
+        HStack(alignment: .top, spacing: 12) {
+            if let clientIcon {
+                Image(nsImage: clientIcon)
+                    .resizable()
+                    .frame(width: 40, height: 40)
+            }
+            clientDetails
+        }
+    }
+
+    private var clientDetails: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(request.name)
-                .font(.system(size: 15, weight: .semibold))
-                .lineLimit(2)
+            Text(localization.tr("mcp.approve.title", request.name))
+                .font(.system(size: 14, weight: .semibold))
+                .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
             if let declared = request.declaredName, declared != request.name {
                 Text(localization.tr("mcp.clients.declared", declared))
@@ -125,6 +139,7 @@ struct MCPClientApprovalView: View {
             Button(localization.tr("mcp.approve.allow"), action: onAllow)
                 .buttonStyle(.borderedProminent)
                 .fixedSize()
+                .disabled(!armed)
         }
         .controlSize(.regular)
         .padding(.horizontal, 16)

@@ -199,6 +199,7 @@ final class MCPClientApprovalPanel: MCPClientApprovalPresenting {
         let localization = LocalizationService()
         let view = MCPClientApprovalView(
             request: request,
+            clientIcon: Self.icon(forExecutable: request.executablePath),
             shownAt: Date(),
             deadline: deadline,
             localization: localization,
@@ -206,7 +207,16 @@ final class MCPClientApprovalPanel: MCPClientApprovalPresenting {
             onDeny: onDeny
         )
         .environment(\.locale, localization.locale)
-        self.panel = MCPFloatingPanel.present(view, width: 420)
+        // A home-directory path and "an AI agent is reading your calendar" do not belong in a
+        // screen share in the middle of a call.
+        self.panel = MCPFloatingPanel.present(view, width: 420, hiddenFromScreenSharing: true)
+    }
+
+    /// The icon of the outermost `.app`, or of the file itself: people recognise a client by its
+    /// icon faster than by its path.
+    static func icon(forExecutable path: String) -> NSImage {
+        let app = MCPSystemProcessInspector.outermostApp(path)
+        return NSWorkspace.shared.icon(forFile: app?.path ?? path)
     }
 
     func close() {
