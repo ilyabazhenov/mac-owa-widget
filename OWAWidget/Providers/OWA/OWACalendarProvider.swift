@@ -238,7 +238,9 @@ actor OWACalendarProvider: CalendarProvider {
 
         let fmt = DateFormatter()
         fmt.locale = Locale(identifier: "en_US_POSIX")
-        fmt.timeZone = TimeZone.current
+        // OWA answers with an explicit offset; a bare wall time would be in the zone the request
+        // header named, so read it in that one.
+        fmt.timeZone = OWAServerTimeZone.current.zone
 
         for format in dateFormats {
             fmt.dateFormat = format

@@ -4,13 +4,13 @@ enum OWACalendarViewRequestPayload {
     static func make(
         start: Date,
         end: Date,
-        timezoneID: String,
+        serverTimeZone: OWAServerTimeZone,
         folderIdentifier: OWAFolderIdentifier?
     ) -> [String: Any] {
-        let localFmt = localDateFormatter()
+        let localFmt = serverTimeZone.wallTimeFormatter()
         return [
             "__type": "GetCalendarViewJsonRequest:#Exchange",
-            "Header": commonHeader(timezoneID: timezoneID),
+            "Header": commonHeader(timezoneID: serverTimeZone.windowsID),
             "Body": [
                 "__type": "GetCalendarViewRequest:#Exchange",
                 "CalendarId": calendarID(folderIdentifier: folderIdentifier),
@@ -56,14 +56,6 @@ enum OWACalendarViewRequestPayload {
                 ] as [String: Any],
             ] as [String: Any],
         ]
-    }
-
-    private static func localDateFormatter() -> DateFormatter {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone.current
-        return f
     }
 }
 
@@ -119,14 +111,6 @@ private func owaSharedHeader(timezoneID: String, version: String = "V2017_08_18"
             ] as [String: Any],
         ] as [String: Any],
     ]
-}
-
-private func owaLocalDateFormatter() -> DateFormatter {
-    let f = DateFormatter()
-    f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-    f.locale = Locale(identifier: "en_US_POSIX")
-    f.timeZone = TimeZone.current
-    return f
 }
 
 // MARK: - FindPeople
@@ -201,8 +185,8 @@ enum OWAFindPeoplePayload {
 // MARK: - GetUserAvailabilityInternal
 
 enum OWAUserAvailabilityPayload {
-    static func make(emails: [String], start: Date, end: Date, timezoneID: String) -> [String: Any] {
-        let fmt = owaLocalDateFormatter()
+    static func make(emails: [String], start: Date, end: Date, serverTimeZone: OWAServerTimeZone) -> [String: Any] {
+        let fmt = serverTimeZone.wallTimeFormatter()
         let mailboxes: [[String: Any]] = emails.map { email in
             [
                 "__type": "MailboxData:#Exchange",
@@ -215,7 +199,7 @@ enum OWAUserAvailabilityPayload {
         return [
             "request": [
                 "__type": "GetUserAvailabilityInternalJsonRequest:#Exchange",
-                "Header": owaSharedHeader(timezoneID: timezoneID, version: "Exchange2013"),
+                "Header": owaSharedHeader(timezoneID: serverTimeZone.windowsID, version: "Exchange2013"),
                 "Body": [
                     "__type": "GetUserAvailabilityRequest:#Exchange",
                     "MailboxDataArray": mailboxes,

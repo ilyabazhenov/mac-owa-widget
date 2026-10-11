@@ -140,12 +140,14 @@ private final class Store: @unchecked Sendable {
         let build = info["CFBundleVersion"] as? String ?? "?"
         let os = ProcessInfo.processInfo.operatingSystemVersionString
         let locale = Locale.current.identifier
+        let timeZone = TimeZone.current.identifier
         let started = ISO8601DateFormatter().string(from: Date())
         return """
         OWAWidget diagnostics
         version: \(version) (build \(build))
         macOS: \(os)
         locale: \(locale)
+        system time zone: \(timeZone)
         session started: \(started)
         """
     }

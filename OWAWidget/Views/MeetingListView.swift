@@ -34,7 +34,8 @@ struct MeetingListView: View {
     var selectedEventID: String? = nil
     var onSelect: (CalendarEvent) -> Void = { _ in }
     @EnvironmentObject private var localization: LocalizationService
-    @State private var hasAutoScrolledToCurrentSlot = false
+    /// Bumped by every autoscroll request, so a stale retry from an earlier one stands down.
+    @State private var autoScrollGeneration = 0
 
     private let timeColumnWidth: CGFloat = 56
     private let timelinePointsPerMinute: CGFloat = 1.0
@@ -66,15 +67,15 @@ struct MeetingListView: View {
             }
             .accessibilityElement(children: .contain)
             .onAppear {
-                hasAutoScrolledToCurrentSlot = false
-                scrollToCurrentSlotIfNeeded(proxy: proxy)
+                scrollToCurrentSlot(proxy: proxy, reason: "appear")
             }
-            .onChange(of: sections.map(\.timedEvents.count)) { _ in
-                scrollToCurrentSlotIfNeeded(proxy: proxy)
+            // The popover's view tree outlives a close, and `onAppear` does not reliably fire on
+            // reopen: without this the timeline shows wherever it was left hours ago.
+            .onReceive(NotificationCenter.default.publisher(for: .owaPopoverDidOpen)) { _ in
+                scrollToCurrentSlot(proxy: proxy, reason: "popover-open")
             }
             .onChange(of: sections.first?.date) { _ in
-                hasAutoScrolledToCurrentSlot = false
-                scrollToCurrentSlotIfNeeded(proxy: proxy)
+                scrollToCurrentSlot(proxy: proxy, reason: "day-change")
             }
         }
     }
@@ -237,49 +238,48 @@ struct MeetingListView: View {
         return "slot-\(sectionKey)-\(slotKey)"
     }
 
+    /// Delays at which the scroll is applied. `scrollTo` reports nothing and quietly does nothing
+    /// when the target has not been laid out yet — on the popover's first sizing, or while a day
+    /// slides in (0.22 s) — and the list then stays at midnight. The late repeat lands after both.
+    private static let autoScrollDelays: [UInt64] = [0, 300_000_000]
 
-    private func scrollToCurrentSlotIfNeeded(proxy: ScrollViewProxy) {
-        guard !hasAutoScrolledToCurrentSlot else { return }
-        guard let id = scrollAnchorSlotID() else { return }
+    private func scrollToCurrentSlot(proxy: ScrollViewProxy, reason: String) {
+        guard let section = sections.first else { return }
+        let calendar = AppTimeZone.calendar
+        let now = Date()
+        guard let slotStart = TimelineMeetingLayout.scrollAnchorSlotStart(
+            sectionDate: section.date,
+            now: now,
+            calendar: calendar
+        ) else {
+            return
+        }
+        let id = slotID(for: section.date, slotStart: slotStart)
+        DiagnosticLog.event(Self.autoScrollDiagnostic(reason: reason, now: now, slotStart: slotStart, calendar: calendar))
 
-        hasAutoScrolledToCurrentSlot = true
-        // Deliberately not animated. This runs as the list appears, so there is no previous
-        // position for the user to have seen it travel from — and when the list appears as a
-        // page sliding in from the side, an animated scroll runs against that slide over the
-        // same fifth of a second, visibly scrolling the day while it is still flying in and
-        // risking a short landing on a frame that has not arrived yet.
-        DispatchQueue.main.async {
-            proxy.scrollTo(id, anchor: .top)
+        autoScrollGeneration += 1
+        let generation = autoScrollGeneration
+        for delay in Self.autoScrollDelays {
+            Task { @MainActor in
+                if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
+                guard generation == autoScrollGeneration else { return }
+                // Deliberately not animated. This runs as the list appears, so there is no
+                // previous position for the user to have seen it travel from — and when the list
+                // appears as a page sliding in from the side, an animated scroll runs against
+                // that slide over the same fifth of a second.
+                proxy.scrollTo(id, anchor: .top)
+            }
         }
     }
 
-    // Returns the slot 2 hours before the current clock time, so that after scrolling the current
-    // moment sits lower on the timeline with context above it.
-    //
-    // Computed for whichever day is on screen, not only for today. Paging rebuilds the list, so
-    // any other day would otherwise open at midnight: look at today around 9am, swipe to
-    // tomorrow, and the timeline drops to the small hours instead of staying where the eye was.
-    // Anchoring every day at the same clock position keeps the grid still under a swipe.
-    private func scrollAnchorSlotID() -> String? {
-        guard let section = sections.first else { return nil }
-
-        let calendar = AppTimeZone.calendar
-        let now = Date()
-        let nowMinutes = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
-        // Clamped, not wrapped: two hours before 00:30 is yesterday evening, and projecting that
-        // clock time onto this day would land the user at the bottom of it.
-        let anchorMinutes = max(0, nowMinutes - 120)
-        let snappedMinutes = (anchorMinutes / slotDurationMinutes) * slotDurationMinutes
-
-        // Built by adding minutes to the day's start, exactly the way the slots themselves are, so
-        // the id still matches on a day that gains or loses an hour to DST.
-        guard let slotStart = calendar.date(
-            byAdding: .minute,
-            value: snappedMinutes,
-            to: calendar.startOfDay(for: section.date)
-        ) else {
-            return nil
-        }
-        return slotID(for: section.date, slotStart: slotStart)
+    /// Non-PII trace for "Copy diagnostics": both zones plus the clock and the anchor as the
+    /// timeline sees them, enough to tell a wrong zone from a scroll that did not land.
+    private static func autoScrollDiagnostic(reason: String, now: Date, slotStart: Date, calendar: Calendar) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = calendar.timeZone
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        return "Timeline autoscroll reason=\(reason) display=\(calendar.timeZone.identifier) "
+            + "system=\(TimeZone.current.identifier) now=\(f.string(from: now)) anchor=\(f.string(from: slotStart))"
     }
 }

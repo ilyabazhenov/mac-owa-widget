@@ -798,7 +798,7 @@ actor OWAClient {
         let requestDict = OWACalendarViewRequestPayload.make(
             start: start,
             end: end,
-            timezoneID: windowsTimezoneID(),
+            serverTimeZone: .current,
             folderIdentifier: folderIdentifier
         )
 
@@ -1238,7 +1238,7 @@ actor OWAClient {
 
     private func getUserAvailabilityInternal(emails: [String], from start: Date, to end: Date, attempt: Int) async throws -> [AttendeeAvailability] {
         let canary = try await ensureCanary()
-        let payload = OWAUserAvailabilityPayload.make(emails: emails, start: start, end: end, timezoneID: windowsTimezoneID())
+        let payload = OWAUserAvailabilityPayload.make(emails: emails, start: start, end: end, serverTimeZone: .current)
         let jsonData = try JSONSerialization.data(withJSONObject: payload)
         let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
 
@@ -1649,20 +1649,7 @@ actor OWAClient {
     }
 
     private func windowsTimezoneID() -> String {
-        let mapping: [String: String] = [
-            "Europe/Moscow":       "Russian Standard Time",
-            "Europe/Samara":       "Russia Time Zone 3",
-            "Asia/Yekaterinburg":  "Ekaterinburg Standard Time",
-            "Europe/London":       "GMT Standard Time",
-            "America/New_York":    "Eastern Standard Time",
-            "America/Chicago":     "Central Standard Time",
-            "America/Denver":      "Mountain Standard Time",
-            "America/Los_Angeles": "Pacific Standard Time",
-            "Europe/Berlin":       "W. Europe Standard Time",
-            "Europe/Paris":        "Romance Standard Time",
-            "Asia/Tokyo":          "Tokyo Standard Time",
-        ]
-        return mapping[TimeZone.current.identifier] ?? "Russian Standard Time"
+        OWAServerTimeZone.current.windowsID
     }
 
     static func parseBaseURL(_ input: String) throws -> URL {

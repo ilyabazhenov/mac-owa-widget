@@ -12,6 +12,36 @@ final class TimelineMeetingLayoutTests: XCTestCase {
         dayStart = Date(timeIntervalSince1970: 1_700_000_000)
     }
 
+    func testScrollAnchorIsTwoHoursBeforeNowSnappedToHalfHour() throws {
+        let now = try XCTUnwrap(calendar.date(byAdding: .minute, value: 14 * 60 + 17, to: calendar.startOfDay(for: dayStart)))
+        let anchor = try XCTUnwrap(TimelineMeetingLayout.scrollAnchorSlotStart(sectionDate: dayStart, now: now, calendar: calendar))
+        XCTAssertEqual(calendar.component(.hour, from: anchor), 12)
+        XCTAssertEqual(calendar.component(.minute, from: anchor), 0)
+    }
+
+    func testScrollAnchorForAnotherDayKeepsTodaysClockPosition() throws {
+        // Paging to tomorrow at 14:17 must open tomorrow at 12:00, not at midnight.
+        let now = try XCTUnwrap(calendar.date(byAdding: .minute, value: 14 * 60 + 17, to: calendar.startOfDay(for: dayStart)))
+        let tomorrow = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: dayStart)))
+        let anchor = try XCTUnwrap(TimelineMeetingLayout.scrollAnchorSlotStart(sectionDate: tomorrow, now: now, calendar: calendar))
+        XCTAssertTrue(calendar.isDate(anchor, inSameDayAs: tomorrow))
+        XCTAssertEqual(calendar.component(.hour, from: anchor), 12)
+    }
+
+    func testScrollAnchorMatchesASlotOfThatDay() throws {
+        let now = try XCTUnwrap(calendar.date(byAdding: .minute, value: 9 * 60 + 45, to: calendar.startOfDay(for: dayStart)))
+        let tomorrow = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: dayStart)))
+        let anchor = try XCTUnwrap(TimelineMeetingLayout.scrollAnchorSlotStart(sectionDate: tomorrow, now: now, calendar: calendar))
+        let slots = TimelineMeetingLayout.makeHourSlots(events: [], sectionDate: tomorrow, calendar: calendar, referenceDate: now)
+        XCTAssertTrue(slots.contains { $0.startDate == anchor })
+    }
+
+    func testScrollAnchorClampsToMidnightEarlyInTheDay() throws {
+        let now = try XCTUnwrap(calendar.date(byAdding: .minute, value: 30, to: calendar.startOfDay(for: dayStart)))
+        let anchor = try XCTUnwrap(TimelineMeetingLayout.scrollAnchorSlotStart(sectionDate: dayStart, now: now, calendar: calendar))
+        XCTAssertEqual(anchor, calendar.startOfDay(for: dayStart))
+    }
+
     func testCreatesFixedHalfHourlySlotsForFullDay() {
         let slots = TimelineMeetingLayout.makeHourSlots(
             events: [],

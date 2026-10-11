@@ -6,7 +6,7 @@ final class OWARequestPayloadTests: XCTestCase {
         let payload = OWACalendarViewRequestPayload.make(
             start: Date(timeIntervalSince1970: 0),
             end: Date(timeIntervalSince1970: 3_600),
-            timezoneID: "Russian Standard Time",
+            serverTimeZone: .fallback,
             folderIdentifier: nil
         )
 
@@ -18,7 +18,7 @@ final class OWARequestPayloadTests: XCTestCase {
         let payload = OWACalendarViewRequestPayload.make(
             start: Date(timeIntervalSince1970: 0),
             end: Date(timeIntervalSince1970: 3_600),
-            timezoneID: "Russian Standard Time",
+            serverTimeZone: .fallback,
             folderIdentifier: nil
         )
 
@@ -31,7 +31,7 @@ final class OWARequestPayloadTests: XCTestCase {
         let payload = OWACalendarViewRequestPayload.make(
             start: Date(timeIntervalSince1970: 0),
             end: Date(timeIntervalSince1970: 3_600),
-            timezoneID: "Russian Standard Time",
+            serverTimeZone: .fallback,
             folderIdentifier: OWAFolderIdentifier(id: "folder-id", changeKey: "change-key")
         )
 
@@ -197,7 +197,7 @@ final class OWARequestPayloadTests: XCTestCase {
             emails: ["a@x.com", "b@y.org"],
             start: start,
             end: end,
-            timezoneID: "Russian Standard Time"
+            serverTimeZone: .fallback
         )
         XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: payload))
         let request = try XCTUnwrap(payload["request"] as? [String: Any])

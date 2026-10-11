@@ -166,6 +166,33 @@ enum TimelineMeetingLayout {
         )
     }
 
+    /// Start of the slot the timeline scrolls to: two hours before the current clock time, so the
+    /// current moment sits lower on screen with context above it.
+    ///
+    /// Computed for whichever day is on screen, not only for today. Paging rebuilds the list, so
+    /// any other day would otherwise open at midnight: look at today around 9am, swipe to
+    /// tomorrow, and the timeline drops to the small hours instead of staying where the eye was.
+    /// Anchoring every day at the same clock position keeps the grid still under a swipe.
+    static func scrollAnchorSlotStart(
+        sectionDate: Date,
+        now: Date,
+        calendar: Calendar
+    ) -> Date? {
+        let nowMinutes = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
+        // Clamped, not wrapped: two hours before 00:30 is yesterday evening, and projecting that
+        // clock time onto this day would land the user at the bottom of it.
+        let anchorMinutes = max(0, nowMinutes - 120)
+        let snappedMinutes = (anchorMinutes / slotDurationMinutes) * slotDurationMinutes
+
+        // Built by adding minutes to the day's start, exactly the way `makeHourSlots` builds the
+        // slots, so the start still matches one of them on a day that gains or loses an hour to DST.
+        return calendar.date(
+            byAdding: .minute,
+            value: snappedMinutes,
+            to: calendar.startOfDay(for: sectionDate)
+        )
+    }
+
     private static func adjustedHourBounds(
         sectionDate: Date,
         calendar: Calendar,

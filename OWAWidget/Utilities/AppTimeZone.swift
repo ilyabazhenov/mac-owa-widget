@@ -7,9 +7,9 @@ import Foundation
 /// `Europe/Moscow`; "System" follows the macOS clock.
 ///
 /// Server-side wire format (OWA `TimeZoneContext`, request body date strings) deliberately stays
-/// on `TimeZone.current` because the server is told that TZ via `windowsTimezoneID()` and round-
-/// trips dates against it. Decoupling display TZ from server TZ keeps absolute-time accuracy
-/// while letting the UI match the user's mental model.
+/// on the macOS clock via `OWAServerTimeZone`, which keeps the Windows id in the header and the
+/// zone the dates are written in together. Decoupling display TZ from server TZ keeps
+/// absolute-time accuracy while letting the UI match the user's mental model.
 enum AppTimeZone {
     /// `UserDefaults` key holding the user-selected display timezone token.
     /// Shared single source of truth: `CalendarService` reads/writes it, this resolver reads it.
