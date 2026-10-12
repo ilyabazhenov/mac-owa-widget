@@ -1,3 +1,39 @@
+## v1.0.56 - 2026-10-12
+
+### RU
+
+#### Что изменилось
+
+- Новый MCP-клиент ничего не читает из календаря, пока вы не разрешите ему доступ в окне OWA Widget. Кто подключился, приложение определяет само, по процессу и подписи, а не со слов клиента. Клиенты, которые уже работали с приложением, разрешены автоматически.
+- В **«Настройки» → «AI (MCP)»** появился список клиентов: кто подключался и когда, кнопки **«Разрешить»** и **«Запретить»**. О новом клиенте приходит уведомление. Вопрос можно выключить, тогда новые клиенты получают доступ сразу, а вы получаете уведомление.
+- Там же добавлена готовая строка подключения для Codex.
+- Окна вопроса о доступе и подтверждения встречи подписаны значком и названием OWA Widget, чтобы было видно, кто спрашивает.
+- Таймлайн при каждом открытии окна показывает текущее время. Раньше он мог остаться на полуночи или там, где его пролистали несколько часов назад.
+- Если на Mac выбран часовой пояс, которого не было в таблице приложения, запросы к Exchange уходили в московском поясе, и встречи и занятость коллег сдвигались. Таблица дополнена всеми поясами России, СНГ и частыми направлениями, даты запросов пишутся в том же поясе.
+
+#### Установка
+
+1. Скачайте `.zip`, распакуйте и перенесите `OWAWidget.app` в `/Applications`.
+2. Запустите приложение — дополнительных шагов не нужно.
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- A new MCP client reads nothing from your calendar until you allow it in OWA Widget's window. The app works out who connected itself, from the process and its signature, not from what the client says. Clients that already worked with the app stay allowed.
+- **Settings → AI (MCP)** now lists clients: who connected and when, with **Allow** and **Deny** buttons. A new client brings a notification. You can turn the question off; new clients then get access at once and you get a notification.
+- The same pane now has a ready-made connection line for Codex.
+- The access question and the meeting confirmation window now carry OWA Widget's icon and name, so you can tell who is asking.
+- The timeline shows the current time every time the window opens. Before, it could stay at midnight or where you left it hours ago.
+- If your Mac used a time zone missing from the app's table, requests to Exchange went out in Moscow time, shifting meetings and colleagues' free/busy. The table now covers all Russian and CIS time zones and common destinations, and request dates use the same zone.
+
+#### Installation
+
+1. Download the `.zip`, unzip it and move `OWAWidget.app` to `/Applications`.
+2. Launch the app — no extra steps needed.
+3. All subsequent updates install automatically via the "Install" button inside the app.
+
 ## v1.0.55 - 2026-10-07
 
 ### RU
