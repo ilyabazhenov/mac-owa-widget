@@ -165,7 +165,7 @@
             <a class="link" href="https://github.com/ilyabazhenov/mac-owa-widget">Source on GitHub ›</a>
           </div>
           <p class="fine"><span class="mono" id="version">v1.0</span> · macOS 13+ · Apple Silicon &amp; Intel · free<br>
-            The first launch needs one Terminal command — <a href="#install">how to install</a></p></div>
+            Signed and notarized by Apple — <a href="#install">how to install</a></p></div>
         <figure class="shot">
           <img class="only-light" src="images/popover-light-en.webp" width="1120" height="1560" alt="OWA Widget window: the day timeline, next meeting, all-day events and colleagues">
           <img class="only-dark" src="images/popover-en.webp" width="1120" height="1560" alt="OWA Widget window: the day timeline, next meeting, all-day events and colleagues">
@@ -189,7 +189,8 @@
             <li>Smart menu bar status: time until the meeting, and until it ends</li>
             <li>A reminder with a Join button on the display where your cursor is</li>
             <li>Ctrl+Option+J joins from any app</li>
-            <li>Moved or cancelled meetings show up in a panel you can answer from</li>
+            <li>New invitations, moved and cancelled meetings show up in a panel you can answer from</li>
+            <li>Unanswered invitations wait in the popover, with a ✉︎ count in the menu bar</li>
           </ul>
         </div>
       </div>
@@ -251,7 +252,8 @@
             <li>Read-only by default; creating meetings is a separate switch</li>
             <li>Every meeting goes through a confirmation window: Send, Cancel, or Edit in the regular New Meeting window</li>
             <li>The assistant knows who you are and tells you apart from namesakes</li>
-            <li>Setup is a line from the app's settings, ready for popular MCP clients</li>
+            <li>Setup is a line from the app's settings, ready for Claude Code, Codex and other MCP clients</li>
+            <li>Settings list every client that has connected, and a new one shows a notification. The app works out who connected itself, not from the client's word</li>
           </ul>
         </div>
       </div>
@@ -299,6 +301,7 @@
           <p class="lead">Several Exchange / OWA servers, including ones behind Windows single sign-on, and any calendar your Mac already syncs. All on one timeline.</p>
           <ul class="facts">
             <li>macOS calendars are read-only; RSVP and new meetings go through OWA</li>
+            <li>A two-finger swipe pages through days, like back and forward in a browser</li>
             <li>Theme, window size, time zone and language in Settings</li>
           </ul>
         </div>
@@ -341,8 +344,7 @@
         <li><div><b>Move it to Applications</b>
           <p>Unzip and drag <code>OWAWidget.app</code> to <code>/Applications</code>.</p></div></li>
         <li><div><b>Launch and add an account</b>
-          <p>The icon appears in the menu bar. Settings → Accounts → “+”: Exchange (OWA) or macOS Calendar.</p>
-          <div class="cmd"><code>open /Applications/OWAWidget.app</code><button type="button" data-copy>Copy</button></div></div></li>
+          <p>The icon appears in the menu bar. Settings → Accounts → “+”: Exchange (OWA) or macOS Calendar.</p></div></li>
       </ol>
       <dl class="req">
         <div><dt>macOS</dt><dd>13 Ventura or later, Apple Silicon and Intel</dd></div>

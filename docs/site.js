@@ -48,18 +48,6 @@
   tick();
   setInterval(tick, 30000);
 
-  // Copy buttons for install commands.
-  document.querySelectorAll('[data-copy]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var text = b.parentElement.querySelector('code').textContent;
-      navigator.clipboard.writeText(text).then(function () {
-        var label = b.textContent;
-        b.textContent = ru ? 'Скопировано' : 'Copied';
-        setTimeout(function () { b.textContent = label; }, 1400);
-      });
-    });
-  });
-
   // Latest version from GitHub; the static label stays if the request fails.
   fetch('https://api.github.com/repos/ilyabazhenov/mac-owa-widget/releases/latest')
     .then(function (r) { return r.ok ? r.json() : null; })
