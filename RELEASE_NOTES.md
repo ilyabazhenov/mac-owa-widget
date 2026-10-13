@@ -1,3 +1,33 @@
+## v1.0.58 - 2026-10-13
+
+### RU
+
+#### Что изменилось
+
+- В панели о новых приглашениях заработали кнопки **«Принять»**, **«Под вопросом»** и **«Отклонить»**: ответ уходит в Exchange, и строка пропадает с панели. С появления панели в v1.0.52 эти кнопки ничего не делали.
+- Кнопка **«Открыть»** в той же панели теперь показывает встречу в окне приложения.
+- **«Скрыть»** теперь убирает приглашение и из счётчика ✉︎ в строке меню, а не только с панели.
+
+#### Установка
+
+1. Скачайте `.zip`, распакуйте и перенесите `OWAWidget.app` в `/Applications`.
+2. Запустите приложение — дополнительных шагов не нужно.
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- The **Accept**, **Tentative** and **Decline** buttons in the new invitations panel now work: the answer goes to Exchange and the row leaves the panel. Since the panel appeared in v1.0.52 these buttons did nothing.
+- **Open** in the same panel now shows the meeting in the app window.
+- **Hide** now also removes the invitation from the ✉︎ counter in the menu bar, not only from the panel.
+
+#### Installation
+
+1. Download the `.zip`, unzip it and move `OWAWidget.app` to `/Applications`.
+2. Launch the app — no extra steps needed.
+3. All subsequent updates install automatically via the "Install" button inside the app.
+
 ## v1.0.57 - 2026-10-13
 
 ### RU
