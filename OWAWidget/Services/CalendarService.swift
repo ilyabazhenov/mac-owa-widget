@@ -73,7 +73,8 @@ final class CalendarService: ObservableObject {
     private let customMeetingReminders: any CustomMeetingReminderControlling
     private let eventCacheStore: any EventCacheStoring
     private let invitationTracker: any MeetingInvitationTracking
-    private let invitationAlerts: any MeetingInvitationAlertPresenting
+    /// Internal rather than private so tests can check the default panel gets its handlers.
+    let invitationAlerts: any MeetingInvitationAlertPresenting
     private var invitationLocalization: MeetingInvitationLocalization = .english
     private let log = Logger(subsystem: "com.owawidget", category: "CalendarService")
     private let meetingEngagementStats = MeetingEngagementStatsService()
@@ -383,9 +384,12 @@ final class CalendarService: ObservableObject {
                 PostJoinDismissController.shared.dismissAfterJoin(context: .inAppReminder)
             }
         }
-        if let invitationController = invitationAlerts as? MeetingInvitationAlertController {
+        if let invitationController = self.invitationAlerts as? MeetingInvitationAlertController {
             invitationController.onRespond = { [weak self] eventID, action in
                 guard let self, let event = self.events.first(where: { $0.id == eventID }) else {
+                    #if DEBUG
+                    DiagnosticLog.event("Invitation respond: event not in calendar")
+                    #endif
                     throw CalendarProviderError.notSupported
                 }
                 try await self.respondToMeeting(event, action: action)
@@ -838,7 +842,15 @@ final class CalendarService: ObservableObject {
     // MARK: - Meeting response
 
     func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {
-        guard let provider = providers.first(where: { $0.account.id == event.accountID }) else { return }
+        guard let provider = providers.first(where: { $0.account.id == event.accountID }) else {
+            #if DEBUG
+            DiagnosticLog.event("respondToMeeting: no provider for account, providers=\(providers.count)")
+            #endif
+            return
+        }
+        #if DEBUG
+        DiagnosticLog.event("respondToMeeting start action=\(action) hasChangeKey=\(event.changeKey != nil)")
+        #endif
 
         let optimisticType: MeetingResponseType
         switch action {
@@ -854,7 +866,13 @@ final class CalendarService: ObservableObject {
             // cancel the in-flight task and surface URLError.networkConnectionLost (-1005).
             try await provider.respondToMeeting(event, action: action)
             log.info("respondToMeeting succeeded eventID=\(event.id, privacy: .public)")
+            #if DEBUG
+            DiagnosticLog.event("respondToMeeting succeeded")
+            #endif
         } catch {
+            #if DEBUG
+            DiagnosticLog.event("respondToMeeting failed error=\((error as NSError).domain)#\((error as NSError).code)")
+            #endif
             applyResponseType(event.responseType, to: event.id)
             applyBlockingError(error, context: "respondToMeeting")
             log.error("respondToMeeting failed eventID=\(event.id, privacy: .public) error=\(error.localizedDescription, privacy: .public)")

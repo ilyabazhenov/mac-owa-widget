@@ -720,6 +720,24 @@ final class CalendarServiceInvitationTests: XCTestCase {
         )
     }
 
+    /// The app builds the panel itself (`invitationAlerts: nil`). Its buttons only work if that
+    /// panel, not just an injected one, gets the RSVP, open and hide handlers.
+    func testDefaultPanelIsWiredToTheService() throws {
+        let service = CalendarService(
+            providers: [],
+            eventCacheStore: NullCache(),
+            notificationService: SilentNotificationService(),
+            customMeetingReminders: SilentMeetingReminderController(),
+            invitationTracker: InMemoryTracker(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+        let controller = try XCTUnwrap(service.invitationAlerts as? MeetingInvitationAlertController)
+        XCTAssertNotNil(controller.onRespond)
+        XCTAssertNotNil(controller.onOpen)
+        XCTAssertNotNil(controller.onHide)
+    }
+
     func testNewInvitationAfterBaselineReachesThePanel() async {
         UserDefaults.standard.set(true, forKey: enabledKey)
         let account = CalendarAccount(displayName: "Exchange", serverURL: "", email: "", accountType: .owa)

@@ -125,6 +125,13 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
     // MARK: - Actions
 
     private func respond(_ row: MeetingInvitationRow, action: MeetingResponseAction) {
+        #if DEBUG
+        let tappedIndex = rows.firstIndex(where: { $0.id == row.id })
+        DiagnosticLog.event(
+            "Invitation panel respond tap action=\(action) row=\(tappedIndex.map(String.init) ?? "missing") rows=\(rows.count) "
+                + "sending=\(tappedIndex.flatMap { rows[$0].sendingAction }.map { "\($0)" } ?? "none") handler=\(onRespond != nil)"
+        )
+        #endif
         guard let index = rows.firstIndex(where: { $0.id == row.id }),
               rows[index].sendingAction == nil,
               let onRespond
@@ -138,9 +145,15 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
         Task { @MainActor in
             do {
                 try await onRespond(eventID, action)
+                #if DEBUG
+                DiagnosticLog.event("Invitation panel respond done action=\(action)")
+                #endif
                 rows.removeAll { $0.id == rowID }
             } catch {
                 log.error("respond failed: \(error.localizedDescription, privacy: .public)")
+                #if DEBUG
+                DiagnosticLog.event("Invitation panel respond failed action=\(action) error=\((error as NSError).domain)#\((error as NSError).code)")
+                #endif
                 if let i = rows.firstIndex(where: { $0.id == rowID }) {
                     rows[i].sendingAction = nil
                     rows[i].errorMessage = localization.sendFailed
@@ -155,10 +168,16 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
     }
 
     private func open(_ row: MeetingInvitationRow) {
+        #if DEBUG
+        DiagnosticLog.event("Invitation panel open tap handler=\(onOpen != nil)")
+        #endif
         onOpen?(row.alert.representativeEventID)
     }
 
     private func hide(_ row: MeetingInvitationRow) {
+        #if DEBUG
+        DiagnosticLog.event("Invitation panel hide tap handler=\(onHide != nil)")
+        #endif
         rows.removeAll { $0.id == row.id }
         onHide?(row.alert.eventIDs)
         if rows.isEmpty {
@@ -181,7 +200,12 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
             onRespond: { [weak self] row, action in self?.respond(row, action: action) },
             onOpen: { [weak self] row in self?.open(row) },
             onHide: { [weak self] row in self?.hide(row) },
-            onClose: { [weak self] in self?.dismissAll() }
+            onClose: { [weak self] in
+                #if DEBUG
+                DiagnosticLog.event("Invitation panel close tap")
+                #endif
+                self?.dismissAll()
+            }
         )
     }
 
