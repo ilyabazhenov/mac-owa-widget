@@ -3,7 +3,9 @@ APP_PATH    := .build/$(APP_NAME).app
 SRC_DIR     := OWAWidget
 # Empty = host default (arm64 on Apple Silicon). Release packaging sets both macOS arches.
 SWIFT_BUILD_ARGS ?=
-RELEASE_SWIFT_BUILD_ARGS := --arch arm64 --arch x86_64
+# `-c release`: SwiftPM defaults to debug, which would ship every `#if DEBUG` block (cleartext
+# /tmp logs with meeting titles, the Debug settings section) to users.
+RELEASE_SWIFT_BUILD_ARGS := -c release --arch arm64 --arch x86_64
 INFO_PLIST  := $(SRC_DIR)/Info.plist
 CODE_SIGN_IDENTITY ?= -
 # Releases must be Developer ID signed: TCC and Keychain grants then survive Sparkle updates, and

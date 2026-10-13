@@ -1,3 +1,35 @@
+## v1.0.57 - 2026-10-13
+
+### RU
+
+#### Что изменилось
+
+- Приложение собирается в релизной конфигурации. Прежние версии по ошибке собирались в отладочной, и в них оставался код, нужный только при разработке.
+- Из настроек пропал раздел **«Debug»**. Его кнопки нужны были только для проверки при разработке, а **«Force auth block»** останавливала синхронизацию с сообщением о неверном пароле.
+- Приложение больше не пишет отладочные журналы. Если у вас подключены календари macOS (iCloud, Google и другие через приложение «Календарь»), прежние версии записывали названия их встреч, названия календарей и ссылки на звонки в файл `/tmp/owawidget_eventkit.log` открытым текстом, и его могли прочитать другие приложения и пользователи этого Mac. Встречи Exchange в этот файл не попадали. Файл удалится при перезагрузке Mac, можно удалить его и сразу: `rm /tmp/owawidget_*.log`.
+- Приложение стало почти вдвое меньше: 28 МБ вместо 45.
+
+#### Установка
+
+1. Скачайте `.zip`, распакуйте и перенесите `OWAWidget.app` в `/Applications`.
+2. Запустите приложение — дополнительных шагов не нужно.
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- The app is now built in the release configuration. Earlier versions were built in the debug configuration by mistake and still carried code meant only for development.
+- The **Debug** section is gone from Settings. Its buttons were only for testing during development, and **Force auth block** stopped syncing with a wrong-password message.
+- The app no longer writes debug logs. If you connected macOS calendars (iCloud, Google and others through the Calendar app), earlier versions wrote their meeting titles, calendar names and call links in plain text to `/tmp/owawidget_eventkit.log`, which other apps and users of this Mac could read. Exchange meetings never went into that file. It is removed when the Mac restarts; you can also delete it right away: `rm /tmp/owawidget_*.log`.
+- The app is almost half the size: 28 MB instead of 45.
+
+#### Installation
+
+1. Download the `.zip`, unzip it and move `OWAWidget.app` to `/Applications`.
+2. Launch the app — no extra steps needed.
+3. All subsequent updates install automatically via the "Install" button inside the app.
+
 ## v1.0.56 - 2026-10-12
 
 ### RU

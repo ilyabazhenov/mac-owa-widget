@@ -138,7 +138,7 @@ swift build
 
 ## Debug-логирование в файл
 
-`make run` и `make watch` собирают **debug**-конфигурацию (`swift build` без `--configuration release`), поэтому блоки `#if DEBUG` активны именно в этих режимах. Используй это для инструментирования нового кода.
+`make run` и `make watch` собирают **debug**-конфигурацию (`swift build` без `--configuration release`), поэтому блоки `#if DEBUG` активны именно в этих режимах. Релиз (`make release-bundle`) собирается с `-c release`, и до пользователей эти блоки не доходят. Используй это для инструментирования нового кода.
 
 ### Правило
 

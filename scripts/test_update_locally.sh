@@ -33,7 +33,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="${ROOT_DIR}/.build/artifacts/sparkle/Sparkle/bin"
-BUILT_APP="${ROOT_DIR}/.build/OWAWidget.app"
+# Переопределяется, чтобы проверить релизную сборку, не трогая рабочую копию:
+#   BUILT_APP=.build/release-check/OWAWidget.app (после make release-bundle APP_PATH=…).
+BUILT_APP="${BUILT_APP:-${ROOT_DIR}/.build/OWAWidget.app}"
 WORK_DIR="${ROOT_DIR}/.build/update-test"
 TEST_BUNDLE_ID="com.owawidget.MacOwaWidget.updatetest"
 PORT="${PORT:-8899}"
