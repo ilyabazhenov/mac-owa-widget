@@ -146,6 +146,8 @@ swift build
 
 ### Канонический паттерн
 
+Логи пишутся в `~/Library/Logs/OWAWidget/<компонент>.log` через `DebugTextLog` (`OWAWidget/Utilities/DebugTextLog.swift`): каталог 0700, файлы 0600, открытие с `O_NOFOLLOW`. **Не пиши в `/tmp`**: его читает и пишет любой пользователь Mac. Файлы там выходили 0644 с названиями встреч и ссылками на звонки, а symlink, подложенный заранее под имя лога, перенаправлял запись в чужой файл. Трейсы с целыми ответами сервера (тела OWA, FreeBusy, выдача GAL) идут не сюда, а в `DebugLogLocation`: он шифрует их через `SecureStore`, и `tail` их не прочитает.
+
 ```swift
 import os.log
 
@@ -153,40 +155,28 @@ import os.log
 private let log = Logger(subsystem: "com.owawidget", category: "MyComponent")
 
 #if DEBUG
-// Путь: /tmp/owawidget_<компонент>.log
-private static let debugLogURL = URL(fileURLWithPath: "/tmp/owawidget_mycomponent.log")
+private static let debugLogName = "mycomponent.log"
 
 // Вызывать в init() — сбрасывает файл при каждом запуске приложения:
-private func setupDebugLog() {
-    let header = "=== MyComponent Log started \(Date()) ===\n"
-    try? header.write(to: Self.debugLogURL, atomically: true, encoding: .utf8)
+private static func setupDebugLog() {
+    DebugTextLog.reset(debugLogName, with: "=== MyComponent Log started \(Date()) ===\n")
 }
 
 // Вызывать вместо / вместе с log.info:
 private func dlog(_ message: String) {
-    let f = DateFormatter()
-    f.dateFormat = "HH:mm:ss.SSS"
-    let line = "[\(f.string(from: Date()))] \(message)\n"
-    guard let data = line.data(using: .utf8) else { return }
-    if let handle = try? FileHandle(forWritingTo: Self.debugLogURL) {
-        handle.seekToEndOfFile()
-        handle.write(data)
-        try? handle.close()
-    } else {
-        try? data.write(to: Self.debugLogURL, options: .atomic)
-    }
+    DebugTextLog.append(message, to: Self.debugLogName)
 }
 #endif
 ```
 
 ### Соглашения по именованию файлов
 
-| Компонент | Путь |
+| Компонент | Лог |
 |---|---|
-| `CustomMeetingReminderController` | `/tmp/owawidget_reminder.log` |
-| `CalendarService` | `/tmp/owawidget_calendar.log` |
-| `EventKitCalendarProvider` | `/tmp/owawidget_eventkit.log` |
-| Новый компонент `FooService` | `/tmp/owawidget_foo.log` |
+| `EventKitCalendarProvider` | `~/Library/Logs/OWAWidget/eventkit.log` |
+| `MCPDebugLog` (MCP-сервер) | `~/Library/Logs/OWAWidget/mcp.log` |
+| `CustomMeetingReminderController`, `OWAClient`, `MeetingFreeSlotCalculator` | зашифрованы, `DebugLogLocation` (`reminder.log`, `owaclient.log`, `freeslots.log`) |
+| Новый компонент `FooService` | `~/Library/Logs/OWAWidget/foo.log` |
 
 ### Как агент читает логи
 
@@ -194,10 +184,10 @@ private func dlog(_ message: String) {
 
 ```bash
 # Посмотреть последние N строк:
-tail -100 /tmp/owawidget_reminder.log
+tail -100 ~/Library/Logs/OWAWidget/eventkit.log
 
 # Найти ключевые события:
-grep -n "present\|enqueue\|SUPPRESSED\|WARNING" /tmp/owawidget_reminder.log
+grep -n "fetch\|blocked\|WARNING" ~/Library/Logs/OWAWidget/mcp.log
 ```
 
 Или использовать `Read`-инструмент напрямую с `offset`/`limit` для больших файлов.

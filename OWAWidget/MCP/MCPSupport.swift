@@ -130,31 +130,19 @@ struct MCPTokenBucket: Sendable {
     }
 }
 
-/// File log for development (`make run` builds DEBUG): /tmp/owawidget_mcp.log, per AGENTS.md.
+/// File log for development (`make run` builds DEBUG): `~/Library/Logs/OWAWidget/mcp.log`, per AGENTS.md.
 enum MCPDebugLog {
     static let logger = Logger(subsystem: "com.owawidget", category: "MCP")
 
     #if DEBUG
-    private static let url = URL(fileURLWithPath: "/tmp/owawidget_mcp.log")
-    private static let lock = NSLock()
+    private static let name = "mcp.log"
 
     static func reset() {
-        try? "=== MCP Log started \(Date()) ===\n".write(to: url, atomically: true, encoding: .utf8)
+        DebugTextLog.reset(name, with: "=== MCP Log started \(Date()) ===\n")
     }
 
     static func write(_ message: String) {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        guard let data = "[\(formatter.string(from: Date()))] \(message)\n".data(using: .utf8) else { return }
-        lock.lock()
-        defer { lock.unlock() }
-        if let handle = try? FileHandle(forWritingTo: url) {
-            handle.seekToEndOfFile()
-            handle.write(data)
-            try? handle.close()
-        } else {
-            try? data.write(to: url, options: .atomic)
-        }
+        DebugTextLog.append(message, to: name)
     }
     #else
     static func reset() {}

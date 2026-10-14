@@ -129,25 +129,14 @@ actor EventKitCalendarProvider: CalendarProvider {
     }
 
     #if DEBUG
-    private static let debugLogURL = URL(fileURLWithPath: "/tmp/owawidget_eventkit.log")
+    private static let debugLogName = "eventkit.log"
 
     private static func setupDebugLog() {
-        let header = "=== EventKitCalendarProvider log started \(Date()) ===\n"
-        try? header.write(to: debugLogURL, atomically: true, encoding: .utf8)
+        DebugTextLog.reset(debugLogName, with: "=== EventKitCalendarProvider log started \(Date()) ===\n")
     }
 
     private func dlog(_ message: String) {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        let line = "[\(formatter.string(from: Date()))] \(message)\n"
-        guard let data = line.data(using: .utf8) else { return }
-        if let handle = try? FileHandle(forWritingTo: Self.debugLogURL) {
-            handle.seekToEndOfFile()
-            handle.write(data)
-            try? handle.close()
-        } else {
-            try? data.write(to: Self.debugLogURL, options: .atomic)
-        }
+        DebugTextLog.append(message, to: Self.debugLogName)
     }
     #endif
 }
