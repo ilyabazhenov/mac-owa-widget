@@ -88,15 +88,9 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
             lock.unlock()
         }
 
-        // Still follow the redirect (federated/ADFS login depends on it), but never carry
-        // the Authorization header across a host change to avoid leaking credentials.
-        var forwarded = request
-        if let fromHost = response.url?.host?.lowercased(),
-           let toHost = request.url?.host?.lowercased(),
-           fromHost != toHost {
-            forwarded.setValue(nil, forHTTPHeaderField: "Authorization")
-        }
-        completionHandler(forwarded)
+        // Still follow the redirect (federated/ADFS login depends on it), but https only, and
+        // without the headers that belong to the configured server once the host changes.
+        completionHandler(OWACredentialHostPolicy.redirectedRequest(request, from: response.url))
     }
 
     /// Whether `host` may be handed the account's credentials: it is the configured server, or a
@@ -140,6 +134,12 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
         // difference in who is allowed to ask for it.
         if OWACredentialHostPolicy.carriesCredentials(method) {
             let host = challenge.protectionSpace.host
+            // Hosts are compared without the scheme: a plain-http challenge from the right host
+            // must not get the handshake either.
+            guard challenge.protectionSpace.protocol == NSURLProtectionSpaceHTTPS else {
+                completionHandler(.cancelAuthenticationChallenge, nil)
+                return
+            }
             if !isCredentialRecipientAllowed(host) {
                 // Read the chain before taking the lock: its accessor takes the same non-recursive
                 // lock, and `NSLock` would deadlock rather than tell us about it.
@@ -614,6 +614,12 @@ actor OWAClient {
     private func requireApprovedLoginHost(_ url: URL) throws {
         let configuredHost = baseURL.host ?? ""
         let loginHost = url.host ?? ""
+
+        // The password goes in the form body: never over plain http, whatever the host.
+        guard url.scheme?.lowercased() == "https" else {
+            log.error("Login form posts to a non-https URL; password not sent")
+            throw OWAError.invalidURL(url.absoluteString)
+        }
 
         if OWACredentialHostPolicy.allowsCredentials(
             challengeHost: loginHost,

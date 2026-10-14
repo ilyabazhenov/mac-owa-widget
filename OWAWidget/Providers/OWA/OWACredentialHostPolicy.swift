@@ -45,6 +45,32 @@ enum OWACredentialHostPolicy {
         return normalizedHost(challengeHost) == configured
     }
 
+    /// The request a redirect may continue with, or `nil` to stop there.
+    ///
+    /// Only https is followed: App Transport Security would refuse plain http anyway, but the
+    /// credential guards compare hosts only, so the scheme is checked here rather than trusted to a
+    /// setting elsewhere. On a host change the headers that belong to the configured server stay
+    /// behind: `Authorization`, the `X-OWA-*` family (the canary, and `X-OWA-UrlPostData`, which
+    /// carries the request itself) and the action names.
+    static func redirectedRequest(_ request: URLRequest, from responseURL: URL?) -> URLRequest? {
+        guard request.url?.scheme?.lowercased() == "https" else { return nil }
+        guard let fromHost = responseURL?.host, let toHost = request.url?.host,
+              normalizedHost(fromHost) != normalizedHost(toHost)
+        else { return request }
+
+        var forwarded = request
+        for field in (request.allHTTPHeaderFields ?? [:]).keys where isServerBoundHeader(field) {
+            forwarded.setValue(nil, forHTTPHeaderField: field)
+        }
+        return forwarded
+    }
+
+    private static func isServerBoundHeader(_ field: String) -> Bool {
+        let name = field.lowercased()
+        return name == "authorization" || name == "action" || name == "client-request-id"
+            || name.hasPrefix("x-owa-")
+    }
+
     /// Case- and trailing-dot-insensitive. `mail.example.com.` and `mail.example.com` are the same
     /// name in DNS, and a redirect that adds the root label must not read as a different host.
     ///

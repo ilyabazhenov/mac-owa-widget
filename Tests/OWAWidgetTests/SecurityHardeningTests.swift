@@ -260,3 +260,47 @@ final class HTTPErrorDescriptionTests: XCTestCase {
         XCTAssertEqual(OWAError.httpError(404, "").localizedDescription, "HTTP 404")
     }
 }
+
+// MARK: - Redirects
+
+/// What a redirect may carry on: the configured server's headers stay with it, and nothing is
+/// followed over plain http.
+final class RedirectPolicyTests: XCTestCase {
+    private func request(_ url: String) -> URLRequest {
+        var request = URLRequest(url: URL(string: url)!)
+        request.setValue("canary-value", forHTTPHeaderField: "X-OWA-CANARY")
+        request.setValue("%7B%22subject%22%7D", forHTTPHeaderField: "X-OWA-UrlPostData")
+        request.setValue("GetCalendarView", forHTTPHeaderField: "Action")
+        request.setValue("Basic abc", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        return request
+    }
+
+    func testSameHostKeepsEveryHeader() throws {
+        let forwarded = try XCTUnwrap(OWACredentialHostPolicy.redirectedRequest(
+            request("https://MAIL.example.com./owa/service.svc"),
+            from: URL(string: "https://mail.example.com/owa/")
+        ))
+        XCTAssertEqual(forwarded.value(forHTTPHeaderField: "X-OWA-CANARY"), "canary-value")
+        XCTAssertEqual(forwarded.value(forHTTPHeaderField: "Authorization"), "Basic abc")
+    }
+
+    func testOtherHostDropsServerBoundHeaders() throws {
+        let forwarded = try XCTUnwrap(OWACredentialHostPolicy.redirectedRequest(
+            request("https://adfs.example.org/adfs/ls"),
+            from: URL(string: "https://mail.example.com/owa/")
+        ))
+        XCTAssertNil(forwarded.value(forHTTPHeaderField: "X-OWA-CANARY"))
+        XCTAssertNil(forwarded.value(forHTTPHeaderField: "X-OWA-UrlPostData"))
+        XCTAssertNil(forwarded.value(forHTTPHeaderField: "Action"))
+        XCTAssertNil(forwarded.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertEqual(forwarded.value(forHTTPHeaderField: "Content-Type"), "application/json")
+    }
+
+    func testPlainHTTPIsNotFollowed() {
+        XCTAssertNil(OWACredentialHostPolicy.redirectedRequest(
+            request("http://mail.example.com/owa/"),
+            from: URL(string: "https://mail.example.com/owa/")
+        ))
+    }
+}
