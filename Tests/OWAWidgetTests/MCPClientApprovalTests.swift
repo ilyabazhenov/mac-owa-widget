@@ -163,4 +163,48 @@ final class MCPClientApprovalTests: XCTestCase {
         list = MCPKnownClientList.record(identity, at: Date(), in: list, newClientAccess: .pending).list
         XCTAssertEqual(list.first?.access, .denied, "a later connection does not reset the decision")
     }
+
+    // MARK: - Floods
+
+    func testQueueIsCappedAndAClientTurnedAwayIsNotAsked() async {
+        let presenter = FakePresenter()
+        let controller = MCPClientApprovalController(presenter: presenter)
+        let limit = MCPClientApprovalController.maxQueuedQuestions
+        for index in 0...limit { controller.ask(request("k\(index)")) }
+        controller.ask(request("overflow"))
+
+        XCTAssertTrue(controller.isAsking(about: "k\(limit)"))
+        XCTAssertFalse(controller.isAsking(about: "overflow"))
+        let outcome = await controller.decision(for: request("overflow"))
+        XCTAssertEqual(outcome, .timedOut, "turned away: \"waiting for the user\", no panel")
+
+        presenter.deny?()
+        controller.ask(request("overflow"))
+        XCTAssertTrue(controller.isAsking(about: "overflow"), "room again once a question is answered")
+    }
+
+    func testFloodOfNewClientsDoesNotEvictTheUsersAnswers() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        func identity(_ key: String) -> MCPClientIdentity {
+            MCPClientIdentity(key: key, name: key, executablePath: "/\(key)", script: nil, kind: .direct, pid: 1)
+        }
+        var list = MCPKnownClientList.record(identity("claude"), at: start, in: []).list
+        list = MCPKnownClientList.setAccess(.allowed, forKey: "claude", in: list)
+        list = MCPKnownClientList.record(identity("spy"), at: start, in: list).list
+        list = MCPKnownClientList.setAccess(.denied, forKey: "spy", in: list)
+
+        for index in 0..<(MCPKnownClientList.maxCount * 2) {
+            list = MCPKnownClientList.record(
+                identity("/tmp/script-\(index)"),
+                at: start.addingTimeInterval(Double(index + 1)),
+                in: list,
+                newClientAccess: .pending
+            ).list
+        }
+
+        XCTAssertEqual(list.count, MCPKnownClientList.maxCount)
+        XCTAssertEqual(list.first { $0.key == "claude" }?.access, .allowed)
+        XCTAssertEqual(list.first { $0.key == "spy" }?.access, .denied)
+        XCTAssertEqual(list.first?.key, "/tmp/script-\(MCPKnownClientList.maxCount * 2 - 1)", "the newest stays: its question may be open")
+    }
 }

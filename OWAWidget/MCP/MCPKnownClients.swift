@@ -101,7 +101,25 @@ enum MCPKnownClientList {
             ))
             isNew = true
         }
-        return (Array(sorted(list).prefix(maxCount)), isNew)
+        return (trimmed(sorted(list), keeping: identity.key), isNew)
+    }
+
+    /// Cuts the list to `maxCount`, dropping undecided entries before answered ones.
+    ///
+    /// By `lastSeen` alone, a script started from fifty different paths (each path is a new key)
+    /// would push every allow and deny the user ever gave out of the list, and the next real
+    /// connection would ask all over again. The entry just recorded stays: its question may be on
+    /// screen, and an answer to a key no longer in the list would be lost.
+    static func trimmed(_ sortedList: [MCPKnownClient], keeping key: String) -> [MCPKnownClient] {
+        var list = sortedList
+        while list.count > maxCount,
+              let index = list.lastIndex(where: { $0.access == .pending && $0.key != key }) {
+            list.remove(at: index)
+        }
+        if list.count > maxCount, let index = list.lastIndex(where: { $0.key != key }) {
+            list.remove(at: index)
+        }
+        return Array(list.prefix(maxCount))
     }
 
     static func noteDeclaredName(_ name: String, forKey key: String, in list: [MCPKnownClient]) -> [MCPKnownClient] {

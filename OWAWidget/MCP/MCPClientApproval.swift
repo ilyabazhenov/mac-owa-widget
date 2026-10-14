@@ -45,6 +45,10 @@ final class MCPClientApprovalController {
     /// How long a question stays on screen. Under the 60 seconds a TypeScript SDK client waits.
     static let questionTimeout: TimeInterval = 45
     static let waitLimit: TimeInterval = 50
+    /// Questions waiting behind the one on screen. Each new script path is a new client, so
+    /// without a cap a script could keep panels coming for hours until one gets clicked by
+    /// mistake. A client turned away here gets "waiting for the user" and asks again later.
+    static let maxQueuedQuestions = 3
 
     private struct Waiter {
         let id: UUID
@@ -95,6 +99,7 @@ final class MCPClientApprovalController {
             questions[request.key] = question
             return
         }
+        guard order.count < Self.maxQueuedQuestions + 1 else { return }
         questions[request.key] = Question(request: request)
         order.append(request.key)
         showNextIfIdle()
