@@ -185,8 +185,14 @@ enum HTMLTableScanner {
         return rows
     }
 
+    /// Searched only up to the last `>`: past it no tag can complete, and a run of unclosed
+    /// `<table` would otherwise send every attempt to the end of the input (see
+    /// `MeetingBodyHTMLConverter.searchRange(endingAtLastOf:in:)`).
     private static func tokens(_ pattern: NSRegularExpression, in html: String) -> [NSTextCheckingResult] {
-        pattern.matches(in: html, range: NSRange(location: 0, length: (html as NSString).length))
+        guard let range = MeetingBodyHTMLConverter.searchRange(endingAtLastOf: [">"], in: html as NSString) else {
+            return []
+        }
+        return pattern.matches(in: html, range: range)
     }
 
     private static func regex(_ pattern: String) -> NSRegularExpression {
@@ -195,6 +201,6 @@ enum HTMLTableScanner {
         try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
     }
 
-    private static let tablePattern = regex(#"<table\b[^>]*>|</table>"#)
-    private static let cellPattern = regex(#"<table\b[^>]*>|</table>|<tr\b[^>]*>|</tr>|<t[dh]\b[^>]*>|</t[dh]>"#)
+    private static let tablePattern = regex(#"<table\b[^<>]*>|</table>"#)
+    private static let cellPattern = regex(#"<table\b[^<>]*>|</table>|<tr\b[^<>]*>|</tr>|<t[dh]\b[^<>]*>|</t[dh]>"#)
 }

@@ -217,10 +217,15 @@ struct MeetingDetailContentView: View {
                 // Tables are rebuilt from the original markup when it is available; without it
                 // (cached text after a restart, or a plain-text body) the same text renders as
                 // running text.
-                bodyAttributed = MeetingBodyRenderer.attributedBody(
-                    text: details.body ?? event.displayBody,
-                    html: details.bodyHTML
-                )
+                let text = details.body ?? event.displayBody
+                let html = details.bodyHTML
+                // Parsed off the main actor: the markup is whatever the sender put in the
+                // invitation, and a large body must not freeze the menu bar while it converts.
+                let nodes = await Task.detached(priority: .userInitiated) {
+                    MeetingBodyRenderer.nodes(text: text, html: html)
+                }.value
+                guard !Task.isCancelled else { return }
+                bodyAttributed = nodes.flatMap(MeetingBodyRenderer.attributedBody(nodes:))
             } catch {
                 // A cancelled task (panel dismissed or switched meetings) must not clobber the
                 // state the replacement task is already setting.

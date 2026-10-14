@@ -25,11 +25,29 @@ enum MeetingBodyRenderer {
         color: NSColor,
         linkColor: NSColor
     ) -> NSAttributedString? {
+        guard let nodes = nodes(text: text, html: html) else { return nil }
+        return attributedBody(nodes: nodes, font: font, color: color, linkColor: linkColor)
+    }
+
+    /// The parsing half, safe to run off the main actor. The markup comes from whoever sent the
+    /// invitation, and the panel should not wait on it: see `loadBody` in the detail panel.
+    static func nodes(text: String?, html: String?) -> [MeetingBodyDocument.Node]? {
         let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmed.isEmpty else { return nil }
-
-        let nodes = html.map(MeetingBodyDocument.nodes(fromHTML:))
+        return html.map(MeetingBodyDocument.nodes(fromHTML:))
             ?? MeetingBodyDocument.nodes(fromPlainText: trimmed)
+    }
+
+    static func attributedBody(nodes: [MeetingBodyDocument.Node]) -> NSAttributedString? {
+        attributedBody(nodes: nodes, font: font, color: .secondaryLabelColor, linkColor: .linkColor)
+    }
+
+    private static func attributedBody(
+        nodes: [MeetingBodyDocument.Node],
+        font: NSFont,
+        color: NSColor,
+        linkColor: NSColor
+    ) -> NSAttributedString? {
         let result = MeetingBodyAttributedBuilder.attributedString(
             for: nodes,
             font: font,

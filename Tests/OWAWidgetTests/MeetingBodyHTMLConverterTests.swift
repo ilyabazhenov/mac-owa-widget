@@ -119,4 +119,40 @@ final class MeetingBodyHTMLConverterTests: XCTestCase {
         // A stray comparison must not be mistaken for markup.
         XCTAssertFalse(MeetingBodyHTMLConverter.looksLikeHTML("если a < b, то встречаемся"))
     }
+
+    // MARK: - Hostile markup
+
+    /// Anyone can send an invitation, so the body is attacker-controlled. Runs of openings without
+    /// their closing used to make every pass quadratic: 100 KB of `<!--x` took 28 s on the main
+    /// thread. Each body here is ~200 KB with a single closing at the very end, the worst case for
+    /// a search bounded by the last closing; linear passes finish in a fraction of a second.
+    func testHostileBodiesConvertInLinearTime() {
+        let bodies: [(String, String)] = [
+            ("<!--x", "-->"),
+            ("<style>x", "</style>"),
+            ("<a href=\"x\">", "</a>"),
+            ("<a x", "</a>"),
+            ("<li>x", "</li>"),
+            ("<td>x", "</td>"),
+            ("<p x", ">"),
+            ("<table x", "</table>"),
+            ("<a href=\"", "\">y</a>"),
+        ]
+        for (unit, closing) in bodies {
+            let html = "<p>hi</p>" + String(repeating: unit, count: 200 * 1024 / unit.count) + closing
+            let start = Date()
+            _ = MeetingBodyHTMLConverter.plainText(from: html)
+            _ = MeetingBodyDocument.nodes(fromHTML: html)
+            _ = MeetingBodyHTMLConverter.looksLikeHTML(html)
+            XCTAssertLessThan(Date().timeIntervalSince(start), 2, "\(unit) … \(closing)")
+        }
+    }
+
+    /// Comments are now dropped in a pass of their own; each must still end at its own `-->`.
+    func testCommentsBetweenParagraphsAreDroppedOneByOne() {
+        XCTAssertEqual(
+            MeetingBodyHTMLConverter.plainText(from: "<!--a--><p>Раз</p><!--b--><p>Два</p>"),
+            "Раз\n\nДва"
+        )
+    }
 }

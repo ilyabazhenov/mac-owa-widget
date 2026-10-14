@@ -18,25 +18,26 @@ enum MeetingBodyHTMLConverter {
 
     static func looksLikeHTML(_ string: String) -> Bool {
         guard string.contains("<") else { return false }
-        return tagPattern.firstMatch(
-            in: string,
-            range: NSRange(location: 0, length: (string as NSString).length)
-        ) != nil
+        let ns = string as NSString
+        guard let range = searchRange(endingAtLastOf: [">"], in: ns) else { return false }
+        return tagPattern.firstMatch(in: string, range: range) != nil
     }
 
     static func plainText(from html: String) -> String {
         var text = html
-        text = replace(in: text, pattern: dropWholeElementsPattern, with: " ")
+        for (pattern, closing) in droppedElements {
+            text = replace(in: text, pattern: pattern, with: " ", closings: [closing])
+        }
         // Outlook hard-wraps the *markup* at ~70 columns. In HTML those newlines are ordinary
         // whitespace, so they must collapse to spaces — keeping them split sentences mid-phrase
         // ("Дерево контактов. Исключения\n(доработка)"). Every line break below comes from a tag.
-        text = replace(in: text, pattern: sourceNewlinePattern, with: " ")
+        text = replace(in: text, pattern: sourceNewlinePattern, with: " ", closings: nil)
         text = expandAnchors(in: text)
         // Outlook wraps the content of every cell and list item in its own <p>. Left alone, that
         // paragraph break fires before the cell separator does and a table row falls apart into one
         // line per cell — so inside cells and bullets the block tags are flattened to spaces first.
-        text = flattenBlockTags(in: text, insideElementsMatching: cellContentPattern)
-        text = flattenBlockTags(in: text, insideElementsMatching: listItemContentPattern)
+        text = flattenBlockTags(in: text, insideElementsMatching: cellContentPattern, closings: ["</td>", "</th>"])
+        text = flattenBlockTags(in: text, insideElementsMatching: listItemContentPattern, closings: ["</li>"])
         text = markListItems(in: text)
         text = replace(in: text, pattern: cellPattern, with: cellSeparator)
         text = replace(in: text, pattern: paragraphPattern, with: "\n\n")
@@ -51,7 +52,8 @@ enum MeetingBodyHTMLConverter {
     /// `<a href="…">text</a>` → `text` when the text already shows the URL, otherwise `text (URL)`.
     private static func expandAnchors(in html: String) -> String {
         let ns = html as NSString
-        let matches = anchorPattern.matches(in: html, range: NSRange(location: 0, length: ns.length))
+        guard let range = searchRange(endingAtLastOf: ["</a>"], in: ns) else { return html }
+        let matches = anchorPattern.matches(in: html, range: range)
         guard !matches.isEmpty else { return html }
 
         var result = ""
@@ -84,7 +86,7 @@ enum MeetingBodyHTMLConverter {
     /// leading spaces would be trimmed away by the line normalization.
     private static func markListItems(in html: String) -> String {
         var depth = 0
-        return replaceMatches(in: html, pattern: listStructurePattern) { match, ns in
+        return replaceMatches(in: html, pattern: listStructurePattern, closings: [">"]) { match, ns in
             let tag = ns.substring(with: match.range).lowercased()
             if tag.hasPrefix("</") {
                 depth = max(0, depth - 1)
@@ -99,8 +101,12 @@ enum MeetingBodyHTMLConverter {
     }
 
     /// Replaces `<p>`/`<div>`/`<br>` with spaces, but only within the elements the pattern matches.
-    private static func flattenBlockTags(in html: String, insideElementsMatching pattern: NSRegularExpression) -> String {
-        replaceMatches(in: html, pattern: pattern) { match, ns in
+    private static func flattenBlockTags(
+        in html: String,
+        insideElementsMatching pattern: NSRegularExpression,
+        closings: [String]
+    ) -> String {
+        replaceMatches(in: html, pattern: pattern, closings: closings) { match, ns in
             replace(in: ns.substring(with: match.range), pattern: innerBlockTagPattern, with: " ")
         }
     }
@@ -111,7 +117,7 @@ enum MeetingBodyHTMLConverter {
         for (entity, replacement) in namedEntities {
             result = result.replacingOccurrences(of: entity, with: replacement, options: .caseInsensitive)
         }
-        result = replaceMatches(in: result, pattern: numericEntityPattern) { match, ns in
+        result = replaceMatches(in: result, pattern: numericEntityPattern, closings: [";"]) { match, ns in
             let isHex = !ns.substring(with: match.range(at: 1)).isEmpty
             let digits = ns.substring(with: match.range(at: 2))
             guard let code = UInt32(digits, radix: isHex ? 16 : 10), let scalar = Unicode.Scalar(code) else {
@@ -152,23 +158,51 @@ enum MeetingBodyHTMLConverter {
 
     // MARK: - Regex helpers
 
-    private static func replace(in string: String, pattern: NSRegularExpression, with template: String) -> String {
+    /// The part of `ns` up to the end of the last of `closings`, or `nil` when none occurs.
+    ///
+    /// Every pattern here ends in a fixed token (`>`, `</li>`, `-->`…). A match that never finds it
+    /// (`.*?`, `[^>]*`) scans to the end of the input and fails, and the engine then retries from
+    /// the next opening — n openings × n characters. Meeting bodies come from anyone who can send
+    /// an invitation: 100 KB of unclosed `<!--` took 28 s, on the main thread. Ending the search at
+    /// the last closing token means every attempt that gets past its opening succeeds, so each
+    /// character is consumed once.
+    static func searchRange(endingAtLastOf closings: [String], in ns: NSString) -> NSRange? {
+        let end = closings.compactMap { closing -> Int? in
+            let found = ns.range(of: closing, options: [.backwards, .caseInsensitive])
+            return found.location == NSNotFound ? nil : found.location + found.length
+        }.max()
+        return end.map { NSRange(location: 0, length: $0) }
+    }
+
+    /// `closings`: what every match of `pattern` ends with, see ``searchRange(endingAtLastOf:in:)``;
+    /// `nil` for a pattern with no unbounded part.
+    private static func replace(
+        in string: String,
+        pattern: NSRegularExpression,
+        with template: String,
+        closings: [String]? = [">"]
+    ) -> String {
         let ns = string as NSString
-        return pattern.stringByReplacingMatches(
-            in: string,
-            range: NSRange(location: 0, length: ns.length),
-            withTemplate: template
-        )
+        let range: NSRange
+        if let closings {
+            guard let bounded = searchRange(endingAtLastOf: closings, in: ns) else { return string }
+            range = bounded
+        } else {
+            range = NSRange(location: 0, length: ns.length)
+        }
+        return pattern.stringByReplacingMatches(in: string, range: range, withTemplate: template)
     }
 
     /// Replacement driven by a closure; returning `nil` keeps the original match untouched.
     private static func replaceMatches(
         in string: String,
         pattern: NSRegularExpression,
+        closings: [String],
         transform: (NSTextCheckingResult, NSString) -> String?
     ) -> String {
         let ns = string as NSString
-        let matches = pattern.matches(in: string, range: NSRange(location: 0, length: ns.length))
+        guard let range = searchRange(endingAtLastOf: closings, in: ns) else { return string }
+        let matches = pattern.matches(in: string, range: range)
         guard !matches.isEmpty else { return string }
 
         var result = ""
@@ -196,13 +230,19 @@ enum MeetingBodyHTMLConverter {
     static let bulletPrefix = "• "
     static let nestedBulletPrefix = "◦ "
 
-    private static let dropWholeElementsPattern = regex(
-        #"<!--.*?-->|<style\b[^>]*>.*?</style>|<script\b[^>]*>.*?</script>|<head\b[^>]*>.*?</head>"#
-    )
+    /// Elements dropped with their content, each searched on its own up to its own closing tag
+    /// (see ``searchRange(endingAtLastOf:in:)``). Inside an opening tag `[^<>]` rather than `[^>]`:
+    /// a run of `<a x` with no `>` must not let every attempt scan to the next distant `>`.
+    private static let droppedElements: [(NSRegularExpression, String)] = [
+        (regex(#"<!--.*?-->"#), "-->"),
+        (regex(#"<style\b[^<>]*>.*?</style>"#), "</style>"),
+        (regex(#"<script\b[^<>]*>.*?</script>"#), "</script>"),
+        (regex(#"<head\b[^<>]*>.*?</head>"#), "</head>"),
+    ]
     private static let sourceNewlinePattern = regex(#"[\r\n\t]+"#)
-    private static let anchorPattern = regex(#"<a\b[^>]*?href\s*=\s*["']([^"']*)["'][^>]*>(.*?)</a>"#)
-    private static let cellContentPattern = regex(#"<t[dh]\b[^>]*>.*?</t[dh]>"#)
-    private static let listItemContentPattern = regex(#"<li\b[^>]*>.*?</li>"#)
+    private static let anchorPattern = regex(#"<a\b[^<>]*?href\s*=\s*["']([^"']*)["'][^<>]*>(.*?)</a>"#)
+    private static let cellContentPattern = regex(#"<t[dh]\b[^<>]*>.*?</t[dh]>"#)
+    private static let listItemContentPattern = regex(#"<li\b[^<>]*>.*?</li>"#)
     private static let innerBlockTagPattern = regex(#"</?p\b[^>]*>|</?div\b[^>]*>|<br\b[^>]*>"#)
     private static let listStructurePattern = regex(#"<ul\b[^>]*>|<ol\b[^>]*>|</ul>|</ol>|<li\b[^>]*>"#)
     private static let cellPattern = regex(#"</t[dh]>"#)
