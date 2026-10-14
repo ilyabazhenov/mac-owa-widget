@@ -142,7 +142,14 @@ final class SettingsViewModel: ObservableObject {
         pendingCertTrust = nil
         pendingLoginHostApproval = nil
 
-        let pwd = editingPassword
+        // An empty field means "the stored password" — but only for the server and login it was
+        // stored for; `canReuseStoredPassword` is false once either is edited.
+        var pwd = editingPassword
+        if pwd.isEmpty, canReuseStoredPassword {
+            pwd = (try? KeychainService.load(accountID: account.id)) ?? ""
+            // The keychain dialog leaves focus with SecurityAgent; bring the settings window back.
+            NSApp.activate(ignoringOtherApps: true)
+        }
         Task {
             do {
                 let provider = try OWACalendarProvider(account: account, password: pwd)
@@ -261,12 +268,27 @@ final class SettingsViewModel: ObservableObject {
             return
         }
 
-        // Reading the password pops the system keychain-access dialog (drawn by
-        // SecurityAgent). When it closes, focus stays with the system agent and the
-        // settings window drops behind other apps. Re-activate ourselves so the
-        // window — and the edit sheet about to open on it — comes back to the front.
-        editingPassword = (try? KeychainService.load(accountID: account.id)) ?? ""
-        NSApp.activate(ignoringOtherApps: true)
+        // The stored password is not put into the form. Pre-filled, it would go to whatever
+        // server the user (or anyone at the unlocked Mac) typed into the URL field and tested;
+        // an empty field keeps it instead, see `canReuseStoredPassword`.
+        editingPassword = ""
+    }
+
+    /// Whether an empty password field may stand for the stored password: only for an existing
+    /// account still pointed at the server and login the password was entered for.
+    var canReuseStoredPassword: Bool {
+        guard !isAddingNew,
+              let account = editingAccount,
+              account.accountType.requiresPassword,
+              let original = accounts.first(where: { $0.id == account.id })
+        else { return false }
+        return CalendarService.storedPasswordStillApplies(from: original, to: account)
+    }
+
+    /// An existing account whose server or login was edited needs the password typed again.
+    var needsPasswordForChangedServer: Bool {
+        guard !isAddingNew, let account = editingAccount, account.accountType.requiresPassword else { return false }
+        return editingPassword.isEmpty && !canReuseStoredPassword
     }
 
     func saveAccount(localization: LocalizationService) {
@@ -327,6 +349,7 @@ final class SettingsViewModel: ObservableObject {
             return !account.serverURL.isEmpty
                 && !account.email.isEmpty
                 && !(isAddingNew && editingPassword.isEmpty)
+                && !needsPasswordForChangedServer
         case .eventKit:
             return eventKitAccess.canRead && !selectedCalendarIdentifiers.isEmpty
         }

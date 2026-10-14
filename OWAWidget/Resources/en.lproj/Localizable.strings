@@ -33,6 +33,8 @@
 "settings.account.server.help" = "Any format is accepted: mail.company.com, https://mail.company.com, or https://mail.company.com/owa";
 "settings.account.email" = "Account";
 "settings.account.password" = "Password";
+"settings.account.password.keep" = "Unchanged";
+"settings.account.password.changedServer" = "The server or account has changed. Enter the password again: the saved password is never sent to a different server.";
 "settings.account.display.section" = "Display";
 "settings.account.name" = "Account name";
 "settings.account.name.help" = "Friendly name shown in the accounts list";

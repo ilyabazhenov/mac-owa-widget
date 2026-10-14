@@ -472,11 +472,17 @@ final class CalendarService: ObservableObject {
     /// looking like a guarantee. The practical impact is small: a password is normally changed
     /// here because it changed on the server, so the Keychain ends up holding the correct one.
     func updateAccount(_ account: CalendarAccount, newPassword: String?) throws {
+        guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
+        let previous = accounts[idx]
+        // The stored password was entered for one server and login. Pointed anywhere else, it
+        // would go to whatever host the edit names on the next sync — the credential host check
+        // follows the configured server, so it cannot catch this.
+        if newPassword == nil, !Self.storedPasswordStillApplies(from: previous, to: account) {
+            throw CalendarServiceError.passwordRequiredForNewServer
+        }
         if let pwd = newPassword {
             try KeychainService.save(password: pwd, accountID: account.id)
         }
-        guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
-        let previous = accounts[idx]
         accounts[idx] = account
 
         guard persistAccounts() else {
@@ -486,14 +492,26 @@ final class CalendarService: ObservableObject {
         // Pointing the account at a different server invalidates every trust decision made for
         // the old one. Done after the write, so a failed persist (which puts `previous` back)
         // does not throw away decisions the account still depends on.
-        if serverHost(of: previous) != serverHost(of: account) {
+        if Self.serverHost(of: previous) != Self.serverHost(of: account) {
             revokeServerTrust(for: previous)
         }
         Task { await rebuildProviders() }
     }
 
+    /// Whether the password stored for `previous` may stay in place after the edit to `updated`:
+    /// only while it still goes to the same server under the same login.
+    static func storedPasswordStillApplies(from previous: CalendarAccount, to updated: CalendarAccount) -> Bool {
+        guard updated.accountType.requiresPassword else { return true }
+        guard let host = serverHost(of: updated), host == serverHost(of: previous) else { return false }
+        return normalizedLogin(previous.email) == normalizedLogin(updated.email)
+    }
+
+    private static func normalizedLogin(_ login: String) -> String {
+        login.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
     /// Host an account's server URL resolves to, or `nil` for a URL this client cannot parse.
-    private func serverHost(of account: CalendarAccount) -> String? {
+    private static func serverHost(of account: CalendarAccount) -> String? {
         guard account.accountType == .owa,
               let base = try? OWAClient.parseBaseURL(account.serverURL)
         else { return nil }
@@ -1522,11 +1540,15 @@ enum CalendarServiceError: Error, LocalizedError {
     /// The encrypted account store could not be written — most likely the master key in the
     /// Keychain is unavailable because the user declined the authorization prompt.
     case accountPersistenceFailed
+    /// The server or login changed and no password came with it.
+    case passwordRequiredForNewServer
 
     var errorDescription: String? {
         switch self {
         case .accountPersistenceFailed:
             "Could not save the account. Allow OWAWidget to access your keychain and try again."
+        case .passwordRequiredForNewServer:
+            "Enter the password again: the server or login has changed."
         }
     }
 }

@@ -49,16 +49,31 @@ struct AccountSettingsView: View {
         )
     }
 
+    /// The field starts empty for an existing account: the stored password is never shown or
+    /// pre-filled, and leaving the field empty keeps it.
+    private var passwordPrompt: String {
+        vm.canReuseStoredPassword ? localization.tr("settings.account.password.keep") : ""
+    }
+
     @ViewBuilder
     private var exchangeSections: some View {
-        Section(localization.tr("settings.account.exchange.section")) {
+        Section {
             TextField(localization.tr("settings.account.server.url"), text: $account.serverURL,
                       prompt: Text(localization.tr("settings.account.server.prompt")))
                 .help(localization.tr("settings.account.server.help"))
 
             TextField(localization.tr("settings.account.email"), text: $account.email)
 
-            SecureField(localization.tr("settings.account.password"), text: $password)
+            SecureField(localization.tr("settings.account.password"), text: $password,
+                        prompt: Text(passwordPrompt))
+        } header: {
+            Text(localization.tr("settings.account.exchange.section"))
+        } footer: {
+            if vm.needsPasswordForChangedServer {
+                Text(localization.tr("settings.account.password.changedServer"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+            }
         }
 
         Section(localization.tr("settings.account.display.section")) {
@@ -71,7 +86,8 @@ struct AccountSettingsView: View {
                 Button(isTesting ? localization.tr("settings.account.testing") : localization.tr("settings.account.test")) {
                     onTestConnection()
                 }
-                .disabled(isTesting || account.serverURL.isEmpty || account.email.isEmpty || password.isEmpty)
+                .disabled(isTesting || account.serverURL.isEmpty || account.email.isEmpty
+                          || (password.isEmpty && !vm.canReuseStoredPassword))
 
                 if let result = testResult {
                     Text(result)

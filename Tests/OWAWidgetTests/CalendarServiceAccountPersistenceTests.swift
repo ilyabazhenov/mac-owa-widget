@@ -146,6 +146,50 @@ final class CalendarServiceAccountPersistenceTests: XCTestCase {
         XCTAssertEqual(service.accounts.first?.displayName, "Переименованный")
     }
 
+    // MARK: - The stored password stays with its server
+
+    func testChangingServerWithoutPasswordIsRefused() throws {
+        try seedLegacyAccount()
+        let service = makeService(keyAvailable: true)
+
+        var updated = try XCTUnwrap(service.accounts.first)
+        updated.serverURL = "https://attacker.example.net"
+
+        XCTAssertThrowsError(try service.updateAccount(updated, newPassword: nil)) { error in
+            XCTAssertEqual(error as? CalendarServiceError, .passwordRequiredForNewServer)
+        }
+        XCTAssertEqual(service.accounts.first?.serverURL, "https://mail.example.com")
+    }
+
+    func testChangingLoginWithoutPasswordIsRefused() throws {
+        try seedLegacyAccount()
+        let service = makeService(keyAvailable: true)
+
+        var updated = try XCTUnwrap(service.accounts.first)
+        updated.email = "someone.else@example.com"
+
+        XCTAssertThrowsError(try service.updateAccount(updated, newPassword: nil)) { error in
+            XCTAssertEqual(error as? CalendarServiceError, .passwordRequiredForNewServer)
+        }
+    }
+
+    func testStoredPasswordAppliesWhileServerAndLoginStayTheSame() {
+        let original = makeAccount()
+        var sameServer = original
+        sameServer.serverURL = "MAIL.example.com./owa"
+        sameServer.email = " User@Example.com "
+        sameServer.displayName = "Другое имя"
+        XCTAssertTrue(CalendarService.storedPasswordStillApplies(from: original, to: sameServer))
+
+        var otherServer = original
+        otherServer.serverURL = "https://mail.example.com.attacker.net"
+        XCTAssertFalse(CalendarService.storedPasswordStillApplies(from: original, to: otherServer))
+
+        var unparseable = original
+        unparseable.serverURL = "http://mail.example.com"
+        XCTAssertFalse(CalendarService.storedPasswordStillApplies(from: original, to: unparseable))
+    }
+
     func testRemoveAccountReportsPersistenceFailure() throws {
         try seedLegacyAccount()
         let service = makeService(keyAvailable: false)

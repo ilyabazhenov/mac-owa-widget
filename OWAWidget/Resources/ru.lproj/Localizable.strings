@@ -33,6 +33,8 @@
 "settings.account.server.help" = "Принимается любой формат: mail.company.com, https://mail.company.com или https://mail.company.com/owa";
 "settings.account.email" = "Учетная запись";
 "settings.account.password" = "Пароль";
+"settings.account.password.keep" = "Не меняется";
+"settings.account.password.changedServer" = "Сервер или учётная запись изменились — введите пароль заново. Сохранённый пароль не отправляется на другой сервер.";
 "settings.account.display.section" = "Отображение";
 "settings.account.name" = "Название аккаунта";
 "settings.account.name.help" = "Понятное имя для списка аккаунтов";

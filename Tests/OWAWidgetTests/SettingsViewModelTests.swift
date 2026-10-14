@@ -259,6 +259,56 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(TrustedCertificateStore.isTrusted(fingerprint: "aa11", forKey: key))
     }
 
+    // MARK: - Stored password
+
+    /// EventKit accounts hold no password, so `beginEditAccount` never touches the Keychain here;
+    /// an OWA account is put into the edit state directly for the same reason.
+    private func beginEditingOWAAccount(_ vm: SettingsViewModel) -> CalendarAccount {
+        let account = CalendarAccount(
+            id: UUID(),
+            displayName: "Работа",
+            serverURL: "https://mail.example.com",
+            email: "user@example.com"
+        )
+        vm.accounts = [account]
+        vm.editingAccount = account
+        vm.isAddingNew = false
+        vm.editingPassword = ""
+        return account
+    }
+
+    func testEmptyPasswordKeepsStoredOneForSameServer() {
+        let (_, vm, _) = makeSUT()
+        _ = beginEditingOWAAccount(vm)
+
+        XCTAssertTrue(vm.canReuseStoredPassword)
+        XCTAssertFalse(vm.needsPasswordForChangedServer)
+        XCTAssertTrue(vm.canSaveAccount)
+    }
+
+    func testChangedServerNeedsPasswordBeforeSave() {
+        let (_, vm, _) = makeSUT()
+        _ = beginEditingOWAAccount(vm)
+        vm.editingAccount?.serverURL = "https://attacker.example.net"
+
+        XCTAssertFalse(vm.canReuseStoredPassword)
+        XCTAssertTrue(vm.needsPasswordForChangedServer)
+        XCTAssertFalse(vm.canSaveAccount)
+
+        vm.editingPassword = "typed-again"
+        XCTAssertFalse(vm.needsPasswordForChangedServer)
+        XCTAssertTrue(vm.canSaveAccount)
+    }
+
+    func testNewAccountNeverReusesAStoredPassword() {
+        let (_, vm, _) = makeSUT()
+        _ = beginEditingOWAAccount(vm)
+        vm.isAddingNew = true
+
+        XCTAssertFalse(vm.canReuseStoredPassword)
+        XCTAssertFalse(vm.canSaveAccount)
+    }
+
     private func makeSUT() -> (CalendarService, SettingsViewModel, FakeLaunchAtLoginManager) {
         let service = CalendarService(
             providers: [],
