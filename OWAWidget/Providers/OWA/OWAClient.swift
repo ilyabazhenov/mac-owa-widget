@@ -946,6 +946,9 @@ actor OWAClient {
     /// weaker permissions than everything around it. Now it cannot be switched on in a shipped
     /// build at all, and what it writes in DEBUG is encrypted like every other trace.
     #if DEBUG
+    /// Enough to compare the last few syncs; older dumps are deleted as new ones arrive.
+    private static let keptCalendarViewDumps = 50
+
     private func dumpGetCalendarViewResponseIfNeeded(
         data: Data,
         statusCode: Int,
@@ -958,6 +961,7 @@ actor OWAClient {
         let name = "getcalendarview-\(timestamp)-status\(statusCode)-req\(requestID)-sync\(syncID).json"
         let outputData = prettyPrintedJSONDataIfPossible(from: data) ?? data
         DebugLogLocation.write(outputData, to: name)
+        DebugLogLocation.prune(fileNamePrefix: "getcalendarview-", keep: Self.keptCalendarViewDumps)
         log.notice(
             "OWA GetCalendarView debug dump saved sync=\(syncID, privacy: .public) request=\(requestID, privacy: .public) status=\(statusCode, privacy: .public)"
         )

@@ -254,6 +254,18 @@ final class SecureStore: @unchecked Sendable {
         FileManager.default.fileExists(atPath: url(for: name).path)
     }
 
+    /// Names of the stored containers that start with `prefix`, sorted. An empty prefix lists
+    /// nothing: this feeds deletion, and "everything" is never what a caller means.
+    func names(withPrefix prefix: String) -> [String] {
+        guard !prefix.isEmpty,
+              let files = try? FileManager.default.contentsOfDirectory(atPath: directory.path)
+        else { return [] }
+        return files
+            .filter { $0.hasPrefix(prefix) && $0.hasSuffix(".enc") }
+            .map { String($0.dropLast(".enc".count)) }
+            .sorted()
+    }
+
     // MARK: Container internals
 
     func seal(payload: Data, name: String) throws -> Data {

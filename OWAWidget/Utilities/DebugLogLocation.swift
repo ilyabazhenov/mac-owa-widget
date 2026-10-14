@@ -127,6 +127,31 @@ enum DebugLogLocation {
         SecureStore.shared.remove(storageName(for: fileName))
     }
 
+    /// Оставляет только `keep` самых новых дампов, чьё имя начинается с `fileNamePrefix`.
+    ///
+    /// Для дампов, где каждый — отдельный файл с меткой времени в начале имени (их порядок по имени
+    /// совпадает с хронологическим). Без этого `getcalendarview-*` копились без края: десять тысяч
+    /// файлов и 4 ГБ в `.dev`-хранилище. Удаляется только то, что лежит под префиксом `debug-` —
+    /// в том же каталоге живут аккаунты и кэш, и промах фильтра стоил бы их.
+    static func prune(fileNamePrefix: String, keep: Int, store: SecureStore = .shared) {
+        guard !fileNamePrefix.isEmpty else { return }
+        let prefix = storageName(for: fileNamePrefix)
+        guard prefix.hasPrefix("debug-"), prefix.count > "debug-".count else { return }
+        let names = store.names(withPrefix: prefix)
+        let removed = Set(names.dropLast(max(0, keep)))
+        for name in removed {
+            store.remove(name)
+        }
+        // `write` keeps each dump's copy in memory too; without this the buffers grow by one
+        // response per sync for as long as the app runs.
+        lock.lock()
+        defer { lock.unlock() }
+        for fileName in buffers.keys where fileName.hasPrefix(fileNamePrefix) && removed.contains(storageName(for: fileName)) {
+            buffers[fileName] = nil
+            pendingBytes[fileName] = nil
+        }
+    }
+
     /// Сбрасывает всё накопленное на диск. Полезно перед снятием трейсов вручную.
     static func flushAll() {
         lock.lock()

@@ -127,5 +127,48 @@ final class DebugLogLocationTests: XCTestCase {
         XCTAssertEqual(DebugLogLocation.storageName(for: "sample.log"), "debug-sample-log")
         XCTAssertEqual(DebugLogLocation.storageName(for: "a/b.json"), "debug-a-b-json")
     }
+
+    // MARK: - Pruning dumps
+
+    private func makeStore() -> (SecureStore, URL) {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("debug-prune-\(UUID().uuidString)", isDirectory: true)
+        return (SecureStore(directory: directory, keyProvider: InMemorySecureStoreKeyProvider()), directory)
+    }
+
+    /// Dumps live next to the accounts and the event cache: pruning must touch its own prefix
+    /// and nothing else, and keep the newest.
+    func testPruneKeepsNewestDumpsAndTouchesNothingElse() throws {
+        let (store, directory) = makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        for minute in 10..<20 {
+            let name = DebugLogLocation.storageName(for: "getcalendarview-2026-10-14T10-\(minute)-00Z-status200-req1-sync1.json")
+            try store.write(Data("{}".utf8), name: name)
+        }
+        let others = ["calendarAccounts", "events", "debug-owaclient-log", "debug-getcalendarevent_last-json"]
+        for other in others {
+            try store.write(Data("x".utf8), name: other)
+        }
+
+        DebugLogLocation.prune(fileNamePrefix: "getcalendarview-", keep: 3, store: store)
+
+        let dumps = store.names(withPrefix: "debug-getcalendarview-")
+        XCTAssertEqual(dumps.count, 3)
+        XCTAssertTrue(dumps.allSatisfy { $0.contains("T10-17") || $0.contains("T10-18") || $0.contains("T10-19") })
+        for other in others {
+            XCTAssertTrue(store.exists(other), other)
+        }
+    }
+
+    func testEmptyPrefixPrunesNothing() throws {
+        let (store, directory) = makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try store.write(Data("x".utf8), name: "debug-a")
+
+        DebugLogLocation.prune(fileNamePrefix: "", keep: 0, store: store)
+        XCTAssertTrue(store.exists("debug-a"))
+        XCTAssertEqual(store.names(withPrefix: ""), [])
+    }
 }
 #endif
