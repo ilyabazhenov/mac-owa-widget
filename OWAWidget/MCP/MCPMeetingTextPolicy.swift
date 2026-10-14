@@ -39,7 +39,10 @@ enum MCPMeetingTextPolicy {
     /// two stay the same.
     static func normalizedAgenda(_ agenda: String) -> String {
         var lines: [String] = []
-        for line in agenda.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n") {
+        // Every line separator, not only "\n": U+2028, U+2029, NEL or a bare CR stack up blank
+        // space just as well. CRLF first, so it counts as one break rather than two.
+        let unified = agenda.replacingOccurrences(of: "\r\n", with: "\n")
+        for line in unified.components(separatedBy: .newlines) {
             let isBlank = line.trimmingCharacters(in: .whitespaces).isEmpty
             if isBlank, lines.last.map({ $0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? true { continue }
             lines.append(isBlank ? "" : line)

@@ -185,6 +185,14 @@ final class CalendarServiceAccountPersistenceTests: XCTestCase {
         otherServer.serverURL = "https://mail.example.com.attacker.net"
         XCTAssertFalse(CalendarService.storedPasswordStillApplies(from: original, to: otherServer))
 
+        var otherPort = original
+        otherPort.serverURL = "https://mail.example.com:4443/owa"
+        XCTAssertFalse(CalendarService.storedPasswordStillApplies(from: original, to: otherPort))
+
+        var explicitDefaultPort = original
+        explicitDefaultPort.serverURL = "https://mail.example.com:443"
+        XCTAssertTrue(CalendarService.storedPasswordStillApplies(from: original, to: explicitDefaultPort))
+
         var unparseable = original
         unparseable.serverURL = "http://mail.example.com"
         XCTAssertFalse(CalendarService.storedPasswordStillApplies(from: original, to: unparseable))

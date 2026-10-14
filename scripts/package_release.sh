@@ -107,7 +107,11 @@ FORBIDDEN_ENTITLEMENTS=(
   com.apple.security.cs.allow-jit
 )
 for binary in "${APP_PATH}" "${APP_PATH}/Contents/Helpers/owawidget-mcp"; do
-  ENTITLEMENTS="$(codesign -d --entitlements - --xml "${binary}" 2>/dev/null || true)"
+  # A missing binary or a codesign failure must stop the release, not read as "no entitlements".
+  if [[ ! -e "${binary}" ]] || ! ENTITLEMENTS="$(codesign -d --entitlements - --xml "${binary}" 2>/dev/null)"; then
+    echo "Cannot read the signature of ${binary}." >&2
+    exit 1
+  fi
   for key in "${FORBIDDEN_ENTITLEMENTS[@]}"; do
     if [[ "${ENTITLEMENTS}" == *"${key}"* ]]; then
       echo "Release signature of ${binary} carries ${key}." >&2

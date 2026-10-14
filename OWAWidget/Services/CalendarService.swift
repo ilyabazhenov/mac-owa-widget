@@ -499,11 +499,19 @@ final class CalendarService: ObservableObject {
     }
 
     /// Whether the password stored for `previous` may stay in place after the edit to `updated`:
-    /// only while it still goes to the same server under the same login.
+    /// only while it still goes to the same server — host and port — under the same login.
     static func storedPasswordStillApplies(from previous: CalendarAccount, to updated: CalendarAccount) -> Bool {
         guard updated.accountType.requiresPassword else { return true }
-        guard let host = serverHost(of: updated), host == serverHost(of: previous) else { return false }
+        guard let host = serverHost(of: updated), host == serverHost(of: previous),
+              serverPort(of: updated) == serverPort(of: previous)
+        else { return false }
         return normalizedLogin(previous.email) == normalizedLogin(updated.email)
+    }
+
+    /// The port an account's server URL names, 443 when it names none (the scheme is always https).
+    private static func serverPort(of account: CalendarAccount) -> Int? {
+        guard let base = try? OWAClient.parseBaseURL(account.serverURL) else { return nil }
+        return base.port ?? 443
     }
 
     private static func normalizedLogin(_ login: String) -> String {

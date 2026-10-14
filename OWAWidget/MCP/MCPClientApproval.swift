@@ -91,6 +91,9 @@ final class MCPClientApprovalController {
 
     func isAsking(about key: String) -> Bool { questions[key] != nil }
 
+    /// Clients with a question on screen or in line.
+    var askingKeys: Set<String> { Set(questions.keys) }
+
     /// Puts the question in line without waiting for the answer: called when a new client
     /// connects, so the panel is up before its first tool call.
     func ask(_ request: MCPClientApprovalRequest) {

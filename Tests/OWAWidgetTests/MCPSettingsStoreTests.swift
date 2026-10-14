@@ -47,7 +47,8 @@ final class MCPSettingsStoreTests: XCTestCase {
 
         let settings = load()
 
-        XCTAssertEqual(settings, MCPSettings(serverEnabled: true, createMeetings: true, askNewClients: false))
+        // "Don't ask" is never carried over: see testDeletedStoreDoesNotReviveDontAsk.
+        XCTAssertEqual(settings, MCPSettings(serverEnabled: true, createMeetings: true, askNewClients: true))
         for key in MCPSettingsStore.legacyDefaultsKeys {
             XCTAssertNil(defaults.object(forKey: key), key)
         }
@@ -66,6 +67,17 @@ final class MCPSettingsStoreTests: XCTestCase {
         XCTAssertFalse(settings.serverEnabled)
         XCTAssertTrue(settings.askNewClients)
         XCTAssertNil(defaults.object(forKey: MCPSettingsStore.legacyEnabledKey))
+    }
+
+    /// The store file is the user's: any of their processes can delete it and plant the old keys.
+    /// The server may come back on that way, but never without the new-client question.
+    func testDeletedStoreDoesNotReviveDontAsk() throws {
+        XCTAssertTrue(makeStore().save(MCPSettings(serverEnabled: false, askNewClients: true)))
+        try FileManager.default.removeItem(at: secureStore.url(for: MCPSettingsStore.storageName))
+        defaults.set(true, forKey: MCPSettingsStore.legacyEnabledKey)
+        defaults.set(false, forKey: MCPSettingsStore.legacyAskNewClientsKey)
+
+        XCTAssertTrue(load().askNewClients)
     }
 
     func testSavedSwitchesRoundTrip() {

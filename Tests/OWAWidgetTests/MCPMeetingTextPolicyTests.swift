@@ -29,4 +29,9 @@ final class MCPMeetingTextPolicyTests: XCTestCase {
         let agenda = "1. Итоги\n\n\n   \n\n\n\n\n2. Планы\r\n\r\n\r\n3. Разное\n\n"
         XCTAssertEqual(MCPMeetingTextPolicy.normalizedAgenda(agenda), "1. Итоги\n\n2. Планы\n\n3. Разное")
     }
+
+    func testOtherLineSeparatorsCollapseToo() {
+        let gap = String(repeating: "\u{2028}", count: 200) + String(repeating: "\r", count: 50) + "\u{2029}\u{85}"
+        XCTAssertEqual(MCPMeetingTextPolicy.normalizedAgenda("OK" + gap + "хвост"), "OK\n\nхвост")
+    }
 }

@@ -288,7 +288,8 @@ final class MCPServerService: ObservableObject {
             identity,
             at: Date(),
             in: knownClients,
-            newClientAccess: askNewClients ? .pending : .allowed
+            newClientAccess: askNewClients ? .pending : .allowed,
+            protecting: approval?.askingKeys ?? []
         )
         if let declared = clients[index].declaredName {
             list = MCPKnownClientList.noteDeclaredName(declared, forKey: identity.key, in: list)

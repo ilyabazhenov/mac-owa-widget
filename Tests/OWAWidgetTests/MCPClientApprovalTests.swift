@@ -207,4 +207,25 @@ final class MCPClientApprovalTests: XCTestCase {
         XCTAssertEqual(list.first { $0.key == "spy" }?.access, .denied)
         XCTAssertEqual(list.first?.key, "/tmp/script-\(MCPKnownClientList.maxCount * 2 - 1)", "the newest stays: its question may be open")
     }
+
+    func testClientWithAnOpenQuestionIsNeverTrimmed() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        func identity(_ key: String) -> MCPClientIdentity {
+            MCPClientIdentity(key: key, name: key, executablePath: "/\(key)", script: nil, kind: .direct, pid: 1)
+        }
+        var list = MCPKnownClientList.record(identity("asked"), at: start, in: [], newClientAccess: .pending).list
+        for index in 0..<MCPKnownClientList.maxCount {
+            list = MCPKnownClientList.record(
+                identity("other-\(index)"),
+                at: start.addingTimeInterval(Double(index + 1)),
+                in: list,
+                newClientAccess: .pending,
+                protecting: ["asked"]
+            ).list
+        }
+        XCTAssertEqual(list.count, MCPKnownClientList.maxCount)
+        XCTAssertTrue(list.contains { $0.key == "asked" }, "its panel is open: the answer must have an entry to land in")
+        list = MCPKnownClientList.setAccess(.allowed, forKey: "asked", in: list)
+        XCTAssertEqual(list.first { $0.key == "asked" }?.access, .allowed)
+    }
 }

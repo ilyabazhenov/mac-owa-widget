@@ -38,6 +38,12 @@ enum MCPSettingsStore {
     ///
     /// An unreadable store gives the defaults (server off), not the legacy values: once the
     /// switches have moved, whatever sits under the old keys was written by someone else.
+    ///
+    /// "First run" cannot be told apart from "someone deleted `mcpSettings.enc`": the file is the
+    /// user's, and any of their processes can remove it, then write the old keys and wait for a
+    /// restart. So the migration never carries "don't ask about new clients" over — the question
+    /// stays on, and a client switched on that way still meets a panel. A user who had turned it
+    /// off turns it off once more.
     static func load(from store: Store = shared, defaults: UserDefaults = .standard) -> MCPSettings {
         if let saved = store.load() {
             removeLegacy(from: defaults)
@@ -48,7 +54,8 @@ enum MCPSettingsStore {
         var migrated = MCPSettings()
         migrated.serverEnabled = defaults.bool(forKey: legacyEnabledKey)
         migrated.createMeetings = defaults.bool(forKey: legacyCreateMeetingsKey)
-        migrated.askNewClients = defaults.object(forKey: legacyAskNewClientsKey) as? Bool ?? true
+        // Deliberately not read from `legacyAskNewClientsKey`, see above.
+        migrated.askNewClients = true
         // Same order as every other migration: write, read back and compare, only then delete.
         if store.save(migrated), store.load() == migrated {
             removeLegacy(from: defaults)

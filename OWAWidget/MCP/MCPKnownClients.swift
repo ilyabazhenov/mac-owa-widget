@@ -74,7 +74,8 @@ enum MCPKnownClientList {
         _ identity: MCPClientIdentity,
         at date: Date,
         in list: [MCPKnownClient],
-        newClientAccess: MCPClientAccess = .allowed
+        newClientAccess: MCPClientAccess = .allowed,
+        protecting openQuestions: Set<String> = []
     ) -> (list: [MCPKnownClient], isNew: Bool) {
         guard identity.isResolved else { return (list, false) }
         var list = list
@@ -101,25 +102,26 @@ enum MCPKnownClientList {
             ))
             isNew = true
         }
-        return (trimmed(sorted(list), keeping: identity.key), isNew)
+        return (trimmed(sorted(list), keeping: openQuestions.union([identity.key])), isNew)
     }
 
     /// Cuts the list to `maxCount`, dropping undecided entries before answered ones.
     ///
     /// By `lastSeen` alone, a script started from fifty different paths (each path is a new key)
     /// would push every allow and deny the user ever gave out of the list, and the next real
-    /// connection would ask all over again. The entry just recorded stays: its question may be on
-    /// screen, and an answer to a key no longer in the list would be lost.
-    static func trimmed(_ sortedList: [MCPKnownClient], keeping key: String) -> [MCPKnownClient] {
+    /// connection would ask all over again. The entries in `kept` stay — the one just recorded
+    /// and every client whose question is on screen or queued: an answer to a key no longer in
+    /// the list would be lost, and the client asked again.
+    static func trimmed(_ sortedList: [MCPKnownClient], keeping kept: Set<String>) -> [MCPKnownClient] {
         var list = sortedList
         while list.count > maxCount,
-              let index = list.lastIndex(where: { $0.access == .pending && $0.key != key }) {
+              let index = list.lastIndex(where: { $0.access == .pending && !kept.contains($0.key) }) {
             list.remove(at: index)
         }
-        if list.count > maxCount, let index = list.lastIndex(where: { $0.key != key }) {
+        while list.count > maxCount, let index = list.lastIndex(where: { !kept.contains($0.key) }) {
             list.remove(at: index)
         }
-        return Array(list.prefix(maxCount))
+        return list
     }
 
     static func noteDeclaredName(_ name: String, forKey key: String, in list: [MCPKnownClient]) -> [MCPKnownClient] {
