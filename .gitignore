@@ -30,6 +30,14 @@ tmp/
 # IDE
 .idea/
 
+# Signing material: certificates, App Store Connect keys, private keys. Never in the repo.
+*.p12
+*.p8
+*.pem
+*.key
+*.cer
+*.mobileprovision
+
 # Environment files
 .env
 *.env

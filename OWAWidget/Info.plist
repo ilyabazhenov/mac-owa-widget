@@ -52,9 +52,8 @@
         a freshly generated appcast.xml as an asset alongside the .zip.
 
         SUPublicEDKey holds the Ed25519 public key used to verify update signatures.
-        It MUST match the private key stored in Keychain / GitHub Secret SPARKLE_ED_PRIVATE_KEY.
-        Run scripts/generate_sparkle_keys.sh once to produce a keypair and paste the
-        public key value into the string below.
+        It MUST match the private key in the login Keychain (backup and recovery:
+        docs/sparkle-key-backup.md); scripts/package_release.sh checks this before signing.
     -->
     <key>SUFeedURL</key>
     <string>https://github.com/ilyabazhenov/mac-owa-widget/releases/latest/download/appcast.xml</string>

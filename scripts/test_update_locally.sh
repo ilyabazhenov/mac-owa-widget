@@ -19,7 +19,10 @@
 #   4. Запуск «старой» версии, которая проверяет обновления на localhost.
 #
 # Ничего не уходит на GitHub: фид, архив и подпись живут только на localhost, а тестовая версия
-# никогда не публикуется. Отдельный bundle id означает отдельные UserDefaults и отдельный каталог
+# никогда не публикуется. Подписывает стенд одноразовым EdDSA-ключом, а не боевым: обе стороны
+# получают его публичную половину в SUPublicEDKey. С боевым ключом архив «версии 99.0.0» был бы
+# настоящим обновлением для всех пользователей, и попади он в фид — они остались бы на нём
+# навсегда, ведь Sparkle не откатывает версию назад. Отдельный bundle id означает отдельные UserDefaults и отдельный каталог
 # в Application Support, поэтому аккаунты и кэш рабочей копии недоступны тестовой.
 #
 # Использование:
@@ -94,6 +97,21 @@ fi
 cleanup_traces
 mkdir -p "${WORK_DIR}/old" "${WORK_DIR}/new" "${WORK_DIR}/serve"
 
+# Одноразовая пара ключей стенда. Приватная половина — в WORK_DIR (0600), которую стенд удаляет
+# за собой; формат тот же, что принимает `--ed-key-file`: base64 32-байтного seed.
+STAND_KEY_FILE="${WORK_DIR}/stand-ed25519.key"
+STAND_KEYS="$(swift - <<'SWIFT'
+import CryptoKit
+let key = Curve25519.Signing.PrivateKey()
+print(key.rawRepresentation.base64EncodedString())
+print(key.publicKey.rawRepresentation.base64EncodedString())
+SWIFT
+)"
+( umask 077 && printf '%s' "$(sed -n 1p <<<"${STAND_KEYS}")" > "${STAND_KEY_FILE}" )
+STAND_PUBLIC_KEY="$(sed -n 2p <<<"${STAND_KEYS}")"
+unset STAND_KEYS
+[[ -s "${STAND_KEY_FILE}" && -n "${STAND_PUBLIC_KEY}" ]] || { echo "Не удалось создать ключ стенда" >&2; exit 1; }
+
 set_str() { # plist key value
   /usr/libexec/PlistBuddy -c "Set :$2 $3" "$1" >/dev/null 2>&1 || \
   /usr/libexec/PlistBuddy -c "Add :$2 string $3" "$1"
@@ -103,6 +121,7 @@ patch_plist() { # app_path [version] [build]
   local plist="$1/Contents/Info.plist"
   set_str "${plist}" CFBundleIdentifier "${TEST_BUNDLE_ID}"
   set_str "${plist}" SUFeedURL "http://localhost:${PORT}/appcast.xml"
+  set_str "${plist}" SUPublicEDKey "${STAND_PUBLIC_KEY}"
   [[ -n "${2:-}" ]] && set_str "${plist}" CFBundleShortVersionString "$2"
   [[ -n "${3:-}" ]] && set_str "${plist}" CFBundleVersion "$3"
   # Фид отдаётся по http с localhost, поэтому только для стенда снимаем ATS.
@@ -150,10 +169,11 @@ echo "== Архив и appcast =="
 ditto -c -k --sequesterRsrc --keepParent "${NEW_APP}" \
   "${WORK_DIR}/serve/OWAWidget-v${NEW_VERSION}-macos.zip"
 "${BIN_DIR}/generate_appcast" --download-url-prefix "http://localhost:${PORT}/" \
-  "${WORK_DIR}/serve" >/dev/null
+  --ed-key-file "${STAND_KEY_FILE}" "${WORK_DIR}/serve" >/dev/null
+rm -f "${STAND_KEY_FILE}"
 if ! grep -q 'sparkle:edSignature="[^"]' "${WORK_DIR}/serve/appcast.xml"; then
   echo "appcast без подписи — стенд бессмыслен, клиент такое обновление отвергнет." >&2
-  echo "Проверьте ключ: см. docs/sparkle-key-backup.md" >&2
+  echo "Ключ стенда одноразовый; проверьте вывод generate_appcast выше." >&2
   exit 1
 fi
 echo "   версия в фиде: $(grep -o '<sparkle:shortVersionString>[^<]*' "${WORK_DIR}/serve/appcast.xml" | head -1 | sed 's/.*>//')"

@@ -63,6 +63,16 @@ if [[ ! -f "${RELEASE_NOTES_FILE}" ]]; then
   exit 1
 fi
 
+# The build compiles whatever is in the working tree, and the build number comes from
+# `git rev-list --count HEAD`: an uncommitted change would ship in a release that no commit
+# describes. The release commit (VERSION, RELEASE_NOTES.md) comes first, see AGENTS.md.
+DIRTY="$(git -C "${ROOT_DIR}" status --porcelain)"
+if [[ -n "${DIRTY}" ]]; then
+  echo "The working tree has uncommitted changes; commit them before packaging:" >&2
+  echo "${DIRTY}" >&2
+  exit 1
+fi
+
 # Fail before the build, not after it: both checks are cheap, the build is not.
 if ! security find-identity -v -p codesigning | grep -q '"Developer ID Application: '; then
   echo "No valid 'Developer ID Application' certificate in the login Keychain." >&2
@@ -84,6 +94,40 @@ make -C "${ROOT_DIR}" release-bundle >&2
 if [[ ! -d "${APP_PATH}" ]]; then
   echo "App bundle not found at ${APP_PATH}" >&2
   exit 1
+fi
+
+# Entitlements that loosen hardened runtime belong to local ad-hoc builds only
+# (OWAWidget-dev.entitlements). sign_app.sh picks them by identity; this checks the result,
+# so a change there cannot ship them silently.
+FORBIDDEN_ENTITLEMENTS=(
+  com.apple.security.cs.disable-library-validation
+  com.apple.security.get-task-allow
+  com.apple.security.cs.allow-dyld-environment-variables
+  com.apple.security.cs.allow-unsigned-executable-memory
+  com.apple.security.cs.allow-jit
+)
+for binary in "${APP_PATH}" "${APP_PATH}/Contents/Helpers/owawidget-mcp"; do
+  ENTITLEMENTS="$(codesign -d --entitlements - --xml "${binary}" 2>/dev/null || true)"
+  for key in "${FORBIDDEN_ENTITLEMENTS[@]}"; do
+    if [[ "${ENTITLEMENTS}" == *"${key}"* ]]; then
+      echo "Release signature of ${binary} carries ${key}." >&2
+      exit 1
+    fi
+  done
+done
+echo "✓ Entitlements: no hardened-runtime exceptions" >&2
+
+# The archive is signed with the key in the Keychain; clients check it against the
+# SUPublicEDKey of the version they run. A mismatch would publish an update nobody can install.
+if [[ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ]]; then
+  KEYCHAIN_PUBLIC_KEY="$("${SPARKLE_ARTIFACTS_DIR}/bin/generate_keys" -p 2>/dev/null | tail -1 | tr -d '[:space:]')"
+  BUNDLE_PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "${APP_PATH}/Contents/Info.plist")"
+  if [[ "${KEYCHAIN_PUBLIC_KEY}" != "${BUNDLE_PUBLIC_KEY}" ]]; then
+    echo "The EdDSA key in the Keychain does not match SUPublicEDKey in the bundle." >&2
+    echo "See docs/sparkle-key-backup.md before going any further." >&2
+    exit 1
+  fi
+  echo "✓ EdDSA key in the Keychain matches SUPublicEDKey" >&2
 fi
 
 # Notarize, then staple the ticket into the bundle so Gatekeeper accepts the app

@@ -5,7 +5,9 @@ SRC_DIR     := OWAWidget
 SWIFT_BUILD_ARGS ?=
 # `-c release`: SwiftPM defaults to debug, which would ship every `#if DEBUG` block (cleartext
 # /tmp logs with meeting titles, the Debug settings section) to users.
-RELEASE_SWIFT_BUILD_ARGS := -c release --arch arm64 --arch x86_64
+# --force-resolved-versions: a release builds exactly the dependency revisions committed in
+# Package.resolved, never whatever a `from:` range would resolve to today.
+RELEASE_SWIFT_BUILD_ARGS := -c release --arch arm64 --arch x86_64 --force-resolved-versions
 INFO_PLIST  := $(SRC_DIR)/Info.plist
 CODE_SIGN_IDENTITY ?= -
 # Releases must be Developer ID signed: TCC and Keychain grants then survive Sparkle updates, and
