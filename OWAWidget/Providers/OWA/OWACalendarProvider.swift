@@ -23,7 +23,7 @@ actor OWACalendarProvider: CalendarProvider {
             items = try await client.fetchCalendarView(from: start, to: end)
         } catch {
             log.error(
-                "OWA provider fetch failed sync=\(syncID, privacy: .public) account=\(accountID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                "OWA provider fetch failed sync=\(syncID, privacy: .public) account=\(accountID, privacy: .public) error=\(error.localizedDescription, privacy: .private)"
             )
             throw error
         }
@@ -80,7 +80,7 @@ actor OWACalendarProvider: CalendarProvider {
                 folderIdentifier: folderIdentifier
             )
         } catch {
-            log.error("createMeeting failed: \(error, privacy: .public)")
+            log.error("createMeeting failed: \(error, privacy: .private)")
             throw error
         }
     }

@@ -163,11 +163,20 @@ final class SecureStore: @unchecked Sendable {
     /// Support, and the Keychain guard in ``TrustedCertificateStore`` never engaged. `XCTest` is
     /// linked into the test host and absent from the shipped app, which makes this both reliable
     /// and impossible to trip accidentally in production.
+    ///
+    /// The environment variables are a DEBUG-only extra. In a release build anyone who can set the
+    /// app's environment (`launchctl setenv`, `open --env`) could otherwise switch it to a throwaway
+    /// key and directory: an empty app, and a lazy migration moving cleartext into that throwaway
+    /// store before deleting the original.
     static var isRunningTests: Bool {
         if NSClassFromString("XCTestCase") != nil { return true }
+        #if DEBUG
         let environment = ProcessInfo.processInfo.environment
         return environment["XCTestConfigurationFilePath"] != nil
             || environment["XCTestSessionIdentifier"] != nil
+        #else
+        return false
+        #endif
     }
 
     private static func testFallbackDirectory() -> URL {

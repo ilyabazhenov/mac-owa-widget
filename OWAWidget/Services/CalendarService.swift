@@ -893,7 +893,7 @@ final class CalendarService: ObservableObject {
             #endif
             applyResponseType(event.responseType, to: event.id)
             applyBlockingError(error, context: "respondToMeeting")
-            log.error("respondToMeeting failed eventID=\(event.id, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            log.error("respondToMeeting failed eventID=\(event.id, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
             throw error
         }
     }
@@ -963,7 +963,7 @@ final class CalendarService: ObservableObject {
             // logon-page rejection latches immediately. Leaves `lastAuthProbeAt` correctly
             // initialised for the auto-probe.
             if registerAuthFailure(isProbe: false, definitive: OWAError.isDefinitiveAuthRejection(error)) {
-                log.error("\(context, privacy: .public) suspended sync: auth error (failures=\(self.consecutiveAuthFailures, privacy: .public)) — \(error.localizedDescription, privacy: .public)")
+                log.error("\(context, privacy: .public) suspended sync: auth error (failures=\(self.consecutiveAuthFailures, privacy: .public)) — \(error.localizedDescription, privacy: .private)")
             } else {
                 log.warning("\(context, privacy: .public) transient auth failure \(self.consecutiveAuthFailures, privacy: .public)/\(self.authFailureThreshold, privacy: .public)")
             }
@@ -1376,7 +1376,7 @@ final class CalendarService: ObservableObject {
                 // auto-probe and the manual "retry" action can still lift it without the user
                 // re-entering the password.
                 if registerAuthFailure(isProbe: isAuthBlockProbe, definitive: OWAError.isDefinitiveAuthRejection(error)) {
-                    log.error("Sync \(syncID, privacy: .public) suspended: auth error (failures=\(self.consecutiveAuthFailures, privacy: .public)) — \(error.localizedDescription, privacy: .public)")
+                    log.error("Sync \(syncID, privacy: .public) suspended: auth error (failures=\(self.consecutiveAuthFailures, privacy: .public)) — \(error.localizedDescription, privacy: .private)")
                 } else {
                     // Not latched yet — treat as transient: keep showing cached events and
                     // let the next scheduled cycle retry.
@@ -1396,7 +1396,7 @@ final class CalendarService: ObservableObject {
                 // rejected credentials on the very next tick).
                 syncStatus = .authenticationRequired
                 lastAuthProbeAt = clock()
-                log.warning("Sync \(syncID, privacy: .public) auth-block probe failed with non-auth error — staying latched: \(error.localizedDescription, privacy: .public)")
+                log.warning("Sync \(syncID, privacy: .public) auth-block probe failed with non-auth error — staying latched: \(error.localizedDescription, privacy: .private)")
             } else {
                 if OWAError.isAbstractClassHTTPError(error) {
                     syncRequestGate.recordTransientFailure(at: Date())
@@ -1412,7 +1412,7 @@ final class CalendarService: ObservableObject {
                 } else {
                     syncStatus = .offlineCached(error.localizedDescription)
                 }
-                log.error("Sync \(syncID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                log.error("Sync \(syncID, privacy: .public) failed: \(error.localizedDescription, privacy: .private)")
             }
             await rescheduleMeetingRemindersForCurrentEvents()
         }

@@ -724,7 +724,7 @@ actor OWAClient {
                 )
                 return items
             }
-            log.error("Calendar view fetch failed sync=\(syncID, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            log.error("Calendar view fetch failed sync=\(syncID, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
             throw error
         }
     }
@@ -1380,7 +1380,7 @@ actor OWAClient {
             log.error("EWS CreateItem URLError code=\(urlErr.code.rawValue, privacy: .public) (\(urlErr.localizedDescription, privacy: .public))")
             throw urlErr
         } catch {
-            log.error("EWS CreateItem network error: \(error, privacy: .public)")
+            log.error("EWS CreateItem network error: \(error, privacy: .private)")
             throw error
         }
 

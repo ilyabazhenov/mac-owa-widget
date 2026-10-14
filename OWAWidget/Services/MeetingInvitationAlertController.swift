@@ -150,7 +150,7 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
                 #endif
                 rows.removeAll { $0.id == rowID }
             } catch {
-                log.error("respond failed: \(error.localizedDescription, privacy: .public)")
+                log.error("respond failed: \(error.localizedDescription, privacy: .private)")
                 #if DEBUG
                 DiagnosticLog.event("Invitation panel respond failed action=\(action) error=\((error as NSError).domain)#\((error as NSError).code)")
                 #endif

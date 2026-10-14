@@ -230,7 +230,7 @@ final class CreateMeetingViewModel: ObservableObject {
                 // normal — user typed more
             } catch {
                 setResults([], kind: kind)
-                log.error("findPeople error: \(error.localizedDescription, privacy: .public)")
+                log.error("findPeople error: \(error.localizedDescription, privacy: .private)")
             }
         }
         switch kind {
@@ -536,7 +536,7 @@ final class CreateMeetingViewModel: ObservableObject {
             )
             successMessage = "create.meeting.success"
         } catch {
-            log.error("createMeeting UI error: \(error, privacy: .public)")
+            log.error("createMeeting UI error: \(error, privacy: .private)")
             errorMessage = error.localizedDescription
         }
     }
