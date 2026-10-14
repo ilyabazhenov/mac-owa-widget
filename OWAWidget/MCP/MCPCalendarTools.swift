@@ -31,6 +31,8 @@ final class MCPCalendarTools {
     /// minutes after the connection is back.
     static let ownDomainErrorRetryInterval: TimeInterval = 60
 
+    static let disabledMessage = "Access for AI assistants is turned off in OWA Widget (Settings → MCP). Ask the user to turn it on."
+
     private let calendarService: CalendarService
     private let accessGuard: MCPAccessGuard
     private let detailsCache: MCPEventDetailsCache
@@ -77,7 +79,7 @@ final class MCPCalendarTools {
 
     func call(name: String, arguments: [String: JSONValue], client: String? = nil) async -> MCPToolResult {
         guard isEnabled() else {
-            return .failure("Access for AI assistants is turned off in OWA Widget (Settings → MCP). Ask the user to turn it on.")
+            return .failure(Self.disabledMessage)
         }
         let context = CallContext(now: clock(), coder: MCPDateCoder(timeZone: timeZoneProvider()))
         do {

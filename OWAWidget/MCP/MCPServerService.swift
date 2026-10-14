@@ -10,12 +10,6 @@ import UserNotifications
 @MainActor
 final class MCPServerService: ObservableObject {
     static let shared = MCPServerService()
-    static let enabledDefaultsKey = "mcpServerEnabled"
-    /// Off by default and separate from the main switch: reading the calendar and sending
-    /// invitations on the user's behalf are different decisions.
-    static let createMeetingsDefaultsKey = "mcpCreateMeetingsEnabled"
-    /// On by default: a client the user has not seen before reads nothing until they allow it.
-    static let askNewClientsDefaultsKey = "mcpAskNewClients"
     /// After an unanswered question the client gets "waiting for the user" without a new panel
     /// for this long: a widget that polls every minute must not reopen it every minute.
     static let unansweredQuestionCooldown: TimeInterval = 10 * 60
@@ -55,10 +49,11 @@ final class MCPServerService: ObservableObject {
     @Published private(set) var knownClients: [MCPKnownClient] = []
     /// In memory only: who called which tool, never arguments or results.
     @Published private(set) var journal: [JournalEntry] = []
-    @Published var isEnabled: Bool = UserDefaults.standard.bool(forKey: MCPServerService.enabledDefaultsKey) {
+    /// The switches are persisted through `SecureStore` (see ``MCPSettings``), never `UserDefaults`.
+    @Published var isEnabled: Bool {
         didSet {
             guard isEnabled != oldValue else { return }
-            UserDefaults.standard.set(isEnabled, forKey: Self.enabledDefaultsKey)
+            settingsChanged()
             MCPDebugLog.log("enabled=\(isEnabled)")
             if isEnabled {
                 // Clients that connected while the switch was off start reading only now.
@@ -68,20 +63,24 @@ final class MCPServerService: ObservableObject {
             }
         }
     }
-    @Published var askNewClients: Bool = UserDefaults.standard.object(forKey: MCPServerService.askNewClientsDefaultsKey) as? Bool ?? true {
+    @Published var askNewClients: Bool {
         didSet {
             guard askNewClients != oldValue else { return }
-            UserDefaults.standard.set(askNewClients, forKey: Self.askNewClientsDefaultsKey)
+            settingsChanged()
             MCPDebugLog.log("askNewClients=\(askNewClients)")
         }
     }
-    @Published var canCreateMeetings: Bool = UserDefaults.standard.bool(forKey: MCPServerService.createMeetingsDefaultsKey) {
+    @Published var canCreateMeetings: Bool {
         didSet {
             guard canCreateMeetings != oldValue else { return }
-            UserDefaults.standard.set(canCreateMeetings, forKey: Self.createMeetingsDefaultsKey)
+            settingsChanged()
             MCPDebugLog.log("createMeetings=\(canCreateMeetings)")
         }
     }
+    /// What the tool calls read. The gate (`authorize`) and the tools must see the same switches:
+    /// when the tools re-read a store of their own, flipping that store from outside opened the
+    /// tools while the gate still thought the server was off and let every call through.
+    private let settingsSnapshot: MCPSettingsSnapshot
 
     private(set) var socketPath: String = ""
     private var listener: MCPSocketListener?
@@ -93,7 +92,23 @@ final class MCPServerService: ObservableObject {
     private var approval: MCPClientApprovalController?
     private var unansweredUntil: [String: Date] = [:]
 
-    private init() {}
+    private init() {
+        let settings = MCPSettingsStore.load()
+        isEnabled = settings.serverEnabled
+        askNewClients = settings.askNewClients
+        canCreateMeetings = settings.createMeetings
+        settingsSnapshot = MCPSettingsSnapshot(settings)
+    }
+
+    private func settingsChanged() {
+        let settings = MCPSettings(
+            serverEnabled: isEnabled,
+            createMeetings: canCreateMeetings,
+            askNewClients: askNewClients
+        )
+        settingsSnapshot.update(settings)
+        _ = MCPSettingsStore.shared.save(settings)
+    }
 
     /// Starts listening. Called from the menu-bar label's `onAppear`, which runs at launch;
     /// later calls are no-ops.
@@ -103,8 +118,8 @@ final class MCPServerService: ObservableObject {
 
         let calendarTools = MCPCalendarTools(
             calendarService: calendarService,
-            isEnabled: { UserDefaults.standard.bool(forKey: MCPServerService.enabledDefaultsKey) },
-            canCreateMeetings: { UserDefaults.standard.bool(forKey: MCPServerService.createMeetingsDefaultsKey) }
+            isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled },
+            canCreateMeetings: { [settingsSnapshot] in settingsSnapshot.current.createMeetings }
         )
         toolbox = MCPToolbox(calendarTools: calendarTools) { tool, client, isError in
             MCPServerService.shared.record(tool: tool, client: client, isError: isError)
@@ -301,9 +316,11 @@ final class MCPServerService: ObservableObject {
 
     /// `nil` when the client may call tools; otherwise the error text it gets instead.
     func authorize(_ clientID: UUID) async -> String? {
-        // A disabled server answers every call itself; there is nothing to ask about.
-        guard isEnabled else { return nil }
-        guard let index = clients.firstIndex(where: { $0.id == clientID }) else { return nil }
+        // Fails closed: a disabled server refuses here too, not only inside the tools, so no
+        // single switch can open the tools behind the gate's back.
+        guard isEnabled else { return MCPCalendarTools.disabledMessage }
+        // Gone already: no reply can reach it, and a call nobody can attribute is not allowed.
+        guard let index = clients.firstIndex(where: { $0.id == clientID }) else { return Self.unidentifiedMessage }
         guard let identity = clients[index].identity, identity.isResolved else {
             return askNewClients ? Self.unidentifiedMessage : nil
         }
