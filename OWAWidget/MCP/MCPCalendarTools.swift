@@ -778,9 +778,16 @@ final class MCPCalendarTools {
         }
         let location = arguments["location"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard location.count <= 255 else { throw ArgumentError("`location` is limited to 255 characters") }
-        let agenda = arguments["agenda"]?.stringValue ?? ""
+        let agenda = MCPMeetingTextPolicy.normalizedAgenda(arguments["agenda"]?.stringValue ?? "")
         guard agenda.count <= Self.maxBodyCharacters else {
             throw ArgumentError("`agenda` is limited to \(Self.maxBodyCharacters) characters")
+        }
+        for (name, text) in [("title", title), ("location", location), ("agenda", agenda)]
+        where MCPMeetingTextPolicy.containsBidiControls(text) {
+            throw ArgumentError(
+                "`\(name)` contains bidirectional control characters (U+202A–U+202E, U+2066–U+2069), "
+                    + "which make text display differently from what is sent. Remove them."
+            )
         }
         let account = try exchangeAccount(arguments)
 
@@ -1019,7 +1026,7 @@ final class MCPCalendarTools {
         var seen = Set<String>()
         return try array.compactMap { item in
             guard let text = item.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-                  Self.isEmailAddress(text) else {
+                  Self.isEmailAddress(text), MCPMeetingTextPolicy.isPlainASCIIAddress(text) else {
                 throw ArgumentError("`\(key)` must hold email addresses (find them with find_people), got \(item)")
             }
             return seen.insert(text).inserted ? text : nil

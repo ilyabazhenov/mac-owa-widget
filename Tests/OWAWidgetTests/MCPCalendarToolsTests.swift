@@ -915,6 +915,9 @@ final class MCPCalendarToolsTests: XCTestCase {
             ["title": " ", "start": "2026-10-06T15:00", "end": "2026-10-06T15:30"],
             ["title": "x", "start": "2026-10-06T15:00", "end": "2026-10-06T15:30", "required": ["Иванов"]],
             ["title": "x", "start": "2026-10-06T15:00", "end": "2026-10-06T15:30", "account_id": .string(local.id.uuidString)],
+            ["title": "Созвон \u{202E}", "start": "2026-10-06T15:00", "end": "2026-10-06T15:30"],
+            ["title": "x", "start": "2026-10-06T15:00", "end": "2026-10-06T15:30", "agenda": "итоги \u{2066}скрыто\u{2069}"],
+            ["title": "x", "start": "2026-10-06T15:00", "end": "2026-10-06T15:30", "required": ["ivan@\u{0430}lfabank.ru"]],
         ]
         for arguments in broken {
             let result = await tools.call(name: "create_meeting", arguments: arguments)

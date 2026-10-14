@@ -455,6 +455,7 @@
 "mcp.confirm.externalWarning" = "Some attendees are outside your organization.";
 "mcp.confirm.more" = "and %d more";
 "mcp.confirm.externalUnknown" = "Could not determine your organization's domain, so external addresses are not marked. Check the addresses yourself.";
+"mcp.confirm.hiddenCharacters" = "The meeting text contains invisible characters. Choose Edit… to check it.";
 "mcp.confirm.conflicts" = "Overlaps your meetings";
 "mcp.confirm.addToCalendar" = "Add to Calendar";
 "mcp.confirm.sendInvitations" = "Send Invitations";

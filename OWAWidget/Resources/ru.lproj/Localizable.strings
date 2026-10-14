@@ -455,6 +455,7 @@
 "mcp.confirm.externalWarning" = "Среди участников есть адреса вне вашей организации.";
 "mcp.confirm.more" = "и ещё %d";
 "mcp.confirm.externalUnknown" = "Не удалось определить домен вашей организации, поэтому внешние адреса не отмечены. Проверьте адреса сами.";
+"mcp.confirm.hiddenCharacters" = "В тексте встречи есть невидимые символы. Чтобы проверить его, нажмите «Изменить…».";
 "mcp.confirm.conflicts" = "Пересекается с вашими встречами";
 "mcp.confirm.addToCalendar" = "Добавить в календарь";
 "mcp.confirm.sendInvitations" = "Отправить приглашения";

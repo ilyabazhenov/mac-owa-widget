@@ -22,6 +22,10 @@ struct MCPMeetingConfirmationView: View {
     let onReject: () -> Void
     let onEdit: () -> Void
 
+    /// Same guard as the client question: the panel opens in the middle of the screen while the
+    /// user may be clicking something else, and that click must not send invitations.
+    @State private var armed = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
@@ -29,6 +33,9 @@ struct MCPMeetingConfirmationView: View {
                 meeting
                 attendees
                 if !proposal.conflicts.isEmpty { conflicts }
+                if proposal.hasHiddenCharacters {
+                    note(localization.tr("mcp.confirm.hiddenCharacters"), icon: "eye.trianglebadge.exclamationmark", color: .orange)
+                }
                 if !agendaText.isEmpty { agenda }
             }
             .padding(16)
@@ -52,6 +59,11 @@ struct MCPMeetingConfirmationView: View {
                 .stroke(Color.accentColor.opacity(0.3), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        .task(id: shownAt) {
+            armed = false
+            try? await Task.sleep(for: MCPClientApprovalView.armingDelay)
+            armed = true
+        }
     }
 
     // MARK: - Sections
@@ -89,9 +101,9 @@ struct MCPMeetingConfirmationView: View {
 
     private var meeting: some View {
         VStack(alignment: .leading, spacing: 3) {
+            // Never cut: up to 255 characters, and the user must read all of what goes out.
             Text(proposal.title)
                 .font(.system(size: 15, weight: .semibold))
-                .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
             Text(dayText)
                 .font(.system(size: 12))
@@ -136,10 +148,14 @@ struct MCPMeetingConfirmationView: View {
                     if let name = person.name, !name.isEmpty {
                         Text(name).font(.system(size: 12)).lineLimit(1)
                     }
+                    // Cut in the middle, never at the end: the domain is what tells a colleague
+                    // from `ivanov@corp.ru.evil.com`.
                     Text(person.email)
                         .font(.system(size: 11))
                         .foregroundStyle(person.isExternal ? .orange : .secondary)
                         .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(person.email)
                     if person.isExternal {
                         Text(localization.tr("mcp.confirm.external"))
                             .font(.system(size: 10, weight: .semibold))
@@ -181,6 +197,9 @@ struct MCPMeetingConfirmationView: View {
                 if isLongAgenda {
                     ScrollView { agendaBody }
                         .frame(height: 150)
+                        // Overlay scrollbars stay hidden until scrolled: the user must see at a
+                        // glance that there is more text than fits.
+                        .scrollIndicators(.visible)
                 } else {
                     agendaBody
                 }
@@ -218,6 +237,7 @@ struct MCPMeetingConfirmationView: View {
             // third bordered button would not fit next to "Send Invitations".
             Button(localization.tr("mcp.confirm.edit"), action: onEdit)
                 .buttonStyle(.borderless)
+                .disabled(!armed)
                 // Borderless text is grey in this panel and reads as disabled.
                 .foregroundStyle(Color.accentColor)
                 .help(localization.tr("mcp.confirm.edit.help"))
@@ -229,6 +249,7 @@ struct MCPMeetingConfirmationView: View {
             // No default-action shortcut: a stray Return must not send invitations.
             Button(confirmTitle, action: onConfirm)
                 .buttonStyle(.borderedProminent)
+                .disabled(!armed)
                 .fixedSize()
         }
         .controlSize(.regular)
@@ -334,6 +355,11 @@ struct MCPMeetingConfirmationView: View {
 extension MCPMeetingProposal {
     var hasExternalAttendees: Bool {
         (required + optional).contains(where: \.isExternal)
+    }
+
+    /// Text the user cannot fully see in the panel: zero-width and other invisible characters.
+    var hasHiddenCharacters: Bool {
+        [title, location, agenda].contains(where: MCPMeetingTextPolicy.containsHiddenCharacters)
     }
 }
 
