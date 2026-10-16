@@ -1,3 +1,51 @@
+## v1.0.59 - 2026-10-16
+
+### RU
+
+#### Что изменилось
+
+Этот выпуск закрывает уязвимости, найденные при аудите безопасности.
+
+- **Пароль не уходит на чужой сервер.** Окно правки аккаунта больше не подставляет сохранённый пароль: пустое поле значит «не меняется». Если изменить адрес сервера или учётную запись, без нового пароля аккаунт не проверится и не сохранится. Раньше человек за разблокированным Mac мог вписать свой сервер и получить ваш пароль. Заодно окно правки открывается без вопроса связки ключей.
+- **Редиректы на другой сервер** больше не уносят служебные заголовки Exchange, а на адреса `http://` приложение не переходит и пароль туда не отправляет.
+- **Приглашение со специально испорченным текстом больше не вешает приложение.** Раньше такое тело письма разбиралось десятки секунд, и всё это время приложение не отвечало.
+- **Окно подтверждения встречи от AI-ассистента** (MCP, `create_meeting`) показывает ровно то, что уйдёт:
+  - кнопки **«Отправить»** и **«Изменить…»** срабатывают через долю секунды после появления окна, так что случайный клик ничего не отправит;
+  - название показывается целиком, у длинного адреса виден домен;
+  - текст с символами, меняющими направление письма, и адреса не латиницей отклоняются; о прочих невидимых символах окно предупреждает.
+- **Настройки MCP-сервера** перенесены в зашифрованное хранилище: другая программа на Mac больше не может включить сервер в обход настроек. Если вы отключали **«Спрашивать разрешение у новых клиентов»**, после обновления этот переключатель снова включён — при необходимости выключите его ещё раз.
+- Поток подключений от новых MCP-клиентов больше не стирает ваши решения «разрешить / запретить» по уже известным клиентам и не засыпает вас окнами вопросов.
+- Тексты ошибок сервера больше не попадают в системный журнал macOS открытым текстом.
+
+#### Установка
+
+1. Скачайте `.zip`, распакуйте и перенесите `OWAWidget.app` в `/Applications`.
+2. Запустите приложение — дополнительных шагов не нужно.
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+This release fixes vulnerabilities found in a security audit.
+
+- **Your password never goes to another server.** The account edit window no longer fills in the saved password: an empty field means "unchanged". If you change the server address or the account, it cannot be checked or saved without a new password. Before, someone at an unlocked Mac could enter their own server and receive your password. The edit window also opens without a keychain prompt now.
+- **Redirects to another server** no longer carry Exchange request headers along, and the app no longer follows `http://` addresses or sends the password to them.
+- **A deliberately malformed invitation no longer freezes the app.** Before, such a message body took tens of seconds to parse, and the app did not respond meanwhile.
+- **The meeting confirmation window for AI assistants** (MCP, `create_meeting`) shows exactly what will be sent:
+  - **Send** and **Edit…** respond only a moment after the window appears, so a stray click sends nothing;
+  - the title is shown in full, and long addresses keep the domain visible;
+  - text with direction-changing characters and non-Latin addresses is rejected; the window warns about other invisible characters.
+- **MCP server settings** moved to encrypted storage: another program on the Mac can no longer turn the server on behind your back. If you had turned off **Ask before a new client reads the calendar**, it is on again after the update — turn it off once more if you need to.
+- A flood of new MCP clients no longer erases your allow / deny decisions for known clients or buries you in permission prompts.
+- Server error texts no longer go to the macOS system log in plain text.
+
+#### Installation
+
+1. Download the `.zip`, unzip it and move `OWAWidget.app` to `/Applications`.
+2. Launch the app — no extra steps needed.
+3. All subsequent updates install automatically via the "Install" button inside the app.
+
 ## v1.0.58 - 2026-10-13
 
 ### RU
