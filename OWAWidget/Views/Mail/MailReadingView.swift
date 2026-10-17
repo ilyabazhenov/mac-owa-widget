@@ -405,7 +405,7 @@ struct MailMessageCard: View {
     }
 
     private var bodyView: some View {
-        MailMessageWebView(html: model.document(for: message), height: $bodyHeight) { link in
+        MailMessageWebView(html: model.document(for: message), height: $bodyHeight, copyTitle: localization.tr("mail.action.copy")) { link in
             model.pendingLink = link
         }
         .frame(height: bodyHeight)

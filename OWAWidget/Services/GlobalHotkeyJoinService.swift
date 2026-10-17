@@ -28,14 +28,14 @@ final class GlobalHotkeyJoinService {
             }
 
             if candidates.count == 1, let event = candidates.first {
-                calendarService.openJoinURL(for: event, source: .globalShortcut)
+                calendarService.openJoinURL(for: event)
                 PostJoinDismissController.shared.dismissAfterJoin(context: .popoverContent)
                 return
             }
 
             let items = candidates.map(MeetingReminderItem.init(event:))
             MeetingJoinSelectionController.shared.present(items: items) { selected in
-                calendarService.openJoinURL(for: selected, source: .globalShortcut)
+                calendarService.openJoinURL(for: selected)
             }
         }
     }

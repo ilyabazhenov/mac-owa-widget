@@ -8,6 +8,8 @@ import Foundation
 enum OWAMailPayloads {
     /// OWA asks for this many recipients per message; `RecipientCounts` tells how many there were.
     static let maximumRecipientsToReturn = 20
+    /// For reading back a draft before it is sent: every recipient, or the check means nothing.
+    static let maximumRecipientsForReview = 1000
     /// The server cuts bodies past this size (bytes).
     static let maximumBodySize = 2_097_152
     /// One transparent pixel: the server swaps it in for every inline image it does not serve.
@@ -63,7 +65,7 @@ enum OWAMailPayloads {
     /// The item shape OWA uses to read message bodies. The JavaScript hooks the browser passes
     /// (`InlineImageUrlOnLoadTemplate`, `InlineImageCustomDataTemplate`) are left out on purpose:
     /// the reader here runs no script.
-    static func readingItemShape(forConversation: Bool) -> [String: Any] {
+    static func readingItemShape(forConversation: Bool, maximumRecipients: Int = maximumRecipientsToReturn) -> [String: Any] {
         var shape: [String: Any] = [
             "__type": "ItemResponseShape:#Exchange",
             "BaseShape": "IdOnly",
@@ -75,7 +77,7 @@ enum OWAMailPayloads {
             "InlineImageUrlTemplate": blankInlineImage,
             "FilterInlineSafetyTips": true,
             "MaximumBodySize": maximumBodySize,
-            "MaximumRecipientsToReturn": maximumRecipientsToReturn,
+            "MaximumRecipientsToReturn": maximumRecipients,
             "CssScopeClassName": cssScopeClassName,
         ]
         if forConversation {
@@ -232,13 +234,13 @@ enum OWAMailPayloads {
         ]
     }
 
-    static func getItem(_ ref: MailItemRef, timeZoneID: String) -> [String: Any] {
+    static func getItem(_ ref: MailItemRef, timeZoneID: String, allRecipients: Bool = false) -> [String: Any] {
         [
             "__type": "GetItemJsonRequest:#Exchange",
             "Header": header(version: "V2017_08_18", timeZoneID: timeZoneID),
             "Body": [
                 "__type": "GetItemRequest:#Exchange",
-                "ItemShape": readingItemShape(forConversation: false),
+                "ItemShape": readingItemShape(forConversation: false, maximumRecipients: allRecipients ? maximumRecipientsForReview : maximumRecipientsToReturn),
                 "ItemIds": [itemID(ref)],
                 "ShapeName": "ItemNormalizedBody",
                 "InternetMessageId": NSNull(),
@@ -476,7 +478,40 @@ enum OWAMailPayloads {
             """
         }
 
-        return """
+        return soapEnvelope("""
+            <m:CreateItem MessageDisposition="\(disposition)">
+              <m:SavedItemFolderId><t:DistinguishedFolderId Id="\(savedFolder)"/></m:SavedItemFolderId>
+              <m:Items>\(itemXML)</m:Items>
+            </m:CreateItem>
+        """)
+    }
+
+    /// Sends a draft as it is on the server, a copy to Sent Items.
+    static func sendItemSOAP(_ ref: MailItemRef) -> String {
+        soapEnvelope("""
+            <m:SendItem SaveItemToFolder="true">
+              <m:ItemIds>\(itemIDXML(ref))</m:ItemIds>
+              <m:SavedItemFolderId><t:DistinguishedFolderId Id="sentitems"/></m:SavedItemFolderId>
+            </m:SendItem>
+        """)
+    }
+
+    /// Removes a draft this app created for review and the user did not send.
+    static func deleteItemSOAP(_ ref: MailItemRef) -> String {
+        soapEnvelope("""
+            <m:DeleteItem DeleteType="HardDelete">
+              <m:ItemIds>\(itemIDXML(ref))</m:ItemIds>
+            </m:DeleteItem>
+        """)
+    }
+
+    private static func itemIDXML(_ ref: MailItemRef) -> String {
+        let changeKey = ref.changeKey.map { " ChangeKey=\"" + OWACreateCalendarEventPayload.escapeXML($0) + "\"" } ?? ""
+        return "<t:ItemId Id=\"" + OWACreateCalendarEventPayload.escapeXML(ref.id) + "\"" + changeKey + "/>"
+    }
+
+    private static func soapEnvelope(_ body: String) -> String {
+        """
         <?xml version="1.0" encoding="utf-8"?>
         <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" \
         xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" \
@@ -485,10 +520,7 @@ enum OWAMailPayloads {
             <t:RequestServerVersion Version="Exchange2013_SP1"/>
           </soap:Header>
           <soap:Body>
-            <m:CreateItem MessageDisposition="\(disposition)">
-              <m:SavedItemFolderId><t:DistinguishedFolderId Id="\(savedFolder)"/></m:SavedItemFolderId>
-              <m:Items>\(itemXML)</m:Items>
-            </m:CreateItem>
+        \(body)
           </soap:Body>
         </soap:Envelope>
         """

@@ -45,8 +45,6 @@ final class CalendarService: ObservableObject {
     /// tells the user to add an account, and doing that writes a fresh list over the container
     /// that is still on disk. See ``SecureCodableStore/LoadOutcome``.
     @Published private(set) var accountStoreUnreadable = false
-    @Published private(set) var engagementSnapshot: MeetingEngagementSnapshot = .empty
-    @Published private(set) var engagementPeriod: MeetingEngagementPeriod = .today
 
     /// A meeting the popover should show as soon as it is on screen — set by "Open" on the
     /// invitation panel, consumed (and cleared) by `PopoverView`.
@@ -80,7 +78,6 @@ final class CalendarService: ObservableObject {
     let invitationAlerts: any MeetingInvitationAlertPresenting
     private var invitationLocalization: MeetingInvitationLocalization = .english
     private let log = Logger(subsystem: "com.owawidget", category: "CalendarService")
-    private let meetingEngagementStats = MeetingEngagementStatsService()
     private var notificationLocalization: NotificationLocalization
     private var nextSyncID = 0
     private var activeSyncIDs = Set<Int>()
@@ -380,10 +377,9 @@ final class CalendarService: ObservableObject {
         self.invitationAlerts = invitationAlerts ?? MeetingInvitationAlertController(clock: clock)
         self.clock = clock
         self.notificationLocalization = initialNotificationLocalization
-        self.engagementPeriod = meetingEngagementStats.defaultPeriod
         if let reminderController = customMeetingReminders as? CustomMeetingReminderController {
             reminderController.onJoin = { [weak self] item in
-                self?.openJoinURL(for: item, source: .inAppReminder)
+                self?.openJoinURL(for: item)
                 PostJoinDismissController.shared.dismissAfterJoin(context: .inAppReminder)
             }
         }
@@ -412,7 +408,6 @@ final class CalendarService: ObservableObject {
             loadAccounts()
         }
         loadCachedEvents()
-        recalculateEngagementSnapshot()
 
         guard startBackgroundTasks else { return }
 
@@ -681,27 +676,11 @@ final class CalendarService: ObservableObject {
 
     func replaceEventsForTests(_ events: [CalendarEvent]) {
         self.events = events
-        recalculateEngagementSnapshot()
     }
 
     /// Sets the account list without touching the Keychain or the encrypted store.
     func replaceAccountsForTests(_ accounts: [CalendarAccount]) {
         self.accounts = accounts
-    }
-
-    var meetingEngagementScope: MeetingEngagementScope {
-        meetingEngagementStats.scope
-    }
-
-    func setMeetingEngagementScope(_ scope: MeetingEngagementScope) {
-        meetingEngagementStats.setScope(scope)
-        recalculateEngagementSnapshot()
-    }
-
-    func setMeetingEngagementPeriod(_ period: MeetingEngagementPeriod) {
-        engagementPeriod = period
-        meetingEngagementStats.setDefaultPeriod(period)
-        recalculateEngagementSnapshot()
     }
 
     // MARK: - Meeting creation
@@ -991,19 +970,14 @@ final class CalendarService: ObservableObject {
         }
     }
 
-    func openJoinURL(for event: CalendarEvent, source: MeetingJoinSource) {
+    func openJoinURL(for event: CalendarEvent) {
         guard let url = event.joinURLForActions else { return }
-        // Only record the join if the URL was actually safe to open.
-        guard MeetingURLOpener.open(url) else { return }
-        meetingEngagementStats.trackJoin(for: event, source: source)
-        recalculateEngagementSnapshot()
+        MeetingURLOpener.open(url)
     }
 
-    func openJoinURL(for reminderItem: MeetingReminderItem, source: MeetingJoinSource) {
+    func openJoinURL(for reminderItem: MeetingReminderItem) {
         guard let url = reminderItem.joinURL else { return }
-        guard MeetingURLOpener.open(url) else { return }
-        meetingEngagementStats.trackJoin(eventID: reminderItem.eventID, startDate: reminderItem.startDate, source: source)
-        recalculateEngagementSnapshot()
+        MeetingURLOpener.open(url)
     }
 
     #if DEBUG
@@ -1374,7 +1348,6 @@ final class CalendarService: ObservableObject {
                 syncStatus = .lastSynced(Date())
             }
             log.info("Sync \(syncID, privacy: .public) complete events=\(self.events.count, privacy: .public)")
-            recalculateEngagementSnapshot()
 
             await rescheduleMeetingRemindersForCurrentEvents()
 
@@ -1516,10 +1489,6 @@ final class CalendarService: ObservableObject {
         guard let snapshot = eventCacheStore.load() else { return }
         events = snapshot.events.sorted { $0.startDate < $1.startDate }
         eventCoverage = EventCoverage(snapshot: snapshot)
-    }
-
-    private func recalculateEngagementSnapshot(now: Date = Date()) {
-        engagementSnapshot = meetingEngagementStats.snapshot(events: events, period: engagementPeriod, now: now)
     }
 
     @discardableResult

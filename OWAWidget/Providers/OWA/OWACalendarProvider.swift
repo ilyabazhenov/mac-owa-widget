@@ -309,4 +309,7 @@ extension OWACalendarProvider: MailProvider {
     func mailEndSearch() async { await client.mailEndSearch() }
 
     func mailSend(_ outgoing: MailOutgoing) async throws -> MailItemRef? { try await client.mailSend(outgoing) }
+    func mailDraftForReview(_ ref: MailItemRef) async throws -> MailMessage { try await client.mailDraftForReview(ref) }
+    func mailSendDraft(_ ref: MailItemRef) async throws { try await client.mailSendDraft(ref) }
+    func mailDeleteDraft(_ ref: MailItemRef) async throws { try await client.mailDeleteDraft(ref) }
 }

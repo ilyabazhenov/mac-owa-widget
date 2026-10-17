@@ -95,8 +95,55 @@ actor FakeMailProvider: MailProvider {
 
     func mailSend(_ outgoing: MailOutgoing) async throws -> MailItemRef? {
         try record("send")
+        if outgoing.send {
+            sent.append(outgoing)
+            return nil
+        }
+        drafts.append(outgoing)
+        let id = "DRAFT-\(drafts.count)"
+        reviewDrafts[id] = outgoing
+        return MailItemRef(id: id, changeKey: "CK-DRAFT")
+    }
+
+    // Drafts: what Exchange holds and would send.
+    private(set) var drafts: [MailOutgoing] = []
+    private(set) var reviewDrafts: [String: MailOutgoing] = [:]
+    private(set) var deletedDrafts: [String] = []
+    /// Recipients the server adds on its own (a Reply-To, people removed from a reply-all).
+    var draftExtraRecipients: [MailAddress] = []
+    var draftHiddenRecipients = 0
+    var sendDraftError: Error?
+    func setDraftExtraRecipients(_ value: [MailAddress]) { draftExtraRecipients = value }
+    func setDraftHiddenRecipients(_ value: Int) { draftHiddenRecipients = value }
+    func setSendDraftError(_ value: Error?) { sendDraftError = value }
+
+    func mailDraftForReview(_ ref: MailItemRef) async throws -> MailMessage {
+        try record("draftReview")
+        guard let outgoing = reviewDrafts[ref.id] else { throw MailError.notFound }
+        return MailMessage(
+            ref: MailItemRef(id: ref.id, changeKey: "CK-DRAFT-2"), conversationID: nil, parentFolderID: "DRAFTS", kind: .note,
+            subject: outgoing.subject, from: nil,
+            to: outgoing.to.map { MailAddress(name: $0, email: $0) } + draftExtraRecipients,
+            cc: outgoing.cc.map { MailAddress(name: $0, email: $0) }, bcc: [],
+            hiddenRecipientCount: draftHiddenRecipients, received: nil, sent: nil, isRead: true, isDraft: true, importance: .normal,
+            bodyHTML: outgoing.body, preview: "", attachments: [], categories: [], isFlagged: false,
+            actions: [], meeting: nil, internetMessageID: nil
+        )
+    }
+
+    func mailSendDraft(_ ref: MailItemRef) async throws {
+        try record("sendDraft")
+        if let sendDraftError { throw sendDraftError }
+        guard var outgoing = reviewDrafts[ref.id] else { throw MailError.notFound }
+        outgoing.send = true
         sent.append(outgoing)
-        return nil
+        reviewDrafts[ref.id] = nil
+    }
+
+    func mailDeleteDraft(_ ref: MailItemRef) async throws {
+        try record("deleteDraft")
+        deletedDrafts.append(ref.id)
+        reviewDrafts[ref.id] = nil
     }
 }
 
@@ -250,7 +297,8 @@ final class MailServiceTests: XCTestCase {
     func testSendPassesTheMessageThrough() async throws {
         let service = makeService()
         let outgoing = MailOutgoing(kind: .reply, reference: MailItemRef(id: "M1", changeKey: "CK"), to: ["a@example.com"], cc: [], subject: "", body: "Hi")
-        try await service.send(outgoing)
+        let prepared = try await service.prepareSend(outgoing)
+        try await service.sendPrepared(prepared)
         let sent = await provider.sent
         XCTAssertEqual(sent, [outgoing])
     }

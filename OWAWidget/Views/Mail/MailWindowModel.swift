@@ -687,22 +687,10 @@ final class MailWindowModel: ObservableObject {
     /// OWA credentials) and shows them inline.
     func loadRemoteImages(for message: MailMessage) {
         let html = fullBodies[message.id] ?? message.bodyHTML ?? ""
-        let sources = Array(MailHTMLDocument.remoteImageSources(in: html).prefix(30))
+        let sources = Array(MailHTMLDocument.remoteImageSources(in: html).prefix(MailRemoteImageLoader.maxImages))
         guard !sources.isEmpty else { return }
         Task {
-            let session = URLSession(configuration: .ephemeral)
-            var images: [String: (data: Data, type: String)] = [:]
-            for source in sources {
-                guard let url = URL(string: source), url.scheme?.lowercased() == "https" else { continue }
-                var request = URLRequest(url: url, timeoutInterval: 15)
-                request.httpShouldHandleCookies = false
-                guard let (data, response) = try? await session.data(for: request),
-                      data.count <= 2 * 1024 * 1024,
-                      let type = (response as? HTTPURLResponse)?.mimeType, type.hasPrefix("image/") else { continue }
-                images[source] = (data, type)
-            }
-            session.invalidateAndCancel()
-            remoteImages[message.id] = images
+            remoteImages[message.id] = await MailRemoteImageLoader.load(sources)
         }
     }
 

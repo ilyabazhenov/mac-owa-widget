@@ -138,14 +138,6 @@
 "preferences.notifications.sound.tink" = "Tink — лёгкий и короткий";
 "preferences.notifications.sound.ping" = "Ping — чёткий сигнал";
 "preferences.notifications.sound.silent" = "Без звука";
-"preferences.engagement.section" = "Статистика подключений";
-"preferences.engagement.scope" = "Какие встречи учитывать";
-"preferences.engagement.scope.joinableOnly" = "Только встречи со ссылкой на звонок";
-"preferences.engagement.scope.allEvents" = "Все встречи";
-"preferences.engagement.period" = "Период по умолчанию";
-"preferences.engagement.period.today" = "Сегодня";
-"preferences.engagement.period.7days" = "7 дней";
-"preferences.engagement.period.30days" = "30 дней";
 "preferences.save" = "Сохранить настройки";
 
 "preferences.updates.section" = "Обновления";
@@ -512,7 +504,6 @@
 
 /* Mail */
 "settings.tab.mail" = "Почта";
-"popover.mail" = "Почта";
 "menubar.mail.unread" = "Непрочитанных писем во «Входящих»: %d";
 "mail.title" = "Почта";
 "mail.window.title" = "Почта";
@@ -721,3 +712,34 @@
 "mail.digest.folders" = "Непрочитанное в папках";
 "mcp.mail.confirm.sendIn" = "Отправить · %d";
 "mcp.mail.confirm.wait" = "Кнопка заработает через несколько секунд: проверьте адресатов и текст";
+"popover.inbox.title" = "Входящие";
+"popover.inbox.invitations" = "Приглашения";
+"popover.inbox.unread" = "Непрочитанные";
+"popover.inbox.empty" = "Ничего не ждёт ответа";
+"popover.inbox.mailOff" = "Почта выключена — её можно включить в настройках, раздел «Почта».";
+"popover.inbox.accept" = "Принять";
+"popover.inbox.tentative" = "Под вопросом";
+"popover.inbox.decline" = "Отклонить";
+"popover.inbox.more" = "Другие ответы";
+"popover.inbox.sending" = "Отправляем ответ";
+"popover.inbox.respondFailed" = "Не удалось ответить — попробуйте ещё раз";
+"mail.action.copy" = "Скопировать";
+"popover.inbox.folderEmpty" = "В папке пусто";
+"popover.inbox.unreadHelp" = "Непрочитанных в папке «%@»: %d";
+"popover.inbox.checked" = "проверено %@";
+"popover.inbox.refresh" = "Проверить почту";
+"popover.inbox.blocked" = "Почта на паузе, пока не решён вход";
+"popover.inbox.mailOffShort" = "Почта выключена";
+"popover.inbox.folders" = "Другие папки";
+"mail.compose.review.title" = "Exchange отправит письмо не только тем, кто в полях";
+"mail.compose.review.added" = "Получат также: %@";
+"mail.compose.review.dropped" = "Не получат: %@";
+"mail.compose.review.cancel" = "Не отправлять";
+"mail.compose.review.send" = "Отправить всем";
+"mcp.mail.confirm.size" = "Строк: %d · символов: %d";
+"mcp.mail.confirm.scroll" = "Текст длиннее окна — прокрутите";
+"mail.compose.externalUnknown" = "Не удалось проверить, есть ли среди адресатов внешние: ваш адрес ещё не определён";
+"popover.calendar.title" = "Календарь";
+"popover.inbox.foldersClose" = "Скрыть папки";
+"popover.inbox.show" = "Показать входящие";
+"popover.inbox.hide" = "Скрыть входящие";

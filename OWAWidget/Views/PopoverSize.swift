@@ -12,6 +12,9 @@ struct PopoverSize: Equatable {
     /// placement can't be reliably overridden. Keeping widths within the space available
     /// beside a right-edge icon means macOS leaves the popover anchored under the icon at
     /// every size. All values stay within `minimum…maximum`.
+    ///
+    /// The inbox panel is not a size: it attaches beside the popover at any of them
+    /// (`PopoverInboxPanelStore`, toggled by the envelope in the popover header).
     enum Preset: String, CaseIterable, Identifiable {
         case compact
         case medium
@@ -41,6 +44,13 @@ enum PopoverSizePresetStore {
     private static let key = "popoverSizePreset"
 
     static func load(from defaults: UserDefaults = .standard) -> PopoverSize.Preset {
+        // The short-lived "wide" preset was the compact popover plus the inbox panel; the panel
+        // is a toggle of its own now.
+        if defaults.string(forKey: key) == "wide" {
+            PopoverInboxPanelStore.setShown(true, in: defaults)
+            save(.compact, to: defaults)
+            return .compact
+        }
         guard let raw = defaults.string(forKey: key),
               let preset = PopoverSize.Preset(rawValue: raw) else {
             return .compact
@@ -51,4 +61,14 @@ enum PopoverSizePresetStore {
     static func save(_ preset: PopoverSize.Preset, to defaults: UserDefaults = .standard) {
         defaults.set(preset.rawValue, forKey: key)
     }
+}
+
+/// Whether the inbox panel shows beside the popover. Off by default.
+enum PopoverInboxPanelStore {
+    static let key = "popoverInboxPanelShown"
+    /// Width of the panel; its height follows the popover's.
+    static let width: Double = 340
+
+    static func isShown(in defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: key) }
+    static func setShown(_ shown: Bool, in defaults: UserDefaults = .standard) { defaults.set(shown, forKey: key) }
 }

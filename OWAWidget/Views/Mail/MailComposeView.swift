@@ -9,6 +9,8 @@ final class MailComposeModel: ObservableObject {
         case editing
         case countdown(Int)
         case sending
+        /// Exchange would send to other people than the ones in the fields: the user decides.
+        case review(MailPreparedSend)
         case failed(String)
         case done(MailOutgoing.Kind, sent: Bool)
     }
@@ -164,17 +166,54 @@ final class MailComposeModel: ObservableObject {
         commit(.to)
         commit(.cc)
         guard invalidRecipients.isEmpty else { return }
-        Task { await deliver(outgoing(send: false)) }
+        let outgoing = outgoing(send: false)
+        phase = .sending
+        Task {
+            do {
+                _ = try await service.saveDraft(outgoing)
+                phase = .done(outgoing.kind, sent: false)
+            } catch {
+                phase = .failed(error.localizedDescription)
+            }
+        }
     }
 
+    /// Draft on the server, read back, then sent — or shown first when Exchange put other people
+    /// on it than the ones in the fields (a Reply-To, someone removed from a reply-all).
     private func deliver(_ outgoing: MailOutgoing) async {
         phase = .sending
         do {
-            try await service.send(outgoing)
-            phase = .done(outgoing.kind, sent: outgoing.send)
+            let prepared = try await service.prepareSend(outgoing)
+            if prepared.matchesRequest {
+                try await service.sendPrepared(prepared)
+                phase = .done(outgoing.kind, sent: true)
+            } else {
+                phase = .review(prepared)
+            }
         } catch {
             phase = .failed(error.localizedDescription)
         }
+    }
+
+    /// The user saw who Exchange would send to and agreed.
+    func confirmReviewed() {
+        guard case .review(let prepared) = phase else { return }
+        phase = .sending
+        Task {
+            do {
+                try await service.sendPrepared(prepared)
+                phase = .done(prepared.outgoing.kind, sent: true)
+            } catch {
+                phase = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Back to editing; the review draft goes away.
+    func cancelReviewed() {
+        guard case .review(let prepared) = phase else { return }
+        phase = .editing
+        Task { await service.discardPrepared(prepared) }
     }
 }
 
@@ -188,6 +227,9 @@ struct MailComposeWindowContent: View {
             if let request = service.composeRequest {
                 MailComposeView(request: request, service: service)
                     .id(request.id)
+                    // The compose window can open without the mail window (an assistant's draft):
+                    // it needs the user's address for the external-recipient check itself.
+                    .task(id: request.id) { await service.resolveOwnAddress() }
             } else {
                 Text(localization.tr("mail.compose.nothing"))
                     .foregroundStyle(.secondary)
@@ -233,7 +275,11 @@ struct MailComposeView: View {
             Divider()
             if !model.suggestions.isEmpty { suggestionList; Divider() }
             VStack(alignment: .leading, spacing: 8) {
-                if !model.externalDomains.isEmpty {
+                if model.service.ownDomain == nil, !model.allRecipients.isEmpty {
+                    // Fail visible, not open: without the user's own domain no address can be
+                    // told external.
+                    warning(localization.tr("mail.compose.externalUnknown"))
+                } else if !model.externalDomains.isEmpty {
                     warning(localization.tr("mail.compose.external", model.externalDomains.joined(separator: ", ")))
                 }
                 if !model.invalidRecipients.isEmpty {
@@ -337,6 +383,44 @@ struct MailComposeView: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.13)))
     }
 
+    /// Who Exchange would send to beyond the fields, and who it dropped. No default button: the
+    /// user reads the names and chooses.
+    private func reviewFooter(_ prepared: MailPreparedSend) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text(localization.tr("mail.compose.review.title")).font(.system(size: 12, weight: .semibold))
+            }
+            if !prepared.addedRecipients.isEmpty {
+                Text(localization.tr("mail.compose.review.added", prepared.addedRecipients.map(reviewName).joined(separator: ", ")))
+                    .font(.system(size: 12))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !prepared.droppedRecipients.isEmpty {
+                Text(localization.tr("mail.compose.review.dropped", prepared.droppedRecipients.joined(separator: ", ")))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Spacer()
+                Button(localization.tr("mail.compose.review.cancel")) { model.cancelReviewed() }
+                    .keyboardShortcut(.cancelAction)
+                Button(localization.tr("mail.compose.review.send")) { model.confirmReviewed() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func reviewName(_ address: MailAddress) -> String {
+        guard let email = address.email else { return address.displayName }
+        let label = address.displayName == email ? email : "\(address.displayName) <\(email)>"
+        return model.service.isExternal(email) ? label + " (" + localization.tr("mail.external") + ")" : label
+    }
+
     @ViewBuilder
     private var footer: some View {
         HStack(spacing: 8) {
@@ -352,6 +436,8 @@ struct MailComposeView: View {
                 ProgressView().controlSize(.small)
                 Text(localization.tr("mail.compose.sending")).font(.system(size: 13))
                 Spacer()
+            case .review(let prepared):
+                reviewFooter(prepared)
             default:
                 Button(localization.tr("mail.compose.saveDraft")) { model.saveDraft() }
                 if case .failed(let message) = model.phase {

@@ -9,11 +9,6 @@ import Foundation
 enum MailHTMLDocument {
     static let contentSecurityPolicy = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; form-action 'none'; frame-src 'none'; base-uri 'none'"
 
-    /// Elements that have no business in a message shown here; their whole content goes.
-    private static let droppedElements = ["script", "iframe", "frame", "frameset", "object", "embed", "applet", "form", "noscript"]
-    /// Void or head-only elements that could redirect, re-base or pull in content.
-    private static let droppedTags = ["meta", "base", "link"]
-
     /// The full document for one message body.
     ///
     /// - Parameters:
@@ -24,8 +19,7 @@ enum MailHTMLDocument {
         inlineImages: [String: (data: Data, type: String)] = [:],
         remoteImages: [String: (data: Data, type: String)] = [:]
     ) -> String {
-        var html = sanitized(body)
-        html = replacingImageSources(in: html) { source in
+        let html = MailHTMLScanner.process(body, sanitize: true) { source in
             if let cid = contentID(fromSource: source), let image = inlineImages[cid] ?? inlineImages[cid.lowercased()] {
                 return dataURI(image.data, type: image.type)
             }
@@ -59,29 +53,11 @@ enum MailHTMLDocument {
         """
     }
 
-    /// Removes active and redirecting markup. Defense in depth: the server filters too, and the
-    /// web view runs no script, but a document that never contains them cannot surprise anyone.
+    /// Removes active and redirecting markup. Defense in depth: the server filters too, the web
+    /// view runs no script and the CSP allows nothing remote, so this is not the boundary — but a
+    /// document that never contains them cannot surprise anyone.
     static func sanitized(_ html: String) -> String {
-        var text = html
-        for element in droppedElements {
-            text = text.replacingOccurrences(
-                of: "<\(element)\\b[^>]*>[\\s\\S]*?</\(element)\\s*>",
-                with: "",
-                options: [.regularExpression, .caseInsensitive]
-            )
-            text = text.replacingOccurrences(of: "<\(element)\\b[^>]*/?>", with: "", options: [.regularExpression, .caseInsensitive])
-        }
-        for tag in droppedTags {
-            text = text.replacingOccurrences(of: "<\(tag)\\b[^>]*>", with: "", options: [.regularExpression, .caseInsensitive])
-        }
-        // Inline event handlers (onclick=, onload=...) and javascript: URLs.
-        text = text.replacingOccurrences(
-            of: "\\s+on[a-z]+\\s*=\\s*(\"[^\"]*\"|'[^']*'|[^\\s>]+)",
-            with: "",
-            options: [.regularExpression, .caseInsensitive]
-        )
-        text = text.replacingOccurrences(of: "javascript:", with: "blocked:", options: .caseInsensitive)
-        return text
+        MailHTMLScanner.process(html, sanitize: true) { _ in nil }
     }
 
     /// `cid:abc@01D` → `abc@01D`.
@@ -117,33 +93,18 @@ enum MailHTMLDocument {
 
     /// Rewrites every `<img src="…">` through `transform`; `nil` keeps the source.
     static func replacingImageSources(in html: String, transform: (String) -> String?) -> String {
-        guard let regex = try? NSRegularExpression(pattern: "(<img\\b[^>]*?\\bsrc\\s*=\\s*)([\"'])(.*?)\\2", options: [.caseInsensitive]) else {
-            return html
-        }
-        let ns = html as NSString
-        var output = ""
-        var cursor = 0
-        for match in regex.matches(in: html, range: NSRange(location: 0, length: ns.length)) {
-            let sourceRange = match.range(at: 3)
-            output += ns.substring(with: NSRange(location: cursor, length: sourceRange.location - cursor))
-            let source = ns.substring(with: sourceRange)
-            output += transform(htmlUnescaped(source)) ?? source
-            cursor = sourceRange.location + sourceRange.length
-        }
-        output += ns.substring(from: cursor)
-        return output
-    }
-
-    private static func htmlUnescaped(_ text: String) -> String {
-        text.replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&quot;", with: "\"")
-            .replacingOccurrences(of: "&#39;", with: "'")
+        MailHTMLScanner.process(html, sanitize: false, imageSource: transform)
     }
 
     /// Plain text of a body for MCP and previews: no markup, quoted history included as text.
+    ///
+    /// Text the reader would not show (`display:none`, `mso-hide:all`, `font-size:0`, the `hidden`
+    /// attribute…) is left out: an assistant must read what the user sees, not instructions a
+    /// sender tucked away for it.
     static func plainText(_ html: String?) -> String {
         guard let html, !html.isEmpty else { return "" }
-        return MeetingBodyHTMLConverter.plainText(from: sanitized(html)).trimmingCharacters(in: .whitespacesAndNewlines)
+        let visible = MailHTMLScanner.process(html, sanitize: true, dropHidden: true) { _ in nil }
+        return MeetingBodyHTMLConverter.plainText(from: visible).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Whether a body shows nothing: no text (spaces, `&nbsp;` and zero-width characters do not
@@ -166,5 +127,362 @@ enum MailHTMLDocument {
         shown = shown.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: "")
         let strip: (String) -> String = { $0.hasPrefix("www.") ? String($0.dropFirst(4)) : $0 }
         return strip(shown) == strip(actualHost) || strip(actualHost).hasSuffix("." + strip(shown)) ? nil : shown
+    }
+}
+
+/// One pass over message markup, linear in its length.
+///
+/// Regular expressions are not used here on purpose: with backtracking, a hostile body (tens of
+/// kilobytes of spaces, unterminated `<img` tags or quotes) made the old patterns run for
+/// minutes on the main thread and froze the whole app. Nothing is rescanned: after a tag or quote
+/// that never ends the rest is shown as escaped text; an unterminated comment or dropped element
+/// (`<script>` never closed) hides the rest, as a browser would.
+enum MailHTMLScanner {
+    /// Elements dropped with everything inside them.
+    static let droppedContainers: Set<String> = ["script", "iframe", "frameset", "object", "applet", "noscript", "noembed", "template"]
+    /// Tags dropped on their own; their content (if any) stays.
+    static let droppedTags: Set<String> = ["meta", "base", "link", "form", "input", "embed", "frame"]
+    /// Attributes that can carry a URL a click or a load would follow.
+    private static let urlAttributes: Set<String> = ["href", "src", "action", "formaction", "xlink:href", "background", "data", "poster", "srcset", "lowsrc", "dynsrc"]
+
+    private typealias Scalars = [Unicode.Scalar]
+
+    private struct Attribute {
+        let name: String
+        let range: Range<Int>
+        let value: Range<Int>?
+        let quote: Unicode.Scalar?
+    }
+
+    /// Elements without content: hiding one hides nothing after it.
+    private static let voidElements: Set<String> = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]
+
+    static func process(_ html: String, sanitize: Bool, dropHidden: Bool = false, imageSource: (String) -> String?) -> String {
+        let s = Array(html.unicodeScalars)
+        let n = s.count
+        var out = String.UnicodeScalarView()
+        out.reserveCapacity(n)
+        var i = 0
+        while i < n {
+            guard let lt = index(of: "<", in: s, from: i) else {
+                out.append(contentsOf: s[i..<n])
+                break
+            }
+            out.append(contentsOf: s[i..<lt])
+            if lt + 1 < n, s[lt + 1] == "!" {
+                // Comments (Outlook keeps conditional markup in them) and the doctype stay as they are.
+                let end = starts(s, at: lt, with: "<!--") ? find(s, "-->", from: lt + 4).map { $0 + 3 } : index(of: ">", in: s, from: lt).map { $0 + 1 }
+                guard let end else { break }
+                out.append(contentsOf: s[lt..<end])
+                i = end
+                continue
+            }
+            var j = lt + 1
+            let closing = j < n && s[j] == "/"
+            if closing { j += 1 }
+            let nameStart = j
+            while j < n, isNameScalar(s[j]) { j += 1 }
+            guard j > nameStart else {
+                out.append("<")
+                i = lt + 1
+                continue
+            }
+            let name = lowercased(s, nameStart..<j)
+            guard let parsed = attributes(s, from: j) else {
+                // A tag or quote that never ends (broken markup from some mailers): the rest is
+                // shown as plain text rather than lost. Escaped, it is inert.
+                if sanitize {
+                    for scalar in s[lt..<n] {
+                        switch scalar {
+                        case "<": out.append(contentsOf: "&lt;".unicodeScalars)
+                        case ">": out.append(contentsOf: "&gt;".unicodeScalars)
+                        default: out.append(scalar)
+                        }
+                    }
+                } else {
+                    out.append(contentsOf: s[lt..<n])
+                }
+                break
+            }
+            let tagEnd = parsed.end + 1
+
+            if sanitize, droppedContainers.contains(name) {
+                if closing || parsed.selfClosing {
+                    i = tagEnd
+                } else if let close = closingTag(s, name: name, from: tagEnd), let gt = index(of: ">", in: s, from: close) {
+                    i = gt + 1
+                } else {
+                    break  // never closed: everything after it was its content
+                }
+                continue
+            }
+            if sanitize, droppedTags.contains(name) {
+                i = tagEnd
+                continue
+            }
+            if closing {
+                out.append(contentsOf: s[lt..<tagEnd])
+                i = tagEnd
+                continue
+            }
+            if dropHidden, isHidden(parsed.list, in: s) {
+                if parsed.selfClosing || voidElements.contains(name) {
+                    i = tagEnd
+                } else if let end = elementEnd(s, name: name, from: tagEnd) {
+                    i = end
+                } else {
+                    break  // never closed: hidden to the end
+                }
+                continue
+            }
+
+            var rebuilt = false
+            var parts: [String] = []
+            for attribute in parsed.list {
+                if sanitize, attribute.name.hasPrefix("on") || attribute.name == "ping" {
+                    rebuilt = true
+                    continue
+                }
+                if name == "img", attribute.name == "src", let value = attribute.value,
+                   let replacement = imageSource(unescaped(String(String.UnicodeScalarView(s[value])))) {
+                    let quote = attribute.quote.map(String.init) ?? "\""
+                    parts.append(String(String.UnicodeScalarView(s[attribute.range.lowerBound..<value.lowerBound])).trimmingCharacters(in: .whitespaces)
+                        .replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "'", with: "") + quote + replacement + quote)
+                    rebuilt = true
+                    continue
+                }
+                if sanitize, urlAttributes.contains(attribute.name), let value = attribute.value,
+                   isScriptURL(String(String.UnicodeScalarView(s[value]))) {
+                    let quote = attribute.quote.map(String.init) ?? "\""
+                    parts.append(attribute.name + "=" + quote + "blocked:" + quote)
+                    rebuilt = true
+                    continue
+                }
+                parts.append(String(String.UnicodeScalarView(s[attribute.range])))
+            }
+            if rebuilt {
+                var tag = "<" + String(String.UnicodeScalarView(s[nameStart..<j]))
+                for part in parts { tag += " " + part }
+                if parsed.selfClosing { tag += " /" }
+                out.append(contentsOf: (tag + ">").unicodeScalars)
+            } else {
+                out.append(contentsOf: s[lt..<tagEnd])
+            }
+            i = tagEnd
+        }
+        return String(out)
+    }
+
+    /// The attributes of a tag up to its `>`; `nil` when the tag or a quoted value never ends.
+    private static func attributes(_ s: Scalars, from start: Int) -> (list: [Attribute], selfClosing: Bool, end: Int)? {
+        let n = s.count
+        var list: [Attribute] = []
+        var selfClosing = false
+        var k = start
+        while k < n {
+            let c = s[k]
+            if c == ">" { return (list, selfClosing, k) }
+            if isSpace(c) || c == "/" {
+                selfClosing = c == "/"
+                k += 1
+                continue
+            }
+            selfClosing = false
+            let attributeStart = k
+            while k < n, !isSpace(s[k]), s[k] != "=", s[k] != ">", s[k] != "/" { k += 1 }
+            let name = lowercased(s, attributeStart..<k)
+            var m = k
+            while m < n, isSpace(s[m]) { m += 1 }
+            guard m < n, s[m] == "=" else {
+                list.append(Attribute(name: name, range: attributeStart..<k, value: nil, quote: nil))
+                continue
+            }
+            m += 1
+            while m < n, isSpace(s[m]) { m += 1 }
+            if m < n, s[m] == "\"" || s[m] == "'" {
+                let quote = s[m]
+                guard let close = index(of: quote, in: s, from: m + 1) else { return nil }
+                list.append(Attribute(name: name, range: attributeStart..<(close + 1), value: (m + 1)..<close, quote: quote))
+                k = close + 1
+            } else {
+                let valueStart = m
+                while m < n, !isSpace(s[m]), s[m] != ">" { m += 1 }
+                list.append(Attribute(name: name, range: attributeStart..<m, value: valueStart..<m, quote: nil))
+                k = m
+            }
+        }
+        return nil
+    }
+
+    /// Hidden by attribute or inline style, the ways mail hides text from a reader.
+    private static func isHidden(_ attributes: [Attribute], in s: Scalars) -> Bool {
+        for attribute in attributes {
+            if attribute.name == "hidden" { return true }
+            guard attribute.name == "style", let value = attribute.value else { continue }
+            var compact = ""
+            for i in value where !isSpace(s[i]) { compact.unicodeScalars.append(lowercase(s[i])) }
+            if compact.contains("display:none") || compact.contains("visibility:hidden") || compact.contains("mso-hide:all") {
+                return true
+            }
+            for property in ["font-size:0", "opacity:0"] {
+                var searchStart = compact.startIndex
+                while let range = compact.range(of: property, range: searchStart..<compact.endIndex) {
+                    let next = range.upperBound < compact.endIndex ? compact[range.upperBound] : ";"
+                    if !(next.isNumber || next == ".") { return true }
+                    searchStart = range.upperBound
+                }
+            }
+        }
+        return false
+    }
+
+    /// Just past the tag that closes this element, counting nested elements of the same name.
+    private static func elementEnd(_ s: Scalars, name: String, from start: Int) -> Int? {
+        let target = Array(name.unicodeScalars)
+        var depth = 1
+        var i = start
+        while let lt = index(of: "<", in: s, from: i) {
+            let closing = lt + 1 < s.count && s[lt + 1] == "/"
+            let nameStart = lt + (closing ? 2 : 1)
+            var matches = nameStart + target.count <= s.count
+            if matches {
+                for (offset, scalar) in target.enumerated() where lowercase(s[nameStart + offset]) != scalar {
+                    matches = false
+                    break
+                }
+            }
+            let after = nameStart + target.count
+            if matches, after >= s.count || !isNameScalar(s[after]) {
+                guard let gt = index(of: ">", in: s, from: after) else { return nil }
+                if closing {
+                    depth -= 1
+                    if depth == 0 { return gt + 1 }
+                } else if s[gt - 1] != "/" {
+                    depth += 1
+                }
+                i = gt + 1
+            } else {
+                i = lt + 1
+            }
+        }
+        return nil
+    }
+
+    /// `javascript:` / `vbscript:` however written: entities, case, whitespace and control
+    /// characters inside the scheme.
+    private static func isScriptURL(_ raw: String) -> Bool {
+        var text = unescaped(raw)
+        text = text.replacingOccurrences(of: "&colon;", with: ":", options: .caseInsensitive)
+        var compact = String.UnicodeScalarView()
+        for scalar in decodeNumericEntities(text).unicodeScalars where scalar.value > 0x20 && !(0x7F...0x9F).contains(scalar.value) {
+            compact.append(scalar)
+            if compact.count > 16 { break }
+        }
+        let head = String(compact).lowercased()
+        return head.hasPrefix("javascript:") || head.hasPrefix("vbscript:") || head.hasPrefix("livescript:")
+    }
+
+    /// `&#106;` and `&#x6A;` (with or without the semicolon), only in the short scheme part.
+    private static func decodeNumericEntities(_ text: String) -> String {
+        guard text.contains("&#") else { return text }
+        let scalars = Array(text.unicodeScalars.prefix(200))
+        var out = String.UnicodeScalarView()
+        var i = 0
+        while i < scalars.count {
+            if scalars[i] == "&", i + 1 < scalars.count, scalars[i + 1] == "#" {
+                var j = i + 2
+                let hex = j < scalars.count && (scalars[j] == "x" || scalars[j] == "X")
+                if hex { j += 1 }
+                var value: UInt32 = 0
+                let digitsStart = j
+                while j < scalars.count, j - digitsStart < 8, let digit = Int(String(scalars[j]), radix: hex ? 16 : 10) {
+                    value = value &* (hex ? 16 : 10) &+ UInt32(digit)
+                    j += 1
+                }
+                if j > digitsStart, let scalar = Unicode.Scalar(value) {
+                    out.append(scalar)
+                    if j < scalars.count, scalars[j] == ";" { j += 1 }
+                    i = j
+                    continue
+                }
+            }
+            out.append(scalars[i])
+            i += 1
+        }
+        return String(out)
+    }
+
+    static func unescaped(_ text: String) -> String {
+        text.replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+    }
+
+    /// The `</name` that closes a dropped element, case-insensitive.
+    private static func closingTag(_ s: Scalars, name: String, from start: Int) -> Int? {
+        let target = Array(name.unicodeScalars)
+        var i = start
+        while let lt = index(of: "<", in: s, from: i) {
+            if lt + 1 < s.count, s[lt + 1] == "/" {
+                var matches = lt + 2 + target.count <= s.count
+                if matches {
+                    for (offset, scalar) in target.enumerated() where lowercase(s[lt + 2 + offset]) != scalar {
+                        matches = false
+                        break
+                    }
+                }
+                let after = lt + 2 + target.count
+                if matches, after >= s.count || !isNameScalar(s[after]) { return lt }
+            }
+            i = lt + 1
+        }
+        return nil
+    }
+
+    private static func index(of scalar: Unicode.Scalar, in s: Scalars, from start: Int) -> Int? {
+        var i = start
+        while i < s.count {
+            if s[i] == scalar { return i }
+            i += 1
+        }
+        return nil
+    }
+
+    private static func find(_ s: Scalars, _ needle: String, from start: Int) -> Int? {
+        let target = Array(needle.unicodeScalars)
+        guard let first = target.first else { return nil }
+        var i = start
+        while let candidate = index(of: first, in: s, from: i) {
+            if starts(s, at: candidate, with: needle) { return candidate }
+            i = candidate + 1
+        }
+        return nil
+    }
+
+    private static func starts(_ s: Scalars, at index: Int, with prefix: String) -> Bool {
+        var i = index
+        for scalar in prefix.unicodeScalars {
+            guard i < s.count, s[i] == scalar else { return false }
+            i += 1
+        }
+        return true
+    }
+
+    private static func isNameScalar(_ c: Unicode.Scalar) -> Bool {
+        (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c == "-" || c == ":"
+    }
+
+    private static func isSpace(_ c: Unicode.Scalar) -> Bool {
+        c == " " || c == "\t" || c == "\n" || c == "\r" || c == "\u{0C}"
+    }
+
+    private static func lowercase(_ c: Unicode.Scalar) -> Unicode.Scalar {
+        (c >= "A" && c <= "Z") ? Unicode.Scalar(c.value + 32)! : c
+    }
+
+    private static func lowercased(_ s: Scalars, _ range: Range<Int>) -> String {
+        var view = String.UnicodeScalarView()
+        for i in range { view.append(lowercase(s[i])) }
+        return String(view)
     }
 }

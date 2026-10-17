@@ -71,7 +71,7 @@ final class MailReviewTests: XCTestCase {
         await provider.setConversations([conversation("A", from: "Bitbucket"), conversation("B", from: "Ольга Васильева")])
         let service = makeService { $0.menuBarBadgeEnabled = true; $0.notifyMode = .people }
         var notified: [String] = []
-        service.notifier = { notified.append($0.id) }
+        service.notifier = { conversation, _ in notified.append(conversation.id) }
         await service.checkInbox()
         XCTAssertEqual(service.popoverUnread.map(\.id), ["B"])
         XCTAssertEqual(service.menuBarUnreadCount, 1)
@@ -83,11 +83,30 @@ final class MailReviewTests: XCTestCase {
         XCTAssertEqual(notified, ["D"], "new mail from a person notifies; a system and old mail do not")
     }
 
+    /// The server's "external sender" warning is cut from previews; a notification must say it.
+    func testNotificationMarksExternalSender() async {
+        await provider.setConversations([conversation("A", from: "Ольга Васильева")])
+        let service = makeService { $0.notifyMode = .people }
+        let localization = LocalizationService(selectedLanguage: .russian)
+        service.localization = localization
+        var labels: [String: String?] = [:]
+        service.notifier = { conversation, label in labels[conversation.id] = label }
+        await service.checkInbox()
+        var outside = conversation("X", from: "Пётр Иванов")
+        outside.hasExternalBanner = true
+        await provider.setConversations([outside, conversation("Y", from: "Анна Смирнова"), conversation("A", from: "Ольга Васильева")])
+        await provider.setUnread(7)
+        await service.checkInbox()
+        XCTAssertEqual(labels["X"], .some("внешний"))
+        XCTAssertEqual(labels["Y"], .some(nil))
+        XCTAssertTrue(service.isExternalSender(outside))
+    }
+
     func testImportantNotificationsNeedTodaysPeople() async {
         await provider.setConversations([conversation("A", from: "Ольга Васильева")])
         let service = makeService { $0.notifyMode = .important }
         var notified: [String] = []
-        service.notifier = { notified.append($0.id) }
+        service.notifier = { conversation, _ in notified.append(conversation.id) }
         await service.checkInbox()
         backend.vipNames = [MailVIP.normalized("Дмитрий Орлов")]
         await provider.setConversations([conversation("B", from: "Сергей Морозов"), conversation("C", from: "Орлов Дмитрий")])

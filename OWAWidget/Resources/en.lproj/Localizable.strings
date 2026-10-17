@@ -138,14 +138,6 @@
 "preferences.notifications.sound.tink" = "Tink — light and short";
 "preferences.notifications.sound.ping" = "Ping — clear signal";
 "preferences.notifications.sound.silent" = "Silent";
-"preferences.engagement.section" = "Join statistics";
-"preferences.engagement.scope" = "Eligible meetings";
-"preferences.engagement.scope.joinableOnly" = "Only meetings with join links";
-"preferences.engagement.scope.allEvents" = "All meetings";
-"preferences.engagement.period" = "Default period";
-"preferences.engagement.period.today" = "Today";
-"preferences.engagement.period.7days" = "7 days";
-"preferences.engagement.period.30days" = "30 days";
 "preferences.save" = "Save Preferences";
 
 "preferences.updates.section" = "Updates";
@@ -512,7 +504,6 @@
 
 /* Mail */
 "settings.tab.mail" = "Mail";
-"popover.mail" = "Mail";
 "menubar.mail.unread" = "Unread mail in Inbox: %d";
 "mail.title" = "Mail";
 "mail.window.title" = "Mail";
@@ -721,3 +712,34 @@
 "mail.digest.folders" = "Unread in folders";
 "mcp.mail.confirm.sendIn" = "Send · %d";
 "mcp.mail.confirm.wait" = "The button works in a few seconds: check the recipients and text";
+"popover.inbox.title" = "Inbox";
+"popover.inbox.invitations" = "Invitations";
+"popover.inbox.unread" = "Unread";
+"popover.inbox.empty" = "Nothing is waiting for you";
+"popover.inbox.mailOff" = "Mail is off — turn it on in Settings, Mail section.";
+"popover.inbox.accept" = "Accept";
+"popover.inbox.tentative" = "Tentative";
+"popover.inbox.decline" = "Decline";
+"popover.inbox.more" = "Other answers";
+"popover.inbox.sending" = "Sending the answer";
+"popover.inbox.respondFailed" = "Couldn't answer — try again";
+"mail.action.copy" = "Copy";
+"popover.inbox.folderEmpty" = "This folder is empty";
+"popover.inbox.unreadHelp" = "Unread in %@: %d";
+"popover.inbox.checked" = "checked %@";
+"popover.inbox.refresh" = "Check mail";
+"popover.inbox.blocked" = "Mail is paused until sign-in is fixed";
+"popover.inbox.mailOffShort" = "Mail is off";
+"popover.inbox.folders" = "Other folders";
+"mail.compose.review.title" = "Exchange would send this to more than the people in the fields";
+"mail.compose.review.added" = "Also gets it: %@";
+"mail.compose.review.dropped" = "Will not get it: %@";
+"mail.compose.review.cancel" = "Don't send";
+"mail.compose.review.send" = "Send to all";
+"mcp.mail.confirm.size" = "%d lines · %d characters";
+"mcp.mail.confirm.scroll" = "The text is longer than the box: scroll";
+"mail.compose.externalUnknown" = "Could not check for external recipients: your own address is not known yet";
+"popover.calendar.title" = "Calendar";
+"popover.inbox.foldersClose" = "Hide folders";
+"popover.inbox.show" = "Show inbox";
+"popover.inbox.hide" = "Hide inbox";

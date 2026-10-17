@@ -79,8 +79,51 @@ final class MailComposeTests: XCTestCase {
         model.saveDraft()
         for _ in 0..<20 where model.phase != .done(.new, sent: false) { try await Task.sleep(for: .milliseconds(50)) }
         let sent = await provider.sent
-        XCTAssertEqual(sent.count, 1)
-        XCTAssertEqual(sent.first?.send, false)
-        XCTAssertEqual(sent.first?.subject, "Plan")
+        let drafts = await provider.drafts
+        XCTAssertTrue(sent.isEmpty)
+        XCTAssertEqual(drafts.count, 1)
+        XCTAssertEqual(drafts.first?.send, false)
+        XCTAssertEqual(drafts.first?.subject, "Plan")
+    }
+
+    // MARK: - Draft, review, send
+
+    func testSendGoesThroughAReviewedDraft() async throws {
+        let outgoing = MailComposeModel(request: MailComposeDraftBuilder.request(.reply, from: original(), ownAddress: "a.morgan@example.com"), service: service).outgoing(send: true)
+        let prepared = try await service.prepareSend(outgoing)
+        XCTAssertTrue(prepared.matchesRequest)
+        var sent = await provider.sent
+        XCTAssertTrue(sent.isEmpty, "nothing goes out before the draft is reviewed")
+        try await service.sendPrepared(prepared)
+        sent = await provider.sent
+        XCTAssertEqual(sent.map(\.to), [["g.miller@example.com"]])
+        let calls = await provider.calls
+        XCTAssertEqual(calls.suffix(3), ["send", "draftReview", "sendDraft"])
+    }
+
+    func testRecipientsExchangeAddsAreCaught() async throws {
+        await provider.setDraftExtraRecipients([MailAddress(name: "Grace", email: "grace@evil.example"), MailAddress(name: "Legacy", email: nil)])
+        let outgoing = MailComposeModel(request: MailComposeDraftBuilder.request(.reply, from: original(), ownAddress: nil), service: service).outgoing(send: true)
+        let prepared = try await service.prepareSend(outgoing)
+        XCTAssertFalse(prepared.matchesRequest)
+        XCTAssertEqual(prepared.addedRecipients.map(\.name), ["Grace", "Legacy"], "an address the server does not give counts as added")
+        await service.discardPrepared(prepared)
+        let sent = await provider.sent
+        let deleted = await provider.deletedDrafts
+        XCTAssertTrue(sent.isEmpty)
+        XCTAssertEqual(deleted, [prepared.draft.id])
+    }
+
+    func testCutShortRecipientListIsNotSent() async throws {
+        await provider.setDraftHiddenRecipients(3)
+        let outgoing = MailOutgoing(kind: .new, reference: nil, to: ["g.miller@example.com"], cc: [], subject: "x", body: "y")
+        do {
+            _ = try await service.prepareSend(outgoing)
+            XCTFail("expected recipientsUnverified")
+        } catch {
+            XCTAssertEqual(error as? MailError, .recipientsUnverified)
+        }
+        let deleted = await provider.deletedDrafts
+        XCTAssertEqual(deleted.count, 1, "the unreadable draft does not stay behind")
     }
 }

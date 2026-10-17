@@ -38,4 +38,10 @@ protocol MailProvider: Actor {
     func mailEndSearch() async
     /// Sends (or saves to Drafts) through EWS. Returns the saved draft's id, if any.
     func mailSend(_ outgoing: MailOutgoing) async throws -> MailItemRef?
+    /// The draft as the server holds it, with every recipient: what sending it would send.
+    func mailDraftForReview(_ ref: MailItemRef) async throws -> MailMessage
+    /// Sends a draft as it is on the server. Never repeated on a broken connection.
+    func mailSendDraft(_ ref: MailItemRef) async throws
+    /// Deletes a review draft the user did not send.
+    func mailDeleteDraft(_ ref: MailItemRef) async throws
 }

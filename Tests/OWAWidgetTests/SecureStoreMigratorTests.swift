@@ -80,6 +80,24 @@ final class SecureStoreMigratorTests: XCTestCase {
         XCTAssertTrue(exists("owa-debug"))
     }
 
+    func testRemovesRetiredJoinStatistics() throws {
+        let store = SecureStore(directory: root.appendingPathComponent("store", isDirectory: true),
+                                keyProvider: InMemorySecureStoreKeyProvider())
+        let suite = "SecureStoreMigratorTests.retired.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        try store.write(Data("статистика".utf8), name: SecureStoreMigrator.retiredStoreName)
+        try store.write(Data("встречи".utf8), name: "events")
+        defaults.set(Data("статистика".utf8), forKey: SecureStoreMigrator.retiredDefaultsKey)
+
+        SecureStoreMigrator.removeRetiredStores(store: store, defaults: defaults)
+
+        XCTAssertFalse(store.exists(SecureStoreMigrator.retiredStoreName))
+        XCTAssertNil(defaults.data(forKey: SecureStoreMigrator.retiredDefaultsKey))
+        XCTAssertTrue(store.exists("events"), "остальные контейнеры трогать нельзя")
+    }
+
     func testProductionEntryPointIsInertUnderTests() {
         // The guard is what keeps `swift test` from deleting the developer's own directories.
         XCTAssertTrue(SecureStore.isRunningTests)

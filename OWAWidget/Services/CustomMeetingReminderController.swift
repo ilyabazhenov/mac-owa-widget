@@ -439,6 +439,8 @@ final class CustomMeetingReminderController {
 
 extension CustomMeetingReminderController: CustomMeetingReminderControlling {}
 
-private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+/// A click in a window that is not key reaches the control at once instead of only focusing it.
+/// Also used by the popover's inbox panel.
+final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

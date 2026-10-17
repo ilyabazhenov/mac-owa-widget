@@ -131,7 +131,9 @@ final class MCPMailConfirmationPanel: MCPMailConfirmationPresenting {
         )
         .environment(\.locale, localization.locale)
         // Hidden from screen sharing: the panel shows the whole letter.
-        self.panel = MCPFloatingPanel.present(view, width: 440, hiddenFromScreenSharing: true)
+        // Hidden from screen sharing: the panel shows the whole letter. A click while it is not
+        // key only brings it forward: "Send" is never pressed by the click that refocuses it.
+        self.panel = MCPFloatingPanel.present(view, width: 440, hiddenFromScreenSharing: true, firstClickActs: false)
     }
 
     func close() {
@@ -155,6 +157,12 @@ struct MCPMailConfirmationView: View {
     let onEdit: () -> Void
 
     @State private var armed = false
+    @State private var bodyHeight: CGFloat = 0
+    static let bodyBoxHeight: CGFloat = 180
+
+    static func lineCount(_ text: String) -> Int {
+        text.isEmpty ? 0 : text.split(separator: "\n", omittingEmptySubsequences: false).count
+    }
     /// Seconds left before "Send" works. Every email waits: the pause is there to make the
     /// recipients and text get read, not to judge which email is risky.
     @State private var sendCountdown = Self.sendDelaySeconds
@@ -196,10 +204,25 @@ struct MCPMailConfirmationView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                             .padding(8)
+                            .background(GeometryReader { proxy in
+                                Color.clear.preference(key: MailBodyHeightKey.self, value: proxy.size.height)
+                            })
                     }
-                    .frame(maxHeight: 180)
+                    .frame(maxHeight: Self.bodyBoxHeight)
                     .scrollIndicators(.visible)
                     .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
+                    .onPreferenceChange(MailBodyHeightKey.self) { bodyHeight = $0 }
+                    // How much text there is, and a plain warning when it runs past the box: the
+                    // user approves all of it, not the part in view.
+                    HStack(spacing: 6) {
+                        Text(localization.tr("mcp.mail.confirm.size", Self.lineCount(proposal.body), proposal.body.count))
+                        if bodyHeight > Self.bodyBoxHeight + 1 {
+                            Label(localization.tr("mcp.mail.confirm.scroll"), systemImage: "arrow.down.circle")
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
                 }
                 if !proposal.forwardedAttachments.isEmpty {
                     note(localization.tr("mcp.mail.confirm.attachments", proposal.forwardedAttachments.count, proposal.forwardedAttachments.joined(separator: ", ")),
@@ -296,10 +319,11 @@ struct MCPMailConfirmationView: View {
     private func section(_ title: String, _ people: [MCPMailProposal.Recipient]) -> some View {
         if !people.isEmpty {
             Text(title).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-            // External and new addresses always, then the rest up to the limit.
+            // External and new addresses always, then the rest up to the limit. Without the
+            // external check nothing can be told apart, so every address is listed.
             let flagged = people.filter { $0.isExternal || $0.isNew }
             let rest = people.filter { !$0.isExternal && !$0.isNew }
-            let visible = flagged + rest.prefix(max(0, Self.visibleRecipientLimit - flagged.count))
+            let visible = proposal.externalCheckAvailable ? flagged + rest.prefix(max(0, Self.visibleRecipientLimit - flagged.count)) : people
             ForEach(visible, id: \.email) { person in
                 HStack(spacing: 6) {
                     Text(person.email)
@@ -375,4 +399,9 @@ enum MailConfirmationText {
         guard let date else { return "" }
         return localization.formatDate(date, format: "d MMMM, HH:mm")
     }
+}
+
+private struct MailBodyHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

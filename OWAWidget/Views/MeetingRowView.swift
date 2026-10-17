@@ -87,7 +87,7 @@ struct MeetingRowView: View {
                     .accessibilityHint(localization.tr("a11y.meeting.copy.link.hint"))
 
                     Button {
-                        calendarService.openJoinURL(for: event, source: .meetingRow)
+                        calendarService.openJoinURL(for: event)
                         PostJoinDismissController.shared.dismissAfterJoin(context: .popoverContent)
                     } label: {
                         if iconOnlyJoin {

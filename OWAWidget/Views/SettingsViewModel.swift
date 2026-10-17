@@ -7,8 +7,6 @@ final class SettingsViewModel: ObservableObject {
     @Published var syncInterval: TimeInterval { didSet { updateUnsavedChanges() } }
     @Published var notificationLeadMinutes: Int { didSet { updateUnsavedChanges() } }
     @Published var meetingReminderSound: MeetingReminderSound { didSet { updateUnsavedChanges() } }
-    @Published var meetingEngagementScope: MeetingEngagementScope { didSet { updateUnsavedChanges() } }
-    @Published var meetingEngagementDefaultPeriod: MeetingEngagementPeriod { didSet { updateUnsavedChanges() } }
     @Published var notificationScreenPolicy: NotificationScreenPolicy { didSet { updateUnsavedChanges() } }
     @Published var notificationPosition: NotificationPosition { didSet { updateUnsavedChanges() } }
     @Published var invitationAlertsEnabled: Bool { didSet { updateUnsavedChanges() } }
@@ -91,8 +89,6 @@ final class SettingsViewModel: ObservableObject {
         self.syncInterval = calendarService.syncInterval
         self.notificationLeadMinutes = calendarService.notificationLeadMinutes
         self.meetingReminderSound = calendarService.meetingReminderSound
-        self.meetingEngagementScope = calendarService.meetingEngagementScope
-        self.meetingEngagementDefaultPeriod = calendarService.engagementPeriod
         self.notificationScreenPolicy = calendarService.notificationScreenPolicy
         self.notificationPosition = calendarService.notificationPosition
         self.invitationAlertsEnabled = calendarService.invitationAlertsEnabled
@@ -113,8 +109,6 @@ final class SettingsViewModel: ObservableObject {
             syncInterval: calendarService.syncInterval,
             notificationLeadMinutes: calendarService.notificationLeadMinutes,
             meetingReminderSound: calendarService.meetingReminderSound,
-            meetingEngagementScope: calendarService.meetingEngagementScope,
-            meetingEngagementDefaultPeriod: calendarService.engagementPeriod,
             notificationScreenPolicy: calendarService.notificationScreenPolicy,
             notificationPosition: calendarService.notificationPosition,
             invitationAlertsEnabled: calendarService.invitationAlertsEnabled,
@@ -485,8 +479,6 @@ final class SettingsViewModel: ObservableObject {
         service.colleaguesCacheMinutes = colleaguesCacheMinutes
         service.colleaguesRowLimit = colleaguesRowLimit
         service.displayTimeZoneOption = displayTimeZone
-        service.setMeetingEngagementScope(meetingEngagementScope)
-        service.setMeetingEngagementPeriod(meetingEngagementDefaultPeriod)
         service.applySavedPreferences()
         baselinePreferences = currentPreferencesSnapshot()
         updateUnsavedChanges()
@@ -525,8 +517,6 @@ final class SettingsViewModel: ObservableObject {
         let syncInterval: TimeInterval
         let notificationLeadMinutes: Int
         let meetingReminderSound: MeetingReminderSound
-        let meetingEngagementScope: MeetingEngagementScope
-        let meetingEngagementDefaultPeriod: MeetingEngagementPeriod
         let notificationScreenPolicy: NotificationScreenPolicy
         let notificationPosition: NotificationPosition
         let invitationAlertsEnabled: Bool
@@ -548,8 +538,6 @@ final class SettingsViewModel: ObservableObject {
             syncInterval: syncInterval,
             notificationLeadMinutes: notificationLeadMinutes,
             meetingReminderSound: meetingReminderSound,
-            meetingEngagementScope: meetingEngagementScope,
-            meetingEngagementDefaultPeriod: meetingEngagementDefaultPeriod,
             notificationScreenPolicy: notificationScreenPolicy,
             notificationPosition: notificationPosition,
             invitationAlertsEnabled: invitationAlertsEnabled,

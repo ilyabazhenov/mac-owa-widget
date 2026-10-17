@@ -18,9 +18,13 @@ enum SecureStoreMigrator {
         "calendarAccounts",
         RecentAttendeesStore.legacyDefaultsKey,
         RecentAttendeesStore.olderLegacyDefaultsKey,
-        RecentLocationsStore.legacyDefaultsKey,
-        MeetingEngagementStatsService.legacyDefaultsKey
+        RecentLocationsStore.legacyDefaultsKey
     ]
+
+    /// Join statistics behind the footer's join-rate ring, removed together with the feature.
+    /// Earlier versions kept them in an encrypted store and, before that, in the preferences plist.
+    static let retiredStoreName = "engagement"
+    static let retiredDefaultsKey = "meetingEngagementStats.storage.v1"
 
     /// Directories written before traces were encrypted, relative to the app's Application Support
     /// folder. Both predate the move to bundle-id-scoped paths, so nothing current writes to them.
@@ -34,7 +38,7 @@ enum SecureStoreMigrator {
 
     /// Touches the stores whose migration nothing else triggers during startup.
     ///
-    /// The event cache, accounts and engagement stats migrate on their own as `CalendarService`
+    /// The event cache and accounts migrate on their own as `CalendarService`
     /// comes up, so they are deliberately absent here — reading them twice would be wasted work.
     /// Trusted certificates are deliberately absent: their legacy copy lives in the Keychain, not
     /// in cleartext on disk, and reading it needs an authorization dialog. Draining it from here
@@ -51,6 +55,13 @@ enum SecureStoreMigrator {
         DiagnosticLog.event("SecureStore migration pass done pendingLegacyKeys=\(remaining.count)")
 
         removeLegacyCleartextDebugDirectories()
+        removeRetiredStores()
+    }
+
+    /// Deletes what the removed join statistics left behind: nothing reads it any more.
+    static func removeRetiredStores(store: SecureStore = .shared, defaults: UserDefaults = .standard) {
+        store.remove(retiredStoreName)
+        defaults.removeObject(forKey: retiredDefaultsKey)
     }
 
     /// Production entry point for the cleanup. Guarded so the suite never deletes anything under

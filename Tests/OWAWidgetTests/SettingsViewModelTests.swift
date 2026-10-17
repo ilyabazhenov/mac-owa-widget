@@ -171,8 +171,6 @@ final class SettingsViewModelTests: XCTestCase {
         vm.menuBarDisplayMode = .status
         vm.notificationScreenPolicy = .main
         vm.meetingReminderSound = .ping
-        vm.meetingEngagementScope = .allEvents
-        vm.meetingEngagementDefaultPeriod = .sevenDays
 
         vm.savePreferences()
 
@@ -181,8 +179,6 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(service.menuBarDisplayMode, .status)
         XCTAssertEqual(service.notificationScreenPolicy, .main)
         XCTAssertEqual(service.meetingReminderSound, .ping)
-        XCTAssertEqual(service.meetingEngagementScope, .allEvents)
-        XCTAssertEqual(service.engagementPeriod, .sevenDays)
         XCTAssertFalse(vm.hasUnsavedChanges)
     }
 

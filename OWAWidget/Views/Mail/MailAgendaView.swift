@@ -190,7 +190,7 @@ struct MailAgendaView: View {
                 }
                 if let url = event.joinURLForActions, !past, !declined {
                     Button {
-                        calendar.openJoinURL(for: event, source: .meetingRow)
+                        calendar.openJoinURL(for: event)
                     } label: {
                         Image(systemName: "video.fill").font(.system(size: 11))
                     }

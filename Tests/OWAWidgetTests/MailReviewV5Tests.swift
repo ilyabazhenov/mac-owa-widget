@@ -195,3 +195,80 @@ final class MailSendCountdownTests: XCTestCase {
         XCTAssertEqual(MCPMailConfirmationView.sendLabel(remaining: 0, localization: localization), "Отправить")
     }
 }
+
+@MainActor
+final class MailInboxPanelTests: XCTestCase {
+    func testPanelListIsTheFolderAsIsAndNotRefetchedWithin30Seconds() async throws {
+        let defaults = UserDefaults(suiteName: "recent-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let provider = FakeMailProvider(account: MailFixtures.account)
+        await provider.setConversations([MailFixtures.conversation("robot"), MailFixtures.conversation("person", unread: 0)])
+        let backend = FakeMailBackend(provider: provider)
+        let service = MailService(backend: backend, defaults: defaults)
+        await service.refreshPanelList()
+        XCTAssertEqual(service.panelList.map(\.id), ["robot", "person"], "no filtering: what the inbox holds")
+        await service.refreshPanelList()
+        let lists = await provider.calls.filter { $0.hasPrefix("conversations:All") }
+        XCTAssertEqual(lists.count, 1, "a second call within 30 s makes no request")
+    }
+
+    func testPanelStatusReadsLikeThePopoverSyncLine() {
+        let localization = LocalizationService(selectedLanguage: .russian)
+        let now = Date()
+        XCTAssertEqual(MailPresentation.panelStatus(unread: 3, lastChecked: now.addingTimeInterval(-10), now: now, localization: localization),
+                       "Непрочитанных: 3 · проверено " + localization.relativeSyncPhrase(since: now.addingTimeInterval(-10), now: now))
+        XCTAssertTrue(MailPresentation.panelStatus(unread: 0, lastChecked: now.addingTimeInterval(-180), now: now, localization: localization).hasPrefix("Проверено "))
+        XCTAssertEqual(MailPresentation.panelStatus(unread: nil, lastChecked: nil, localization: localization), "Ещё не обновлялось")
+    }
+
+    func testPanelFolderIsRememberedAndFallsBackWhenGone() async throws {
+        let defaults = UserDefaults(suiteName: "panel-folder-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let provider = FakeMailProvider(account: MailFixtures.account)
+        func folder(_ id: String, _ distinguished: String?) -> MailFolder {
+            MailFolder(id: id, distinguishedID: distinguished, displayName: id, parentID: nil, unreadCount: 2, totalCount: 9, childFolderCount: 0)
+        }
+        await provider.setFolders([folder("INBOX", "inbox"), folder("DIANA", nil)])
+        let backend = FakeMailBackend(provider: provider)
+        let service = MailService(backend: backend, defaults: defaults)
+        try await service.loadFolders()
+        await service.selectPanelFolder(.id("DIANA"))
+        XCTAssertEqual(service.panelFolderInfo?.id, "DIANA")
+        XCTAssertEqual(MailService(backend: backend, defaults: defaults).panelFolder, .id("DIANA"), "remembered between launches")
+
+        await provider.setFolders([folder("INBOX", "inbox")])
+        try await service.loadFolders()
+        XCTAssertEqual(service.panelFolder, .distinguished(.inbox), "a folder that is gone falls back to the inbox")
+        XCTAssertNil(defaults.string(forKey: MailService.panelFolderKey))
+    }
+
+    func testPanelFolderStorageRoundTrip() {
+        for ref in [MailFolderRef.distinguished(.sentitems), .id("AAMkAD=")] {
+            XCTAssertEqual(MailService.folderRef(storageValue: MailService.storageValue(ref)), ref)
+        }
+        XCTAssertNil(MailService.folderRef(storageValue: "distinguished:nonsense"))
+        XCTAssertNil(MailService.folderRef(storageValue: nil))
+    }
+}
+
+@MainActor
+final class MailPanelFolderListTests: XCTestCase {
+    func testSubfoldersSitRightUnderTheirParent() {
+        func folder(_ id: String, _ distinguished: String? = nil, parent: String? = "ROOT") -> MailFolder {
+            MailFolder(id: id, distinguishedID: distinguished, displayName: id, parentID: parent, unreadCount: 0, totalCount: 1, childFolderCount: 0)
+        }
+        let folders = [
+            folder("ROOT", "msgfolderroot", parent: nil),
+            folder("INBOX", "inbox"), folder("DIANA", parent: "INBOX"), folder("NIGHT", parent: "DIANA"),
+            folder("SENT", "sentitems"), folder("Archive"),
+        ]
+        let rows = MailPanelFolderList.rows(folders)
+        XCTAssertEqual(rows.map(\.folder.id), ["INBOX", "DIANA", "NIGHT", "SENT", "Archive"])
+        XCTAssertEqual(rows.map(\.depth), [0, 1, 2, 0, 0])
+        XCTAssertEqual(rows.map(\.startsCustom), [false, false, false, false, true])
+    }
+}

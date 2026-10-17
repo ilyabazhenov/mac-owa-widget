@@ -161,6 +161,14 @@ final class MailService: ObservableObject {
     @Published private(set) var peopleUnread: [MailConversationSummary] = []
     /// The size of the unread page `peopleUnread` was cut from: the count is "N+" past it.
     @Published private(set) var unreadPageWasFull = false
+    /// The folder the panel beside the popover shows (the inbox unless the user picked another),
+    /// remembered between launches.
+    @Published private(set) var panelFolder: MailFolderRef = .distinguished(.inbox)
+    /// That folder's newest conversations, as the folder lists them. Loaded only once the panel
+    /// has been shown (`refreshPanelList`).
+    @Published private(set) var panelList: [MailConversationSummary] = []
+    private var panelListLoaded: Date?
+    static let panelFolderKey = "mailPanelFolder"
     @Published private(set) var lastChecked: Date?
     @Published private(set) var checkState: MailLoadState = .idle
     @Published var openRequest: MailOpenRequest?
@@ -180,6 +188,7 @@ final class MailService: ObservableObject {
     private var cacheClearTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
     private var isChecking = false
+    private var isResolvingOwnAddress = false
     private var lastCountsRefresh: Date?
     private(set) var isWindowOpen = false
     /// The inbox's id, learned from the unread check or the folder list.
@@ -187,13 +196,17 @@ final class MailService: ObservableObject {
     /// Unread conversations already seen, so only new ones notify. `nil` until the first check,
     /// which records silently: everything unread at launch would otherwise notify at once.
     private var seenUnreadIDs: Set<String>?
-    /// Posts a system notification; replaced in tests.
-    var notifier: (MailConversationSummary) -> Void = MailService.postNotification
+    /// Posts a system notification; replaced in tests. The second argument is the "external"
+    /// label when the sender is outside the organization, `nil` otherwise.
+    var notifier: (MailConversationSummary, String?) -> Void = { MailService.postNotification($0, externalLabel: $1) }
+    /// For the words notifications carry; set by the app.
+    weak var localization: LocalizationService?
 
     init(backend: (any MailBackend)? = nil, defaults: UserDefaults = .standard) {
         self.backend = backend
         self.defaults = defaults
         self.settings = MailSettings.load(from: defaults)
+        self.panelFolder = Self.folderRef(storageValue: defaults.string(forKey: Self.panelFolderKey)) ?? .distinguished(.inbox)
     }
 
     /// The app's instance, for views outside the mail window's environment (the meeting card).
@@ -300,6 +313,7 @@ final class MailService: ObservableObject {
             inboxUnreadCount = unread
             lastChecked = Date()
             checkState = .idle
+            if ownAddress == nil { Task { await resolveOwnAddress() } }
             let needsList = settings.popoverSectionEnabled || settings.menuBarBadgeEnabled || settings.notifyMode != .off
             if needsList, changed || (unread > 0 && latestUnread.isEmpty) || seenUnreadIDs == nil {
                 if unread == 0 {
@@ -309,6 +323,8 @@ final class MailService: ObservableObject {
                     applyUnreadPage(page.conversations.filter(\.isUnread), full: page.nextCursor != nil)
                 }
             }
+            // New mail (or mail read elsewhere): the inbox panel, once it has been shown, follows.
+            if changed, panelListLoaded != nil, panelFolder == .distinguished(.inbox) { await refreshPanelList(minInterval: 0) }
         } catch {
             report(error, context: "mail.checkInbox")
             checkState = .failed(error.localizedDescription)
@@ -345,12 +361,15 @@ final class MailService: ObservableObject {
             guard !seen.contains(conversation.id), !conversation.isAutomated else { return false }
             return settings.notifyMode == .people || MailVIP.matches(conversation.primarySender, in: vip) || conversation.importance == .high
         }
-        for conversation in fresh.prefix(Self.notificationsPerCheck) { notifier(conversation) }
+        for conversation in fresh.prefix(Self.notificationsPerCheck) {
+            notifier(conversation, isExternalSender(conversation) ? (localization?.tr("mail.external") ?? "external") : nil)
+        }
     }
 
-    nonisolated static func postNotification(_ conversation: MailConversationSummary) {
+    nonisolated static func postNotification(_ conversation: MailConversationSummary, externalLabel: String?) {
         let content = UNMutableNotificationContent()
-        content.title = conversation.primarySender
+        // The server's own "external sender" warning is cut from previews, so it is said here.
+        content.title = externalLabel.map { conversation.primarySender + " · " + $0 } ?? conversation.primarySender
         content.subtitle = conversation.topic
         content.body = String(conversation.preview.prefix(160))
         content.userInfo = ["conversationID": conversation.id]
@@ -375,6 +394,10 @@ final class MailService: ObservableObject {
         if let inbox = folders.first(where: { $0.distinguished == .inbox }) {
             inboxFolderID = inbox.id
             inboxUnreadCount = inbox.unreadCount
+        }
+        // A remembered folder that is gone (deleted, or another account's) falls back to the inbox.
+        if case .id(let id) = panelFolder, !folders.isEmpty, !folders.contains(where: { $0.id == id }) {
+            resetPanelFolder()
         }
     }
 
@@ -404,6 +427,65 @@ final class MailService: ObservableObject {
             return copy
         }
         if let inbox = folders.first(where: { $0.distinguished == .inbox }) { inboxUnreadCount = inbox.unreadCount }
+    }
+
+    /// The first page of the panel's folder; calls closer than `minInterval` apart are skipped.
+    func refreshPanelList(minInterval: TimeInterval = 30) async {
+        guard isAvailable, !isBlocked else { return }
+        if let loaded = panelListLoaded, Date().timeIntervalSince(loaded) < minInterval { return }
+        panelListLoaded = Date()
+        let folder = panelFolder
+        guard let page = try? await perform("mail.panelList", {
+            try await $0.mailConversations(in: folder, cursor: .first, filter: .all)
+        }), folder == panelFolder else { return }
+        panelList = page.conversations
+    }
+
+    /// Switches the panel to another folder and loads it.
+    func selectPanelFolder(_ folder: MailFolderRef) async {
+        guard folder != panelFolder else { return }
+        panelFolder = folder
+        defaults.set(Self.storageValue(folder), forKey: Self.panelFolderKey)
+        panelList = []
+        panelListLoaded = nil
+        await refreshPanelList(minInterval: 0)
+    }
+
+    private func resetPanelFolder() {
+        panelFolder = .distinguished(.inbox)
+        defaults.removeObject(forKey: Self.panelFolderKey)
+        panelList = []
+        panelListLoaded = nil
+    }
+
+    /// The folder tree for the panel, when the mail window has not loaded it yet.
+    func loadFoldersIfNeeded() async {
+        guard folders.isEmpty, isAvailable, !isBlocked else { return }
+        try? await loadFolders()
+    }
+
+    /// The panel folder's entry in the tree (for its name and unread count).
+    var panelFolderInfo: MailFolder? {
+        switch panelFolder {
+        case .distinguished(let name): folders.first { $0.distinguished == name }
+        case .id(let id): folders.first { $0.id == id }
+        }
+    }
+
+    static func storageValue(_ folder: MailFolderRef) -> String {
+        switch folder {
+        case .distinguished(let name): "distinguished:" + name.rawValue
+        case .id(let id): "id:" + id
+        }
+    }
+
+    static func folderRef(storageValue value: String?) -> MailFolderRef? {
+        guard let value else { return nil }
+        if value.hasPrefix("distinguished:"), let name = MailDistinguishedFolder(rawValue: String(value.dropFirst(14))) {
+            return .distinguished(name)
+        }
+        if value.hasPrefix("id:"), value.count > 3 { return .id(String(value.dropFirst(3))) }
+        return nil
     }
 
     /// Moves folder unread counts right away, before the server confirms them.
@@ -623,19 +705,58 @@ final class MailService: ObservableObject {
 
     /// Sends (or saves) a message the user wrote in the compose window.
     @discardableResult
-    func send(_ outgoing: MailOutgoing) async throws -> MailItemRef? {
-        let result = try await perform("mail.send") { try await $0.mailSend(outgoing) }
-        if let ref = outgoing.reference, let conversation = threadCache.first(where: { $0.value.messages.contains { $0.ref.id == ref.id } })?.key {
-            evict(conversation)
-        }
+    /// Saves to Drafts. Sending never goes through here: see `prepareSend`.
+    func saveDraft(_ outgoing: MailOutgoing) async throws -> MailItemRef? {
+        var copy = outgoing
+        copy.send = false
+        let draft = copy
+        let result = try await perform("mail.draft") { try await $0.mailSend(draft) }
         changeGeneration += 1
         return result
     }
 
+    /// Step one of sending: a draft on the server, read back. Nothing is sent yet; the draft is
+    /// deleted again if it cannot be read.
+    func prepareSend(_ outgoing: MailOutgoing) async throws -> MailPreparedSend {
+        var copy = outgoing
+        copy.send = false
+        let draft = copy
+        guard let ref = try await perform("mail.prepare", { try await $0.mailSend(draft) }) else {
+            throw MailError.serverError("no draft id")
+        }
+        do {
+            let message = try await perform("mail.prepare.review") { try await $0.mailDraftForReview(ref) }
+            return try MailPreparedSend.make(draft: message, outgoing: outgoing)
+        } catch {
+            try? await perform("mail.prepare.discard") { try await $0.mailDeleteDraft(ref) }
+            throw error
+        }
+    }
+
+    /// Step two: sends the reviewed draft as it is.
+    func sendPrepared(_ prepared: MailPreparedSend) async throws {
+        try await perform("mail.send") { try await $0.mailSendDraft(prepared.draft) }
+        if let ref = prepared.outgoing.reference,
+           let conversation = threadCache.first(where: { $0.value.messages.contains { $0.ref.id == ref.id } })?.key {
+            evict(conversation)
+        }
+        changeGeneration += 1
+    }
+
+    /// Drops a reviewed draft the user decided not to send.
+    func discardPrepared(_ prepared: MailPreparedSend) async {
+        try? await perform("mail.discard") { try await $0.mailDeleteDraft(prepared.draft) }
+    }
+
     /// Looks the user's own address up once per account.
+    /// Without it nothing can be told external, so it is looked up again until it is known: by
+    /// the mail window, the compose window and every inbox check.
     func resolveOwnAddress() async {
-        guard ownAddress == nil, isAvailable, let account, let backend else { return }
-        ownAddress = await backend.ownMailAddress(accountID: account.id)
+        guard ownAddress == nil, !isResolvingOwnAddress, isAvailable, !isBlocked, let account, let backend else { return }
+        isResolvingOwnAddress = true
+        defer { isResolvingOwnAddress = false }
+        let address = await backend.ownMailAddress(accountID: account.id)
+        if self.account?.id == account.id { ownAddress = address }
     }
 
     var ownDomain: String? {
@@ -645,6 +766,12 @@ final class MailService: ObservableObject {
     /// The calendar's time for the meeting an invitation in the list is about.
     func meetingInterval(forTopic topic: String) -> DateInterval? {
         backend?.mailMeetingInterval(topic: topic)
+    }
+
+    /// The sender is outside the organization: the server's warning was in the preview, or the
+    /// address is in another domain. Every place that shows a stripped preview tags it with this.
+    func isExternalSender(_ conversation: MailConversationSummary) -> Bool {
+        conversation.hasExternalBanner || isExternal(conversation.senderEmail)
     }
 
     /// Outside the user's mail domain; `false` while the domain is unknown.
@@ -734,6 +861,10 @@ final class MailService: ObservableObject {
         folders = []
         inboxUnreadCount = nil
         latestUnread = []
+        panelList = []
+        panelListLoaded = nil
+        // A folder id belongs to one account: another account starts from its inbox.
+        if case .id = panelFolder { resetPanelFolder() }
         lastChecked = nil
         inboxFolderID = nil
         ownAddress = nil

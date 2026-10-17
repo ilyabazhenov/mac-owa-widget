@@ -107,10 +107,13 @@ struct MailPopoverSectionView: View {
         } label: {
             HStack(spacing: 8) {
                 Circle().fill(Color.accentColor).frame(width: 6, height: 6)
-                Text(conversation.senders.first ?? "")
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
-                    .frame(width: 112, alignment: .leading)
+                HStack(spacing: 4) {
+                    Text(conversation.senders.first ?? "")
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    if mail.isExternalSender(conversation) { MailExternalTag() }
+                }
+                .frame(width: 112, alignment: .leading)
                 Text(conversation.topic.isEmpty ? localization.tr("mail.noSubject") : conversation.topic)
                     .font(.system(size: 12))
                     .lineLimit(1)

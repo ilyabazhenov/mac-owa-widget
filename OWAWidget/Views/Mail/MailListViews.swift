@@ -4,6 +4,20 @@ import SwiftUI
 /// Small presentation helpers shared by the mail views.
 @MainActor
 enum MailPresentation {
+    /// The inbox panel's status line, worded like the popover's sync line beside it:
+    /// "Unread: 12 · checked 3 min ago".
+    static func panelStatus(unread: Int?, lastChecked: Date?, now: Date = Date(), localization: LocalizationService) -> String {
+        var parts: [String] = []
+        if let unread, unread > 0 { parts.append(localization.tr("mail.window.subtitle.unread", unread)) }
+        if let lastChecked {
+            parts.append(localization.tr("popover.inbox.checked", localization.relativeSyncPhrase(since: lastChecked, now: now)))
+        } else {
+            parts.append(localization.tr("mail.window.subtitle.notUpdated"))
+        }
+        let text = parts.joined(separator: " · ")
+        return text.prefix(1).uppercased() + text.dropFirst()
+    }
+
     /// Window subtitle under the folder name: "Unread: 12 · updated 16:44".
     static func windowSubtitle(unread: Int?, lastChecked: Date?, localization: LocalizationService) -> String {
         var parts: [String] = []
@@ -336,6 +350,56 @@ struct MailSidebarView: View {
     }
 }
 
+/// The orange "external" mark next to a sender from outside the organization. It stands in for
+/// the server's warning text, which is cut from previews.
+struct MailExternalTag: View {
+    @EnvironmentObject private var localization: LocalizationService
+
+    var body: some View {
+        Text(localization.tr("mail.external"))
+            .font(.system(size: 9, weight: .semibold))
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(RoundedRectangle(cornerRadius: 3).fill(Color.orange.opacity(0.16)))
+            .foregroundStyle(.orange)
+            .fixedSize()
+            .accessibilityLabel(localization.tr("mail.external"))
+    }
+}
+
+// MARK: - Inbox panel folders
+
+/// The folder tree flattened for the inbox panel: system folders in the sidebar's order, each
+/// followed by its subfolders (so the inbox's rule folders sit right under it), then the user's
+/// own folders, all open.
+enum MailPanelFolderList {
+    struct Row: Equatable {
+        let folder: MailFolder
+        let depth: Int
+        /// First of the user's own top-level folders: a divider goes above it.
+        var startsCustom = false
+    }
+
+    @MainActor
+    static func rows(_ folders: [MailFolder]) -> [Row] {
+        let visible = MailSidebarPolicy.visibleFolders(folders)
+        var result: [Row] = []
+        var placed = Set<String>()
+        func add(_ folder: MailFolder, depth: Int) {
+            guard depth < 8, placed.insert(folder.id).inserted else { return }
+            result.append(Row(folder: folder, depth: depth))
+            for child in MailSidebarPolicy.children(of: folder.id, in: visible) { add(child, depth: depth + 1) }
+        }
+        for name in MailSidebarPolicy.shownSystemFolders {
+            if let folder = visible.first(where: { $0.distinguished == name }) { add(folder, depth: 0) }
+        }
+        let firstCustom = result.count
+        for folder in MailSidebarPolicy.topLevelCustom(visible) { add(folder, depth: 0) }
+        if firstCustom > 0, firstCustom < result.count { result[firstCustom].startsCustom = true }
+        return result
+    }
+}
+
 // MARK: - Window toolbar
 
 /// The list filters as segments in the window toolbar: one click, and the active one is visible.
@@ -659,7 +723,7 @@ struct MailConversationListView: View {
                 terms: model.searchTerms,
                 folderName: model.isSearching ? model.folderName(for: conversation.parentFolderID) : nil,
                 compactPreview: conversation.isAutomated,
-                isExternal: conversation.hasExternalBanner || service.isExternal(conversation.senderEmail),
+                isExternal: service.isExternalSender(conversation),
                 meetingLine: MailPresentation.meetingLine(
                     conversation,
                     interval: conversation.isMeetingRequest ? service.meetingInterval(forTopic: conversation.topic) : nil,
@@ -834,15 +898,7 @@ struct MailConversationRow: View {
                     Text(people.joined(separator: ", "))
                         .font(.system(size: 13, weight: conversation.isUnread ? .semibold : .regular))
                         .lineLimit(1)
-                    if isExternal {
-                        Text(localization.tr("mail.external"))
-                            .font(.system(size: 9, weight: .semibold))
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(RoundedRectangle(cornerRadius: 3).fill(Color.orange.opacity(0.16)))
-                            .foregroundStyle(.orange)
-                            .fixedSize()
-                    }
+                    if isExternal { MailExternalTag() }
                     Spacer(minLength: 4)
                     if conversation.isFlagged { Image(systemName: "flag.fill").font(.system(size: 9)).foregroundStyle(.orange) }
                     if conversation.hasAttachments { Image(systemName: "paperclip").font(.system(size: 10)).foregroundStyle(.secondary) }

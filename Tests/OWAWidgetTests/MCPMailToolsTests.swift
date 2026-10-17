@@ -70,8 +70,45 @@ final class MCPMailToolsTests: XCTestCase {
         }
         func mailEndSearch() async {}
         func mailSend(_ outgoing: MailOutgoing) async throws -> MailItemRef? {
+            if outgoing.send {
+                sent.append(outgoing)
+                return nil
+            }
+            let id = "DRAFT-\(drafts.count + deletedDrafts.count + sent.count + 1)"
+            drafts[id] = outgoing
+            return MailItemRef(id: id, changeKey: "CK-DRAFT")
+        }
+
+        // Review drafts: what Exchange would send.
+        private(set) var drafts: [String: MailOutgoing] = [:]
+        private(set) var deletedDrafts: [String] = []
+        /// Recipients Exchange adds on its own, as for a Reply-To.
+        var draftExtraTo: [MailAddress] = []
+        func setDraftExtraTo(_ value: [MailAddress]) { draftExtraTo = value }
+
+        func mailDraftForReview(_ ref: MailItemRef) async throws -> MailMessage {
+            guard let outgoing = drafts[ref.id] else { throw MailError.notFound }
+            let original = outgoing.reference.flatMap { reference in threads.values.flatMap(\.messages).first { $0.ref.id == reference.id } }
+            return MailMessage(
+                ref: MailItemRef(id: ref.id, changeKey: "CK-DRAFT-2"), conversationID: nil, parentFolderID: "DRAFTS", kind: .note,
+                subject: outgoing.subject, from: nil,
+                to: outgoing.to.map { MailAddress(name: $0, email: $0) } + draftExtraTo,
+                cc: outgoing.cc.map { MailAddress(name: $0, email: $0) }, bcc: [],
+                hiddenRecipientCount: 0, received: nil, sent: nil, isRead: true, isDraft: true, importance: .normal,
+                bodyHTML: outgoing.body, preview: "", attachments: outgoing.kind == .forward ? (original?.attachments ?? []) : [],
+                categories: [], isFlagged: false, actions: [], meeting: nil, internetMessageID: nil
+            )
+        }
+
+        func mailSendDraft(_ ref: MailItemRef) async throws {
+            guard var outgoing = drafts.removeValue(forKey: ref.id) else { throw MailError.notFound }
+            outgoing.send = true
             sent.append(outgoing)
-            return nil
+        }
+
+        func mailDeleteDraft(_ ref: MailItemRef) async throws {
+            deletedDrafts.append(ref.id)
+            drafts[ref.id] = nil
         }
     }
 
@@ -228,6 +265,48 @@ final class MCPMailToolsTests: XCTestCase {
             let result = await tools.call(name: "prepare_mail", arguments: ["kind": "reply", "message_id": .string(id), "body": .string("Text \(outcome)")], client: nil)
             XCTAssertTrue(result.isError)
         }
+        let sent = await provider.sent
+        XCTAssertTrue(sent.isEmpty)
+    }
+
+    /// Exchange puts the original's Reply-To on a reply: the panel shows it, flagged, and when the
+    /// user declines nothing is sent and the review draft is deleted.
+    func testRecipientsTheServerAddsAreShownBeforeSending() async throws {
+        confirmer.outcome = .rejected
+        await provider.setDraftExtraTo([MailAddress(name: "Grace", email: "grace.miller@evil.example")])
+        let tools = makeTools()
+        let id = try await messageID(tools)
+        _ = await tools.call(name: "prepare_mail", arguments: ["kind": "reply", "message_id": .string(id), "body": "Thanks"], client: nil)
+        let proposal = try XCTUnwrap(confirmer.proposals.first)
+        let added = try XCTUnwrap(proposal.to.first { $0.email == "grace.miller@evil.example" })
+        XCTAssertTrue(added.isNew)
+        XCTAssertTrue(added.isExternal)
+        try await Task.sleep(for: .milliseconds(100))
+        let sent = await provider.sent
+        let deleted = await provider.deletedDrafts
+        XCTAssertTrue(sent.isEmpty)
+        XCTAssertEqual(deleted.count, 1)
+    }
+
+    /// A harmless first line cannot hide the rest of the text below blank (or invisible) lines.
+    func testBodyCannotHideBelowBlankLines() async throws {
+        confirmer.outcome = .rejected
+        let tools = makeTools()
+        let body = "Thanks, see you Tuesday!" + String(repeating: "\n", count: 80) + String(repeating: "\u{200B}\n", count: 10) + "   \n" + "Confidential numbers"
+        _ = await tools.call(name: "prepare_mail", arguments: ["kind": "new", "to": ["g.miller@example.com"], "subject": "Hi", "body": .string(body)], client: nil)
+        let proposal = try XCTUnwrap(confirmer.proposals.first)
+        XCTAssertEqual(proposal.body, "Thanks, see you Tuesday!\n\nConfidential numbers")
+    }
+
+    /// A declined panel is followed by a pause, so an assistant cannot put the next one up at once.
+    func testPauseAfterDecline() async throws {
+        confirmer.outcome = .rejected
+        let tools = makeTools()
+        _ = await tools.call(name: "prepare_mail", arguments: ["kind": "new", "to": ["g.miller@example.com"], "subject": "A", "body": "One"], client: nil)
+        confirmer.outcome = .confirmed
+        let again = await tools.call(name: "prepare_mail", arguments: ["kind": "new", "to": ["g.miller@example.com"], "subject": "B", "body": "Two"], client: nil)
+        XCTAssertTrue(again.isError)
+        XCTAssertEqual(confirmer.proposals.count, 1, "no second panel during the pause")
         let sent = await provider.sent
         XCTAssertTrue(sent.isEmpty)
     }

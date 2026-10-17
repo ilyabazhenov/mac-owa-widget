@@ -237,6 +237,14 @@ actor OWAClient {
     private let password: String
 
     var canaryToken: String?
+    /// The sign-in in progress: requests that hit an expired session at the same moment wait for
+    /// it instead of each starting their own (each would be one more NTLM attempt against AD, and
+    /// they would clear each other's cookies).
+    private var authenticationInFlight: Task<Void, Error>?
+    /// The last definitive rejection of this client's password. A new password makes a new
+    /// client, so repeating the same one within the cooldown can only count toward an AD lockout.
+    private var lastAuthRejection: (error: Error, at: Date)?
+    static let authRejectionCooldown: TimeInterval = 60
     private var defaultCalendarFolderIdentifier: OWAFolderIdentifier?
     private var forceDistinguishedCalendarFolder = false
     private var requestSequence = 0
@@ -336,7 +344,28 @@ actor OWAClient {
         }
     }
 
+    /// Signs in, joining a sign-in already in progress, and refusing to retry a password the
+    /// server definitively rejected less than a minute ago.
     func authenticate() async throws {
+        if let rejection = lastAuthRejection, Date().timeIntervalSince(rejection.at) < Self.authRejectionCooldown {
+            throw rejection.error
+        }
+        if let running = authenticationInFlight {
+            return try await running.value
+        }
+        let task = Task { try await self.performAuthentication() }
+        authenticationInFlight = task
+        defer { authenticationInFlight = nil }
+        do {
+            try await task.value
+            lastAuthRejection = nil
+        } catch {
+            if OWAError.isDefinitiveAuthRejection(error) { lastAuthRejection = (error, Date()) }
+            throw error
+        }
+    }
+
+    private func performAuthentication() async throws {
         let syncID = SyncDiagnostics.syncIDText
         log.info("OWA auth started sync=\(syncID, privacy: .public)")
         sessionDelegate.reset()

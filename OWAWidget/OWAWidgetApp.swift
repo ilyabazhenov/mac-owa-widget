@@ -42,6 +42,7 @@ struct OWAWidgetApp: App {
                     syncLocalization()
                     colleaguePresenceService.attach(calendarService)
                     mailService.attach(calendarService)
+                    mailService.localization = localizationService
                 }
                 .onChange(of: localizationService.selectedLanguage) { _ in
                     syncLocalization()
@@ -61,6 +62,7 @@ struct OWAWidgetApp: App {
                     // means the colleagues section is ready the first time the popover opens.
                     colleaguePresenceService.attach(calendarService)
                     mailService.attach(calendarService)
+                    mailService.localization = localizationService
                 }
         }
         .menuBarExtraStyle(.window)
@@ -157,7 +159,7 @@ struct OWAWidgetApp: App {
     /// Called from onAppear so it runs after @StateObject is fully initialised.
     private func setupNotificationDelegate() {
         Self.notificationDelegate.onJoinFromNotification = { [calendarService] item in
-            calendarService.openJoinURL(for: item, source: .reminderNotification)
+            calendarService.openJoinURL(for: item)
             PostJoinDismissController.shared.dismissAfterJoin(context: .notificationAction)
         }
         Self.notificationDelegate.onOpenMail = { [mailService] conversationID in

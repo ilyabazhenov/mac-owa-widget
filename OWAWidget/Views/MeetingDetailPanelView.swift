@@ -512,7 +512,7 @@ private struct MeetingDetailActionsView: View {
             if let url = event.joinURLForActions {
                 HStack(spacing: 10) {
                     Button {
-                        calendarService.openJoinURL(for: event, source: .detailPanel)
+                        calendarService.openJoinURL(for: event)
                         onJoinCompleted()
                         PostJoinDismissController.shared.dismissAfterJoin(context: .detailPanel)
                     } label: {

@@ -14,6 +14,7 @@ struct PopoverView: View {
     private let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
     private var fullVersion: String { "\(appVersion).\(appBuild)" }
     let contentHorizontalPadding: CGFloat = 12
+    @AppStorage(PopoverInboxPanelStore.key) private var inboxPanelShown = false
     @State private var selectedDayOffset: Int = 0
     /// Direction of the last day step, which is what the page slide follows.
     @State private var isPagingForward: Bool = true
@@ -123,6 +124,22 @@ struct PopoverView: View {
             PopoverWindowRegistrar()
                 .frame(width: 0, height: 0)
         }
+        .background {
+            PopoverInboxPanelAttachment(
+                isEnabled: showsInboxPanel && !service.accounts.isEmpty,
+                width: CGFloat(PopoverInboxPanelStore.width),
+                content: inboxPanelContent,
+                onShow: {
+                    guard mail.isAvailable else { return }
+                    mail.popoverDidAppear()
+                    Task {
+                        await mail.refreshPanelList()
+                        await mail.refreshFolderCounts()
+                    }
+                }
+            )
+            .frame(width: 0, height: 0)
+        }
         .animation(.easeInOut(duration: 0.16), value: colleaguesSection.isExpanded)
         .animation(.easeInOut(duration: 0.18), value: selectedEvent?.id)
         .onEscapeKey(perform: handleEscape)
@@ -148,10 +165,17 @@ struct PopoverView: View {
 
     // MARK: - Header
 
+    /// Named after what it shows, like the inbox panel beside it ("Inbox | Calendar"); the app
+    /// itself is already the menu-bar icon, and its version sits in the footer.
     private var header: some View {
         HStack {
-            Text(localization.tr("app.name"))
-                .font(.system(size: 13, weight: .semibold))
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.accentColor)
+                Text(localization.tr("popover.calendar.title"))
+                    .font(.system(size: 13, weight: .semibold))
+            }
 
             Spacer()
 
@@ -183,13 +207,29 @@ struct PopoverView: View {
             }
 
             if mail.isAvailable {
-                Button { openMail(nil) } label: {
-                    Image(systemName: "envelope")
+                // Shows or hides the inbox panel; the mail window opens from the panel itself.
+                Button {
+                    inboxPanelShown.toggle()
+                } label: {
+                    Image(systemName: inboxPanelShown ? "envelope.fill" : "envelope")
                         .font(.system(size: 13))
+                        .foregroundStyle(inboxPanelShown ? Color.accentColor : .primary)
+                        .overlay(alignment: .topTrailing) {
+                            if !inboxPanelShown, let unread = mail.inboxUnreadCount, unread > 0 {
+                                Text(unread > 99 ? "99+" : "\(unread)")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 3)
+                                    .frame(minWidth: 12, minHeight: 12)
+                                    .background(Capsule().fill(Color.accentColor))
+                                    .offset(x: 7, y: -6)
+                            }
+                        }
                 }
                 .buttonStyle(.plain)
-                .help(localization.tr("popover.mail"))
-                .accessibilityLabel(localization.tr("popover.mail"))
+                .help(localization.tr(inboxPanelShown ? "popover.inbox.hide" : "popover.inbox.show"))
+                .accessibilityLabel(localization.tr(inboxPanelShown ? "popover.inbox.hide" : "popover.inbox.show"))
             }
 
             if service.supportsMeetingCreation {
@@ -221,23 +261,6 @@ struct PopoverView: View {
         .padding(.horizontal, contentHorizontalPadding)
         .padding(.vertical, 11)
         .accessibilitySortPriority(selectedEvent == nil ? 1 : 0)
-    }
-
-    private var footerEngagementIndicator: some View {
-        let snapshot = service.engagementSnapshot
-        let percent = Int(snapshot.conversionRate * 100)
-        return HStack(spacing: 4) {
-            CompactCircularProgress(
-                progress: snapshot.conversionRate,
-                title: nil,
-                lineWidth: 2
-            )
-            Text("\(percent)%")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-        .help(localization.effectiveLanguageCode == "ru" ? "Доля подключений: \(snapshot.joinedViaWidget)/\(snapshot.eligibleMeetings)" : "Join rate: \(snapshot.joinedViaWidget)/\(snapshot.eligibleMeetings)")
     }
 
     /// Quick popover-size switcher. Applies immediately (unlike the Settings picker,
@@ -301,47 +324,73 @@ struct PopoverView: View {
                     selectedEventID: selectedEvent?.id,
                     onSelect: selectEvent
                 )
+            } else if showsInboxPanel {
+                // The inbox has its own panel beside the popover: no strips that would read as
+                // belonging to the date above them.
+                calendarColumn(showsInboxStrips: false)
             } else {
-                VStack(spacing: 0) {
-                    dateNavBar
-                    Divider()
-                    UpdateAvailableBannerView(
-                        updateCheck: updateCheck,
-                        horizontalPadding: contentHorizontalPadding
-                    )
-                    if updateCheck.availableUpdate != nil {
-                        Divider()
-                    }
-                    if mail.showsPopoverSection {
-                        MailPopoverSectionView(
-                            mail: mail,
-                            horizontalPadding: contentHorizontalPadding,
-                            onOpen: openMail
-                        )
-                        Divider()
-                    }
-                    let popoverInvitations = service.popoverInvitationGroups
-                    if !popoverInvitations.isEmpty {
-                        PendingInvitationsSectionView(
-                            groups: popoverInvitations,
-                            horizontalPadding: contentHorizontalPadding,
-                            onSelect: focus(on:),
-                            onDismiss: { service.dismissInvitations(eventIDs: $0.events.map(\.id)) }
-                        )
-                        Divider()
-                    }
-                    // Both days are on screen for the length of the slide, so they are stacked
-                    // rather than laid out in sequence: a VStack would briefly squeeze each into
-                    // half the height. Clipping keeps the leaving day inside the timeline area.
-                    ZStack(alignment: .top) {
-                        dayBody
-                            .id(selectedDayOffset)
-                            .transition(dayPageTransition)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                }
+                calendarColumn(showsInboxStrips: true)
             }
+        }
+    }
+
+    /// The panel needs mail: without it the envelope that toggles it is not there either.
+    private var showsInboxPanel: Bool { inboxPanelShown && mail.isAvailable }
+
+    private var inboxPanelContent: AnyView {
+        AnyView(
+            PopoverInboxColumn(
+                calendar: service,
+                mail: mail,
+                horizontalPadding: contentHorizontalPadding,
+                onSelectEvent: focus(on:),
+                onOpenMail: openMail
+            )
+            .environmentObject(localization)
+            .environment(\.locale, localization.locale)
+        )
+    }
+
+    /// The date bar and the day; in the single-column layout also the mail and invitation strips.
+    private func calendarColumn(showsInboxStrips: Bool) -> some View {
+        VStack(spacing: 0) {
+            dateNavBar
+            Divider()
+            UpdateAvailableBannerView(
+                updateCheck: updateCheck,
+                horizontalPadding: contentHorizontalPadding
+            )
+            if updateCheck.availableUpdate != nil {
+                Divider()
+            }
+            if showsInboxStrips, mail.showsPopoverSection {
+                MailPopoverSectionView(
+                    mail: mail,
+                    horizontalPadding: contentHorizontalPadding,
+                    onOpen: openMail
+                )
+                Divider()
+            }
+            let popoverInvitations = showsInboxStrips ? service.popoverInvitationGroups : []
+            if !popoverInvitations.isEmpty {
+                PendingInvitationsSectionView(
+                    groups: popoverInvitations,
+                    horizontalPadding: contentHorizontalPadding,
+                    onSelect: focus(on:),
+                    onDismiss: { service.dismissInvitations(eventIDs: $0.events.map(\.id)) }
+                )
+                Divider()
+            }
+            // Both days are on screen for the length of the slide, so they are stacked
+            // rather than laid out in sequence: a VStack would briefly squeeze each into
+            // half the height. Clipping keeps the leaving day inside the timeline area.
+            ZStack(alignment: .top) {
+                dayBody
+                    .id(selectedDayOffset)
+                    .transition(dayPageTransition)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
         }
     }
 
@@ -361,7 +410,9 @@ struct PopoverView: View {
                 sections: eventSections,
                 contentHorizontalPadding: contentHorizontalPadding,
                 selectedEventID: selectedEvent?.id,
-                onSelect: selectEvent
+                onSelect: selectEvent,
+                // The date bar right above already names the day.
+                showsDayLabel: false
             )
         }
     }
@@ -474,7 +525,6 @@ struct PopoverView: View {
                 }
 
                 Spacer(minLength: 8)
-                footerEngagementIndicator
 
                 popoverSizeMenu
 
@@ -497,6 +547,9 @@ struct PopoverView: View {
         NSApp.activate(ignoringOtherApps: true)
         if let conversationID { mail.open(conversationID: conversationID) }
         openWindow(id: "mail")
+        // The mail window takes over; a click in the inbox panel never takes focus from the
+        // popover, so the popover would otherwise stay open on top of it.
+        PostJoinDismissController.shared.dismissPopover()
     }
 
     private func openSettings() {
@@ -833,28 +886,5 @@ struct PopoverView: View {
                 dayEnd: dayEnd
             )
         ]
-    }
-}
-
-private struct CompactCircularProgress: View {
-    let progress: Double
-    let title: String?
-    var lineWidth: CGFloat = 3
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(Color.secondary.opacity(0.22), lineWidth: lineWidth)
-            Circle()
-                .trim(from: 0, to: max(0, min(progress, 1)))
-                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-            if let title {
-                Text(title)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(width: 16, height: 16)
     }
 }

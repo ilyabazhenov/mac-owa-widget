@@ -12,6 +12,16 @@ struct MailDigest: Equatable {
     static let limit = 6
     static let awaitingDays = 7
 
+    /// People's recent conversations the user has not written in (and that are not already listed
+    /// as unread): a heuristic, as in the MCP digest.
+    static func awaitingReply(in list: [MailConversationSummary], excluding ids: Set<String>, now: Date = Date()) -> [MailConversationSummary] {
+        let since = now.addingTimeInterval(-Double(awaitingDays) * 86_400)
+        return list.filter {
+            !$0.isAutomated && !$0.userHasReplied && !$0.isMeetingRequest && !$0.isMeetingCancellation
+                && ($0.lastDelivery ?? .distantPast) >= since && !ids.contains($0.id)
+        }
+    }
+
     /// - Parameters:
     ///   - inboxList: the inbox conversations the list shows, or `nil` when it shows something
     ///     else (another folder, a search): "awaiting reply" is then left out.
@@ -21,12 +31,7 @@ struct MailDigest: Equatable {
         folders: [MailFolder],
         now: Date = Date()
     ) -> MailDigest {
-        let since = now.addingTimeInterval(-Double(awaitingDays) * 86_400)
-        let unreadIDs = Set(peopleUnread.map(\.id))
-        let awaiting = (inboxList ?? []).filter {
-            !$0.isAutomated && !$0.userHasReplied && !$0.isMeetingRequest && !$0.isMeetingCancellation
-                && ($0.lastDelivery ?? .distantPast) >= since && !unreadIDs.contains($0.id)
-        }
+        let awaiting = awaitingReply(in: inboxList ?? [], excluding: Set(peopleUnread.map(\.id)), now: now)
         let skipped: Set<MailDistinguishedFolder> = [.inbox, .drafts, .sentitems, .deleteditems, .junkemail, .outbox]
         let busy = MailSidebarPolicy.visibleFolders(folders)
             .filter { $0.unreadCount > 0 && !($0.distinguished.map(skipped.contains) ?? false) }
@@ -123,10 +128,13 @@ struct MailDigestView: View {
             model.click(conversation, modifiers: [])
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(conversation.primarySender)
-                    .font(.system(size: 12, weight: conversation.isUnread ? .semibold : .regular))
-                    .lineLimit(1)
-                    .frame(width: 170, alignment: .leading)
+                HStack(spacing: 4) {
+                    Text(conversation.primarySender)
+                        .font(.system(size: 12, weight: conversation.isUnread ? .semibold : .regular))
+                        .lineLimit(1)
+                    if service.isExternalSender(conversation) { MailExternalTag() }
+                }
+                .frame(width: 170, alignment: .leading)
                 Text(conversation.topic.isEmpty ? localization.tr("mail.noSubject") : conversation.topic)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)

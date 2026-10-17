@@ -276,4 +276,18 @@ final class OWAMailParsersTests: XCTestCase {
             ISO8601DateFormatter().date(from: "2026-10-16T21:04:49Z")
         )
     }
+
+    /// The folder fallback skips a folder the mailbox lacks, never a sign-in or connection error:
+    /// swallowed, each one would mean another password attempt against AD.
+    func testFolderFallbackSkipsOnlyFolderLevelErrors() {
+        XCTAssertTrue(OWAClient.isFolderLevelError(MailError.notFound))
+        XCTAssertTrue(OWAClient.isFolderLevelError(OWAError.httpError(400, "ErrorFolderNotFound")))
+        XCTAssertFalse(OWAClient.isFolderLevelError(OWAError.authenticationFailed("rejected")))
+        XCTAssertFalse(OWAClient.isFolderLevelError(OWAError.httpError(401, "")))
+        XCTAssertFalse(OWAClient.isFolderLevelError(OWAError.httpError(440, "")))
+        XCTAssertFalse(OWAClient.isFolderLevelError(OWAError.httpError(449, "")))
+        XCTAssertFalse(OWAClient.isFolderLevelError(OWAError.httpError(503, "")))
+        XCTAssertFalse(OWAClient.isFolderLevelError(MailError.blocked("paused")))
+        XCTAssertFalse(OWAClient.isFolderLevelError(URLError(.notConnectedToInternet)))
+    }
 }

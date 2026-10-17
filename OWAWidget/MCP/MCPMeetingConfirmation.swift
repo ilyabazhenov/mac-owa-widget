@@ -157,7 +157,9 @@ final class MCPConfirmationPanel: MCPConfirmationPresenting {
 @MainActor
 enum MCPFloatingPanel {
     /// `hiddenFromScreenSharing` keeps the panel out of screen recordings and shared screens.
-    static func present<Content: View>(_ view: Content, width: CGFloat, hiddenFromScreenSharing: Bool = false) -> NSPanel {
+    /// `firstClickActs: false` makes a click on the panel while it is not key only bring it
+    /// forward, so a user coming back to the screen cannot press a button by accident.
+    static func present<Content: View>(_ view: Content, width: CGFloat, hiddenFromScreenSharing: Bool = false, firstClickActs: Bool = true) -> NSPanel {
         let panel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: 240),
             styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
@@ -177,6 +179,7 @@ enum MCPFloatingPanel {
         }
 
         let hosting = ConfirmationFirstMouseHostingView(rootView: view)
+        hosting.firstClickActs = firstClickActs
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView = hosting
@@ -225,5 +228,6 @@ private final class KeyablePanel: NSPanel {
 }
 
 private final class ConfirmationFirstMouseHostingView<Content: View>: NSHostingView<Content> {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    var firstClickActs = true
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { firstClickActs }
 }

@@ -107,22 +107,8 @@ struct PendingInvitationsSectionView: View {
         .help(event.organizer.map { localization.tr("invitations.pending.organizer", $0) } ?? event.title)
     }
 
-    /// "Today, 14:00", "Tomorrow, 9:30", "Fri, 26 Sep, 11:00" — short enough for a fixed column.
+    /// Short enough for a fixed column.
     private func whenLabel(_ event: CalendarEvent) -> String {
-        let calendar = AppTimeZone.calendar
-        let day: String
-        if calendar.isDateInToday(event.startDate) {
-            day = localization.tr("date.today")
-        } else if calendar.isDateInTomorrow(event.startDate) {
-            day = localization.tr("date.tomorrow")
-        } else {
-            let formatter = DateFormatter()
-            formatter.locale = localization.locale
-            formatter.timeZone = AppTimeZone.zone
-            formatter.setLocalizedDateFormatFromTemplate("EEEdMMM")
-            day = formatter.string(from: event.startDate)
-        }
-        guard !event.isAllDay else { return day }
-        return "\(day), \(localization.shortTime(event.startDate))"
+        InvitationLabel.when(event, localization: localization)
     }
 }

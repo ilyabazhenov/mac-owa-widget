@@ -52,6 +52,8 @@ struct MailLinkActivation: Identifiable, Equatable {
 struct MailMessageWebView: NSViewRepresentable {
     let html: String
     @Binding var height: CGFloat
+    /// The one item of the body's context menu.
+    var copyTitle = "Copy"
     let onLink: (MailLinkActivation) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -69,6 +71,10 @@ struct MailMessageWebView: NSViewRepresentable {
         view.setValue(false, forKey: "drawsBackground")
         view.allowsMagnification = false
         view.allowsBackForwardNavigationGestures = false
+        // Force click previews a link in a web view of WebKit's own: script on, network on, no CSP
+        // and no link dialog.
+        view.allowsLinkPreview = false
+        view.copyTitle = copyTitle
         view.onWidthChange = { [weak coordinator = context.coordinator, weak view] in
             guard let view else { return }
             coordinator?.measure(view)
@@ -79,6 +85,7 @@ struct MailMessageWebView: NSViewRepresentable {
 
     func updateNSView(_ view: MailReaderWebView, context: Context) {
         context.coordinator.parent = self
+        view.copyTitle = copyTitle
         if context.coordinator.loadedHTML != html {
             context.coordinator.load(html, into: view)
         }
@@ -173,7 +180,17 @@ struct MailMessageWebView: NSViewRepresentable {
 /// reflow the text and change the height.
 final class MailReaderWebView: WKWebView {
     var onWidthChange: (() -> Void)?
+    var copyTitle = "Copy"
     private var lastWidth: CGFloat = 0
+
+    /// WebKit's own items can download an image or a linked file, open one in a new window or
+    /// preview it through Look Up — outside the reader's CSP, content blocker and link dialog.
+    /// Their identifiers are not public API, so instead of filtering them the menu keeps Copy.
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        menu.removeAllItems()
+        menu.addItem(withTitle: copyTitle, action: #selector(NSText.copy(_:)), keyEquivalent: "")
+        super.willOpenMenu(menu, with: event)
+    }
 
     override func scrollWheel(with event: NSEvent) {
         nextResponder?.scrollWheel(with: event)

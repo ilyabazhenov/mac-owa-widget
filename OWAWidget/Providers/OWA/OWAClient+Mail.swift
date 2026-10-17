@@ -113,8 +113,17 @@ extension OWAClient {
         for name in system {
             // One per request: a mailbox without `archive` fails the whole batch otherwise.
             let payload = OWAMailPayloads.getFolder(folders: [OWAMailPayloads.distinguishedFolderID(name)], withNames: true, timeZoneID: windowsTimezoneID())
-            guard let data = try? await mailServiceCall(action: "GetFolder", payload: payload),
-                  let json = try? OWAMailParsers.json(data),
+            let data: Data
+            do {
+                data = try await mailServiceCall(action: "GetFolder", payload: payload)
+            } catch {
+                // Only a folder this mailbox lacks is skipped. Sign-in, certificate and login-host
+                // errors go up: swallowed, every iteration would sign in again (one more bad
+                // password attempt each) and the breaker would never see why.
+                if Self.isFolderLevelError(error) { continue }
+                throw error
+            }
+            guard let json = try? OWAMailParsers.json(data),
                   let folder = OWAMailParsers.folders(in: json).first else { continue }
             result.append(MailFolder(
                 id: folder.id, distinguishedID: name.rawValue,
@@ -124,6 +133,19 @@ extension OWAClient {
         }
         guard !result.isEmpty else { throw OWAError.invalidResponse }
         return result
+    }
+
+    /// An error about one folder (missing in this mailbox, refused by the server), not about the
+    /// session or the connection.
+    static func isFolderLevelError(_ error: Error) -> Bool {
+        if OWAError.isAuthError(error) { return false }
+        switch error as? OWAError {
+        case .httpError(let code, _): return code != 449 && code < 500
+        case .invalidResponse: return true
+        default:
+            if case .blocked = error as? MailError { return false }
+            return error is MailError
+        }
     }
 
     /// `sessiondata.ashx`: the session bootstrap the OWA page loads first. Its `findFolders`
@@ -264,44 +286,92 @@ extension OWAClient {
 
     // MARK: - Sending (EWS)
 
-    /// `CreateItem` through EWS, like `createCalendarEvent`: the same NTLM session, the same
-    /// handling of a POST dropped on a fresh connection and of a stale session.
-    func mailSend(_ outgoing: MailOutgoing, attempt: Int = 0) async throws -> MailItemRef? {
-        let soap = OWAMailPayloads.createMessageSOAP(outgoing)
-        let ewsURL = try url("/EWS/Exchange.asmx")
-        var request = URLRequest(url: ewsURL, timeoutInterval: 30)
+    /// `CreateItem` through EWS. Used for drafts: sending goes draft → review → `mailSendDraft`.
+    /// A save that is dropped and repeated at worst leaves a second draft, never a second email;
+    /// an outright send (`send == true`) is never repeated automatically.
+    func mailSend(_ outgoing: MailOutgoing) async throws -> MailItemRef? {
+        let body = try await ewsCall(
+            action: "CreateItem",
+            soap: OWAMailPayloads.createMessageSOAP(outgoing),
+            mayRepeat: !outgoing.send,
+            note: "kind=\(outgoing.kind.rawValue) send=\(outgoing.send) to=\(outgoing.to.count) cc=\(outgoing.cc.count)"
+        )
+        return OWAMailParsers.createdItemRef(fromSOAP: body)
+    }
+
+    /// The draft as Exchange holds it, every recipient included: what will actually be sent.
+    func mailDraftForReview(_ ref: MailItemRef) async throws -> MailMessage {
+        let payload = OWAMailPayloads.getItem(ref, timeZoneID: windowsTimezoneID(), allRecipients: true)
+        let data = try await mailServiceCall(action: "GetItem", payload: payload)
+        guard let message = try OWAMailParsers.messages(data).first else { throw MailError.notFound }
+        return message
+    }
+
+    /// Sends a reviewed draft. Never repeated after a broken connection: Exchange may already
+    /// have sent it, so that is reported as uncertain instead of risking a second copy.
+    func mailSendDraft(_ ref: MailItemRef) async throws {
+        _ = try await ewsCall(action: "SendItem", soap: OWAMailPayloads.sendItemSOAP(ref), mayRepeat: false, note: "")
+    }
+
+    func mailDeleteDraft(_ ref: MailItemRef) async throws {
+        _ = try await ewsCall(action: "DeleteItem", soap: OWAMailPayloads.deleteItemSOAP(ref), mayRepeat: true, note: "")
+    }
+
+    /// One EWS SOAP call on the shared NTLM session.
+    ///
+    /// - Parameter mayRepeat: whether a request dropped by the connection may be sent again.
+    ///   Only for requests whose repetition is harmless; a 401/440 is always retried once, as the
+    ///   server answered it without acting on it.
+    private func ewsCall(action: String, soap: String, mayRepeat: Bool, note: String, attempt: Int = 0) async throws -> String {
+        var request = URLRequest(url: try url("/EWS/Exchange.asmx"), timeoutInterval: 30)
         request.httpMethod = "POST"
         request.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        request.setValue("\"http://schemas.microsoft.com/exchange/services/2006/messages/CreateItem\"", forHTTPHeaderField: "SOAPAction")
+        request.setValue("\"http://schemas.microsoft.com/exchange/services/2006/messages/\(action)\"", forHTTPHeaderField: "SOAPAction")
         addCommonHeaders(&request)
         request.httpBody = Data(soap.utf8)
-        log.info("EWS mail CreateItem kind=\(outgoing.kind.rawValue, privacy: .public) send=\(outgoing.send, privacy: .public) to=\(outgoing.to.count, privacy: .public) cc=\(outgoing.cc.count, privacy: .public) bytes=\(soap.utf8.count, privacy: .public)")
+        log.info("EWS mail \(action, privacy: .public) \(note, privacy: .public) bytes=\(soap.utf8.count, privacy: .public)")
 
         let (data, response): (Data, URLResponse)
         do {
-            (data, response) = try await sessionDataAllowingStaleReconnect(for: request)
-        } catch let urlErr as URLError where urlErr.code == .networkConnectionLost && attempt < 1 {
-            // A POST that is the first request on a fresh connection is dropped before NTLM: the
-            // server never saw it, so resending cannot send the message twice.
-            DiagnosticLog.event("Mail CreateItem URLError \(urlErr.code.rawValue), re-authenticating")
+            (data, response) = mayRepeat ? try await sessionDataAllowingStaleReconnect(for: request) : try await fetchData(request)
+        } catch let urlErr as URLError where mayRepeat && urlErr.code == .networkConnectionLost && attempt < 1 {
+            DiagnosticLog.event("Mail \(action) URLError \(urlErr.code.rawValue), re-authenticating")
             try await authenticate()
-            return try await mailSend(outgoing, attempt: attempt + 1)
+            return try await ewsCall(action: action, soap: soap, mayRepeat: mayRepeat, note: note, attempt: attempt + 1)
+        } catch let urlErr as URLError where !mayRepeat && Self.mayHaveReachedServer(urlErr) {
+            DiagnosticLog.event("Mail \(action) URLError \(urlErr.code.rawValue): outcome unknown, not repeated")
+            throw MailError.sendUncertain
         }
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
         if OWAError.isSessionStaleStatus(http.statusCode) {
-            guard attempt < 1 else { throw OWAError.httpError(http.statusCode, "EWS mail CreateItem auth retry exhausted") }
+            guard attempt < 1 else { throw OWAError.httpError(http.statusCode, "EWS mail \(action) auth retry exhausted") }
             try await authenticate()
-            return try await mailSend(outgoing, attempt: attempt + 1)
+            return try await ewsCall(action: action, soap: soap, mayRepeat: mayRepeat, note: note, attempt: attempt + 1)
         }
         let body = String(data: data, encoding: .utf8) ?? ""
         guard (200..<300).contains(http.statusCode) else {
-            log.error("EWS mail CreateItem HTTP \(http.statusCode, privacy: .public)")
+            log.error("EWS mail \(action, privacy: .public) HTTP \(http.statusCode, privacy: .public)")
             throw OWAError.httpError(http.statusCode, String(body.prefix(600)))
         }
         let code = Self.extractEWSResponseCode(from: body)
-        log.info("EWS mail CreateItem responseCode=\(code ?? "nil", privacy: .public)")
-        DiagnosticLog.event("Mail CreateItem kind=\(outgoing.kind.rawValue) send=\(outgoing.send) code=\(code ?? "nil")")
+        log.info("EWS mail \(action, privacy: .public) responseCode=\(code ?? "nil", privacy: .public)")
+        DiagnosticLog.event("Mail \(action) code=\(code ?? "nil")")
         guard code == "NoError" else { throw OWAError.ewsError(code ?? "UnknownError") }
-        return OWAMailParsers.createdItemRef(fromSOAP: body)
+        return body
+    }
+
+    /// A failure after which the request may have been processed: the bytes went out and the
+    /// answer did not come back. Failures before any connection (no network, DNS, TLS refusal)
+    /// mean the server never saw it.
+    static func mayHaveReachedServer(_ error: URLError) -> Bool {
+        switch error.code {
+        case .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+             .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+             .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot, .clientCertificateRejected,
+             .appTransportSecurityRequiresSecureConnection, .userAuthenticationRequired:
+            return false
+        default:
+            return true
+        }
     }
 }

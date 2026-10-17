@@ -56,10 +56,13 @@ struct MeetingRelatedMailView: View {
                             mail.open(conversationID: conversation.id)
                         } label: {
                             HStack(spacing: 6) {
-                                Text(conversation.primarySender)
-                                    .font(.system(size: 11, weight: conversation.isUnread ? .semibold : .medium))
-                                    .lineLimit(1)
-                                    .frame(maxWidth: 110, alignment: .leading)
+                                HStack(spacing: 4) {
+                                    Text(conversation.primarySender)
+                                        .font(.system(size: 11, weight: conversation.isUnread ? .semibold : .medium))
+                                        .lineLimit(1)
+                                    if mail.isExternalSender(conversation) { MailExternalTag() }
+                                }
+                                .frame(maxWidth: 150, alignment: .leading)
                                 Text(conversation.topic)
                                     .font(.system(size: 11))
                                     .lineLimit(1)

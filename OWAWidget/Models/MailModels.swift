@@ -414,15 +414,66 @@ struct MailOutgoing: Sendable, Equatable {
     var send: Bool = true
 }
 
+/// An email saved as a draft and read back from Exchange: who it will really go to.
+///
+/// For a reply Exchange works the recipients out itself (the original's Reply-To, everyone on a
+/// reply-all) and may add them to the ones asked for. Sending the draft only after reading it
+/// back means what the user approves is exactly what goes out.
+struct MailPreparedSend: Sendable, Equatable {
+    let draft: MailItemRef
+    let outgoing: MailOutgoing
+    let to: [MailAddress]
+    let cc: [MailAddress]
+    let bcc: [MailAddress]
+    let attachments: [MailAttachmentInfo]
+
+    var recipients: [MailAddress] { to + cc + bcc }
+
+    /// Recipients the server put on the draft beyond the ones asked for. One without an address
+    /// counts too: what cannot be matched cannot be taken as approved.
+    var addedRecipients: [MailAddress] {
+        let requested = Set((outgoing.to + outgoing.cc).map { $0.lowercased() })
+        return recipients.filter { address in
+            guard let email = address.email?.lowercased() else { return true }
+            return !requested.contains(email)
+        }
+    }
+
+    /// Recipients asked for that the server left off.
+    var droppedRecipients: [String] {
+        let present = Set(recipients.compactMap { $0.email?.lowercased() })
+        return (outgoing.to + outgoing.cc).filter { !present.contains($0.lowercased()) }
+    }
+
+    /// Exchange's list is exactly the one asked for.
+    var matchesRequest: Bool { addedRecipients.isEmpty && droppedRecipients.isEmpty }
+
+    /// Reads a review draft into what will be sent; refuses a list the server cut short.
+    static func make(draft message: MailMessage, outgoing: MailOutgoing) throws -> MailPreparedSend {
+        guard message.hiddenRecipientCount == 0 else { throw MailError.recipientsUnverified }
+        return MailPreparedSend(
+            draft: message.ref, outgoing: outgoing,
+            to: message.to, cc: message.cc, bcc: message.bcc,
+            attachments: message.attachments
+        )
+    }
+}
+
 enum MailError: LocalizedError, Equatable {
     case notSupported
     case notFound
     case blocked(String)
     case serverError(String)
     case tooLarge(Int)
+    /// The connection broke while Exchange had the send request: it may have gone out.
+    case sendUncertain
+    /// The server would not list every recipient of the draft, so it cannot be shown in full.
+    case recipientsUnverified
 
     var errorDescription: String? {
         switch self {
+        case .sendUncertain: "The connection broke while sending: the email may have gone out. Check Sent Items before sending again."
+        case .recipientsUnverified: "Exchange did not list every recipient of this email, so it was not sent. Open it in OWA to check the recipients."
         case .notSupported: "Mail is not available for this account"
         case .notFound: "The message was not found. It may have been moved or deleted."
         case .blocked(let reason): reason
