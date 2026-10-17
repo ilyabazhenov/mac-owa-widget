@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Mail: reply sketch</title>
+<link rel="stylesheet" href="mock.css"><link rel="stylesheet" href="mail.css">
+<style>body{width:1000px;height:720px}.stage{width:100%;height:100%;gap:36px}
+.cap{font-size:12px;color:var(--fg2);text-align:center;margin-bottom:8px}</style>
+</head><body><div class="stage" id="s"></div>
+<script src="mock.js"></script><script src="mail-mock.js"></script>
+<script>
+const p = MAIL.partner, d = MAIL.dmitry;
+// Reply all to an external thread: the external address is marked in the field and in the warning above the body.
+const compose = (sending) => `<div class="window" style="width:440px;height:600px;position:relative">
+  <div class="titlebar"><span class="traffic"><i></i><i></i><i></i></span>${L('Ответ всем', 'Reply All')}</div><div class="divider"></div>
+  <div class="cmp-row"><span class="lbl">${L('Кому', 'To')}</span><span class="tok ext">${p.n} · ${p.e}</span></div>
+  <div class="cmp-row"><span class="lbl">${L('Копия', 'Cc')}</span><span class="tok">${d.n}</span><span class="tok">${PEOPLE.anna}</span></div>
+  <div class="cmp-row"><span class="lbl">${L('Тема', 'Subject')}</span><span>RE: ${THREADS[3].s}</span></div>
+  <div class="cmp-body" style="${sending ? 'opacity:.55' : ''}">
+    <div class="notice warn">${icon('warn', 13, C.orange)}<span>${L('Письмо уйдёт за пределы организации: <b>partner-corp.com</b>', 'This leaves your organization: <b>partner-corp.com</b>')}</span></div>
+    <span>Hi Thomas,</span>
+    <span>${L('Thanks for the quick turnaround. Section 4.2 works for us if we cap the response time at 8 business hours. I’ve added Noah and Sophie for the technical part.', 'Thanks for the quick turnaround. Section 4.2 works for us if we cap the response time at 8 business hours. I’ve added Noah and Sophie for the technical part.')}</span>
+    <span>Best,<br>${ME}</span>
+    <div class="quote">${L('Вчера, 18:12, Thomas Wright пишет:', 'Yesterday, 18:12, Thomas Wright wrote:')}<br>Hi, please find attached the updated draft. We accepted most of your comments except section 4.2…</div>
+    <div class="row sec" style="gap:6px;font-size:11px">${icon('info', 11, 'var(--fg2)')}${L('Вложения в ответ не добавляются: прикрепить файл можно в OWA.', 'Attachments can’t be added here yet: attach files in OWA.')}</div>
+  </div>
+  <div class="divider"></div>
+  ${sending
+    ? `<div class="row" style="padding:10px 14px;gap:8px;font-size:13px">${icon('send', 13, C.accent)}<span>${L('Отправка через 4 с…', 'Sending in 4 s…')}</span><span class="spacer"></span>
+        <span class="btn primary">${L('Отменить отправку', 'Undo Send')}</span></div>`
+    : `<div class="row" style="padding:10px 14px;gap:8px"><span class="btn">${L('В черновики', 'Save Draft')}</span><span class="spacer"></span>
+        <span class="btn">${L('Отменить', 'Cancel')}</span><span class="btn primary">${icon('send', 12, '#fff')}${L('Отправить', 'Send')}</span></div>`}
+</div>`;
+document.getElementById('s').innerHTML = `
+  <div><div class="cap">${L('Ответ всем с внешним адресатом', 'Reply all with an external recipient')}</div>${compose(false)}</div>
+  <div><div class="cap">${L('После «Отправить»: 5 секунд на отмену', 'After Send: 5 seconds to undo')}</div>${compose(true)}</div>`;
+</script>
+</body></html>

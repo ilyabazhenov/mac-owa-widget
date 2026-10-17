@@ -3,6 +3,7 @@ import AppKit
 
 struct PopoverView: View {
     @EnvironmentObject var service: CalendarService
+    @EnvironmentObject private var mail: MailService
     @EnvironmentObject private var localization: LocalizationService
     @EnvironmentObject private var updateCheck: UpdateCheckService
     @EnvironmentObject private var colleagues: ColleaguePresenceService
@@ -181,6 +182,16 @@ struct PopoverView: View {
                 .accessibilityLabel(localization.tr("popover.sync.now"))
             }
 
+            if mail.isAvailable {
+                Button { openMail(nil) } label: {
+                    Image(systemName: "envelope")
+                        .font(.system(size: 13))
+                }
+                .buttonStyle(.plain)
+                .help(localization.tr("popover.mail"))
+                .accessibilityLabel(localization.tr("popover.mail"))
+            }
+
             if service.supportsMeetingCreation {
                 Button { openCreateMeeting() } label: {
                     Image(systemName: "plus")
@@ -299,6 +310,14 @@ struct PopoverView: View {
                         horizontalPadding: contentHorizontalPadding
                     )
                     if updateCheck.availableUpdate != nil {
+                        Divider()
+                    }
+                    if mail.showsPopoverSection {
+                        MailPopoverSectionView(
+                            mail: mail,
+                            horizontalPadding: contentHorizontalPadding,
+                            onOpen: openMail
+                        )
                         Divider()
                     }
                     let popoverInvitations = service.popoverInvitationGroups
@@ -472,6 +491,12 @@ struct PopoverView: View {
     private func openCreateMeeting() {
         NSApp.activate(ignoringOtherApps: true)
         openWindow(id: "create-meeting")
+    }
+
+    private func openMail(_ conversationID: String?) {
+        NSApp.activate(ignoringOtherApps: true)
+        if let conversationID { mail.open(conversationID: conversationID) }
+        openWindow(id: "mail")
     }
 
     private func openSettings() {

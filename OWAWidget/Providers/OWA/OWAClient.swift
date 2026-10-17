@@ -232,18 +232,20 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
 }
 
 actor OWAClient {
-    private let baseURL: URL
+    let baseURL: URL
     private let username: String
     private let password: String
 
-    private var canaryToken: String?
+    var canaryToken: String?
     private var defaultCalendarFolderIdentifier: OWAFolderIdentifier?
     private var forceDistinguishedCalendarFolder = false
     private var requestSequence = 0
     private var cachedOrganizerSMTPEmail: String?
+    /// The mail search session `ExecuteSearch` pages through (see `OWAClient+Mail`).
+    var mailSearchSession: OWAMailSearchSession?
     private let sessionDelegate: OWASessionDelegate
     private let session: URLSession
-    private let log = Logger(subsystem: "com.owawidget", category: "OWAClient")
+    let log = Logger(subsystem: "com.owawidget", category: "OWAClient")
     #if DEBUG
     private let getCalendarViewDebugFlagKey = "debugDumpGetCalendarViewResponse"
     #endif
@@ -287,7 +289,7 @@ actor OWAClient {
     /// Single chokepoint for network requests. Converts a TLS trust rejection
     /// (recorded by the session delegate) into a typed `untrustedCertificate` error so
     /// the UI / background sync can prompt the user to trust the server.
-    private func fetchData(_ request: URLRequest) async throws -> (Data, URLResponse) {
+    func fetchData(_ request: URLRequest) async throws -> (Data, URLResponse) {
         do {
             return try await session.data(for: request)
         } catch {
@@ -988,7 +990,7 @@ actor OWAClient {
     }
 
     /// Retries a few times on stale HTTP keep-alive (`URLError.networkConnectionLost`).
-    private func sessionDataAllowingStaleReconnect(for request: URLRequest) async throws -> (Data, URLResponse) {
+    func sessionDataAllowingStaleReconnect(for request: URLRequest) async throws -> (Data, URLResponse) {
         let maxStaleRetries = 3
         var attempt = 0
         while true {
@@ -1152,7 +1154,7 @@ actor OWAClient {
     /// Serialize JSON with `__type` always FIRST. .NET DataContractJsonSerializer needs the discriminator
     /// before any other property when the destination is an abstract base — otherwise it throws
     /// `MemberAccessException: "Cannot create an abstract class."` mid-parse.
-    private static func serializeJSONTypeFirst(_ obj: Any) -> String {
+    static func serializeJSONTypeFirst(_ obj: Any) -> String {
         if let dict = obj as? [String: Any] {
             var keys = Array(dict.keys)
             keys.sort { a, b in
@@ -1208,13 +1210,13 @@ actor OWAClient {
         return out
     }
 
-    private static func makeCorrelationId() -> String {
+    static func makeCorrelationId() -> String {
         let hex = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let suffix = String(Int64.random(in: 100_000_000_000_000...999_999_999_999_999))
         return "\(hex)_\(suffix)"
     }
 
-    private static func iso8601Millis(_ date: Date) -> String {
+    static func iso8601Millis(_ date: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = TimeZone(identifier: "UTC")
@@ -1443,7 +1445,7 @@ actor OWAClient {
 
     // MARK: - Auth helper
 
-    private func ensureCanary() async throws -> String {
+    func ensureCanary() async throws -> String {
         if let token = canaryToken { return token }
         try await authenticate()
         guard let token = canaryToken else { throw OWAError.notAuthenticated }
@@ -1592,7 +1594,7 @@ actor OWAClient {
 
     // MARK: - Helpers
 
-    private func url(_ path: String) throws -> URL {
+    func url(_ path: String) throws -> URL {
         guard let url = URL(string: baseURL.absoluteString + path) else {
             throw OWAError.invalidURL(path)
         }
@@ -1625,7 +1627,7 @@ actor OWAClient {
         return request
     }
 
-    private func addCommonHeaders(_ request: inout URLRequest) {
+    func addCommonHeaders(_ request: inout URLRequest) {
         request.setValue(
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
             forHTTPHeaderField: "User-Agent"
@@ -1658,7 +1660,7 @@ actor OWAClient {
         return nil
     }
 
-    private func windowsTimezoneID() -> String {
+    func windowsTimezoneID() -> String {
         OWAServerTimeZone.current.windowsID
     }
 

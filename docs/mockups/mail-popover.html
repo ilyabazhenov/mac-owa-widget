@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Mail: popover sketch</title>
+<link rel="stylesheet" href="mock.css"><link rel="stylesheet" href="mail.css">
+<style>
+body{width:1000px;height:820px}.stage{width:100%;height:100%;flex-direction:column;gap:14px;justify-content:flex-start;padding-top:18px}
+.pair{display:flex;gap:40px;align-items:flex-start}
+.cap{font-size:12px;color:var(--fg2);text-align:center;margin-bottom:8px}
+.mbar{width:940px;height:26px;display:flex;align-items:center;gap:18px;padding:0 14px;font-size:13px;border-radius:8px;
+  background:rgba(30,30,32,.75);color:#fff}
+html:not(.dark) .mbar{background:rgba(255,255,255,.7);color:#1d1d1f;box-shadow:0 0 0 .5px rgba(0,0,0,.12)}
+.mbar .it{display:inline-flex;align-items:center;gap:6px;padding:1px 8px;border-radius:5px;background:rgba(127,127,127,.28)}
+</style>
+</head><body><div class="stage" id="s"></div>
+<script src="mock.js"></script><script src="mail-mock.js"></script>
+<script>
+// Menu bar label: the @N mail badge is text inside the same label as the meeting countdown (MenuBarExtra draws one image + one text).
+const bar = `<div class="mbar"><b>&#63743;</b><b>Finder</b><span>${L('Файл', 'File')}</span><span>${L('Правка', 'Edit')}</span><span class="spacer"></span>
+  <span class="it">${icon('calendar', 13, 'currentColor')}${L('Дизайн-ревью через 12 мин', 'Design review in 12 min')} · @12</span>
+  <span>${L('Вт 6 окт.', 'Tue Oct 6')}&nbsp;&nbsp;10:48</span></div>`;
+
+const mailRow = (expanded) => `<div class="row mail-row">${icon('tray', 12, C.accent, 2.4)}<span>${L('Почта', 'Mail')}</span>
+  <span class="count" style="background:${a(C.accent, 0.18)};color:${C.accent}">12</span><span class="spacer"></span>
+  <span style="font-size:11px;font-weight:400;color:var(--fg2)">${L('последнее в 10:42', 'latest 10:42')}</span>${icon(expanded ? 'chevU' : 'chevD', 9, 'var(--fg2)', 3)}</div>`;
+
+const items = THREADS.filter((t) => t.unread).concat([THREADS[3]]).slice(0, 4).map((t) => {
+  const who = t.from.split(',')[0];
+  return `<div class="row mail-item">${t.unread ? '<span class="unread-dot"></span>' : '<span style="width:7px"></span>'}
+    <span class="who nowrap">${who}</span><span class="subj nowrap">${t.s}</span>${t.att ? icon('clip', 11, 'var(--fg2)') : ''}<span class="when">${t.t}</span></div>`;
+}).join('');
+const more = `<div class="row mail-more">${L('Открыть почту', 'Open Mail')}${icon('arrowR', 10, C.accent, 2.4)}</div>`;
+
+function pop(expanded) {
+  const dm = DAY_MEETINGS[3];
+  const mail = mailRow(expanded) + (expanded ? items + more : '');
+  return `<div class="window" style="width:420px;height:700px">${popHeader()}<div class="divider"></div>${dateNav()}<div class="divider"></div>
+    ${mail}<div class="divider"></div>
+    ${nextBanner(dm, L('через 12 мин', 'in 12 min'))}<div class="divider" style="margin-top:8px"></div>
+    <div class="sticky-day">${TODAY_LABEL}</div>${allDayRow()}
+    <div class="timeline">${timeline(420, { startMin: hm('10:00') })}</div>
+    <div class="divider"></div>${colleaguesHeader(false)}<div class="divider"></div>${footer()}</div>`;
+}
+
+document.getElementById('s').innerHTML = bar + `<div class="pair">
+  <div><div class="cap">${L('Раздел свёрнут: только счётчик', 'Collapsed: just the count')}</div>${pop(false)}</div>
+  <div><div class="cap">${L('Раздел раскрыт: последние непрочитанные', 'Expanded: latest unread')}</div>${pop(true)}</div></div>`;
+</script>
+</body></html>

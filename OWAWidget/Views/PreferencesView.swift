@@ -5,6 +5,7 @@ struct PreferencesView: View {
     @EnvironmentObject private var localization: LocalizationService
     @EnvironmentObject private var updateCheck: UpdateCheckService
     @EnvironmentObject private var appearance: AppearanceService
+    @EnvironmentObject private var mail: MailService
 
     private let syncOptions: [(minutes: Int, value: TimeInterval)] = [
         (1, 60),
@@ -223,6 +224,8 @@ struct PreferencesView: View {
                     .disabled(vm.meetingReminderSound == .none)
                 }
             }
+
+            MailSettingsSections(mail: mail)
 
             Section(localization.tr("preferences.engagement.section")) {
                 Picker(localization.tr("preferences.engagement.scope"), selection: $vm.meetingEngagementScope) {

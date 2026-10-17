@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Mail: settings sketch</title>
+<link rel="stylesheet" href="mock.css"><link rel="stylesheet" href="mail.css">
+<style>
+body{width:1100px;height:780px}.stage{width:100%;height:100%;gap:28px;align-items:flex-start;padding-top:30px}
+.tabs{display:flex;justify-content:center;padding:6px 0 12px}
+.sect{margin:0 20px 14px}
+.sect h5{font-size:12px;font-weight:600;color:var(--fg2);margin:0 0 6px 8px}
+.box{border-radius:8px;background:color-mix(in srgb,var(--fg) 4%,transparent);box-shadow:inset 0 0 0 .5px var(--sep)}
+.fr{display:flex;align-items:center;gap:10px;padding:8px 10px;font-size:13px;min-height:36px}
+.fr + .fr{border-top:1px solid var(--sep)}
+.pop{display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:2px 4px 2px 8px;border-radius:6px}
+.pop .ch{display:inline-flex;flex-direction:column;background:var(--accent);border-radius:4px;padding:1px 2px}
+.hint{font-size:11px;color:var(--fg2);padding:0 10px 8px;margin-top:-4px;line-height:1.4}
+.lcol{display:flex;flex-direction:column;gap:24px;position:relative}
+</style>
+</head><body><div class="stage" id="s"></div>
+<script src="mock.js"></script><script src="mail-mock.js"></script>
+<script>
+const tabs = (names, on) => `<div class="tabs"><span class="seg">${names.map((t, i) => `<span class="${i === on ? 'on' : ''}">${t}</span>`).join('')}</span></div>`;
+const chev = `<span class="ch">${icon('chevU', 7, '#fff', 3.4)}${icon('chevD', 7, '#fff', 3.4)}</span>`;
+const pop = (v) => `<span class="pop">${v}${chev}</span>`;
+const tg = (on) => `<span class="toggle ${on ? 'on' : ''}"></span>`;
+const fr = (label, ctl, indent = 0) => `<div class="fr" style="padding-left:${10 + indent}px"><span>${label}</span><span class="spacer"></span>${ctl}</div>`;
+const TABS = [L('Аккаунты', 'Accounts'), L('Настройки', 'Preferences'), 'AI (MCP)', L('О приложении', 'About')];
+
+const prefs = `<div class="window" style="width:480px;height:420px">
+  <div class="titlebar"><span class="traffic"><i></i><i></i><i></i></span>${L('Настройки', 'Settings')}</div>${tabs(TABS, 1)}
+  <div style="flex:1;overflow:hidden">
+    <div class="sect"><h5>${L('Почта', 'Mail')}</h5><div class="box">
+      ${fr(L('Почта Exchange в OWA Widget', 'Exchange mail in OWA Widget'), tg(true))}
+      <div class="hint">${L('Окно почты и счётчик непрочитанных. Письма не сохраняются на диск.', 'Mail window and unread count. Messages are never stored on disk.')}</div>
+      ${fr(L('Раздел «Почта» в окне', 'Mail section in the popover'), tg(true), 16)}
+      ${fr(L('Счётчик ✉︎ в строке меню', '✉︎ count in the menu bar'), tg(false), 16)}
+      ${fr(L('Отмечать прочитанным', 'Mark as read'), pop(L('Через 3 секунды', 'After 3 seconds')))}
+      ${fr(L('Проверять новые письма', 'Check for new mail'), pop(L('Каждые 2 минуты', 'Every 2 minutes')))}
+      <div class="hint">${L('Проверка — один лёгкий запрос счётчиков. Пока синк остановлен (например, нужен пароль), почта тоже не проверяется.', 'One lightweight count request. While sync is paused (say, the password is needed), mail is not checked either.')}</div>
+    </div></div>
+  </div></div>`;
+
+const mcp = `<div class="window" style="width:480px;height:480px">
+  <div class="titlebar"><span class="traffic"><i></i><i></i><i></i></span>${L('Настройки', 'Settings')}</div>${tabs(TABS, 2)}
+  <div style="flex:1;overflow:hidden">
+    <div class="sect"><h5>${L('Сервер', 'Server')}</h5><div class="box">
+      ${fr(L('MCP-сервер для AI-ассистентов', 'MCP server for AI assistants'), tg(true))}
+      ${fr(L('Создавать встречи с подтверждением', 'Create meetings with confirmation'), tg(true), 16)}
+      ${fr(L('Спрашивать разрешение у новых клиентов', 'Ask before new clients connect'), tg(true), 16)}
+    </div></div>
+    <div class="sect"><h5>${L('Почта', 'Mail')}</h5><div class="box">
+      ${fr(L('Давать ассистентам читать почту', 'Let assistants read mail'), tg(true))}
+      <div class="hint">${L('Каждый клиент спросит отдельно. Ассистент ничего не меняет в ящике: не отмечает прочитанным, не перемещает, не удаляет.', 'Each client asks separately. Assistants never change the mailbox: no marking read, moving or deleting.')}</div>
+      ${fr(L('Готовить письма с подтверждением', 'Prepare emails with confirmation'), tg(false), 16)}
+      <div class="hint" style="padding-left:26px">${L('Письмо уйдёт, только когда вы нажмёте «Отправить» в окне OWA Widget.', 'An email goes out only after you press Send in the OWA Widget window.')}</div>
+    </div></div>
+    <div class="sect"><div class="notice warn" style="margin:0 2px">${icon('warn', 14, C.orange)}<span style="line-height:1.4">${L('Текст писем уходит AI-ассистенту, которого вы подключили. Убедитесь, что это разрешено правилами вашей организации.', 'Message text goes to the AI assistant you connected. Make sure your organization allows it.')}</span></div></div>
+  </div></div>`;
+
+// Per-client mail consent: same floating panel as the new-client question, asked on the first mail tool call.
+const consent = `<div class="cpanel" style="position:relative;width:420px">
+  <div class="cp-in">
+    <div class="cp-head">${icon('tray', 14, C.accent)}<span>${L('Доступ к почте', 'Mail access')}</span></div>
+    <span class="cp-title">${L('Разрешить Claude читать вашу почту?', 'Let Claude read your mail?')}</span>
+    <span style="font-size:12px;line-height:1.45">${L('Календарь этому клиенту уже разрешён. Почта — отдельное разрешение: ассистент увидит темы, текст писем и список вложений во всех папках.', 'This client can already read your calendar. Mail is a separate permission: the assistant will see subjects, message text and attachment lists in every folder.')}</span>
+    <div class="cp-box" style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px">Claude Code · /usr/local/bin/claude</div>
+  </div>
+  <div class="cp-bar"><i></i></div>
+  <div class="cp-foot"><span class="spacer"></span><span class="btn">${L('Запретить', 'Deny')}</span><span class="btn primary">${L('Разрешить', 'Allow')}</span></div>
+</div>`;
+
+document.getElementById('s').innerHTML = `<div class="lcol">${prefs}${consent}</div>` + mcp;
+</script>
+</body></html>

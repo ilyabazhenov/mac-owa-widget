@@ -34,6 +34,9 @@ final class CalendarService: ObservableObject {
     @Published private(set) var eventCoverage: EventCoverage?
     @Published private(set) var syncStatus: SyncStatus = .idle
     @Published private(set) var accounts: [CalendarAccount] = []
+    /// Bumped whenever the providers are rebuilt (credentials changed, account added): the mail
+    /// service drops what it read through the old ones.
+    @Published private(set) var providerGeneration = 0
 
     /// `true` when the account store holds something this build could not read — most often a
     /// Keychain the user has not authorised yet after an update changed the app's code signature.
@@ -945,6 +948,16 @@ final class CalendarService: ObservableObject {
         applyBlockingError(error, context: context)
     }
 
+    /// Exchange accounts whose mailbox the app can read, in account order.
+    var mailAccounts: [CalendarAccount] {
+        accounts.filter { $0.accountType.supportsMail }
+    }
+
+    /// The mail side of an account's provider: the same actor and network session as its calendar.
+    func mailProvider(accountID: UUID) -> (any MailProvider)? {
+        providers.first { $0.account.id == accountID } as? any MailProvider
+    }
+
     /// Account type behind an event's `accountID`, from the account list or, failing that, the
     /// provider that produced it.
     func accountType(for accountID: UUID) -> AccountType? {
@@ -1100,6 +1113,7 @@ final class CalendarService: ObservableObject {
             }
         }
         providers = built
+        providerGeneration += 1
         updateEventStoreObservation()
         DiagnosticLog.event(
             "CalendarService providers rebuilt count=\(built.count) accounts=\(accounts.count)"

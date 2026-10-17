@@ -23,6 +23,7 @@ Free and open source. The first launch needs one Terminal command — see [Insta
 - **Overlaps side by side** — parallel meetings never stack; the current half hour is highlighted and the past fades out.
 - **All-day, out of the way** — on-call shifts, vacations and trips live in their own strip above the timeline.
 - **New invitations** — everything waiting for your answer, right at the top.
+- **Mail** — unread mail in the popover, a window with folders, search and replies; turned on in Settings, messages are never stored on disk.
 - **A week back, a month ahead** — the arrows or a two-finger swipe on the trackpad.
 - **Your way** — three window sizes, light or dark theme, your own display time zone.
 

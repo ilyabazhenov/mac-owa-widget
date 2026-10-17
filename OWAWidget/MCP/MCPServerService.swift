@@ -77,6 +77,22 @@ final class MCPServerService: ObservableObject {
             MCPDebugLog.log("createMeetings=\(canCreateMeetings)")
         }
     }
+    /// Mail tools in `tools/list` at all; each client is still asked separately.
+    @Published var canReadMail: Bool {
+        didSet {
+            guard canReadMail != oldValue else { return }
+            if !canReadMail { canSendMail = false }
+            settingsChanged()
+            MCPDebugLog.log("mailRead=\(canReadMail)")
+        }
+    }
+    @Published var canSendMail: Bool {
+        didSet {
+            guard canSendMail != oldValue else { return }
+            settingsChanged()
+            MCPDebugLog.log("mailSend=\(canSendMail)")
+        }
+    }
     /// What the tool calls read. The gate (`authorize`) and the tools must see the same switches:
     /// when the tools re-read a store of their own, flipping that store from outside opened the
     /// tools while the gate still thought the server was off and let every call through.
@@ -90,6 +106,9 @@ final class MCPServerService: ObservableObject {
     private var verifier: MCPPeerVerifier?
     private let inspector = MCPSystemProcessInspector()
     private var approval: MCPClientApprovalController?
+    /// The second question, about mail, for clients already allowed to read the calendar.
+    private var mailApproval: MCPClientApprovalController?
+    private var mailUnansweredUntil: [String: Date] = [:]
     private var unansweredUntil: [String: Date] = [:]
 
     private init() {
@@ -97,6 +116,8 @@ final class MCPServerService: ObservableObject {
         isEnabled = settings.serverEnabled
         askNewClients = settings.askNewClients
         canCreateMeetings = settings.createMeetings
+        canReadMail = settings.mailRead
+        canSendMail = settings.mailRead && settings.mailSend
         settingsSnapshot = MCPSettingsSnapshot(settings)
     }
 
@@ -104,7 +125,9 @@ final class MCPServerService: ObservableObject {
         let settings = MCPSettings(
             serverEnabled: isEnabled,
             createMeetings: canCreateMeetings,
-            askNewClients: askNewClients
+            askNewClients: askNewClients,
+            mailRead: canReadMail,
+            mailSend: canReadMail && canSendMail
         )
         settingsSnapshot.update(settings)
         _ = MCPSettingsStore.shared.save(settings)
@@ -112,25 +135,37 @@ final class MCPServerService: ObservableObject {
 
     /// Starts listening. Called from the menu-bar label's `onAppear`, which runs at launch;
     /// later calls are no-ops.
-    func start(calendarService: CalendarService) {
+    func start(calendarService: CalendarService, mailService: MailService? = nil) {
         guard toolbox == nil else { return }
         MCPDebugLog.reset()
 
+        // One budget for every MCP request to Exchange, calendar and mail alike.
+        let accessGuard = MCPAccessGuard(calendarService: calendarService)
         let calendarTools = MCPCalendarTools(
             calendarService: calendarService,
+            accessGuard: accessGuard,
             isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled },
             canCreateMeetings: { [settingsSnapshot] in settingsSnapshot.current.createMeetings }
         )
-        toolbox = MCPToolbox(calendarTools: calendarTools) { tool, client, isError in
+        let mailTools = MCPMailTools(
+            calendarService: calendarService,
+            accessGuard: accessGuard,
+            handOff: { [weak mailService] request in mailService?.compose(request) },
+            canHandOff: { [weak mailService] in mailService?.settings.enabled ?? false },
+            isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled && settingsSnapshot.current.mailRead },
+            canSend: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailSend }
+        )
+        let toolbox = MCPToolbox(calendarTools: calendarTools, mailTools: mailTools, settings: settingsSnapshot) { tool, client, isError in
             MCPServerService.shared.record(tool: tool, client: client, isError: isError)
         }
+        self.toolbox = toolbox
         let info = Bundle.main.infoDictionary
         handler = MCPProtocolHandler(
             serverName: "owa-widget",
             serverTitle: "OWA Widget",
             serverVersion: (info?["CFBundleShortVersionString"] as? String) ?? "dev",
             instructions: MCPToolRegistry.instructions,
-            tools: MCPToolRegistry.tools
+            toolsProvider: { toolbox.tools }
         )
 
         verifier = MCPPeerVerifier.forCurrentApp(bridgePath: bridgePath)
@@ -142,6 +177,14 @@ final class MCPServerService: ObservableObject {
             MCPServerService.shared.unansweredUntil[key] = Date().addingTimeInterval(MCPServerService.unansweredQuestionCooldown)
         }
         self.approval = approval
+        let mailApproval = MCPClientApprovalController()
+        mailApproval.onDecision = { key, allowed in
+            MCPServerService.shared.setMailAccess(allowed ? .allowed : .denied, forKey: key)
+        }
+        mailApproval.onTimeout = { key in
+            MCPServerService.shared.mailUnansweredUntil[key] = Date().addingTimeInterval(MCPServerService.unansweredQuestionCooldown)
+        }
+        self.mailApproval = mailApproval
         knownClients = MCPKnownClientList.sorted(MCPKnownClientsStore.shared.load() ?? [])
 
         let bundleID = Bundle.main.bundleIdentifier ?? "com.owawidget.MacOwaWidget"
@@ -344,6 +387,46 @@ final class MCPServerService: ObservableObject {
         }
     }
 
+    /// `nil` when the client may use the mail tools; otherwise the error text it gets instead.
+    /// Asked after `authorize` let the call through: mail is a separate decision for every
+    /// client, whatever the "ask new clients" setting says.
+    func authorizeMail(_ clientID: UUID, tool: String) async -> String? {
+        guard canReadMail else { return MCPMailTools.disabledMessage }
+        guard let client = clients.first(where: { $0.id == clientID }),
+              let identity = client.identity, identity.isResolved else { return Self.unidentifiedMessage }
+        switch knownClients.first(where: { $0.key == identity.key })?.mailAccess {
+        case .allowed?:
+            return nil
+        case .denied?:
+            return Self.mailDeniedMessage
+        case .pending?, nil:
+            if let until = mailUnansweredUntil[identity.key], until > Date() { return Self.mailWaitingMessage }
+            guard let mailApproval, var request = approvalRequest(clientID) else { return Self.mailWaitingMessage }
+            request.forMail = true
+            request.canSendMail = canSendMail
+            updateKnownClients(MCPKnownClientList.setMailAccess(.pending, forKey: identity.key, in: knownClients))
+            switch await mailApproval.decision(for: request) {
+            case .allowed: return nil
+            case .denied: return Self.mailDeniedMessage
+            case .timedOut, .cancelled: return Self.mailWaitingMessage
+            }
+        }
+    }
+
+    func setMailAccess(_ access: MCPClientAccess?, forKey key: String) {
+        MCPDebugLog.log("set mail access \(access?.rawValue ?? "none"): \(key)")
+        updateKnownClients(MCPKnownClientList.setMailAccess(access, forKey: key, in: knownClients))
+        mailUnansweredUntil[key] = nil
+        if let access, access != .pending {
+            mailApproval?.resolve(key: key, allowed: access == .allowed)
+        }
+    }
+
+    static let mailDeniedMessage = "The user has not allowed this client to read their mail, so nothing was read. "
+        + "They can change that in OWA Widget → Settings → AI (MCP) → Clients."
+    static let mailWaitingMessage = "OWA Widget is asking the user whether this client may read their mail and has no answer yet, "
+        + "so nothing was read. Ask the user to answer the question in OWA Widget, then retry."
+
     /// Allow or deny from the client list; answers an open question about that client too.
     func setAccess(_ access: MCPClientAccess, forKey key: String) {
         MCPDebugLog.log("set access \(access.rawValue): \(key)")
@@ -393,6 +476,7 @@ final class MCPServerService: ObservableObject {
     func forgetKnownClient(_ key: String) {
         MCPDebugLog.log("forget client: \(key)")
         updateKnownClients(knownClients.filter { $0.key != key })
+        mailUnansweredUntil[key] = nil
         for index in clients.indices where clients[index].identity?.key == key {
             clients[index].isRecorded = false
         }
@@ -441,6 +525,10 @@ struct MCPGatedToolbox: MCPToolProviding {
 
     func callTool(name: String, arguments: [String: JSONValue], client: String?) async -> MCPToolResult {
         if let refusal = await MCPServerService.shared.authorize(clientID) {
+            await base.recordCall(name, client, true)
+            return .failure(refusal)
+        }
+        if MCPMailTools.toolNames.contains(name), let refusal = await MCPServerService.shared.authorizeMail(clientID, tool: name) {
             await base.recordCall(name, client, true)
             return .failure(refusal)
         }

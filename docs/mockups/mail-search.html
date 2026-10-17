@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Mail: search sketch</title>
+<link rel="stylesheet" href="mock.css"><link rel="stylesheet" href="mail.css">
+<style>body{width:1240px;height:800px}.stage{width:100%;height:100%}</style>
+</head><body><div class="stage" id="s"></div>
+<script src="mock.js"></script><script src="mail-mock.js"></script>
+<script>
+const q = L('релиз', 'release');
+// ExecuteSearch returns conversations from every folder; each row says where it lives.
+const results = [
+  { ...THREADS[0], folder: L('Входящие', 'Inbox') },
+  { from: PEOPLE.olga, s: L('Дата релиза 1.3 — пятница', 'Release 1.3 date — Friday'), t: L('Пн', 'Mon'), n: 2, folder: L('Релизы', 'Releases'),
+    p: L('Предлагаю зафиксировать дату релиза на пятницу и собрать чек-лист к среде.', 'Let’s lock Friday as the release date and have the checklist ready by Wednesday.') },
+  { from: PEOPLE.olga, s: L('Ретро релиза 1.2', 'Release 1.2 retro'), t: L('29 сент.', 'Sep 29'), n: 5, att: true, folder: L('Релизы', 'Releases'),
+    p: L('Что пошло не так с релизом 1.2 и что меняем в процессе.', 'What went wrong with release 1.2 and what we change in the process.') },
+  { from: PEOPLE.olga, s: L('Приглашение: планирование релиза', 'Invitation: release planning'), t: L('22 сент.', 'Sep 22'), n: 1, folder: L('Удалённые', 'Deleted'),
+    p: L('Ольга Васильева приглашает вас на встречу «Планирование релиза».', 'Grace Miller invited you to “Release planning”.') },
+];
+const list = `<div class="mw-list">
+  <div class="list-h">${L('Поиск', 'Search')}<span class="sub">${L('31 результат', '31 results')}</span><span class="spacer"></span>
+    <span class="seg" style="font-size:11px"><span>${L('Эта папка', 'This folder')}</span><span class="on">${L('Весь ящик', 'Mailbox')}</span></span></div>
+  <div class="filters">
+    <span class="chip2 on">${icon('person', 11)}${L('От:', 'From:')} ${PEOPLE.olga}${icon('xmark', 9, 'var(--fg2)', 2.6)}</span>
+    <span class="chip2">${icon('calendar', 11)}${L('Период: любой', 'Any time')}${icon('chevD', 8, 'var(--fg2)', 3)}</span>
+    <span class="chip2">${icon('clip', 11)}${L('С вложениями', 'Has attachments')}</span>
+  </div>
+  <div class="suggest">${L('Уточнить:', 'Refine:')}
+    <span class="chip2">${PEOPLE.dmitry} <i>12</i></span><span class="chip2">${PEOPLE.pavel} <i>7</i></span><span class="chip2">${L('Релизы', 'Releases')} <i>18</i></span></div>
+  ${results.map((t, i) => threadRow(t, { sel: i === 0, hl: q, folder: t.folder })).join('')}
+  <div class="list-foot">${icon('info', 11, 'var(--fg2)')}${L('Exchange отдаёт не больше 250 результатов. Уточните запрос, если нужного нет.', 'Exchange returns at most 250 results. Narrow the query if you can’t find it.')}</div></div>`;
+document.getElementById('s').innerHTML = mailWindow({ list, search: q, read: readingPane({ compact: true }) });
+</script>
+</body></html>

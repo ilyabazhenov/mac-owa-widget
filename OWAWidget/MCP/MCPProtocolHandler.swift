@@ -103,7 +103,28 @@ struct MCPProtocolHandler: Sendable {
     let serverTitle: String
     let serverVersion: String
     let instructions: String
-    let tools: [MCPToolDefinition]
+    /// Read on every `tools/list` and `tools/call`: the mail tools come and go with their switch.
+    let toolsProvider: @Sendable () -> [MCPToolDefinition]
+
+    var tools: [MCPToolDefinition] { toolsProvider() }
+
+    init(serverName: String, serverTitle: String, serverVersion: String, instructions: String, tools: [MCPToolDefinition]) {
+        self.init(serverName: serverName, serverTitle: serverTitle, serverVersion: serverVersion, instructions: instructions, toolsProvider: { tools })
+    }
+
+    init(
+        serverName: String,
+        serverTitle: String,
+        serverVersion: String,
+        instructions: String,
+        toolsProvider: @escaping @Sendable () -> [MCPToolDefinition]
+    ) {
+        self.serverName = serverName
+        self.serverTitle = serverTitle
+        self.serverVersion = serverVersion
+        self.instructions = instructions
+        self.toolsProvider = toolsProvider
+    }
 
     private var serverInfo: JSONValue {
         ["name": .string(serverName), "title": .string(serverTitle), "version": .string(serverVersion)]

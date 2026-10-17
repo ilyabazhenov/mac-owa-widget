@@ -47,6 +47,14 @@ enum AccountType: String, Codable, Sendable, CaseIterable {
         case .googleCalendar, .eventKit: false
         }
     }
+
+    /// Whether the account has an Exchange mailbox the mail window and MCP mail tools can read.
+    var supportsMail: Bool {
+        switch self {
+        case .owa: true
+        case .googleCalendar, .eventKit: false
+        }
+    }
 }
 
 struct CalendarAccount: Identifiable, Codable, Sendable, Hashable {

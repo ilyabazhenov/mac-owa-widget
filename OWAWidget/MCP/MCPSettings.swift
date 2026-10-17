@@ -14,6 +14,26 @@ struct MCPSettings: Codable, Equatable, Sendable {
     var createMeetings = false
     /// On by default: a client the user has not seen before reads nothing until they allow it.
     var askNewClients = true
+    /// Mail is a separate decision from the calendar, and each client is asked about it again.
+    var mailRead = false
+    /// Off by default: an email goes out only after the user confirms it in the app's panel.
+    var mailSend = false
+}
+
+extension MCPSettings {
+    private enum CodingKeys: String, CodingKey {
+        case serverEnabled, createMeetings, askNewClients, mailRead, mailSend
+    }
+
+    /// Settings saved before a switch existed lack its key: it takes its default (off).
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        serverEnabled = try container.decodeIfPresent(Bool.self, forKey: .serverEnabled) ?? false
+        createMeetings = try container.decodeIfPresent(Bool.self, forKey: .createMeetings) ?? false
+        askNewClients = try container.decodeIfPresent(Bool.self, forKey: .askNewClients) ?? true
+        mailRead = try container.decodeIfPresent(Bool.self, forKey: .mailRead) ?? false
+        mailSend = try container.decodeIfPresent(Bool.self, forKey: .mailSend) ?? false
+    }
 }
 
 enum MCPSettingsStore {
