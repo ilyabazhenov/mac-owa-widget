@@ -155,6 +155,16 @@ struct MCPMailConfirmationView: View {
     let onEdit: () -> Void
 
     @State private var armed = false
+    /// Seconds left before "Send" works. Every email waits: the pause is there to make the
+    /// recipients and text get read, not to judge which email is risky.
+    @State private var sendCountdown = Self.sendDelaySeconds
+
+    static let sendDelaySeconds = 3
+
+    /// "Send · 3" while counting down, "Send" once it can be pressed.
+    static func sendLabel(remaining: Int, localization: LocalizationService) -> String {
+        remaining > 0 ? localization.tr("mcp.mail.confirm.sendIn", remaining) : localization.tr("mcp.mail.confirm.send")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -225,8 +235,16 @@ struct MCPMailConfirmationView: View {
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
         .task(id: shownAt) {
             armed = false
+            sendCountdown = Self.sendDelaySeconds
+            let start = ContinuousClock.now
             try? await Task.sleep(for: MCPClientApprovalView.armingDelay)
+            guard !Task.isCancelled else { return }
             armed = true
+            for remaining in stride(from: Self.sendDelaySeconds - 1, through: 0, by: -1) {
+                try? await Task.sleep(until: start + .seconds(Self.sendDelaySeconds - remaining), clock: .continuous)
+                guard !Task.isCancelled else { return }
+                sendCountdown = remaining
+            }
         }
     }
 
@@ -324,10 +342,18 @@ struct MCPMailConfirmationView: View {
                 .keyboardShortcut(.cancelAction)
                 .fixedSize()
             // No default-action shortcut: a stray Return must not send mail.
-            Button(localization.tr("mcp.mail.confirm.send"), action: onConfirm)
+            Button(action: onConfirm) {
+                // The widest label sizes the button, so the countdown does not make it jump.
+                ZStack {
+                    Text(Self.sendLabel(remaining: Self.sendDelaySeconds, localization: localization)).hidden()
+                    Text(Self.sendLabel(remaining: sendCountdown, localization: localization))
+                }
+                .monospacedDigit()
+            }
                 .buttonStyle(.borderedProminent)
                 .tint(proposal.hasExternalRecipients || proposal.hasNewRecipients ? .orange : .accentColor)
-                .disabled(!armed)
+                .disabled(sendCountdown > 0)
+                .help(sendCountdown > 0 ? localization.tr("mcp.mail.confirm.wait") : "")
                 .fixedSize()
         }
         .padding(.horizontal, 16)

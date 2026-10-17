@@ -626,7 +626,7 @@
 "mcp.mail.read" = "Let AI assistants read mail";
 "mcp.mail.read.description" = "Folders, lists, conversations and search. Each client is asked separately the first time. Assistants change nothing in the mailbox: no read marks, moves or deletions.";
 "mcp.mail.send" = "Let assistants prepare emails";
-"mcp.mail.send.description" = "An email goes out only after you press Send in OWA Widget’s window; external and new recipients are highlighted. At most 5 per hour.";
+"mcp.mail.send.description" = "An email goes out only after you press Send in OWA Widget’s window; the button works after 3 seconds, external and new recipients are highlighted. At most 5 per hour.";
 "mcp.mail.warning" = "Message text goes to the AI assistant you connected. Make sure your organization allows it.";
 "mcp.clients.mail.allowed" = "mail";
 "mcp.clients.mail.denied" = "no mail";
@@ -719,3 +719,5 @@
 "mail.digest.unread" = "Unread from people";
 "mail.digest.awaiting" = "Waiting for your reply";
 "mail.digest.folders" = "Unread in folders";
+"mcp.mail.confirm.sendIn" = "Send · %d";
+"mcp.mail.confirm.wait" = "The button works in a few seconds: check the recipients and text";

@@ -184,3 +184,14 @@ final class MailFolderCountsTests: XCTestCase {
         XCTAssertEqual(model.folders.first { $0.id == "INBOX" }?.unreadCount, 1, "other folders untouched")
     }
 }
+
+@MainActor
+final class MailSendCountdownTests: XCTestCase {
+    func testSendLabelCountsDown() {
+        let localization = LocalizationService(selectedLanguage: .russian)
+        XCTAssertEqual(MCPMailConfirmationView.sendDelaySeconds, 3)
+        XCTAssertEqual(MCPMailConfirmationView.sendLabel(remaining: 3, localization: localization), "Отправить · 3")
+        XCTAssertEqual(MCPMailConfirmationView.sendLabel(remaining: 1, localization: localization), "Отправить · 1")
+        XCTAssertEqual(MCPMailConfirmationView.sendLabel(remaining: 0, localization: localization), "Отправить")
+    }
+}
