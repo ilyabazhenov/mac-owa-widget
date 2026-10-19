@@ -580,6 +580,8 @@
 "mail.compose.title.forward" = "Пересылка";
 "mail.compose.to" = "Кому";
 "mail.compose.cc" = "Копия";
+"mail.compose.moreRecipients" = "ещё %d";
+"mail.compose.moreRecipients.help" = "Показать всех получателей";
 "mail.compose.subject" = "Тема";
 "mail.compose.searchingPeople" = "Ищу в адресной книге…";
 "mail.compose.noPeople" = "В адресной книге никого не нашлось";
@@ -747,3 +749,24 @@
 "mail.window.stale.failed" = "Не удалось обновить список — показано то, что было загружено %@";
 "mail.window.stale.at" = "в %@";
 "mail.window.stale.atDay" = "%@ в %@";
+
+/* Text formatting */
+"richtext.bold" = "Жирный";
+"richtext.italic" = "Курсив";
+"richtext.underline" = "Подчёркнутый";
+"richtext.strikethrough" = "Зачёркнутый";
+"richtext.bulletList" = "Маркированный список";
+"richtext.numberedList" = "Нумерованный список";
+"richtext.outdent" = "Уровень списка выше";
+"richtext.indent" = "Уровень списка ниже";
+"richtext.link" = "Ссылка";
+"richtext.link.title" = "Ссылка";
+"richtext.link.placeholder" = "https://… или name@company.ru";
+"richtext.link.invalid" = "Введите адрес сайта или почты.";
+"richtext.link.apply" = "Готово";
+"richtext.link.remove" = "Убрать ссылку";
+"richtext.link.cancel" = "Отменить";
+"mail.compose.original.show" = "Показать письмо";
+"mail.compose.original.hide" = "Свернуть письмо";
+"mail.reading.lightBackground" = "Светлый фон";
+"mail.reading.darkBackground" = "Тёмный фон";

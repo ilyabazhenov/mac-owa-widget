@@ -149,7 +149,7 @@ actor FakeMailProvider: MailProvider {
             to: outgoing.to.map { MailAddress(name: $0, email: $0) } + draftExtraRecipients,
             cc: outgoing.cc.map { MailAddress(name: $0, email: $0) }, bcc: [],
             hiddenRecipientCount: draftHiddenRecipients, received: nil, sent: nil, isRead: true, isDraft: true, importance: .normal,
-            bodyHTML: outgoing.body, preview: "", attachments: [], categories: [], isFlagged: false,
+            bodyHTML: outgoing.body.plainText, preview: "", attachments: [], categories: [], isFlagged: false,
             actions: [], meeting: nil, internetMessageID: nil
         )
     }

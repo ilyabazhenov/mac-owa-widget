@@ -141,7 +141,7 @@ final class OWAMailPayloadsTests: XCTestCase {
         XCTAssertTrue(soap.contains(#"<t:DistinguishedFolderId Id="sentitems"/>"#))
         XCTAssertTrue(soap.contains("<t:ReplyAllToItem>"))
         XCTAssertTrue(soap.contains(#"<t:ReferenceItemId Id="ID&amp;1" ChangeKey="CK&quot;2"/>"#))
-        XCTAssertTrue(soap.contains("Hi &lt;team&gt;<br><br>Thanks &amp; bye ]]&gt;"))
+        XCTAssertTrue(soap.contains("<div>Hi &lt;team&gt;</div><div><br></div><div>Thanks &amp; bye ]]&gt;</div>"))
         XCTAssertFalse(soap.contains("<t:Subject>"), "an empty subject keeps the server's RE:")
         // Schema order: recipients before the reference, the reference before the new body.
         let to = soap.range(of: "<t:ToRecipients>")!.lowerBound

@@ -815,7 +815,7 @@ final class CalendarService: ObservableObject {
 
     func createMeeting(
         title: String,
-        agenda: String,
+        agenda: RichText,
         location: String = "",
         slot: FreeSlot,
         requiredAttendees: [ResolvedAttendee],

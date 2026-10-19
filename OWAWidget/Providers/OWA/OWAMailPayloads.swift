@@ -435,34 +435,14 @@ enum OWAMailPayloads {
 
     // MARK: - Sending (EWS SOAP)
 
-    /// Plain text typed by the user, as the HTML body of an outgoing message. Every line is
-    /// escaped; nothing the user typed is interpreted as markup. Each U+FFFC becomes the next of
+    /// The text typed by the user, as the HTML body of an outgoing message (`RichTextHTML`):
+    /// nothing the user typed is interpreted as markup. Each U+FFFC becomes the next of
     /// `inlineImages` by its `cid:`; one with no picture left is dropped.
-    static func outgoingBodyHTML(plainText: String, inlineImages: [MailInlineImage] = []) -> String {
-        let lines = plainText
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { escapeHTML(String($0)) }
-        var images = inlineImages.makeIterator()
-        let joined = lines.joined(separator: "<br>")
-            .split(separator: MailInlineImage.placeholder, omittingEmptySubsequences: false)
-            .map(String.init)
-            .reduce(nil as String?) { html, part in
-                guard let html else { return part }
-                guard let image = images.next() else { return html + part }
-                let tag = "<img src=\"cid:\(escapeHTML(image.contentID))\" alt=\"\(escapeHTML(image.name))\" style=\"max-width: 100%;\">"
-                return html + tag + part
-            } ?? ""
-        let inner = joined.isEmpty ? "<br>" : joined
+    static func outgoingBodyHTML(_ body: RichText, inlineImages: [MailInlineImage] = []) -> String {
+        let fragment = RichTextHTML.fragment(body, inlineImages: inlineImages)
+        let inner = fragment == "<div><br></div>" ? "<br>" : fragment
         return "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head>"
             + "<body dir=\"auto\"><div style=\"font-family: Calibri, Arial, sans-serif; font-size: 11pt;\">\(inner)</div></body></html>"
-    }
-
-    static func escapeHTML(_ s: String) -> String {
-        s.replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
     }
 
     private static func recipientsXML(_ element: String, _ addresses: [String]) -> String {
@@ -481,7 +461,7 @@ enum OWAMailPayloads {
     static func createMessageSOAP(_ outgoing: MailOutgoing) -> String {
         let disposition = outgoing.send ? "SendAndSaveCopy" : "SaveOnly"
         let savedFolder = outgoing.send ? "sentitems" : "drafts"
-        let html = outgoingBodyHTML(plainText: outgoing.body, inlineImages: outgoing.inlineImages).replacingOccurrences(of: "]]>", with: "]] >")
+        let html = outgoingBodyHTML(outgoing.body, inlineImages: outgoing.inlineImages).replacingOccurrences(of: "]]>", with: "]] >")
         let subject = outgoing.subject.trimmingCharacters(in: .whitespacesAndNewlines)
         let subjectXML = subject.isEmpty ? "" : "<t:Subject>\(OWACreateCalendarEventPayload.escapeXML(subject))</t:Subject>"
         let recipients = recipientsXML("ToRecipients", outgoing.to) + recipientsXML("CcRecipients", outgoing.cc)

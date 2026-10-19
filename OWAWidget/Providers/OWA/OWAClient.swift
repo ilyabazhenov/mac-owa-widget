@@ -1330,7 +1330,7 @@ actor OWAClient {
 
     func createCalendarEvent(
         title: String,
-        agenda: String,
+        agenda: RichText,
         location: String = "",
         start: Date,
         end: Date,
@@ -1353,7 +1353,7 @@ actor OWAClient {
 
     private func createCalendarEvent(
         title: String,
-        agenda: String,
+        agenda: RichText,
         location: String,
         start: Date,
         end: Date,

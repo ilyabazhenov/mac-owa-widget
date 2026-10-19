@@ -431,9 +431,9 @@ struct MailOutgoing: Sendable, Equatable {
     var to: [String]
     var cc: [String]
     var subject: String
-    /// Plain text typed by the user; sent as escaped HTML. Each U+FFFC marks where the next of
-    /// `inlineImages` goes, as in the editor's text.
-    var body: String
+    /// The text typed by the user, sent as HTML (`RichTextHTML`). Each U+FFFC marks where the
+    /// next of `inlineImages` goes, as in the editor's text.
+    var body: RichText
     /// `false` keeps it in Drafts instead of sending.
     var send: Bool = true
     /// Pictures pasted into the text, in order: inline attachments referenced by `cid:`.

@@ -22,7 +22,7 @@ final class MailComposeModel: ObservableObject {
     @Published var toInput = ""
     @Published var ccInput = ""
     @Published var subject: String
-    @Published var body: String
+    @Published var body: RichText
     /// Pictures pasted into `body`, in the order of its U+FFFC marks.
     @Published var bodyImages: [MailInlineImage] = []
     @Published private(set) var phase: Phase = .editing
@@ -34,6 +34,9 @@ final class MailComposeModel: ObservableObject {
     @Published private(set) var isSearchingPeople = false
     /// The last search for this text came back empty: said so, or the field looks dead.
     @Published private(set) var foundNoPeople = false
+    /// Names for the addresses in the fields, by lowercased address: the original's people and
+    /// the ones picked from the directory. A typed address has none.
+    @Published private(set) var names: [String: String] = [:]
 
     enum Field { case to, cc }
 
@@ -49,8 +52,15 @@ final class MailComposeModel: ObservableObject {
         to = request.to
         cc = request.cc
         subject = request.subject
-        body = request.body
+        body = RichText(plain: request.body)
         defaultSubject = request.subject
+        if let original = request.original {
+            for person in [original.from].compactMap({ $0 }) + original.to + original.cc + original.bcc {
+                guard let email = person.email, !person.name.contains("@") else { continue }
+                let name = person.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty { names[email.lowercased()] = name }
+            }
+        }
     }
 
     var isLocked: Bool {
@@ -107,9 +117,66 @@ final class MailComposeModel: ObservableObject {
 
     func pick(_ person: ResolvedAttendee) {
         let field = suggestionField ?? .to
+        if !person.displayName.isEmpty, !person.displayName.contains("@") { names[person.email.lowercased()] = person.displayName }
         add(person.email, to: field)
         if field == .to { toInput = "" } else { ccInput = "" }
         dismissSuggestions()
+    }
+
+    // MARK: - Chips
+
+    /// Chips a field shows while it is not being edited; the rest hide behind "N more".
+    static let collapsedChipLimit = 8
+
+    /// The chips of a field that is not being edited: the first `limit`, plus every flagged
+    /// (external, invalid) address wherever it is — those never hide behind "N more" — in the
+    /// field's order, and how many are left out. One left out would cost as much room as it saves.
+    static func collapsed(_ list: [String], limit: Int, flagged: (String) -> Bool) -> (shown: [String], hidden: Int) {
+        guard list.count > limit + 1 else { return (list, 0) }
+        var room = max(limit - list.filter(flagged).count, 0)
+        let shown = list.filter { address in
+            if flagged(address) { return true }
+            guard room > 0 else { return false }
+            room -= 1
+            return true
+        }
+        return (shown, list.count - shown.count)
+    }
+
+    func collapsed(_ field: Field) -> (shown: [String], hidden: Int) {
+        Self.collapsed(field == .to ? to : cc, limit: Self.collapsedChipLimit) { [service] address in
+            service.isExternal(address) || !MCPCalendarTools.isEmailAddress(address)
+        }
+    }
+
+    func chipLabel(_ address: String) -> String {
+        Self.chipLabel(address, name: names[address.lowercased()], ownDomain: service.ownDomain)
+    }
+
+    /// What a chip says: the person's name, short; without one, the address — for the user's own
+    /// domain only the part before @, the same on every chip otherwise.
+    static func chipLabel(_ address: String, name: String?, ownDomain: String?) -> String {
+        if let name, !name.contains("@") {
+            let short = shortName(name)
+            if !short.isEmpty { return short }
+        }
+        if let domain = ownDomain, let at = address.lastIndex(of: "@"), at > address.startIndex,
+           address[address.index(after: at)...].lowercased() == domain {
+            return String(address[..<at])
+        }
+        return address
+    }
+
+    /// "Попов Александр Васильевич" → "Попов Александр": the patronymic only takes room. Other
+    /// names stay whole.
+    static func shortName(_ name: String) -> String {
+        let words = name.split(whereSeparator: \.isWhitespace).map(String.init)
+        let cyrillic = { (word: String) in word.unicodeScalars.allSatisfy { (0x0400...0x04FF).contains($0.value) || $0 == "-" } }
+        if words.count == 3, words.allSatisfy(cyrillic),
+           ["ич", "вна", "чна"].contains(where: { words[2].lowercased().hasSuffix($0) }) {
+            return words.prefix(2).joined(separator: " ")
+        }
+        return words.joined(separator: " ")
     }
 
     /// Whether the dropdown under `field` has anything to show: people, a search under way, or
@@ -295,6 +362,13 @@ struct MailComposeView: View {
     @EnvironmentObject private var localization: LocalizationService
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: FocusedField?
+    @StateObject private var editorController = RichTextEditorController()
+    @State private var originalHeight: CGFloat = 80
+    @State private var showsOriginal = true
+    /// The recipient field shown in full: the one being edited, or opened with "N more". Kept
+    /// apart from the focus: the text editor is AppKit, and moving into it leaves the SwiftUI
+    /// focus where it was.
+    @State private var expandedField: MailComposeModel.Field?
 
     private enum FocusedField: Hashable { case recipients(MailComposeModel.Field), subject }
 
@@ -321,6 +395,17 @@ struct MailComposeView: View {
         }
     }
 
+    /// The message replied to, as the reader shows it: no scripts, no remote images. Links do
+    /// nothing here; the reader is where to follow them. Long ones scroll in a box of their own.
+    private func originalView(_ document: String) -> some View {
+        ScrollView {
+            MailMessageWebView(html: document, height: $originalHeight, copyTitle: localization.tr("mail.action.copy")) { _ in }
+                .frame(height: originalHeight)
+        }
+        .frame(height: min(max(originalHeight, 40), 240))
+        .padding(.top, 4)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             recipientRow(localization.tr("mail.compose.to"), field: .to, list: model.to, input: $model.toInput)
@@ -335,6 +420,13 @@ struct MailComposeView: View {
             .font(.system(size: 13))
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
+            Divider()
+            RichTextToolbar(controller: editorController)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .opacity(model.isLocked ? 0.55 : 1)
+                .disabled(model.isLocked)
             Divider()
             VStack(alignment: .leading, spacing: 8) {
                 if model.service.ownDomain == nil, !model.allRecipients.isEmpty {
@@ -355,13 +447,37 @@ struct MailComposeView: View {
                     ))
                 }
                 // Moving into the text closes a recipient dropdown, as moving to another field does.
-                MailComposeBodyEditor(text: $model.body, images: $model.bodyImages, onFocus: model.dismissSuggestions)
+                RichTextEditor(text: $model.body, images: $model.bodyImages, controller: editorController, onFocus: {
+                    model.dismissSuggestions()
+                    expandedField = nil
+                    // Or a click back into the same recipient field would change nothing.
+                    focusedField = nil
+                })
                     .frame(maxHeight: .infinity)
                 if let original = model.request.original, model.request.kind != .new {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(localization.tr("mail.compose.quoted", original.from?.displayName ?? "", MailPresentation.fullTime(original.received, localization: localization)))
-                            .font(.system(size: 11, weight: .medium))
-                        Text(original.preview).font(.system(size: 11)).lineLimit(3)
+                        HStack(spacing: 6) {
+                            Text(localization.tr("mail.compose.quoted", original.from?.displayName ?? "", MailPresentation.fullTime(original.received, localization: localization)))
+                                .font(.system(size: 11, weight: .medium))
+                                .lineLimit(1)
+                            if model.request.originalDocument != nil {
+                                Button {
+                                    showsOriginal.toggle()
+                                } label: {
+                                    Image(systemName: showsOriginal ? "chevron.down" : "chevron.right")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .frame(width: 18, height: 16)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .help(localization.tr(showsOriginal ? "mail.compose.original.hide" : "mail.compose.original.show"))
+                            }
+                        }
+                        if let document = model.request.originalDocument {
+                            if showsOriginal { originalView(document) }
+                        } else {
+                            Text(original.preview).font(.system(size: 11)).lineLimit(3)
+                        }
                         if model.request.kind == .forward, !original.visibleAttachments.isEmpty {
                             Label(localization.tr("mail.compose.forwardAttachments", original.visibleAttachments.map(\.name).joined(separator: ", ")), systemImage: "paperclip")
                                 .font(.system(size: 11))
@@ -386,6 +502,7 @@ struct MailComposeView: View {
             if case .done = phase { dismiss() }
         }
         .onChange(of: focusedField) { focused in
+            if case .recipients(let field) = focused { expandedField = field } else if focused != nil { expandedField = nil }
             // Moving to another field closes the dropdown. Losing focus altogether does not:
             // a click on a suggestion may be what took it.
             guard let focused, focused != model.suggestionField.map(FocusedField.recipients) else { return }
@@ -412,21 +529,28 @@ struct MailComposeView: View {
     private func recipientRow(_ label: String, field: MailComposeModel.Field, list: [String], input: Binding<String>) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(label).foregroundStyle(.secondary).frame(width: labelColumnWidth, alignment: .leading)
+            // A long reply-all list folds to its first chips while the field is not being edited,
+            // so the text keeps its room; focus in the field shows everyone.
+            let editing = expandedField == field || model.showsSuggestions(for: field)
+            let (shown, hidden) = editing ? (list, 0) : model.collapsed(field)
             FlowRow(spacing: 5) {
-                ForEach(list, id: \.self) { address in
-                    let external = model.service.isExternal(address)
-                    let invalid = !MCPCalendarTools.isEmailAddress(address)
-                    HStack(spacing: 4) {
-                        Text(address).font(.system(size: 12))
-                        Button { model.remove(address) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
-                            .buttonStyle(.mailIconCompact)
-                            .foregroundStyle(.secondary)
+                ForEach(shown, id: \.self) { address in
+                    recipientChip(address)
+                }
+                if hidden > 0 {
+                    Button {
+                        expandedField = field
+                        focusedField = .recipients(field)
+                    } label: {
+                        Text(localization.tr("mail.compose.moreRecipients", hidden))
+                            .font(.system(size: 12, weight: .medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.secondary.opacity(0.14)))
+                            .contentShape(Capsule())
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill((invalid ? Color.red : external ? Color.orange : Color.accentColor).opacity(0.16)))
-                    .overlay(Capsule().strokeBorder(external || invalid ? (invalid ? Color.red : Color.orange).opacity(0.5) : .clear, lineWidth: 1))
-                    .help(external ? localization.tr("mail.external") : address)
+                    .buttonStyle(.plain)
+                    .help(localization.tr("mail.compose.moreRecipients.help"))
                 }
                 TextField("", text: input)
                     .textFieldStyle(.plain)
@@ -441,6 +565,31 @@ struct MailComposeView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .disabled(model.isLocked)
+    }
+
+    /// A recipient by name, or by the part before @ in the user's own domain; the whole address
+    /// is in the tooltip. External ones are orange, unusable ones red.
+    private func recipientChip(_ address: String) -> some View {
+        let external = model.service.isExternal(address)
+        let invalid = !MCPCalendarTools.isEmailAddress(address)
+        let name = model.names[address.lowercased()]
+        var tooltip = name.map { "\($0) <\(address)>" } ?? address
+        if external { tooltip += " — " + localization.tr("mail.external") }
+        return HStack(spacing: 4) {
+            Text(model.chipLabel(address))
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 260)
+            Button { model.remove(address) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
+                .buttonStyle(.mailIconCompact)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+        .background(Capsule().fill((invalid ? Color.red : external ? Color.orange : Color.accentColor).opacity(0.16)))
+        .overlay(Capsule().strokeBorder(external || invalid ? (invalid ? Color.red : Color.orange).opacity(0.5) : .clear, lineWidth: 1))
+        .help(tooltip)
     }
 
     /// The divider under a recipient row carries that row's dropdown: hung from the divider's top

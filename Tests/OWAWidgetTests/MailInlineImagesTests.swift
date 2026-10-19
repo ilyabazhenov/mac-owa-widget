@@ -22,20 +22,20 @@ final class MailInlineImagesTests: XCTestCase {
 
     func testBodyHTMLPutsPicturesWhereTheMarksAre() {
         let html = OWAMailPayloads.outgoingBodyHTML(
-            plainText: "Look <here>:\n\u{FFFC}\nand \u{FFFC} done\u{FFFC}",
+            RichText(plain: "Look <here>:\n\u{FFFC}\nand \u{FFFC} done\u{FFFC}"),
             inlineImages: [image("a@x"), image("b\"@x")]
         )
-        XCTAssertTrue(html.contains(#"Look &lt;here&gt;:<br><img src="cid:a@x" alt="a@x.png" style="max-width: 100%;"><br>and <img src="cid:b&quot;@x""#))
+        XCTAssertTrue(html.contains(#"<div>Look &lt;here&gt;:</div><div><img src="cid:a@x" alt="a@x.png" style="max-width: 100%;"></div><div>and <img src="cid:b&quot;@x""#))
         XCTAssertTrue(html.contains(" done</div>"), "a mark with no picture left is dropped")
         XCTAssertFalse(html.contains("\u{FFFC}"))
     }
 
     func testBodyHTMLWithoutPicturesIsUnchanged() {
         XCTAssertEqual(
-            OWAMailPayloads.outgoingBodyHTML(plainText: "a\nb"),
-            OWAMailPayloads.outgoingBodyHTML(plainText: "a\nb", inlineImages: [])
+            OWAMailPayloads.outgoingBodyHTML("a\nb"),
+            OWAMailPayloads.outgoingBodyHTML("a\nb", inlineImages: [])
         )
-        XCTAssertTrue(OWAMailPayloads.outgoingBodyHTML(plainText: "\u{FFFC}").contains("<div style=\"font-family: Calibri, Arial, sans-serif; font-size: 11pt;\"><br></div>"))
+        XCTAssertTrue(OWAMailPayloads.outgoingBodyHTML("\u{FFFC}").contains("<div style=\"font-family: Calibri, Arial, sans-serif; font-size: 11pt;\"><br></div>"))
     }
 
     func testCreateAttachmentSOAPAttachesInlineFiles() {
@@ -61,17 +61,17 @@ final class MailInlineImagesTests: XCTestCase {
 
     func testEditorContentRoundTrips() {
         let images = [image("a"), image("b")]
-        let text = "one \u{FFFC}\ntwo\u{FFFC}"
-        let attributed = MailComposeBodyEditor.attributedString(text: text, images: images)
-        let content = MailComposeBodyEditor.content(of: attributed)
+        let text = RichText(plain: "one \u{FFFC}\ntwo\u{FFFC}")
+        let attributed = RichTextAttributed.attributedString(text, images: images, base: RichTextEditor.font)
+        let content = RichTextAttributed.richText(from: attributed)
         XCTAssertEqual(content.text, text)
         XCTAssertEqual(content.images, images)
     }
 
     func testEditorDropsMarksWithoutPictures() {
-        let attributed = MailComposeBodyEditor.attributedString(text: "a\u{FFFC}b\u{FFFC}", images: [image("x")])
-        let content = MailComposeBodyEditor.content(of: attributed)
-        XCTAssertEqual(content.text, "a\u{FFFC}b")
+        let attributed = RichTextAttributed.attributedString("a\u{FFFC}b\u{FFFC}", images: [image("x")], base: RichTextEditor.font)
+        let content = RichTextAttributed.richText(from: attributed)
+        XCTAssertEqual(content.text.text, "a\u{FFFC}b")
         XCTAssertEqual(content.images.map(\.contentID), ["x"])
     }
 
@@ -83,16 +83,28 @@ final class MailInlineImagesTests: XCTestCase {
         XCTAssertNotNil(NSBitmapImageRep(data: pasted.data))
     }
 
-    func testRichTextKeepsPicturesAndDropsStyles() throws {
+    func testPastedRichTextKeepsPicturesAndBoldAndDropsSizes() throws {
         let source = NSMutableAttributedString(string: "Hi ", attributes: [.font: NSFont.boldSystemFont(ofSize: 20)])
         let wrapper = FileWrapper(regularFileWithContents: png())
         wrapper.preferredFilename = "chart.png"
         source.append(NSAttributedString(attachment: NSTextAttachment(fileWrapper: wrapper)))
-        source.append(NSAttributedString(string: " there"))
-        let content = try XCTUnwrap(MailPastedImages.plainWithPictures(source))
-        let parsed = MailComposeBodyEditor.content(of: content)
-        XCTAssertEqual(parsed.text, "Hi \u{FFFC} there")
+        source.append(NSAttributedString(string: " there", attributes: [.font: NSFont.systemFont(ofSize: 20), .foregroundColor: NSColor.red]))
+        let parsed = RichTextAttributed.richText(from: source, pasted: true)
+        XCTAssertEqual(parsed.text.text, "Hi \u{FFFC} there")
+        XCTAssertEqual(parsed.text.blocks[0].runs.first?.style, .bold)
         XCTAssertEqual(parsed.images.map(\.name), ["chart.png"])
-        XCTAssertNil(MailPastedImages.plainWithPictures(NSAttributedString(string: "plain")))
+        let shown = RichTextAttributed.attributedString(parsed.text, images: parsed.images, base: RichTextEditor.font)
+        let font = try XCTUnwrap(shown.attribute(.font, at: shown.length - 1, effectiveRange: nil) as? NSFont)
+        XCTAssertEqual(font.pointSize, RichTextEditor.font.pointSize)
+    }
+
+    func testPastedPicturesAreDroppedWhereThereAreNone() {
+        let source = NSMutableAttributedString(string: "a")
+        let wrapper = FileWrapper(regularFileWithContents: png())
+        wrapper.preferredFilename = "chart.png"
+        source.append(NSAttributedString(attachment: NSTextAttachment(fileWrapper: wrapper)))
+        let parsed = RichTextAttributed.richText(from: source, allowsImages: false, pasted: true)
+        XCTAssertEqual(parsed.text.text, "a")
+        XCTAssertTrue(parsed.images.isEmpty)
     }
 }

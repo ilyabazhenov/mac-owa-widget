@@ -60,7 +60,7 @@ actor OWACalendarProvider: CalendarProvider {
 
     func createMeeting(
         title: String,
-        agenda: String,
+        agenda: RichText,
         location: String,
         start: Date,
         end: Date,

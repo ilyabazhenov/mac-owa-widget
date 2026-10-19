@@ -478,7 +478,7 @@ final class CreateMeetingViewModel: ObservableObject {
     var canReplaceDraftSilently: Bool {
         if successMessage != nil { return true }
         return draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && draft.agenda.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && draft.agenda.isBlank
             && draft.allAttendees.isEmpty
     }
 

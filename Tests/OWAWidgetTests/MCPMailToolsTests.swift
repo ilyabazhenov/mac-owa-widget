@@ -95,7 +95,7 @@ final class MCPMailToolsTests: XCTestCase {
                 to: outgoing.to.map { MailAddress(name: $0, email: $0) } + draftExtraTo,
                 cc: outgoing.cc.map { MailAddress(name: $0, email: $0) }, bcc: [],
                 hiddenRecipientCount: 0, received: nil, sent: nil, isRead: true, isDraft: true, importance: .normal,
-                bodyHTML: outgoing.body, preview: "", attachments: outgoing.kind == .forward ? (original?.attachments ?? []) : [],
+                bodyHTML: outgoing.body.plainText, preview: "", attachments: outgoing.kind == .forward ? (original?.attachments ?? []) : [],
                 categories: [], isFlagged: false, actions: [], meeting: nil, internetMessageID: nil
             )
         }

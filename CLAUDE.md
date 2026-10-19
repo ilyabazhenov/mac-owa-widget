@@ -15,7 +15,7 @@ OWAWidget — macOS menu bar приложение на Swift 6 и SwiftUI для
 
 - `OWAWidget/Services/` — сервисы состояния, синхронизации, уведомлений и keychain.
 - `OWAWidget/Providers/` — календарные провайдеры (OWA и будущие интеграции).
-- `OWAWidget/Views/` — SwiftUI интерфейс popover и настроек; `Views/Mail/` — окно почты и окно ответа.
+- `OWAWidget/Views/` — SwiftUI интерфейс popover и настроек; `Views/Mail/` — окно почты и окно ответа; `Views/RichText/` — редактор с форматированием (письмо и повестка встречи).
 - `OWAWidget/MCP/`, `OWAWidgetMCPBridge/`, `OWAWidgetMCPShared/` — MCP-сервер для AI-ассистентов и stdio-мост к нему. Календарь, адресная книга и почта только читаются; мутирующие инструменты `create_meeting` и `prepare_mail` подтверждаются в окне приложения.
 
 ## Базовые команды

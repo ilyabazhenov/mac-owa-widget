@@ -269,9 +269,14 @@ struct MailMessageCard: View {
     @ObservedObject var service: MailService
     let message: MailMessage
     @EnvironmentObject private var localization: LocalizationService
+    @Environment(\.colorScheme) private var colorScheme
     @State private var bodyHeight: CGFloat = 60
 
     private var isExpanded: Bool { model.expandedMessageIDs.contains(message.id) }
+
+    private var readerDocument: MailReaderDocument? {
+        model.readerDocument(for: message, darkTheme: colorScheme == .dark)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -392,9 +397,13 @@ struct MailMessageCard: View {
             default:
                 webBody
             }
-            let offersImages = (model.readerDocument(for: message)?.hasRemoteImages ?? false) && model.remoteImages[message.id] == nil
+            let document = readerDocument
+            let offersImages = (document?.hasRemoteImages ?? false) && model.remoteImages[message.id] == nil
             let offersQuoted = model.fullBodies[message.id] == nil && message.kind.hasReadableBody && (model.thread?.messages.count ?? 0) > 1
-            if offersImages || offersQuoted {
+            // In a dark theme: back to white for a message shown dark, and dark again after that.
+            let switchedToLight = model.lightBackground.contains(message.id)
+            let offersBackground = colorScheme == .dark && (document?.isDark == true || switchedToLight)
+            if offersImages || offersQuoted || offersBackground {
             HStack(spacing: 12) {
                 if offersImages {
                     Button {
@@ -412,6 +421,16 @@ struct MailMessageCard: View {
                         pendingLabel(localization.tr("mail.reading.showQuoted"), icon: "text.quote", isPending: model.isPending(.fullBody(message.id)))
                     }
                     .disabled(model.isPending(.fullBody(message.id)))
+                }
+                if offersBackground {
+                    Button {
+                        if switchedToLight { model.lightBackground.remove(message.id) } else { model.lightBackground.insert(message.id) }
+                    } label: {
+                        pendingLabel(
+                            localization.tr(switchedToLight ? "mail.reading.darkBackground" : "mail.reading.lightBackground"),
+                            icon: switchedToLight ? "moon" : "sun.max", isPending: false
+                        )
+                    }
                 }
             }
             .buttonStyle(.mailIcon)
@@ -443,7 +462,7 @@ struct MailMessageCard: View {
     @ViewBuilder
     private var webBody: some View {
         if model.fullBodies[message.id] ?? message.bodyHTML != nil {
-            if let document = model.readerDocument(for: message) {
+            if let document = readerDocument {
                 if !document.isVisuallyEmpty { bodyView(document.html) }
             } else {
                 bodyPlaceholder

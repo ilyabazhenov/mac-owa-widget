@@ -108,7 +108,7 @@ enum AttendeeKind: Sendable, Hashable {
 
 struct MeetingDraft: Sendable {
     var title: String = ""
-    var agenda: String = ""
+    var agenda: RichText = .empty
     var location: String = ""
     var requiredAttendees: [ResolvedAttendee] = []
     var optionalAttendees: [ResolvedAttendee] = []

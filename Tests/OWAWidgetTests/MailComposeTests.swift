@@ -43,6 +43,20 @@ final class MailComposeTests: XCTestCase {
         XCTAssertEqual(forward.subject, "FW: Release 1.3")
     }
 
+    func testReplyAllToANoteToSelfGoesBackToTheUser() {
+        let base = original()
+        let note = MailMessage(
+            ref: base.ref, conversationID: base.conversationID, parentFolderID: base.parentFolderID, kind: .note,
+            subject: "Note", from: MailAddress(name: "Alex Morgan", email: "a.morgan@example.com"),
+            to: [MailAddress(name: "Alex Morgan", email: "A.Morgan@example.com")], cc: [],
+            bcc: [], hiddenRecipientCount: 0, received: Date(), sent: Date(), isRead: true, isDraft: false, importance: .normal,
+            bodyHTML: "<p>x</p>", preview: "x", attachments: [], categories: [], isFlagged: false, actions: [], meeting: nil, internetMessageID: nil
+        )
+        let request = MailComposeDraftBuilder.request(.replyAll, from: note, ownAddress: "a.morgan@example.com")
+        XCTAssertEqual(request.to, ["a.morgan@example.com"])
+        XCTAssertTrue(request.cc.isEmpty)
+    }
+
     func testUntouchedReplySubjectIsLeftToExchange() {
         let model = MailComposeModel(request: MailComposeDraftBuilder.request(.reply, from: original(), ownAddress: nil), service: service)
         XCTAssertEqual(model.outgoing(send: true).subject, "")
@@ -59,6 +73,45 @@ final class MailComposeTests: XCTestCase {
         XCTAssertEqual(model.invalidRecipients, ["not-an-address"])
         XCTAssertFalse(model.canSend)
         XCTAssertFalse(service.isExternal("x@sub.example.com"), "a subdomain of the user's domain is internal")
+    }
+
+    func testChipsShowNamesAndDropTheOwnDomain() {
+        let model = MailComposeModel(request: MailComposeDraftBuilder.request(.replyAll, from: original(), ownAddress: "a.morgan@example.com"), service: service)
+        XCTAssertEqual(model.chipLabel("g.miller@example.com"), "Grace Miller")
+        XCTAssertEqual(model.chipLabel("T.Wright@partner.example"), "Partner", "names match the address in any case")
+        model.toInput = "x.doe@example.com, y@other.example, z@sub.example.com"
+        model.commit(.to)
+        XCTAssertEqual(model.chipLabel("x.doe@example.com"), "x.doe", "a typed address of the user's domain loses only the domain")
+        XCTAssertEqual(model.chipLabel("y@other.example"), "y@other.example", "an external address stays whole")
+        XCTAssertEqual(model.chipLabel("z@sub.example.com"), "z@sub.example.com")
+        XCTAssertEqual(MailComposeModel.chipLabel("a@example.com", name: "a@example.com", ownDomain: "example.com"), "a", "an address given as the name is no name")
+        XCTAssertEqual(MailComposeModel.shortName("Попов  Александр Васильевич"), "Попов Александр")
+        XCTAssertEqual(MailComposeModel.shortName("Иванова Мария Ильинична"), "Иванова Мария")
+        XCTAssertEqual(MailComposeModel.shortName("Mary Ann Smith"), "Mary Ann Smith")
+        XCTAssertEqual(MailComposeModel.shortName("Сидоров Пётр"), "Сидоров Пётр")
+    }
+
+    func testPickedPersonKeepsTheirName() async {
+        backend.people = [ResolvedAttendee(displayName: "Попов Александр Васильевич", email: "APopov@example.com", jobTitle: nil)]
+        let model = MailComposeModel(request: MailComposeRequest(kind: .new, original: nil, to: [], cc: [], subject: "", body: ""), service: service)
+        model.toInput = "Попов"
+        model.inputChanged(.to)
+        await waitForSuggestions(model)
+        model.submit(.to)
+        XCTAssertEqual(model.to, ["APopov@example.com"])
+        XCTAssertEqual(model.chipLabel("APopov@example.com"), "Попов Александр")
+    }
+
+    func testLongListFoldsButKeepsFlaggedAddresses() {
+        let list = (1...12).map { "p\($0)@example.com" } + ["out@partner.example"]
+        let flagged = { (address: String) in address.hasSuffix("partner.example") }
+        let folded = MailComposeModel.collapsed(list, limit: 8, flagged: flagged)
+        XCTAssertEqual(folded.shown, Array(list.prefix(7)) + ["out@partner.example"])
+        XCTAssertEqual(folded.hidden, 5)
+        XCTAssertEqual(folded.shown.count + folded.hidden, list.count)
+        let nine = Array(list.prefix(9))
+        XCTAssertEqual(MailComposeModel.collapsed(nine, limit: 8, flagged: flagged).hidden, 0, "one left out is not worth a chip")
+        XCTAssertEqual(MailComposeModel.collapsed(Array(list.prefix(10)), limit: 8, flagged: flagged).hidden, 2)
     }
 
     func testUndoStopsTheSend() async throws {

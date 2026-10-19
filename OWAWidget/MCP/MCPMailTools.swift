@@ -659,7 +659,7 @@ final class MCPMailTools {
         let shownSubject = subjectArgument.isEmpty
             ? MailComposeDraftBuilder.defaultSubject(kind, original: original?.subject ?? "")
             : subjectArgument
-        let outgoing = MailOutgoing(kind: kind, reference: original?.ref, to: to, cc: cc, subject: subjectArgument, body: body)
+        let outgoing = MailOutgoing(kind: kind, reference: original?.ref, to: to, cc: cc, subject: subjectArgument, body: RichText(plain: body))
 
         let key = [account.id.uuidString, "\(kind)", original?.ref.id ?? "", to.map { $0.lowercased() }.sorted().joined(separator: ","),
                    cc.map { $0.lowercased() }.sorted().joined(separator: ","), subjectArgument, body].joined(separator: "|")

@@ -863,7 +863,7 @@ final class MCPCalendarTools {
         let creation = Task { @MainActor in
             try await service.createMeeting(
                 title: title,
-                agenda: agenda,
+                agenda: RichText(plain: agenda),
                 location: location,
                 slot: FreeSlot(start: start, end: end),
                 requiredAttendees: toResolved(proposal.required),

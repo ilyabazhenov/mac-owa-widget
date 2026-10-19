@@ -31,6 +31,9 @@ struct CreateMeetingView: View {
     @EnvironmentObject private var localization: LocalizationService
     @StateObject private var vm: CreateMeetingViewModel
     @ObservedObject private var draftInbox = MeetingDraftInbox.shared
+    @StateObject private var agendaEditor = RichTextEditorController()
+    /// The agenda has no pictures; the editor wants somewhere to keep them.
+    @State private var agendaImages: [MailInlineImage] = []
     /// Rebuilds the window for another Exchange account when a draft from that account arrives.
     private let onSwitchAccount: (UUID) -> Void
     @State private var requiredFieldHeight: CGFloat = 36
@@ -186,16 +189,22 @@ struct CreateMeetingView: View {
 
     private var agendaField: some View {
         formRow(localization.tr("create.meeting.agenda.label"), alignment: .top) {
-            ZStack(alignment: .topLeading) {
+            VStack(spacing: 0) {
+                RichTextToolbar(controller: agendaEditor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                Divider()
+                RichTextEditor(text: $vm.draft.agenda, images: $agendaImages, allowsImages: false, controller: agendaEditor)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 8)
+            }
+            .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color(nsColor: .controlBackgroundColor))
-                TextEditor(text: $vm.draft.agenda)
-                    .font(.system(size: 13))
-                    .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 4)
-            }
-            .frame(minHeight: 100, maxHeight: 200, alignment: .topLeading)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .frame(minHeight: 130, maxHeight: 230, alignment: .topLeading)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)

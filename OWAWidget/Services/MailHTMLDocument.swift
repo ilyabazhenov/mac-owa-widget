@@ -20,26 +20,70 @@ enum MailHTMLDocument {
         inlineImages: [String: (data: Data, type: String)] = [:],
         remoteImages: [String: (data: Data, type: String)] = [:]
     ) -> String {
+        prepared(body: body, inlineImages: inlineImages, remoteImages: remoteImages).html
+    }
+
+    /// The document, and whether it came out dark. With `dark` a message that leaves its page to
+    /// the reader goes on a dark background with its dark text made light (`MailDarkMode`); one
+    /// with a design of its own stays light.
+    static func prepared(
+        body: String,
+        inlineImages: [String: (data: Data, type: String)] = [:],
+        remoteImages: [String: (data: Data, type: String)] = [:],
+        dark: Bool = false
+    ) -> (html: String, isDark: Bool) {
         func image(for source: String) -> (data: Data, type: String)? {
             if let cid = contentID(fromSource: source), let image = inlineImages[cid] ?? inlineImages[cid.lowercased()] {
                 return image
             }
             return remoteImages[source]
         }
-        let html = MailHTMLScanner.process(body, sanitize: true, imageSource: { source in
-            image(for: source).map { dataURI($0.data, type: $0.type) }
-        }, zoomLink: { source in
-            guard let image = image(for: source), isZoomable(image.data) else { return nil }
-            return zoomURL(forSource: source).absoluteString
-        })
-        return """
+        func process(_ adapter: MailDarkMode?) -> String {
+            MailHTMLScanner.process(body, sanitize: true, imageSource: { source in
+                image(for: source).map { dataURI($0.data, type: $0.type) }
+            }, zoomLink: { source in
+                guard let image = image(for: source), isZoomable(image.data) else { return nil }
+                return zoomURL(forSource: source).absoluteString
+            }, rewriteAttribute: adapter.map { adapter in { adapter.attribute(element: $0, name: $1, value: $2) } },
+               rewriteStyleSheet: adapter.map { adapter in { adapter.styleSheet($0) } })
+        }
+        if dark {
+            let adapter = MailDarkMode()
+            let html = process(adapter)
+            if adapter.canGoDark { return (wrap(html, palette: .dark), true) }
+        }
+        return (wrap(process(nil), palette: .light), false)
+    }
+
+    private struct Palette {
+        let scheme: String
+        let page: String
+        let text: String
+        let quoteRule: String
+        let quoteText: String
+        let link: String
+        let placeholder: String
+        let placeholderOutline: String
+
+        static let light = Palette(
+            scheme: "light", page: "#ffffff", text: "#1d1d1f", quoteRule: "#d0d0d5", quoteText: "#555",
+            link: "#0a66d6", placeholder: "#f2f2f4", placeholderOutline: "#d4d4da"
+        )
+        static let dark = Palette(
+            scheme: "dark", page: "#1e1e20", text: MailDarkMode.textColor, quoteRule: "#48484c", quoteText: "#a8a8ad",
+            link: "#5aa9ff", placeholder: "#2c2c2e", placeholderOutline: "#48484a"
+        )
+    }
+
+    private static func wrap(_ html: String, palette: Palette) -> String {
+        """
         <!DOCTYPE html>
         <html><head><meta charset="utf-8">
         <meta http-equiv="Content-Security-Policy" content="\(contentSecurityPolicy)">
-        <meta name="color-scheme" content="light">
+        <meta name="color-scheme" content="\(palette.scheme)">
         <style>
-        html { background: #ffffff; overflow: hidden; }
-        body { margin: 0; padding: 0; overflow: hidden; color: #1d1d1f; background: #ffffff;
+        html { background: \(palette.page); overflow: hidden; }
+        body { margin: 0; padding: 0; overflow: hidden; color: \(palette.text); background: \(palette.page);
                font: 13px -apple-system, "Helvetica Neue", Arial, sans-serif; line-height: 1.45;
                word-wrap: break-word; overflow-wrap: anywhere; }
         img { max-width: 100%; height: auto; }
@@ -51,14 +95,16 @@ enum MailHTMLDocument {
         pre { white-space: pre-wrap; }
         /* Generated mail often zeroes list padding; the bullets would hang outside the page. */
         #owaw-root ul, #owaw-root ol { padding-inline-start: 1.6em !important; }
-        blockquote { margin-left: 0; padding-left: 10px; border-left: 2px solid #d0d0d5; color: #555; }
-        a { color: #0a66d6; }
+        /* Items with no list around them (templated mail writes bare <li>): the same indent. */
+        #owaw-root > li, #owaw-root :not(ul):not(ol):not(menu) > li { margin-inline-start: 1.6em; }
+        blockquote { margin-left: 0; padding-left: 10px; border-left: 2px solid \(palette.quoteRule); color: \(palette.quoteText); }
+        a { color: \(palette.link); }
         a.owaw-zoom { cursor: zoom-in; text-decoration: none; }
         #owaw-root { display: flow-root; padding: 12px 14px; box-sizing: border-box; }
         /* Remote images stay blocked: show a quiet placeholder instead of an empty frame. It keeps
            the size the sender gave (a 12 px badge over an avatar stays 12 px, the icon shrinks to
            fit); only an image with no size of its own gets a minimum, or it would vanish. */
-        img[src^="http" i] { background: #f2f2f4 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a0a0a8' stroke-width='2'%3E%3Crect x='3' y='4' width='18' height='16' rx='2'/%3E%3Ccircle cx='9' cy='10' r='2'/%3E%3Cpath d='m21 17-5-5-9 8'/%3E%3C/svg%3E") center / min(16px, 75%) no-repeat; outline: 1px dashed #d4d4da; outline-offset: -1px; color: transparent; }
+        img[src^="http" i] { background: \(palette.placeholder) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a0a0a8' stroke-width='2'%3E%3Crect x='3' y='4' width='18' height='16' rx='2'/%3E%3Ccircle cx='9' cy='10' r='2'/%3E%3Cpath d='m21 17-5-5-9 8'/%3E%3C/svg%3E") center / min(16px, 75%) no-repeat; outline: 1px dashed \(palette.placeholderOutline); outline-offset: -1px; color: transparent; }
         img[src^="http" i]:not([width]):not([height]):not([style*="width"]):not([style*="height"]) { min-width: 20px; min-height: 20px; }
         </style></head>
         <body><div id="owaw-root">\(html)</div></body></html>
@@ -199,6 +245,10 @@ enum MailHTMLScanner {
     static let droppedContainers: Set<String> = ["script", "iframe", "frameset", "object", "applet", "noscript", "noembed", "template"]
     /// Tags dropped on their own; their content (if any) stays.
     static let droppedTags: Set<String> = ["meta", "base", "link", "form", "input", "embed", "frame"]
+    /// With `offline`, elements that load (or draw what they load) dropped with what is in them.
+    static let offlineContainers: Set<String> = ["style", "svg", "math", "video", "audio", "picture", "canvas"]
+    /// With `offline`, tags that load, dropped on their own.
+    static let offlineTags: Set<String> = ["img", "image", "source", "track"]
     /// Attributes that can carry a URL a click or a load would follow.
     private static let urlAttributes: Set<String> = ["href", "src", "action", "formaction", "xlink:href", "background", "data", "poster", "srcset", "lowsrc", "dynsrc"]
 
@@ -217,24 +267,52 @@ enum MailHTMLScanner {
     /// - Parameter zoomLink: for an image whose source `imageSource` replaced, the address of a
     ///   link to wrap it in (`nil`: none). Images already inside a sender's link are left alone:
     ///   anchors do not nest, and the sender's link would break.
-    static func process(_ html: String, sanitize: Bool, dropHidden: Bool = false, imageSource: (String) -> String?, zoomLink: ((String) -> String?)? = nil) -> String {
+    /// - Parameter offline: also drop everything that would load when the markup is rendered —
+    ///   pictures, media, stylesheets, URL attributes but `href`, styles that fetch — for markup
+    ///   read by a renderer that loads (pasted HTML). Needs `sanitize`.
+    /// - Parameter rewriteAttribute: a new value for an attribute (element, attribute, value with
+    ///   its entities undone); `""` drops the attribute, `nil` keeps it.
+    /// - Parameter rewriteStyleSheet: new text for what a `<style>` element holds.
+    static func process(
+        _ html: String, sanitize: Bool, dropHidden: Bool = false, offline: Bool = false,
+        imageSource: (String) -> String?, zoomLink: ((String) -> String?)? = nil,
+        rewriteAttribute: ((_ element: String, _ name: String, _ value: String) -> String?)? = nil,
+        rewriteStyleSheet: ((String) -> String)? = nil
+    ) -> String {
         let s = Array(html.unicodeScalars)
         let n = s.count
         var out = String.UnicodeScalarView()
         out.reserveCapacity(n)
         var anchorDepth = 0
+        var inStyleSheet = false
+        /// Text between tags; inside `<style>`, as `rewriteStyleSheet` makes it.
+        func appendText(_ range: Range<Int>) {
+            guard inStyleSheet, let rewriteStyleSheet, !range.isEmpty else {
+                out.append(contentsOf: s[range])
+                return
+            }
+            out.append(contentsOf: rewriteStyleSheet(String(String.UnicodeScalarView(s[range]))).unicodeScalars)
+        }
         var i = 0
         while i < n {
             guard let lt = index(of: "<", in: s, from: i) else {
-                out.append(contentsOf: s[i..<n])
+                appendText(i..<n)
                 break
             }
-            out.append(contentsOf: s[i..<lt])
+            appendText(i..<lt)
             if lt + 1 < n, s[lt + 1] == "!" {
                 // Comments (Outlook keeps conditional markup in them) and the doctype stay as they are.
-                let end = starts(s, at: lt, with: "<!--") ? find(s, "-->", from: lt + 4).map { $0 + 3 } : index(of: ">", in: s, from: lt).map { $0 + 1 }
+                let isComment = starts(s, at: lt, with: "<!--")
+                let end = isComment ? find(s, "-->", from: lt + 4).map { $0 + 3 } : index(of: ">", in: s, from: lt).map { $0 + 1 }
                 guard let end else { break }
-                out.append(contentsOf: s[lt..<end])
+                if isComment, inStyleSheet, rewriteStyleSheet != nil, end - 3 >= lt + 4 {
+                    // Outlook wraps its style sheet in a comment.
+                    out.append(contentsOf: "<!--".unicodeScalars)
+                    appendText((lt + 4)..<(end - 3))
+                    out.append(contentsOf: "-->".unicodeScalars)
+                } else {
+                    out.append(contentsOf: s[lt..<end])
+                }
                 i = end
                 continue
             }
@@ -267,7 +345,7 @@ enum MailHTMLScanner {
             }
             let tagEnd = parsed.end + 1
 
-            if sanitize, droppedContainers.contains(name) {
+            if sanitize, droppedContainers.contains(name) || (offline && offlineContainers.contains(name)) {
                 if closing || parsed.selfClosing {
                     i = tagEnd
                 } else if let close = closingTag(s, name: name, from: tagEnd), let gt = index(of: ">", in: s, from: close) {
@@ -277,10 +355,11 @@ enum MailHTMLScanner {
                 }
                 continue
             }
-            if sanitize, droppedTags.contains(name) {
+            if sanitize, droppedTags.contains(name) || (offline && offlineTags.contains(name)) {
                 i = tagEnd
                 continue
             }
+            if name == "style" { inStyleSheet = !closing && !parsed.selfClosing }
             if closing {
                 if name == "a" { anchorDepth = max(0, anchorDepth - 1) }
                 out.append(contentsOf: s[lt..<tagEnd])
@@ -316,6 +395,15 @@ enum MailHTMLScanner {
                     rebuilt = true
                     continue
                 }
+                if sanitize, offline, attribute.name != "href", urlAttributes.contains(attribute.name) {
+                    rebuilt = true
+                    continue
+                }
+                if sanitize, offline, attribute.name == "style", let value = attribute.value,
+                   stylesLoad(unescaped(String(String.UnicodeScalarView(s[value])))) {
+                    rebuilt = true
+                    continue
+                }
                 if name == "img", attribute.name == "src", let value = attribute.value,
                    let replacement = originalReplacement ?? {
                        let source = unescaped(String(String.UnicodeScalarView(s[value])))
@@ -334,6 +422,15 @@ enum MailHTMLScanner {
                    isScriptURL(String(String.UnicodeScalarView(s[value]))) {
                     let quote = attribute.quote.map(String.init) ?? "\""
                     parts.append(attribute.name + "=" + quote + "blocked:" + quote)
+                    rebuilt = true
+                    continue
+                }
+                if let rewriteAttribute, let value = attribute.value,
+                   let replacement = rewriteAttribute(name, attribute.name, unescaped(String(String.UnicodeScalarView(s[value])))) {
+                    if !replacement.isEmpty {
+                        let escaped = replacement.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;")
+                        parts.append(attribute.name + "=\"" + escaped + "\"")
+                    }
                     rebuilt = true
                     continue
                 }
@@ -452,6 +549,13 @@ enum MailHTMLScanner {
             }
         }
         return nil
+    }
+
+    /// A style that may fetch something: `url(`, `image-set(`, `@import`, or a CSS escape or
+    /// numeric entity that could spell one. Formatting never needs those.
+    private static func stylesLoad(_ style: String) -> Bool {
+        let lowered = style.lowercased()
+        return ["url", "image", "@import", "expression", "\\", "&#"].contains { lowered.contains($0) }
     }
 
     /// `javascript:` / `vbscript:` however written: entities, case, whitespace and control

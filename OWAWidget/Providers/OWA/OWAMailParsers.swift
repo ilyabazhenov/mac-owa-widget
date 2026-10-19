@@ -291,7 +291,7 @@ enum OWAMailParsers {
         let html: String? = {
             guard let value = bodyValue?["Value"] as? String else { return nil }
             if (bodyValue?["BodyType"] as? String) == "Text" {
-                return "<div style=\"white-space: pre-wrap\">\(OWAMailPayloads.escapeHTML(value))</div>"
+                return "<div style=\"white-space: pre-wrap\">\(RichTextHTML.escape(value))</div>"
             }
             return value
         }()

@@ -217,9 +217,8 @@ final class OWARequestPayloadTests: XCTestCase {
     }
 
     func testCalendarBodyHTMLEscapesUserInputAndPreservesLineBreaks() throws {
-        let html = OWACreateCalendarEventPayload.calendarBodyHTML(plainAgenda: "Goals\nDiscuss <budget> & \"plans\"")
-        XCTAssertTrue(html.contains("Goals"))
-        XCTAssertTrue(html.contains("<br/>"))
+        let html = OWACreateCalendarEventPayload.calendarBodyHTML("Goals\nDiscuss <budget> & \"plans\"")
+        XCTAssertTrue(html.contains("<div>Goals</div><div>Discuss"))
         XCTAssertTrue(html.contains("&lt;budget&gt;"))
         XCTAssertTrue(html.contains("&amp;"))
         XCTAssertTrue(html.contains("&quot;plans&quot;"))
@@ -227,14 +226,14 @@ final class OWARequestPayloadTests: XCTestCase {
 
     func testCalendarBodyHTMLNeutralizesCDATAEndDelimiter() throws {
         // SOAP помещает HTML внутрь CDATA — ]]> в пользовательском вводе сломал бы парсинг.
-        let html = OWACreateCalendarEventPayload.calendarBodyHTML(plainAgenda: "before ]]> after")
+        let html = OWACreateCalendarEventPayload.calendarBodyHTML("before ]]> after")
         XCTAssertFalse(html.contains("]]>"), "raw ]]> must not survive into CDATA section")
-        // После защиты подставляется пробел, дальше `>` экранируется HTML-эскейпом.
-        XCTAssertTrue(html.contains("]] &gt;"))
+        // `>` экранируется HTML-эскейпом, так что `]]>` из текста не получается.
+        XCTAssertTrue(html.contains("]]&gt;"))
     }
 
     func testCalendarBodyHTMLReturnsEmptyBodyForBlankAgenda() throws {
-        let html = OWACreateCalendarEventPayload.calendarBodyHTML(plainAgenda: "   \n  ")
+        let html = OWACreateCalendarEventPayload.calendarBodyHTML("   \n  ")
         XCTAssertTrue(html.contains("<br>"), "blank agenda yields an empty-body placeholder")
     }
 }

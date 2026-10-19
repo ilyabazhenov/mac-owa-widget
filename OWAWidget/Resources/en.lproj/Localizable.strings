@@ -580,6 +580,8 @@
 "mail.compose.title.forward" = "Forward";
 "mail.compose.to" = "To";
 "mail.compose.cc" = "Cc";
+"mail.compose.moreRecipients" = "%d more";
+"mail.compose.moreRecipients.help" = "Show all recipients";
 "mail.compose.subject" = "Subject";
 "mail.compose.searchingPeople" = "Searching the address book…";
 "mail.compose.noPeople" = "No one found in the address book";
@@ -747,3 +749,24 @@
 "mail.window.stale.failed" = "Couldn't refresh the list — showing what was loaded %@";
 "mail.window.stale.at" = "at %@";
 "mail.window.stale.atDay" = "on %@ at %@";
+
+/* Text formatting */
+"richtext.bold" = "Bold";
+"richtext.italic" = "Italic";
+"richtext.underline" = "Underline";
+"richtext.strikethrough" = "Strikethrough";
+"richtext.bulletList" = "Bulleted list";
+"richtext.numberedList" = "Numbered list";
+"richtext.outdent" = "Decrease list level";
+"richtext.indent" = "Increase list level";
+"richtext.link" = "Link";
+"richtext.link.title" = "Link";
+"richtext.link.placeholder" = "https://… or name@company.com";
+"richtext.link.invalid" = "Enter a web address or an email address.";
+"richtext.link.apply" = "Apply";
+"richtext.link.remove" = "Remove Link";
+"richtext.link.cancel" = "Cancel";
+"mail.compose.original.show" = "Show the message";
+"mail.compose.original.hide" = "Hide the message";
+"mail.reading.lightBackground" = "Light background";
+"mail.reading.darkBackground" = "Dark background";

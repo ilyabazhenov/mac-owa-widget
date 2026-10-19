@@ -196,6 +196,7 @@ final class MailHTMLDocumentTests: XCTestCase {
 
     func testListsKeepRoomForBullets() {
         XCTAssertTrue(MailHTMLDocument.document(body: "<ul><li>x</li></ul>").contains("padding-inline-start: 1.6em !important"))
+        XCTAssertTrue(MailHTMLDocument.document(body: "<li>x</li>").contains("#owaw-root > li, #owaw-root :not(ul):not(ol):not(menu) > li { margin-inline-start: 1.6em; }"))
     }
 }
 

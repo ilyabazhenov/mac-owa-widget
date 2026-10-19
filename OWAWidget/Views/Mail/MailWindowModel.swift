@@ -202,10 +202,14 @@ struct MailReaderDocument: Sendable {
         let isFull: Bool
         let inlineImages: Int
         let remoteImages: Int
+        /// Asked for on a dark background (a dark theme, not switched to light for the message).
+        let dark: Bool
     }
 
     let key: Key
     let html: String
+    /// It did come out dark: the message has no design of its own.
+    let isDark: Bool
     let hasRemoteImages: Bool
     let isVisuallyEmpty: Bool
 }
@@ -293,6 +297,8 @@ final class MailWindowModel: ObservableObject {
     /// body it ran on the main thread on every change of the model, and the window stood still
     /// for a moment after each click.
     @Published private(set) var readerDocuments: [String: MailReaderDocument] = [:]
+    /// Messages the user switched to a white background in a dark theme, until the window closes.
+    @Published var lightBackground: Set<String> = []
     /// Builds on their way, by message id: what each is made from.
     private var readerDocumentBuilds: [String: MailReaderDocument.Key] = [:]
 
@@ -954,25 +960,22 @@ final class MailWindowModel: ObservableObject {
 
     /// The message's reader document, or nil until its first build is ready. A build starts here
     /// when none matches the body and images at hand; meanwhile an older build stays on screen.
-    func readerDocument(for message: MailMessage) -> MailReaderDocument? {
+    func readerDocument(for message: MailMessage, darkTheme: Bool = false) -> MailReaderDocument? {
         let body = fullBodies[message.id] ?? message.bodyHTML ?? ""
         let inline = inlineImages[message.id] ?? [:]
         let remote = remoteImages[message.id] ?? [:]
-        let key = MailReaderDocument.Key(
-            bodyLength: body.utf8.count,
-            isFull: fullBodies[message.id] != nil,
-            inlineImages: inline.count,
-            remoteImages: remote.count
-        )
+        let key = readerDocumentKey(for: message, darkTheme: darkTheme)
         let current = readerDocuments[message.id]
         if current?.key != key, readerDocumentBuilds[message.id] != key {
             readerDocumentBuilds[message.id] = key
             let id = message.id
             Task { [weak self] in
                 let built = await Task.detached(priority: .userInitiated) {
-                    MailReaderDocument(
+                    let prepared = MailHTMLDocument.prepared(body: body, inlineImages: inline, remoteImages: remote, dark: key.dark)
+                    return MailReaderDocument(
                         key: key,
-                        html: MailHTMLDocument.document(body: body, inlineImages: inline, remoteImages: remote),
+                        html: prepared.html,
+                        isDark: prepared.isDark,
                         hasRemoteImages: MailHTMLDocument.hasRemoteImages(body),
                         isVisuallyEmpty: MailHTMLDocument.isVisuallyEmpty(body)
                     )
@@ -986,12 +989,32 @@ final class MailWindowModel: ObservableObject {
         return current
     }
 
-    func document(for message: MailMessage) -> String {
-        MailHTMLDocument.document(
+    private func readerDocumentKey(for message: MailMessage, darkTheme: Bool) -> MailReaderDocument.Key {
+        let body = fullBodies[message.id] ?? message.bodyHTML ?? ""
+        return MailReaderDocument.Key(
+            bodyLength: body.utf8.count,
+            isFull: fullBodies[message.id] != nil,
+            inlineImages: inlineImages[message.id]?.count ?? 0,
+            remoteImages: remoteImages[message.id]?.count ?? 0,
+            dark: darkTheme && !lightBackground.contains(message.id)
+        )
+    }
+
+    /// The reader's document when the one built for it is current, else built now.
+    private func currentDocument(for message: MailMessage, darkTheme: Bool) -> String {
+        let key = readerDocumentKey(for: message, darkTheme: darkTheme)
+        if let built = readerDocuments[message.id], built.key == key { return built.html }
+        return document(for: message, darkTheme: darkTheme)
+    }
+
+    /// The reader's document built now, on the main thread.
+    func document(for message: MailMessage, darkTheme: Bool = false) -> String {
+        MailHTMLDocument.prepared(
             body: fullBodies[message.id] ?? message.bodyHTML ?? "",
             inlineImages: inlineImages[message.id] ?? [:],
-            remoteImages: remoteImages[message.id] ?? [:]
-        )
+            remoteImages: remoteImages[message.id] ?? [:],
+            dark: readerDocumentKey(for: message, darkTheme: darkTheme).dark
+        ).html
     }
 
     // MARK: - Search
@@ -1053,7 +1076,10 @@ final class MailWindowModel: ObservableObject {
     // MARK: - Compose and links
 
     func compose(_ kind: MailOutgoing.Kind, from message: MailMessage, ownAddress: String?) {
-        service.compose(MailComposeDraftBuilder.request(kind, from: message, ownAddress: ownAddress))
+        var request = MailComposeDraftBuilder.request(kind, from: message, ownAddress: ownAddress)
+        let darkTheme = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        request.originalDocument = currentDocument(for: message, darkTheme: darkTheme)
+        service.compose(request)
     }
 
     func openInOWA(_ message: MailMessage) {
@@ -1145,6 +1171,8 @@ enum MailComposeDraftBuilder {
         }
         to = unique(to)
         cc = unique(cc).filter { address in !to.contains { $0.caseInsensitiveCompare(address) == .orderedSame } }
+        // A message the user sent only to themselves: reply-all goes back to them, as a reply does.
+        if kind == .replyAll, to.isEmpty, cc.isEmpty, let sender { to = [sender] }
         return MailComposeRequest(kind: kind, original: message, to: to, cc: cc, subject: defaultSubject(kind, original: message.subject), body: "")
     }
 

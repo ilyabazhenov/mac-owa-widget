@@ -131,6 +131,9 @@ struct MailComposeRequest: Identifiable, Equatable {
     var cc: [String]
     var subject: String
     var body: String
+    /// The original as the reader shows it (`MailHTMLDocument.document`), for a reply or a
+    /// forward opened from the mail window; `nil` shows its preview text instead.
+    var originalDocument: String? = nil
 }
 
 enum MailLoadState: Equatable {
