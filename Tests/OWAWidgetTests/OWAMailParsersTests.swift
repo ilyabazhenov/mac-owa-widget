@@ -207,13 +207,14 @@ final class OWAMailParsersTests: XCTestCase {
         let json = """
         {"Body":{"ResponseMessages":{"Items":[{"ResponseCode":"NoError","RootFolder":{"IncludesLastItemInRange":false,
          "TotalItemsInView":30497,"Items":[
-          {"ItemId":{"Id":"I1","ChangeKey":"C1"},"ConversationId":{"Id":"CV1"},"Subject":"Hello",
+          {"ItemId":{"Id":"I1","ChangeKey":"C1"},"ConversationId":{"Id":"CV1"},"Subject":"Hello","ItemClass":"IPM.Schedule.Meeting.Resp.Pos",
            "From":{"Mailbox":{"Name":"Grace Miller","EmailAddress":"g.miller@example.com"}},"DisplayTo":"Alex Morgan",
            "DateTimeReceived":"2026-10-16T10:00:00+03:00","IsRead":false,"HasAttachments":true,"InstanceKey":"K1","Preview":"Hi"}]}}]}}}
         """
         let page = try OWAMailParsers.itemPage(data(json))
         XCTAssertEqual(page.items.count, 1)
         XCTAssertEqual(page.items[0].from?.email, "g.miller@example.com")
+        XCTAssertEqual(page.items[0].kind, .meetingResponse, "mark-all-read changes it as one")
         XCTAssertEqual(page.totalInView, 30497)
         XCTAssertEqual(page.nextCursor, .after(instanceKey: "K1"))
     }

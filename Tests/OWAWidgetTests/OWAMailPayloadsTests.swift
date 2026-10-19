@@ -53,15 +53,44 @@ final class OWAMailPayloadsTests: XCTestCase {
 
     func testUpdateItemNeverSendsReadReceipts() throws {
         for update in [MailItemUpdate.isRead(true), .isRead(false), .categories(["X"]), .flag(.flagged)] {
-            let request = try body(OWAMailPayloads.updateItem(MailItemRef(id: "I1", changeKey: "CK"), update: update, timeZoneID: zone))
+            let request = try body(OWAMailPayloads.updateItem(MailItemTarget(MailItemRef(id: "I1", changeKey: "CK"), kind: .note), update: update, timeZoneID: zone))
             XCTAssertEqual(request["SuppressReadReceipts"] as? Bool, true)
             XCTAssertEqual(request["MessageDisposition"] as? String, "SaveOnly")
         }
-        let read = try body(OWAMailPayloads.updateItem(MailItemRef(id: "I1", changeKey: "CK"), update: .isRead(false), timeZoneID: zone))
+        let read = try body(OWAMailPayloads.updateItem(MailItemTarget(MailItemRef(id: "I1", changeKey: "CK"), kind: .note), update: .isRead(false), timeZoneID: zone))
         let change = try XCTUnwrap((read["ItemChanges"] as? [[String: Any]])?.first)
         let set = try XCTUnwrap((change["Updates"] as? [[String: Any]])?.first)
         XCTAssertEqual((set["Path"] as? [String: Any])?["FieldURI"] as? String, "IsRead")
         XCTAssertEqual((set["Item"] as? [String: Any])?["IsRead"] as? Bool, false)
+        XCTAssertEqual((set["Item"] as? [String: Any])?["__type"] as? String, "Message:#Exchange")
+    }
+
+    /// A flag on a meeting response sent as a plain `Message` fails with `ErrorItemNotFound` ("ID
+    /// type 9; actual type 12"), and OWA does not deserialize `MeetingResponseMessage` there:
+    /// meeting messages go as the base `Item`, each change on its own inside one batch.
+    func testUpdateItemNamesEachItemsOwnType() throws {
+        let targets = [
+            MailItemTarget(MailItemRef(id: "R", changeKey: nil), kind: .meetingResponse),
+            MailItemTarget(MailItemRef(id: "Q", changeKey: nil), kind: .meetingRequest),
+            MailItemTarget(MailItemRef(id: "X", changeKey: nil), kind: .meetingCancellation),
+            MailItemTarget(MailItemRef(id: "N", changeKey: nil), kind: .note),
+        ]
+        let request = try body(OWAMailPayloads.updateItems(targets, update: .flag(.flagged), timeZoneID: zone))
+        let types = try XCTUnwrap(request["ItemChanges"] as? [[String: Any]]).map { change in
+            (((change["Updates"] as? [[String: Any]])?.first?["Item"]) as? [String: Any])?["__type"] as? String
+        }
+        XCTAssertEqual(types, ["Item:#Exchange", "Item:#Exchange", "Item:#Exchange", "Message:#Exchange"])
+        let item = try XCTUnwrap((((request["ItemChanges"] as? [[String: Any]])?.first?["Updates"] as? [[String: Any]])?.first?["Item"]) as? [String: Any])
+        XCTAssertEqual((item["Flag"] as? [String: Any])?["FlagStatus"] as? String, "Flagged")
+    }
+
+    /// `IsRead` as `Message` is what marked invitations read before; any other name there broke it.
+    func testReadStateIsAlwaysAMessage() throws {
+        for kind in [MailItemKind.meetingRequest, .meetingResponse, .meetingCancellation, .note] {
+            let request = try body(OWAMailPayloads.updateItem(MailItemTarget(MailItemRef(id: "I", changeKey: nil), kind: kind), update: .isRead(true), timeZoneID: zone))
+            let item = (((request["ItemChanges"] as? [[String: Any]])?.first?["Updates"] as? [[String: Any]])?.first?["Item"]) as? [String: Any]
+            XCTAssertEqual(item?["__type"] as? String, "Message:#Exchange", "\(kind)")
+        }
     }
 
     func testDateRestrictionUpperBoundIsTheNextDay() throws {

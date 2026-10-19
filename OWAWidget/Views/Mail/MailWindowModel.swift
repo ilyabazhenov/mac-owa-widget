@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Quartz
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// Search filters as the window edits them; turned into a `MailSearchQuery` on submit.
@@ -165,6 +166,56 @@ enum MailListRow: Identifiable, Equatable {
     }
 }
 
+/// Failures that mean the server was not reached (VPN down, no network, DNS), as opposed to the
+/// server answering with an error.
+enum MailConnectivity {
+    private static let codes: Set<Int> = [
+        NSURLErrorNotConnectedToInternet, NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost,
+        NSURLErrorDNSLookupFailed, NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost,
+        NSURLErrorInternationalRoamingOff, NSURLErrorDataNotAllowed, NSURLErrorSecureConnectionFailed,
+    ]
+
+    static func isConnectionError(_ error: Error) -> Bool {
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain, codes.contains(ns.code) { return true }
+        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? Error { return isConnectionError(underlying) }
+        return false
+    }
+}
+
+/// A request the window waits for with a spinner on the button that started it; that button
+/// takes no second click meanwhile.
+enum MailPendingAction: Hashable {
+    case refresh
+    case attachment(String)
+    case meetingResponse(String)
+    case fullBody(String)
+    case remoteImages(String)
+}
+
+/// A message body ready for the reader, built off the main thread.
+struct MailReaderDocument: Sendable {
+    /// What the build was made from: a newer body (the quoted history) or newly arrived images
+    /// need a new build.
+    struct Key: Hashable, Sendable {
+        let bodyLength: Int
+        let isFull: Bool
+        let inlineImages: Int
+        let remoteImages: Int
+    }
+
+    let key: Key
+    let html: String
+    let hasRemoteImages: Bool
+    let isVisuallyEmpty: Bool
+}
+
+/// The list shows what was loaded earlier because the latest load failed.
+struct MailStaleListNotice: Equatable {
+    let loadedAt: Date
+    let isConnectionError: Bool
+}
+
 @MainActor
 final class MailWindowModel: ObservableObject {
     @Published private(set) var folders: [MailFolder] = []
@@ -172,10 +223,42 @@ final class MailWindowModel: ObservableObject {
     @Published var mode: MailListMode = .all {
         didSet {
             guard mode != oldValue else { return }
-            if mode.serverFilter != oldValue.serverFilter { Task { await reloadList() } }
+            if mode.serverFilter != oldValue.serverFilter {
+                listShowsFolderPage = false
+                staleList = nil
+                Task { await reloadList() }
+            }
         }
     }
-    @Published private(set) var conversations: [MailConversationSummary] = []
+    @Published private(set) var conversations: [MailConversationSummary] = [] {
+        // Reads, flags and moves made since the snapshot stay in it, so a later failure does not
+        // bring back an older picture of the folder.
+        didSet {
+            guard listShowsFolderPage, let key = currentListKey, let snapshot = listSnapshots[key] else { return }
+            listSnapshots[key] = ListSnapshot(conversations: conversations, nextCursor: nextCursor, totalInView: totalInView, loadedAt: snapshot.loadedAt)
+        }
+    }
+    /// Set while the list shows an earlier load because the latest one failed.
+    @Published private(set) var staleList: MailStaleListNotice?
+
+    /// The last good first page of each folder and filter, in memory only (never on disk), so a
+    /// dropped VPN does not empty a list that was on screen a minute ago.
+    private struct ListKey: Hashable {
+        let folder: MailFolderRef
+        let filter: MailListFilter
+    }
+    private struct ListSnapshot {
+        let conversations: [MailConversationSummary]
+        let nextCursor: MailListCursor?
+        let totalInView: Int?
+        let loadedAt: Date
+    }
+    private var listSnapshots: [ListKey: ListSnapshot] = [:]
+    /// The list holds a page of the selected folder (loaded or restored), not search results or
+    /// leftovers of a search being cleared: only then do its changes go into the snapshot.
+    private var listShowsFolderPage = false
+    private static let snapshotLimit = 20
+    private var currentListKey: ListKey? { ListKey(folder: selectedFolder, filter: mode.serverFilter) }
     @Published private(set) var nextCursor: MailListCursor?
     @Published private(set) var isLoadingList = false
     @Published private(set) var listError: String?
@@ -205,6 +288,13 @@ final class MailWindowModel: ObservableObject {
     @Published private(set) var remoteImages: [String: [String: (data: Data, type: String)]] = [:]
     /// Full text (with the quoted history) loaded on request, by message id.
     @Published private(set) var fullBodies: [String: String] = [:]
+    /// Reader documents of the open thread, by message id. Building one scans the whole body
+    /// (tens of milliseconds for a long notification, more in a debug build); done in the view's
+    /// body it ran on the main thread on every change of the model, and the window stood still
+    /// for a moment after each click.
+    @Published private(set) var readerDocuments: [String: MailReaderDocument] = [:]
+    /// Builds on their way, by message id: what each is made from.
+    private var readerDocumentBuilds: [String: MailReaderDocument.Key] = [:]
 
     @Published var searchFilters = MailSearchFilters()
     @Published private(set) var activeSearch: MailSearchQuery?
@@ -219,6 +309,13 @@ final class MailWindowModel: ObservableObject {
     /// Progress text of a long list action ("Marked 150…").
     @Published private(set) var bulkProgress: Int?
     @Published private(set) var meetingAnswers: [String: MeetingResponseType] = [:]
+    @Published private(set) var pending: Set<MailPendingAction> = []
+    /// The latest read, flag or category change of each message, by id: it is already on screen,
+    /// and the next one waits for it (it needs the change key the server answers with).
+    private var messageChanges: [String: Task<Void, Never>] = [:]
+    /// Messages whose changes are still going, by id, as the server last confirmed them: the
+    /// changes it has accepted so far and its latest change key.
+    private var messageConfirmed: [String: MailMessage] = [:]
 
     let service: MailService
     private var markReadTask: Task<Void, Never>?
@@ -261,20 +358,8 @@ final class MailWindowModel: ObservableObject {
 
     // MARK: - List
 
-    /// The loaded conversations the current mode lets through, in list order.
-    var visibleConversations: [MailConversationSummary] {
-        switch mode {
-        case .all, .unread: conversations
-        case .people: conversations.filter { !$0.isAutomated }
-        case .awaitingReply: conversations.filter { !$0.isAutomated && !$0.userHasReplied && $0.parentFolderID != draftsFolderID }
-        }
-    }
-
-    private var draftsFolderID: String? { folders.first { $0.distinguished == .drafts }?.id }
-
     var rows: [MailListRow] {
-        let bundle = service.settings.bundleAutomated && !isSearching && (mode == .all || mode == .unread)
-        return MailListRow.rows(visibleConversations, bundleAutomated: bundle)
+        MailListRow.rows(conversations, bundleAutomated: service.settings.bundleAutomated && !isSearching)
     }
 
     /// Conversations in the order the user sees them, bundles expanded or not.
@@ -289,7 +374,14 @@ final class MailWindowModel: ObservableObject {
 
     // MARK: - Loading
 
-    func start() async {
+    /// Loads the folders and the list; `folder`, when given, is shown instead of the current one
+    /// (the window opened from the inbox panel), so the current one is not loaded for nothing.
+    func start(folder: MailFolderRef? = nil) async {
+        // Snapshots belong to one account.
+        listSnapshots = [:]
+        listShowsFolderPage = false
+        staleList = nil
+        if let folder { selectedFolder = folder }
         await loadFolders()
         await reloadList()
     }
@@ -304,9 +396,16 @@ final class MailWindowModel: ObservableObject {
     }
 
     func select(folder: MailFolder) {
-        let ref: MailFolderRef = folder.distinguished.map { .distinguished($0) } ?? .id(folder.id)
+        select(ref: folder.distinguished.map { .distinguished($0) } ?? .id(folder.id))
+    }
+
+    func select(ref: MailFolderRef) {
         guard ref != selectedFolder || isSearching else { return }
         clearSearch()
+        // The old folder's rows stay until the new one loads: not this folder's page meanwhile,
+        // and the old folder's "loaded at" notice does not belong to the new one.
+        listShowsFolderPage = false
+        staleList = nil
         selectedFolder = ref
         clearSelection()
         Task { await reloadList() }
@@ -325,6 +424,8 @@ final class MailWindowModel: ObservableObject {
         thread = nil
         threadError = nil
         expandedMessageIDs = []
+        readerDocuments = [:]
+        readerDocumentBuilds = [:]
     }
 
     func reloadList() async {
@@ -341,13 +442,30 @@ final class MailWindowModel: ObservableObject {
             } else {
                 let page = try await service.conversations(in: selectedFolder, cursor: .first, filter: mode.serverFilter)
                 guard generation == listGeneration else { return }
-                conversations = page.conversations
+                if let key = currentListKey {
+                    if listSnapshots[key] == nil, listSnapshots.count >= Self.snapshotLimit { listSnapshots.removeAll() }
+                    listSnapshots[key] = ListSnapshot(conversations: page.conversations, nextCursor: page.nextCursor, totalInView: page.totalInView, loadedAt: Date())
+                }
                 nextCursor = page.nextCursor
                 totalInView = page.totalInView
+                listShowsFolderPage = true
+                conversations = page.conversations
             }
+            staleList = nil
             selectedIDs = selectedIDs.intersection(conversations.map(\.id))
         } catch {
             guard generation == listGeneration, !MailCancellation.isCancellation(error) else { return }
+            if activeSearch == nil, let key = currentListKey, let snapshot = listSnapshots[key] {
+                // Keep what was loaded before and say how old it is, instead of an empty list.
+                nextCursor = snapshot.nextCursor
+                totalInView = snapshot.totalInView
+                listShowsFolderPage = true
+                conversations = snapshot.conversations
+                staleList = MailStaleListNotice(loadedAt: snapshot.loadedAt, isConnectionError: MailConnectivity.isConnectionError(error))
+                return
+            }
+            staleList = nil
+            listShowsFolderPage = false
             conversations = []
             nextCursor = nil
             listError = error.localizedDescription
@@ -373,15 +491,30 @@ final class MailWindowModel: ObservableObject {
                 let page = try await service.conversations(in: selectedFolder, cursor: cursor, filter: mode.serverFilter)
                 guard generation == listGeneration else { return }
                 let known = Set(conversations.map(\.id))
-                conversations += page.conversations.filter { !known.contains($0.id) }
+                // The cursor first: the list change writes the snapshot, and it must carry this
+                // page's cursor, not the previous one.
                 nextCursor = page.nextCursor
+                conversations += page.conversations.filter { !known.contains($0.id) }
             }
         } catch {
             show(error)
         }
     }
 
+    func isPending(_ action: MailPendingAction) -> Bool { pending.contains(action) }
+
+    /// Runs `work` with `action` marked pending; a second call while it runs does nothing.
+    private func whilePending(_ action: MailPendingAction, _ work: () async -> Void) async {
+        guard pending.insert(action).inserted else { return }
+        defer { pending.remove(action) }
+        await work()
+    }
+
     func refresh() async {
+        await whilePending(.refresh) { await reloadAll() }
+    }
+
+    private func reloadAll() async {
         await loadFolders()
         await reloadList()
         if let id = selectedConversationID { await openConversation(id, reload: true) }
@@ -436,36 +569,57 @@ final class MailWindowModel: ObservableObject {
 
     // MARK: - List actions
 
+    // List actions show at once and go back if the server refuses: waiting for Exchange left a
+    // click looking like nothing happened for a second or two.
+
     func markRead(_ targets: [MailConversationSummary], _ isRead: Bool) async {
         guard !targets.isEmpty else { return }
+        let ids = Set(targets.map(\.id))
+        let before = Dictionary(conversations.filter { ids.contains($0.id) }.map { ($0.id, $0.unreadCount) }, uniquingKeysWith: { first, _ in first })
+        let threadBefore = thread.flatMap { ids.contains($0.id) ? $0 : nil }
+        var deltas: [String: Int] = [:]
+        for target in targets {
+            let after = isRead ? 0 : max(1, target.unreadCount)
+            if let folderID = folderID(of: target.parentFolderID) { deltas[folderID, default: 0] += after - target.unreadCount }
+        }
+        applyUnreadDeltas(deltas)
+        conversations = conversations.map { conversation in
+            guard ids.contains(conversation.id) else { return conversation }
+            return conversation.with(unreadCount: isRead ? 0 : max(1, conversation.unreadCount))
+        }
+        if let thread, ids.contains(thread.id) {
+            self.thread = MailThread(id: thread.id, messages: thread.messages.map { $0.with(isRead: isRead) }, totalMessageCount: thread.totalMessageCount)
+        }
         do {
             try await service.setRead(conversations: targets, isRead)
-            var deltas: [String: Int] = [:]
-            for target in targets {
-                let after = isRead ? 0 : max(1, target.unreadCount)
-                if let folderID = folderID(of: target.parentFolderID) { deltas[folderID, default: 0] += after - target.unreadCount }
-            }
-            applyUnreadDeltas(deltas)
-            let ids = Set(targets.map(\.id))
-            conversations = conversations.map { conversation in
-                guard ids.contains(conversation.id) else { return conversation }
-                return conversation.with(unreadCount: isRead ? 0 : max(1, conversation.unreadCount))
-            }
-            if let thread, ids.contains(thread.id) {
-                self.thread = MailThread(id: thread.id, messages: thread.messages.map { $0.with(isRead: isRead) }, totalMessageCount: thread.totalMessageCount)
-            }
         } catch {
+            applyUnreadDeltas(deltas.mapValues { -$0 })
+            conversations = conversations.map { conversation in
+                before[conversation.id].map { conversation.with(unreadCount: $0) } ?? conversation
+            }
+            if let threadBefore, let thread, thread.id == threadBefore.id {
+                let wasRead = Dictionary(threadBefore.messages.map { ($0.id, $0.isRead) }, uniquingKeysWith: { first, _ in first })
+                self.thread = MailThread(
+                    id: thread.id,
+                    messages: thread.messages.map { message in wasRead[message.id].map { message.with(isRead: $0) } ?? message },
+                    totalMessageCount: thread.totalMessageCount
+                )
+            }
             show(error)
         }
     }
 
     func flag(_ targets: [MailConversationSummary], _ flagged: Bool) async {
         guard !targets.isEmpty else { return }
+        let ids = Set(targets.map(\.id))
+        let before = Dictionary(conversations.filter { ids.contains($0.id) }.map { ($0.id, $0.isFlagged) }, uniquingKeysWith: { first, _ in first })
+        conversations = conversations.map { ids.contains($0.id) ? $0.with(isFlagged: flagged) : $0 }
         do {
             try await service.setFlag(conversations: targets, flagged)
-            let ids = Set(targets.map(\.id))
-            conversations = conversations.map { ids.contains($0.id) ? $0.with(isFlagged: flagged) : $0 }
         } catch {
+            conversations = conversations.map { conversation in
+                before[conversation.id].map { conversation.with(isFlagged: $0) } ?? conversation
+            }
             show(error)
         }
     }
@@ -475,16 +629,30 @@ final class MailWindowModel: ObservableObject {
         let ids = Set(targets.map(\.id))
         let order = orderedVisibleIDs
         let nextID = order.first { !ids.contains($0) && (order.firstIndex(of: $0) ?? 0) > (order.firstIndex { ids.contains($0) } ?? 0) }
-        do {
-            try await service.move(conversations: targets, to: folder)
+        let removed = conversations.enumerated().filter { ids.contains($0.element.id) }
+        let openID = selectedConversationID.flatMap { ids.contains($0) ? $0 : nil }
+        withAnimation(.easeInOut(duration: 0.15)) {
             conversations.removeAll { ids.contains($0.id) }
             selectedIDs = []
-            if let open = selectedConversationID, ids.contains(open) {
-                clearSelection()
-                if let nextID { Task { await openConversation(nextID) } }
-            }
+        }
+        if openID != nil {
+            clearSelection()
+            if let nextID { Task { await openConversation(nextID) } }
+        }
+        do {
+            try await service.move(conversations: targets, to: folder)
             await loadFolders()
         } catch {
+            // Back in their places. The conversation that was open comes back too, unless the
+            // user has opened another one since.
+            withAnimation(.easeInOut(duration: 0.15)) {
+                for (offset, conversation) in removed where !conversations.contains(where: { $0.id == conversation.id }) {
+                    conversations.insert(conversation, at: min(offset, conversations.count))
+                }
+            }
+            if let openID, selectedConversationID == nil || selectedConversationID == nextID {
+                Task { await openConversation(openID) }
+            }
             show(error)
         }
     }
@@ -512,12 +680,14 @@ final class MailWindowModel: ObservableObject {
             selectedConversationID = id
             thread = nil
             expandedMessageIDs = []
+            readerDocuments = [:]
+            readerDocumentBuilds = [:]
         }
         threadError = nil
         isLoadingThread = true
         defer { isLoadingThread = false }
         do {
-            let loaded = try await service.thread(id, useCache: !reload)
+            let loaded = try await service.thread(id, useCache: !reload, includingDeleted: selectedFolder == .distinguished(.deleteditems))
             guard selectedConversationID == id else { return }
             thread = loaded
             var expanded = Set(loaded.messages.filter { !$0.isRead }.map(\.id))
@@ -540,12 +710,30 @@ final class MailWindowModel: ObservableObject {
         }
     }
 
+    /// Loads the inline images of messages being opened. A conversation does not always list
+    /// the inline attachments of its older messages, so a body that refers to a `cid:` image its
+    /// message does not list is read again on its own, attachments included. Finding those
+    /// references scans the whole body: done off the main thread, as the reader's document is.
     private func loadInlineImages(for messages: [MailMessage]) {
-        for message in messages where inlineImages[message.id] == nil && message.attachments.contains(where: { $0.isInline }) {
+        for message in messages where inlineImages[message.id] == nil {
             inlineImages[message.id] = [:]
+            let body = fullBodies[message.id] ?? message.bodyHTML ?? ""
             Task {
-                let images = await service.inlineImages(for: message)
-                inlineImages[message.id] = images
+                let references = await Task.detached(priority: .userInitiated) {
+                    MailHTMLDocument.inlineImageReferences(in: body)
+                }.value
+                let listed = Set(message.attachments.filter(\.isInline).compactMap { $0.contentID?.lowercased() })
+                guard !references.isEmpty || !listed.isEmpty else {
+                    // Nothing to load: left unmarked, so a later look (at the full text with the
+                    // quoted history, say) scans again.
+                    if inlineImages[message.id]?.isEmpty ?? false { inlineImages[message.id] = nil }
+                    return
+                }
+                var source = message
+                if references.contains(where: { !listed.contains($0) }), let full = try? await service.fullMessage(message.ref) {
+                    source = full
+                }
+                inlineImages[message.id] = await service.inlineImages(for: source)
             }
         }
     }
@@ -567,35 +755,98 @@ final class MailWindowModel: ObservableObject {
     }
 
     func setRead(_ message: MailMessage, _ isRead: Bool) async {
-        do {
-            let wasRead = message.isRead
-            let updated = try await service.setRead(message, isRead)
-            replace(updated)
-            if wasRead != isRead, let folderID = folderID(of: message.parentFolderID) {
-                applyUnreadDeltas([folderID: isRead ? -1 : 1])
-            }
-            if let conversationID = message.conversationID ?? selectedConversationID,
-               let index = conversations.firstIndex(where: { $0.id == conversationID }) {
-                let old = conversations[index]
-                conversations[index] = old.with(unreadCount: max(0, old.unreadCount + (isRead ? -1 : 1)))
-            }
-        } catch {
-            show(error)
+        let before = current(message)
+        let changes = before.isRead != isRead
+        if changes { adjustUnread(for: before, isRead: isRead) }
+        await updateMessage(message, apply: { $0.with(isRead: isRead) }, revert: { $0.with(isRead: before.isRead) }, onFailure: {
+            if changes { self.adjustUnread(for: before, isRead: !isRead) }
+        }) {
+            try await self.service.setRead($0, isRead)
+        }
+    }
+
+    /// The folder counter and the list row of a message that turned read or unread.
+    private func adjustUnread(for message: MailMessage, isRead: Bool) {
+        if let folderID = folderID(of: message.parentFolderID) {
+            applyUnreadDeltas([folderID: isRead ? -1 : 1])
+        }
+        if let conversationID = message.conversationID ?? selectedConversationID,
+           let index = conversations.firstIndex(where: { $0.id == conversationID }) {
+            let old = conversations[index]
+            conversations[index] = old.with(unreadCount: max(0, old.unreadCount + (isRead ? -1 : 1)))
         }
     }
 
     func setFlag(_ message: MailMessage, _ flagged: Bool) async {
-        do { replace(try await service.setFlag(message, flagged)) } catch { show(error) }
+        let before = current(message)
+        await updateMessage(message, apply: { $0.with(isFlagged: flagged) }, revert: { $0.with(isFlagged: before.isFlagged) }) {
+            try await self.service.setFlag($0, flagged)
+        }
     }
 
     func toggleCategory(_ name: String, on message: MailMessage) async {
-        var categories = message.categories
+        // From what is on screen: a second toggle right after the first builds on it.
+        let before = current(message)
+        var categories = before.categories
         if let index = categories.firstIndex(of: name) { categories.remove(at: index) } else { categories.append(name) }
-        do { replace(try await service.setCategories(message, categories)) } catch { show(error) }
+        await setCategories(categories, on: message, before: before)
     }
 
     func clearCategories(_ message: MailMessage) async {
-        do { replace(try await service.setCategories(message, [])) } catch { show(error) }
+        await setCategories([], on: message, before: current(message))
+    }
+
+    private func setCategories(_ categories: [String], on message: MailMessage, before: MailMessage) async {
+        await updateMessage(message, apply: { $0.with(categories: categories) }, revert: { $0.with(categories: before.categories) }) {
+            try await self.service.setCategories($0, categories)
+        }
+    }
+
+    /// The message as the reader shows it, with the latest change key the server gave for it.
+    private func current(_ message: MailMessage) -> MailMessage {
+        let shown = thread?.messages.first { $0.id == message.id } ?? message
+        return messageConfirmed[message.id].map { shown.with(ref: $0.ref) } ?? shown
+    }
+
+    /// Shows the change at once, then sends it. Changes of one message go one after another:
+    /// each needs the change key the server answered the previous one with, so a second click
+    /// waits for the first instead of being lost. On a failure only this change is taken back.
+    ///
+    /// A request is made from the message as the server last confirmed it, plus its own change —
+    /// never from the screen, which may already show later changes still on their way: the
+    /// service caches what it is given, and a refused change must not stay in that copy.
+    private func updateMessage(
+        _ message: MailMessage,
+        apply: @escaping (MailMessage) -> MailMessage,
+        revert: @escaping (MailMessage) -> MailMessage,
+        onFailure: @escaping () -> Void = {},
+        _ request: @escaping (MailMessage) async throws -> MailMessage
+    ) async {
+        let id = message.id
+        // The first change of a run: what is on screen is what the server holds.
+        if messageConfirmed[id] == nil { messageConfirmed[id] = current(message) }
+        replace(apply(current(message)))
+        let previous = messageChanges[id]
+        let change = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            do {
+                let answered = try await request(self.messageConfirmed[id] ?? message)
+                self.messageConfirmed[id] = answered
+                // Only the change key: the fields on screen may already carry a later change.
+                self.replace(self.current(message))
+            } catch {
+                self.replace(revert(self.current(message)))
+                onFailure()
+                self.show(error)
+            }
+        }
+        messageChanges[id] = change
+        await change.value
+        if messageChanges[id] == change {
+            messageChanges[id] = nil
+            messageConfirmed[id] = nil
+        }
     }
 
     /// Moves the whole open thread to a folder; "delete" goes to Deleted Items.
@@ -653,11 +904,15 @@ final class MailWindowModel: ObservableObject {
     }
 
     func loadFullBody(_ message: MailMessage) async {
-        do {
-            let full = try await service.fullMessage(message.ref)
-            fullBodies[message.id] = full.bodyHTML ?? ""
-        } catch {
-            show(error)
+        await whilePending(.fullBody(message.id)) {
+            do {
+                let full = try await service.fullMessage(message.ref)
+                fullBodies[message.id] = full.bodyHTML ?? ""
+                // The quoted history may refer to pictures the short text did not.
+                loadInlineImages(for: [full])
+            } catch {
+                show(error)
+            }
         }
     }
 
@@ -668,18 +923,20 @@ final class MailWindowModel: ObservableObject {
     }
 
     func respond(to message: MailMessage, _ action: MeetingResponseAction) async {
-        do {
-            if try await service.respond(to: message, action: action) {
-                meetingAnswers[message.id] = switch action {
-                case .accept: .accepted
-                case .tentative: .tentative
-                case .decline: .declined
+        await whilePending(.meetingResponse(message.id)) {
+            do {
+                if try await service.respond(to: message, action: action) {
+                    meetingAnswers[message.id] = switch action {
+                    case .accept: .accepted
+                    case .tentative: .tentative
+                    case .decline: .declined
+                    }
+                } else {
+                    openInOWA(message)
                 }
-            } else {
-                openInOWA(message)
+            } catch {
+                show(error)
             }
-        } catch {
-            show(error)
         }
     }
 
@@ -688,10 +945,45 @@ final class MailWindowModel: ObservableObject {
     func loadRemoteImages(for message: MailMessage) {
         let html = fullBodies[message.id] ?? message.bodyHTML ?? ""
         let sources = Array(MailHTMLDocument.remoteImageSources(in: html).prefix(MailRemoteImageLoader.maxImages))
-        guard !sources.isEmpty else { return }
+        guard !sources.isEmpty, pending.insert(.remoteImages(message.id)).inserted else { return }
         Task {
             remoteImages[message.id] = await MailRemoteImageLoader.load(sources)
+            pending.remove(.remoteImages(message.id))
         }
+    }
+
+    /// The message's reader document, or nil until its first build is ready. A build starts here
+    /// when none matches the body and images at hand; meanwhile an older build stays on screen.
+    func readerDocument(for message: MailMessage) -> MailReaderDocument? {
+        let body = fullBodies[message.id] ?? message.bodyHTML ?? ""
+        let inline = inlineImages[message.id] ?? [:]
+        let remote = remoteImages[message.id] ?? [:]
+        let key = MailReaderDocument.Key(
+            bodyLength: body.utf8.count,
+            isFull: fullBodies[message.id] != nil,
+            inlineImages: inline.count,
+            remoteImages: remote.count
+        )
+        let current = readerDocuments[message.id]
+        if current?.key != key, readerDocumentBuilds[message.id] != key {
+            readerDocumentBuilds[message.id] = key
+            let id = message.id
+            Task { [weak self] in
+                let built = await Task.detached(priority: .userInitiated) {
+                    MailReaderDocument(
+                        key: key,
+                        html: MailHTMLDocument.document(body: body, inlineImages: inline, remoteImages: remote),
+                        hasRemoteImages: MailHTMLDocument.hasRemoteImages(body),
+                        isVisuallyEmpty: MailHTMLDocument.isVisuallyEmpty(body)
+                    )
+                }.value
+                // A newer build was asked for meanwhile, or another thread opened: drop this one.
+                guard let self, self.readerDocumentBuilds[id] == key else { return }
+                self.readerDocumentBuilds[id] = nil
+                self.readerDocuments[id] = built
+            }
+        }
+        return current
     }
 
     func document(for message: MailMessage) -> String {
@@ -718,6 +1010,8 @@ final class MailWindowModel: ObservableObject {
 
     func clearSearch() {
         guard activeSearch != nil || !searchFilters.text.isEmpty else { return }
+        // Search results stay on screen until the folder reloads: not a folder page meanwhile.
+        listShowsFolderPage = false
         activeSearch = nil
         searchTerms = []
         refiners = []
@@ -737,6 +1031,7 @@ final class MailWindowModel: ObservableObject {
     }
 
     private func apply(searchPage page: MailSearchPage, appending: Bool) {
+        listShowsFolderPage = false
         if appending {
             let known = Set(conversations.map(\.id))
             conversations += page.conversations.filter { !known.contains($0.id) }
@@ -773,27 +1068,55 @@ final class MailWindowModel: ObservableObject {
         panel.nameFieldStringValue = MailAttachmentFiles.safeFileName(attachment.name)
         panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            let data = try await service.attachment(attachment)
-            try data.write(to: url, options: .atomic)
-            MailAttachmentFiles.markQuarantined(url)
-        } catch {
-            show(error)
+        await whilePending(.attachment(attachment.id)) {
+            do {
+                let data = try await service.attachment(attachment)
+                try data.write(to: url, options: .atomic)
+                MailAttachmentFiles.markQuarantined(url)
+            } catch {
+                show(error)
+            }
         }
     }
 
-    func preview(_ attachment: MailAttachmentInfo) async {
+    /// Opens an image of the message in Quick Look at full size when `url` is one of the
+    /// reader's zoom links (`MailHTMLDocument.zoomURL`); `false` for any other link.
+    func openImage(_ url: URL, in message: MailMessage) -> Bool {
+        guard let source = MailHTMLDocument.zoomSource(from: url) else { return false }
+        let inline = inlineImages[message.id] ?? [:]
+        let cid = MailHTMLDocument.contentID(fromSource: source)
+        guard let image = cid.flatMap({ inline[$0] ?? inline[$0.lowercased()] }) ?? remoteImages[message.id]?[source] else {
+            return true  // a zoom link with nothing behind it goes nowhere
+        }
         do {
-            let data = try await service.attachment(attachment)
             let directory = try MailAttachmentFiles.preparePreviewDirectory()
-            let url = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            let file = url.appendingPathComponent(MailAttachmentFiles.safeFileName(attachment.name))
-            try data.write(to: file, options: .atomic)
+            let folder = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            let fileExtension = UTType(mimeType: image.type)?.preferredFilenameExtension ?? "png"
+            let file = folder.appendingPathComponent("image." + fileExtension)
+            try image.data.write(to: file, options: .atomic)
             MailAttachmentFiles.markQuarantined(file)
             MailQuickLook.shared.show(file)
         } catch {
             show(error)
+        }
+        return true
+    }
+
+    func preview(_ attachment: MailAttachmentInfo) async {
+        await whilePending(.attachment(attachment.id)) {
+            do {
+                let data = try await service.attachment(attachment)
+                let directory = try MailAttachmentFiles.preparePreviewDirectory()
+                let url = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+                let file = url.appendingPathComponent(MailAttachmentFiles.safeFileName(attachment.name))
+                try data.write(to: file, options: .atomic)
+                MailAttachmentFiles.markQuarantined(file)
+                MailQuickLook.shared.show(file)
+            } catch {
+                show(error)
+            }
         }
     }
 }

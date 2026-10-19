@@ -9,6 +9,17 @@ struct MailItemRef: Hashable, Sendable, Codable {
     let changeKey: String?
 }
 
+/// A message to change and what it is: Exchange binds a change by the item type the request names.
+struct MailItemTarget: Hashable, Sendable {
+    let ref: MailItemRef
+    let kind: MailItemKind
+
+    init(_ ref: MailItemRef, kind: MailItemKind) {
+        self.ref = ref
+        self.kind = kind
+    }
+}
+
 struct MailAddress: Hashable, Sendable {
     let name: String
     let email: String?
@@ -108,6 +119,13 @@ enum MailItemKind: Sendable, Hashable {
         default: true
         }
     }
+
+    var isMeetingMessage: Bool {
+        switch self {
+        case .meetingRequest, .meetingResponse, .meetingCancellation: true
+        default: false
+        }
+    }
 }
 
 struct MailConversationSummary: Identifiable, Hashable, Sendable {
@@ -141,6 +159,14 @@ struct MailConversationSummary: Identifiable, Hashable, Sendable {
 
     var isMeetingRequest: Bool { itemClasses.contains { $0.hasPrefix("IPM.Schedule.Meeting.Request") } }
     var isMeetingCancellation: Bool { itemClasses.contains { $0.hasPrefix("IPM.Schedule.Meeting.Canceled") } }
+
+    /// What every message of the conversation is, when one kind covers them all (as far as
+    /// changing them goes); `nil` when an invitation and replies to it share the thread.
+    var uniformItemKind: MailItemKind? {
+        let kinds = itemClasses.map { MailItemKind(itemClass: $0) }
+        guard let first = kinds.first else { return .note }
+        return kinds.allSatisfy { $0.isMeetingMessage == first.isMeetingMessage } ? first : nil
+    }
 
     var isUnread: Bool { unreadCount > 0 }
     /// The user has written in this conversation (a reply sits in Sent Items).
@@ -315,16 +341,13 @@ struct MailListItem: Identifiable, Hashable, Sendable {
     let importance: MailImportance
     let preview: String
     let instanceKey: String?
+    var kind: MailItemKind = .note
 }
 
 /// A batch of conversations the window lists or acts on together.
 enum MailListMode: String, CaseIterable, Identifiable, Sendable {
     case all
     case unread
-    /// Messages from people, not from systems.
-    case people
-    /// People's conversations the user has not written in yet.
-    case awaitingReply
 
     var id: String { rawValue }
     var serverFilter: MailListFilter { self == .unread ? .unread : .all }
@@ -408,10 +431,34 @@ struct MailOutgoing: Sendable, Equatable {
     var to: [String]
     var cc: [String]
     var subject: String
-    /// Plain text typed by the user; sent as escaped HTML.
+    /// Plain text typed by the user; sent as escaped HTML. Each U+FFFC marks where the next of
+    /// `inlineImages` goes, as in the editor's text.
     var body: String
     /// `false` keeps it in Drafts instead of sending.
     var send: Bool = true
+    /// Pictures pasted into the text, in order: inline attachments referenced by `cid:`.
+    var inlineImages: [MailInlineImage] = []
+}
+
+/// A picture pasted into an outgoing message.
+struct MailInlineImage: Sendable, Equatable {
+    /// Marks where a picture sits in `MailOutgoing.body`, as in an attributed string's text.
+    static let placeholder: Character = "\u{FFFC}"
+    /// Exchange's usual limit on a whole message is 10 MB after base64 (×4/3), with room for
+    /// the text and the quoted history.
+    static let maxTotalBytes = 6 * 1024 * 1024
+
+    let contentID: String
+    let name: String
+    let contentType: String
+    let data: Data
+
+    init(contentID: String = UUID().uuidString.lowercased() + "@owawidget", name: String, contentType: String, data: Data) {
+        self.contentID = contentID
+        self.name = name
+        self.contentType = contentType
+        self.data = data
+    }
 }
 
 /// An email saved as a draft and read back from Exchange: who it will really go to.

@@ -4,6 +4,16 @@ import SwiftUI
 /// Small presentation helpers shared by the mail views.
 @MainActor
 enum MailPresentation {
+    /// "Нет связи с сервером — показано то, что было загружено в 12:40" (with the day when the
+    /// load was not today).
+    static func staleListText(_ notice: MailStaleListNotice, now: Date = Date(), localization: LocalizationService) -> String {
+        let time = localization.shortTime(notice.loadedAt)
+        let when = AppTimeZone.calendar.isDate(notice.loadedAt, inSameDayAs: now)
+            ? localization.tr("mail.window.stale.at", time)
+            : localization.tr("mail.window.stale.atDay", localization.formatDate(notice.loadedAt, format: "d MMM"), time)
+        return localization.tr(notice.isConnectionError ? "mail.window.stale.offline" : "mail.window.stale.failed", when)
+    }
+
     /// The inbox panel's status line, worded like the popover's sync line beside it:
     /// "Unread: 12 · checked 3 min ago".
     static func panelStatus(unread: Int?, lastChecked: Date?, now: Date = Date(), localization: LocalizationService) -> String {
@@ -333,6 +343,7 @@ struct MailSidebarView: View {
         .padding(.leading, 2 + CGFloat(min(depth, 4)) * 12)
         .padding(.trailing, 8)
         .padding(.vertical, 3)
+        .mailHover(enabled: !selected)
         .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.accentColor.opacity(0.18) : .clear))
         .contextMenu {
             Button(localization.tr(isPinned ? "mail.sidebar.unpin" : "mail.sidebar.pin")) {
@@ -400,35 +411,98 @@ enum MailPanelFolderList {
     }
 }
 
-// MARK: - Window toolbar
+// MARK: - List filters
 
-/// The list filters as segments in the window toolbar: one click, and the active one is visible.
+/// The list filters as segments above the list they filter: one click, and the active one is
+/// visible. A list column too narrow for the segments gets a drop-down instead.
 struct MailModePicker: View {
     @ObservedObject var model: MailWindowModel
-    /// A narrow window shows a drop-down: the segments would push the folder title out.
-    var compact = false
     @EnvironmentObject private var localization: LocalizationService
 
     var body: some View {
-        let picker = Picker(localization.tr("mail.mode.help"), selection: $model.mode) {
-            ForEach(MailListMode.allCases) { mode in
-                Text(localization.tr("mail.mode.short.\(mode.rawValue)")).tag(mode)
+        ViewThatFits(in: .horizontal) {
+            FittingSegmentedControl(
+                items: MailListMode.allCases.map { ($0, title($0)) },
+                selection: $model.mode,
+                accessibilityLabel: localization.tr("mail.mode.help")
+            )
+            Picker(localization.tr("mail.mode.help"), selection: $model.mode) {
+                ForEach(MailListMode.allCases) { mode in
+                    Text(title(mode)).tag(mode)
+                }
             }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .controlSize(.small)
+            .fixedSize()
         }
-        Group {
-            if compact {
-                picker.pickerStyle(.menu)
-            } else {
-                // Small: the filters must not outshine the folder title next to them.
-                picker.pickerStyle(.segmented).controlSize(.small)
-            }
-        }
-        .labelsHidden()
-        .fixedSize()
         .disabled(model.isSearching)
         .help(localization.tr("mail.mode.help"))
     }
+
+    private func title(_ mode: MailListMode) -> String {
+        localization.tr("mail.mode.short.\(mode.rawValue)")
+    }
 }
+
+/// A small segmented control whose segments are as wide as their labels. SwiftUI's segmented
+/// picker gives every segment the widest one's width, which left "Все" a wide grey slab.
+struct FittingSegmentedControl<Value: Hashable>: NSViewRepresentable {
+    let items: [(value: Value, title: String)]
+    @Binding var selection: Value
+    var accessibilityLabel: String?
+    /// Room around a label, both sides together. AppKit's own fit is wider by a few points per
+    /// segment — enough to push the list filters out of a list column of the default width.
+    static var labelPadding: CGFloat { 14 }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl()
+        control.trackingMode = .selectOne
+        control.segmentDistribution = .fit
+        control.controlSize = .small
+        control.font = .systemFont(ofSize: NSFont.systemFontSize(for: .small))
+        control.target = context.coordinator
+        control.action = #selector(Coordinator.changed(_:))
+        control.setContentHuggingPriority(.required, for: .horizontal)
+        control.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return control
+    }
+
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.parent = self
+        if control.segmentCount != items.count { control.segmentCount = items.count }
+        for (index, item) in items.enumerated() where control.label(forSegment: index) != item.title {
+            control.setLabel(item.title, forSegment: index)
+            let font = control.font ?? .systemFont(ofSize: NSFont.systemFontSize(for: .small))
+            let width = (item.title as NSString).size(withAttributes: [.font: font]).width
+            control.setWidth(ceil(width) + Self.labelPadding, forSegment: index)
+        }
+        control.selectedSegment = items.firstIndex { $0.value == selection } ?? -1
+        control.isEnabled = context.environment.isEnabled
+        control.setAccessibilityLabel(accessibilityLabel)
+    }
+
+    /// The control's own width, so `ViewThatFits` can tell when it does not fit.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
+        nsView.intrinsicContentSize
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var parent: FittingSegmentedControl
+
+        init(_ parent: FittingSegmentedControl) { self.parent = parent }
+
+        @objc func changed(_ sender: NSSegmentedControl) {
+            guard parent.items.indices.contains(sender.selectedSegment) else { return }
+            parent.selection = parent.items[sender.selectedSegment].value
+        }
+    }
+}
+
+// MARK: - Window toolbar
 
 /// List options that are not filters: bundling system mail and marking the folder read.
 struct MailListOptionsMenu: View {
@@ -485,11 +559,10 @@ struct MailConversationListView: View {
         return model.selectedFolderInfo?.displayName ?? localization.tr("mail.folder.inbox")
     }
 
-    /// The folder name, its counts and the list filters live in the window toolbar; this row
-    /// appears only for what belongs to the list itself: search scope and bulk progress.
-    @ViewBuilder
+    /// The folder name and its counts live in the window toolbar; this row holds what belongs to
+    /// the list itself: its filters (or the search scope while searching) and bulk progress.
     private var header: some View {
-        if model.isSearching || model.bulkProgress != nil {
+        VStack(spacing: 0) {
             headerRow
             Divider()
         }
@@ -502,13 +575,16 @@ struct MailConversationListView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                     .layoutPriority(1)
+            } else {
+                MailModePicker(model: model)
+                    .layoutPriority(1)
             }
             if let progress = model.bulkProgress {
                 ProgressView().controlSize(.small)
                 Text(localization.tr("mail.list.marking", progress)).font(.system(size: 11)).foregroundStyle(.secondary)
             }
-            Spacer(minLength: 4)
             if model.isSearching {
+                Spacer(minLength: 4)
                 Picker("", selection: Binding(
                     get: { model.searchFilters.mailboxWide },
                     set: { value in
@@ -525,8 +601,11 @@ struct MailConversationListView: View {
                 .fixedSize()
             }
         }
+        // No spacer around the filters: it and its gap would take room they need. Centred, as the
+        // agenda's day title next to them; a search keeps its title leading and scope trailing.
+        .frame(maxWidth: .infinity, alignment: model.isSearching ? .leading : .center)
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .frame(height: MailColumnWidths.headerHeight)
     }
 
     private var bulkBar: some View {
@@ -534,17 +613,19 @@ struct MailConversationListView: View {
         return HStack(spacing: 10) {
             Text(localization.tr("mail.list.selected", targets.count)).font(.system(size: 12, weight: .medium))
             Spacer(minLength: 4)
-            Button { Task { await model.markRead(targets, true) } } label: { Image(systemName: "envelope.open") }
-                .help(localization.tr("mail.action.markRead"))
-            Button { Task { await model.markRead(targets, false) } } label: { Image(systemName: "envelope.badge") }
-                .help(localization.tr("mail.action.markUnread"))
-            Button { Task { await model.flag(targets, true) } } label: { Image(systemName: "flag") }
-                .help(localization.tr("mail.action.flag"))
-            moveMenu(targets)
-            Button { Task { await model.move(targets, to: .distinguished(.deleteditems)) } } label: { Image(systemName: "trash") }
-                .help(localization.tr("mail.action.delete"))
+            HStack(spacing: 2) {
+                Button { Task { await model.markRead(targets, true) } } label: { MailActionIcon("envelope.open") }
+                    .help(localization.tr("mail.action.markRead"))
+                Button { Task { await model.markRead(targets, false) } } label: { MailActionIcon("envelope.badge") }
+                    .help(localization.tr("mail.action.markUnread"))
+                Button { Task { await model.flag(targets, true) } } label: { MailActionIcon("flag") }
+                    .help(localization.tr("mail.action.flag"))
+                moveMenu(targets)
+                Button { Task { await model.move(targets, to: .distinguished(.deleteditems)) } } label: { MailActionIcon("trash") }
+                    .help(localization.tr("mail.action.delete"))
+            }
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(MailIconButtonStyle(horizontalPadding: 4))
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(Color.accentColor.opacity(0.08))
@@ -558,11 +639,9 @@ struct MailConversationListView: View {
                 }
             }
         } label: {
-            Image(systemName: "folder")
+            MailActionIcon("folder")
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .mailIconMenu()
         .help(localization.tr("mail.action.move"))
     }
 
@@ -651,7 +730,7 @@ struct MailConversationListView: View {
             Button(action: remove) {
                 Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.mailIconCompact)
             .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 8)
@@ -676,9 +755,6 @@ struct MailConversationListView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                    if model.canLoadMore, model.mode == .people || model.mode == .awaitingReply {
-                        Button(localization.tr("mail.list.loadMore")) { Task { await model.loadMore() } }
-                    }
                 }
             }
             .padding()
@@ -732,6 +808,7 @@ struct MailConversationListView: View {
                 underDaySection: true
             )
             .padding(.leading, indented ? 16 : 0)
+            .mailHover(cornerRadius: 0, enabled: !model.isPicked(conversation.id))
             .contentShape(Rectangle())
             .onTapGesture { model.click(conversation, modifiers: NSEvent.modifierFlags) }
             .contextMenu { contextMenu(for: conversation) }
@@ -817,7 +894,8 @@ struct MailConversationListView: View {
                             } label: {
                                 Text(localization.tr("mail.bundle.markRead", unread)).font(.system(size: 11))
                             }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.mailIcon)
+                            .foregroundStyle(Color.accentColor)
                             .fixedSize()
                         }
                     }
@@ -838,6 +916,7 @@ struct MailConversationListView: View {
                     Task { await model.move(conversations, to: .distinguished(.deleteditems)) }
                 }
             }
+            .mailHover(cornerRadius: 0)
             .background(Color.secondary.opacity(0.05))
             Divider()
         }

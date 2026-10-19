@@ -1,3 +1,4 @@
+import ImageIO
 import XCTest
 @testable import OWAWidget
 
@@ -29,6 +30,67 @@ final class MailHTMLDocumentTests: XCTestCase {
         XCTAssertTrue(doc.contains(#"<img src="data:image/png;base64,AQID" width="10">"#))
         XCTAssertTrue(doc.contains("https://tracker.example/p.gif"), "left for the CSP to block")
         XCTAssertEqual(MailHTMLDocument.remoteImageSources(in: body), ["https://tracker.example/p.gif"])
+    }
+
+    /// OWA replaces `src` of an inline image with the URL template and keeps the `cid:` in `originalsrc`.
+    func testCIDFromOriginalSrcReplacesTemplatePixel() {
+        let pixel = OWAMailPayloads.blankInlineImage
+        let images = ["image001.png@01DD": (Data([1, 2, 3]), "image/png")]
+        let body = #"<img originalsrc="cid:image001.png@01DD" data-imagetype="AttachmentByCid" src="\#(pixel)" width="10">"#
+        let doc = MailHTMLDocument.document(body: body, inlineImages: images)
+        XCTAssertTrue(doc.contains(#"src="data:image/png;base64,AQID""#))
+        XCTAssertFalse(doc.contains(pixel))
+
+        let withoutSrc = MailHTMLDocument.document(body: #"<img originalsrc="cid:image001.png@01DD">"#, inlineImages: images)
+        XCTAssertTrue(withoutSrc.contains(#"src="data:image/png;base64,AQID""#))
+
+        let notLoadedYet = MailHTMLDocument.document(body: body)
+        XCTAssertTrue(notLoadedYet.contains(pixel), "keeps the template until the attachment arrives")
+    }
+
+    /// A sender-sized image in a table cell (Bitbucket avatars) must not be squeezed by the cell.
+    func testSizedImagesInTableCellsKeepTheirWidth() {
+        let doc = MailHTMLDocument.document(body: "<p>x</p>")
+        XCTAssertTrue(doc.contains(#"td img[width], th img[width], td img[style*="width"], th img[style*="width"] { max-width: none; }"#))
+    }
+
+    /// A blocked image keeps the size its sender gave: a minimum would blow small badges up.
+    func testBlockedImagePlaceholderKeepsSenderSize() {
+        let doc = MailHTMLDocument.document(body: "<p>x</p>")
+        XCTAssertTrue(doc.contains(#"img[src^="http" i]:not([width]):not([height]):not([style*="width"]):not([style*="height"]) { min-width: 20px; min-height: 20px; }"#))
+        XCTAssertFalse(doc.contains(#"no-repeat; min-width"#))
+    }
+
+    private func png(width: Int, height: Int) -> Data {
+        let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let data = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+        CGImageDestinationFinalize(destination)
+        return data as Data
+    }
+
+    /// A big image (a pasted screenshot) is fitted to the column and opens in Quick Look on a click.
+    func testLargeImagesGetZoomLinks() throws {
+        let images = ["shot@01": (png(width: 1600, height: 900), "image/png"), "avatar@01": (png(width: 32, height: 32), "image/png")]
+        let body = #"<p><img src="cid:shot@01"></p><img src="cid:avatar@01"><a href="https://example.com/pr"><img src="cid:shot@01"></a>"#
+        let doc = MailHTMLDocument.document(body: body, inlineImages: images)
+        let link = MailHTMLDocument.zoomURL(forSource: "cid:shot@01").absoluteString
+        XCTAssertTrue(doc.contains(#"<p><a class="owaw-zoom" href="\#(link)"><img src="data:image/png;base64,"#))
+        XCTAssertEqual(doc.components(separatedBy: "owaw-zoom\" href").count - 1, 1, "the avatar and the image in the sender's link stay plain")
+        XCTAssertTrue(doc.contains(#"<a href="https://example.com/pr"><img src="data:image/png"#))
+        XCTAssertTrue(doc.contains("a.owaw-zoom { cursor: zoom-in;"))
+
+        XCTAssertEqual(MailHTMLDocument.zoomSource(from: try XCTUnwrap(URL(string: link))), "cid:shot@01")
+        let remote = "https://cdn.example/a+b/shot.png?x=1&y=2"
+        XCTAssertEqual(MailHTMLDocument.zoomSource(from: MailHTMLDocument.zoomURL(forSource: remote)), remote)
+        XCTAssertNil(MailHTMLDocument.zoomSource(from: URL(string: "https://example.com/pr")!))
+    }
+
+    func testInlineImageReferencesReadOriginalSrc() {
+        let body = #"<img originalsrc="cid:Shot@01" src="data:image/gif;base64,R0lGOD"><img src="cid:logo"><img src="cid:shot@01"><img src="https://x.example/a.png">"#
+        XCTAssertEqual(MailHTMLDocument.inlineImageReferences(in: body), ["shot@01", "logo"])
     }
 
     func testRemoteImagesLoadedByChoice() {
@@ -163,5 +225,16 @@ final class MailRemoteImageLoaderTests: XCTestCase {
         XCTAssertTrue(MailRemoteImageLoader.isPublicAddress(MailRemoteImageLoader.IPAddress("2a00:1450::1")!))
         let plainHTTP = await MailRemoteImageLoader.isAllowed(URL(string: "http://cdn.example.com/x.png")!)
         XCTAssertFalse(plainHTTP, "https only")
+    }
+
+    func testRefusalNamesTheReason() async {
+        let plainHTTP = await MailRemoteImageLoader.refusal(for: URL(string: "http://cdn.example.com/x.png")!)
+        XCTAssertEqual(plainHTTP, "not https (http)")
+        let local = await MailRemoteImageLoader.refusal(for: URL(string: "https://wiki.corp.internal/x.png")!)
+        XCTAssertEqual(local, "private or local name")
+        let privateLiteral = await MailRemoteImageLoader.refusal(for: URL(string: "https://10.1.2.3/x.png")!)
+        XCTAssertEqual(privateLiteral, "private or local name")
+        XCTAssertEqual(MailRemoteImageLoader.IPAddress("10.20.30.40")?.description, "10.20.30.40")
+        XCTAssertEqual(MailRemoteImageLoader.IPAddress("fd00::5")?.description, "fd00:0:0:0:0:0:0:5")
     }
 }

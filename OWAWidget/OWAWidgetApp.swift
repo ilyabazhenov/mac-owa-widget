@@ -225,9 +225,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and hides it back to a pure menu-bar agent (`.accessory`) once they all close.
     /// Computed from the union of window-visibility flags so closing one window while
     /// another stays open doesn't prematurely drop the Dock icon.
+    @MainActor
     static func updateActivationPolicy() {
         let shouldShowInDock = createMeetingWindowVisible || settingsWindowVisible || mailWindowVisible || mailComposeWindowVisible
+        let becomesRegular = shouldShowInDock && NSApp.activationPolicy() != .regular
         NSApp.setActivationPolicy(shouldShowInDock ? .regular : .accessory)
+        if becomesRegular, NSApp.isActive { reactivateAsRegular() }
+    }
+
+    /// The window was opened from the menu bar, so the app was activated while still an agent;
+    /// activating it again now that it is regular changes nothing. ⌘Tab orders apps by their
+    /// last activation and puts one that has none at the end. Handing activation to the Dock
+    /// (never in ⌘Tab) and taking it back gives it a real one: first in the list, as any app
+    /// that just opened a window.
+    @MainActor
+    private static func reactivateAsRegular() {
+        guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return }
+        // After the window's own `NSApp.activate` in `onAppear`, which would otherwise undo this.
+        DispatchQueue.main.async {
+            dock.activate(options: [])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {

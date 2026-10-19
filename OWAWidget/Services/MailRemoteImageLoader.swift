@@ -25,39 +25,89 @@ enum MailRemoteImageLoader {
         defer { session.invalidateAndCancel() }
 
         var images: [String: (data: Data, type: String)] = [:]
-        for source in sources.prefix(maxImages) {
-            guard let url = URL(string: source), await isAllowed(url) else { continue }
-            if let image = await fetch(url, session: session) { images[source] = image }
+        // One line per host and reason: a newsletter repeats the same host dozens of times.
+        var refusals: [String: Int] = [:]
+        let candidates = Array(sources.prefix(maxImages))
+        for source in candidates {
+            guard let url = URL(string: source) else {
+                refusals["host=? reason=malformed URL", default: 0] += 1
+                continue
+            }
+            let host = url.host?.lowercased() ?? "?"
+            if let reason = await refusal(for: url) {
+                refusals["host=\(host) reason=\(reason)", default: 0] += 1
+                continue
+            }
+            switch await fetch(url, session: session) {
+            case .success(let image): images[source] = image
+            case .failure(let failure): refusals["host=\(host) reason=\(failure.reason)", default: 0] += 1
+            }
         }
+        for (line, count) in refusals.sorted(by: { $0.key < $1.key }) {
+            DiagnosticLog.event("Mail remote image refused \(line)" + (count > 1 ? " ×\(count)" : ""))
+        }
+        DiagnosticLog.event("Mail remote images loaded \(images.count) of \(candidates.count)")
         return images
     }
 
-    private static func fetch(_ url: URL, session: URLSession) async -> (data: Data, type: String)? {
+    /// Why a fetch gave no image, for the diagnostic log.
+    struct FetchFailure: Error {
+        let reason: String
+    }
+
+    private static func fetch(_ url: URL, session: URLSession) async -> Result<(data: Data, type: String), FetchFailure> {
         var request = URLRequest(url: url)
         request.httpShouldHandleCookies = false
-        guard let (bytes, response) = try? await session.bytes(for: request),
-              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              let type = http.mimeType, type.hasPrefix("image/") else { return nil }
-        if http.expectedContentLength > Int64(maxBytes) { return nil }
+        let bytes: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (bytes, response) = try await session.bytes(for: request)
+        } catch {
+            let code = (error as? URLError)?.code
+            // A refused credential challenge surfaces as a cancelled request.
+            let reason = code == .cancelled ? "authentication required (credentials are never sent)" : "network error \(code.map { String($0.rawValue) } ?? "?")"
+            return .failure(FetchFailure(reason: reason))
+        }
+        guard let http = response as? HTTPURLResponse else { return .failure(FetchFailure(reason: "not an HTTP response")) }
+        guard (200..<300).contains(http.statusCode) else {
+            let redirect = (300..<400).contains(http.statusCode) ? " (redirect refused)" : ""
+            return .failure(FetchFailure(reason: "HTTP \(http.statusCode)\(redirect)"))
+        }
+        guard let type = http.mimeType, type.hasPrefix("image/") else {
+            return .failure(FetchFailure(reason: "not an image (\(http.mimeType ?? "no type"))"))
+        }
+        if http.expectedContentLength > Int64(maxBytes) { return .failure(FetchFailure(reason: "larger than \(maxBytes) bytes")) }
         var data = Data()
         do {
             for try await byte in bytes {
                 data.append(byte)
-                if data.count > maxBytes { return nil }
+                if data.count > maxBytes { return .failure(FetchFailure(reason: "larger than \(maxBytes) bytes")) }
             }
         } catch {
-            return nil
+            return .failure(FetchFailure(reason: "download interrupted"))
         }
-        return (data, type)
+        return .success((data, type))
     }
 
     // MARK: - Where a sender's URL may point
 
     /// `https`, a public-looking name, and every address it resolves to public.
     static func isAllowed(_ url: URL) async -> Bool {
-        guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased(), isPublicName(host) else { return false }
+        await refusal(for: url) == nil
+    }
+
+    /// Why the loader will not fetch this URL; `nil` when it may.
+    static func refusal(for url: URL) async -> String? {
+        let scheme = url.scheme?.lowercased() ?? ""
+        guard scheme == "https" else { return "not https (\(scheme.isEmpty ? "no scheme" : scheme))" }
+        guard let host = url.host?.lowercased() else { return "no host" }
+        guard isPublicName(host) else { return "private or local name" }
         let addresses = await Task.detached { resolve(host) }.value
-        return !addresses.isEmpty && addresses.allSatisfy(isPublicAddress)
+        guard !addresses.isEmpty else { return "does not resolve" }
+        if let address = addresses.first(where: { !isPublicAddress($0) }) {
+            return "resolves to a private address (\(address))"
+        }
+        return nil
     }
 
     /// Single-label names and the suffixes networks keep for themselves never leave the LAN.
@@ -92,9 +142,17 @@ enum MailRemoteImageLoader {
         }
     }
 
-    enum IPAddress: Equatable {
+    enum IPAddress: Equatable, CustomStringConvertible {
         case v4(UInt8, UInt8, UInt8, UInt8)
         case v6([UInt8])
+
+        var description: String {
+            switch self {
+            case .v4(let a, let b, let c, let d): return "\(a).\(b).\(c).\(d)"
+            case .v6(let bytes):
+                return stride(from: 0, to: bytes.count, by: 2).map { String(format: "%x", Int(bytes[$0]) << 8 | Int(bytes[$0 + 1])) }.joined(separator: ":")
+            }
+        }
 
         init?(_ text: String) {
             let trimmed = text.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))

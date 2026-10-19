@@ -33,7 +33,7 @@ struct MailAgendaView: View {
             Divider()
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 2) {
                         let events = dayEvents
                         let allDay = events.filter(\.isAllDay)
                         let timed = events.filter { !$0.isAllDay }
@@ -93,7 +93,7 @@ struct MailAgendaView: View {
     private var header: some View {
         HStack(spacing: 6) {
             Button { dayOffset -= 1 } label: { Image(systemName: "chevron.left") }
-                .buttonStyle(.borderless)
+                .buttonStyle(.mailIcon)
                 .help(localization.tr("mail.agenda.previous"))
             Text(MailAgendaPolicy.dayLabel(day, offset: dayOffset, localization: localization))
                 .font(.system(size: 12, weight: .semibold))
@@ -101,15 +101,16 @@ struct MailAgendaView: View {
                 .frame(maxWidth: .infinity)
             if dayOffset != 0 {
                 Button(localization.tr("mail.agenda.today")) { dayOffset = 0 }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.mailIcon)
+                    .foregroundStyle(Color.accentColor)
                     .font(.system(size: 11))
             }
             Button { dayOffset += 1 } label: { Image(systemName: "chevron.right") }
-                .buttonStyle(.borderless)
+                .buttonStyle(.mailIcon)
                 .help(localization.tr("mail.agenda.next"))
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .frame(height: MailColumnWidths.headerHeight)
     }
 
     /// Evening: today is done, so the column looks ahead instead of standing empty.
@@ -117,7 +118,7 @@ struct MailAgendaView: View {
         let tomorrow = AppTimeZone.calendar.date(byAdding: .day, value: 1, to: AppTimeZone.calendar.startOfDay(for: now)) ?? now
         let events = MailAgendaPolicy.events(on: tomorrow, in: calendar.events)
         let timed = events.filter { !$0.isAllDay }
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 2) {
             Button {
                 dayOffset = 1
             } label: {
@@ -128,7 +129,8 @@ struct MailAgendaView: View {
                 }
                 .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(MailIconButtonStyle(horizontalPadding: 4, verticalPadding: 2))
+            .padding(.leading, -4)
             .help(localization.tr("mail.agenda.next"))
             .padding(.top, 10)
             ForEach(events.filter(\.isAllDay)) { event in
@@ -163,29 +165,37 @@ struct MailAgendaView: View {
         let linked = event.id == threadMeetingID
         let expanded = expandedEventID == event.id
         let declined = event.responseType == .declined || event.isEffectivelyCancelled
+        let detail = MailAgendaPolicy.detailLine(event, expanded: expanded)
         return VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: 6) {
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(MailAgendaPolicy.accent(event))
                     .frame(width: 3)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))")
+                // Start over end, beside the title: a meeting takes two short lines, so a whole
+                // working day fits the column without scrolling.
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(localization.shortTime(event.startDate))
                         .font(.system(size: 11, weight: .medium))
-                        .monospacedDigit()
+                    Text(localization.shortTime(event.endDate))
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
+                }
+                .monospacedDigit()
+                .fixedSize()
+                VStack(alignment: .leading, spacing: 1) {
                     Text(event.title)
                         .font(.system(size: 12, weight: live ? .semibold : .medium))
                         .strikethrough(declined)
-                        .lineLimit(expanded ? 4 : 2)
-                    if let detail = event.location?.trimmingCharacters(in: .whitespaces), !detail.isEmpty {
-                        Text(detail).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-                    } else if let organizer = event.organizer, !event.isOrganizer {
-                        Text(organizer).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                        .lineLimit(expanded ? 4 : 1)
+                    if let detail {
+                        Text(detail).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(expanded ? 2 : 1)
                     }
                 }
+                .help(event.title)
                 Spacer(minLength: 2)
                 if event.responseType == .notResponded, !event.isOrganizer, !past {
                     Image(systemName: "questionmark.circle").font(.system(size: 11)).foregroundStyle(.orange)
+                        .padding(.top, 2)
                         .help(localization.tr("mail.agenda.notAnswered"))
                 }
                 if let url = event.joinURLForActions, !past, !declined {
@@ -194,7 +204,7 @@ struct MailAgendaView: View {
                     } label: {
                         Image(systemName: "video.fill").font(.system(size: 11))
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(MailIconButtonStyle(horizontalPadding: 4, verticalPadding: 2))
                     .foregroundStyle(live ? Color.accentColor : Color.secondary)
                     .help(url.host ?? localization.tr("mail.agenda.join"))
                 }
@@ -204,12 +214,14 @@ struct MailAgendaView: View {
                     .padding(.leading, 11)
             }
         }
-        .padding(6)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
         .background(
             RoundedRectangle(cornerRadius: 7)
                 .fill(linked ? Color.accentColor.opacity(0.16) : (live ? Color.accentColor.opacity(0.08) : Color.clear))
         )
         .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(linked ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 1))
+        .mailHover(cornerRadius: 7, enabled: !linked)
         .opacity(past && !expanded ? 0.55 : 1)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -260,6 +272,17 @@ enum MailAgendaPolicy {
         case 1: return localization.tr("mail.agenda.tomorrowLabel", date)
         default: return date
         }
+    }
+
+    /// The line under a meeting's title: where it is or who called it. A link in the location is
+    /// left out while the row is folded, since the camera button already opens it.
+    static func detailLine(_ event: CalendarEvent, expanded: Bool) -> String? {
+        if let location = event.location?.trimmingCharacters(in: .whitespacesAndNewlines), !location.isEmpty {
+            let isLink = location.lowercased().hasPrefix("http://") || location.lowercased().hasPrefix("https://")
+            if expanded || !isLink { return location }
+        }
+        if let organizer = event.organizer, !organizer.isEmpty, !event.isOrganizer { return organizer }
+        return nil
     }
 
     static func accent(_ event: CalendarEvent) -> Color {

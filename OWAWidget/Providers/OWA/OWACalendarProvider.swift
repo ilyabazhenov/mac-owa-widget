@@ -294,8 +294,8 @@ extension OWACalendarProvider: MailProvider {
         try await client.mailAttachment(id: id, maxBytes: maxBytes)
     }
 
-    func mailUpdate(_ refs: [MailItemRef], _ update: MailItemUpdate) async throws -> [MailItemRef] {
-        try await client.mailUpdate(refs, update)
+    func mailUpdate(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [MailItemRef] {
+        try await client.mailUpdate(targets, update)
     }
 
     func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef] {

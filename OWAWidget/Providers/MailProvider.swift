@@ -30,8 +30,8 @@ protocol MailProvider: Actor {
     /// One message in full (with the quoted history). Does not mark it as read.
     func mailMessage(_ ref: MailItemRef) async throws -> MailMessage
     func mailAttachment(id: String, maxBytes: Int) async throws -> Data
-    /// One request for all `refs`; returns their new ids and change keys, in order.
-    func mailUpdate(_ refs: [MailItemRef], _ update: MailItemUpdate) async throws -> [MailItemRef]
+    /// One request for all `targets`; returns their new ids and change keys, in order.
+    func mailUpdate(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [MailItemRef]
     /// Returns the new ids: a moved item gets a new one.
     func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef]
     func mailSearch(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage

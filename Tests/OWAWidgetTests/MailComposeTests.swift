@@ -126,4 +126,68 @@ final class MailComposeTests: XCTestCase {
         let deleted = await provider.deletedDrafts
         XCTAssertEqual(deleted.count, 1, "the unreadable draft does not stay behind")
     }
+
+    private func waitForSuggestions(_ model: MailComposeModel) async {
+        for _ in 0..<100 where model.isSearchingPeople { try? await Task.sleep(for: .milliseconds(20)) }
+    }
+
+    func testReturnPicksTheHighlightedSuggestionNotTheTypedName() async {
+        backend.people = [
+            ResolvedAttendee(displayName: "Каретко Владислав", email: "VKaretko@example.com", jobTitle: nil),
+            ResolvedAttendee(displayName: "Каретко Анна", email: "AKaretko@example.com", jobTitle: nil),
+        ]
+        let model = MailComposeModel(request: MailComposeRequest(kind: .new, original: nil, to: [], cc: [], subject: "", body: ""), service: service)
+        model.toInput = "Каретко"
+        model.inputChanged(.to)
+        XCTAssertTrue(model.showsSuggestions(for: .to), "the dropdown says it is searching")
+        await waitForSuggestions(model)
+        XCTAssertEqual(model.suggestions.count, 2)
+        model.moveHighlight(by: 1)
+        model.submit(.to)
+        XCTAssertEqual(model.to, ["AKaretko@example.com"])
+        XCTAssertEqual(model.toInput, "")
+        XCTAssertFalse(model.showsSuggestions(for: .to))
+    }
+
+    func testReturnDoesNotPickAPersonFoundForOlderText() async {
+        backend.people = [
+            ResolvedAttendee(displayName: "Каретко Владислав", email: "VKaretko@example.com", jobTitle: nil),
+            ResolvedAttendee(displayName: "Каретко Анна", email: "AKaretko@example.com", jobTitle: nil),
+        ]
+        let model = MailComposeModel(request: MailComposeRequest(kind: .new, original: nil, to: [], cc: [], subject: "", body: ""), service: service)
+        model.toInput = "Кар"
+        model.inputChanged(.to)
+        await waitForSuggestions(model)
+        XCTAssertEqual(model.suggestions.count, 2)
+        // More typed, and Return before the new search answers: the list is the old text's.
+        model.toInput = "Каретко Анна"
+        model.inputChanged(.to)
+        model.submit(.to)
+        XCTAssertTrue(model.to.isEmpty, "nobody is picked from the previous search")
+        XCTAssertEqual(model.toInput, "Каретко Анна")
+    }
+
+    func testNobodyFoundIsShownAndReturnKeepsWhatWasTyped() async {
+        let model = MailComposeModel(request: MailComposeRequest(kind: .new, original: nil, to: [], cc: [], subject: "", body: ""), service: service)
+        model.ccInput = "Никто"
+        model.inputChanged(.cc)
+        await waitForSuggestions(model)
+        XCTAssertTrue(model.foundNoPeople)
+        XCTAssertTrue(model.showsSuggestions(for: .cc))
+        XCTAssertFalse(model.showsSuggestions(for: .to))
+        model.submit(.cc)
+        XCTAssertEqual(model.cc, ["Никто"])
+    }
+
+    func testPastedPicturesAreSentAndOversizedOnesBlockSending() {
+        let request = MailComposeRequest(kind: .new, original: nil, to: ["g.miller@example.com"], cc: [], subject: "s", body: "")
+        let model = MailComposeModel(request: request, service: service)
+        model.body = "see \u{FFFC}"
+        model.bodyImages = [MailInlineImage(contentID: "a", name: "a.png", contentType: "image/png", data: Data([1]))]
+        XCTAssertEqual(model.outgoing(send: true).inlineImages, model.bodyImages)
+        XCTAssertTrue(model.canSend)
+        model.bodyImages = [MailInlineImage(name: "big.png", contentType: "image/png", data: Data(count: MailInlineImage.maxTotalBytes + 1))]
+        XCTAssertTrue(model.imagesTooLarge)
+        XCTAssertFalse(model.canSend)
+    }
 }

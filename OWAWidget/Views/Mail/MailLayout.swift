@@ -7,7 +7,8 @@ import SwiftUI
 @MainActor
 final class ScrollerStyleObserver: ObservableObject {
     @Published private(set) var trailingInset: CGFloat = ScrollerStyleObserver.currentInset()
-    private var observer: NSObjectProtocol?
+    // Written once in init, read once in deinit.
+    nonisolated(unsafe) private var observer: NSObjectProtocol?
 
     init() {
         observer = NotificationCenter.default.addObserver(
@@ -15,6 +16,10 @@ final class ScrollerStyleObserver: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.trailingInset = ScrollerStyleObserver.currentInset() }
         }
+    }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
     }
 
     static func currentInset() -> CGFloat {
@@ -41,8 +46,8 @@ enum MailColumnWidths {
     static let list = (key: "mailListWidth", min: 280.0, ideal: 360.0, max: 620.0)
     static let agenda = (key: "mailAgendaWidth", min: 220.0, ideal: 280.0, max: 440.0)
     static let readerMin: CGFloat = 380
-    /// Below this window width the list filters collapse into a drop-down in the toolbar.
-    static let compactToolbarWidth: CGFloat = 1240
+    /// The row atop the list, the reader and the agenda: one height, so their dividers line up.
+    static let headerHeight: CGFloat = 36
 
     static func clamp(_ value: Double, _ spec: (key: String, min: Double, ideal: Double, max: Double)) -> CGFloat {
         guard value > 0 else { return spec.ideal }
@@ -94,6 +99,9 @@ struct MailColumnDivider: View {
     let range: ClosedRange<Double>
     var resizesTrailing = false
     @State private var startWidth: Double?
+    /// The resize cursor is on the cursor stack: popped on leaving, and on disappearing while
+    /// hovered (a column hidden under the pointer), or it would stay for good.
+    @State private var pushedCursor = false
 
     var body: some View {
         Rectangle()
@@ -104,7 +112,19 @@ struct MailColumnDivider: View {
                     .frame(width: 9)
                     .contentShape(Rectangle())
                     .onHover { inside in
-                        if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                        if inside, !pushedCursor {
+                            NSCursor.resizeLeftRight.push()
+                            pushedCursor = true
+                        } else if !inside, pushedCursor {
+                            NSCursor.pop()
+                            pushedCursor = false
+                        }
+                    }
+                    .onDisappear {
+                        if pushedCursor {
+                            NSCursor.pop()
+                            pushedCursor = false
+                        }
                     }
                     .gesture(
                         DragGesture(minimumDistance: 1, coordinateSpace: .global)

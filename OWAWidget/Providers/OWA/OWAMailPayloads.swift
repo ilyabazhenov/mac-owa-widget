@@ -250,34 +250,51 @@ enum OWAMailPayloads {
 
     // MARK: - Changes in the user's own mailbox
 
-    static func updateItem(_ ref: MailItemRef, update: MailItemUpdate, timeZoneID: String) -> [String: Any] {
-        updateItems([ref], update: update, timeZoneID: timeZoneID)
+    static func updateItem(_ target: MailItemTarget, update: MailItemUpdate, timeZoneID: String) -> [String: Any] {
+        updateItems([target], update: update, timeZoneID: timeZoneID)
     }
 
-    /// One `UpdateItem` for several messages: an `ItemChange` per message.
-    static func updateItems(_ refs: [MailItemRef], update: MailItemUpdate, timeZoneID: String) -> [String: Any] {
-        let field: String
-        let item: [String: Any]
+    /// The `__type` of the item a change carries. `Message` is what OWA sends, and for `IsRead`
+    /// it binds every message, invitations included. A flag or categories on a meeting message
+    /// sent as `Message` fail with `ErrorItemNotFound` ("ID type 9; actual type 12"), and OWA's
+    /// JSON does not deserialize `MeetingRequestMessage` and its kin there (HTTP 500 "Cannot
+    /// deserialize UpdateItemJsonRequest"): those go as the base `Item`, which holds both fields.
+    static func itemType(for update: MailItemUpdate, kind: MailItemKind) -> String {
         switch update {
-        case .isRead(let value):
+        case .isRead: "Message:#Exchange"
+        case .flag, .categories: kind.isMeetingMessage ? "Item:#Exchange" : "Message:#Exchange"
+        }
+    }
+
+    /// One `UpdateItem` for several messages: an `ItemChange` per message, each with the type
+    /// `itemType(for:kind:)` gives it.
+    static func updateItems(_ targets: [MailItemTarget], update: MailItemUpdate, timeZoneID: String) -> [String: Any] {
+        let field: String
+        let value: (String, Any)
+        switch update {
+        case .isRead(let isRead):
             field = "IsRead"
-            item = ["__type": "Message:#Exchange", "IsRead": value]
+            value = ("IsRead", isRead)
         case .categories(let names):
             field = "Categories"
-            item = ["__type": "Message:#Exchange", "Categories": names]
+            value = ("Categories", names)
         case .flag(let status):
             field = "Flag"
-            item = ["__type": "Message:#Exchange", "Flag": ["__type": "FlagType:#Exchange", "FlagStatus": status.rawValue]]
+            value = ("Flag", ["__type": "FlagType:#Exchange", "FlagStatus": status.rawValue])
         }
         return [
             "__type": "UpdateItemJsonRequest:#Exchange",
             "Header": header(version: "Exchange2015", timeZoneID: timeZoneID),
             "Body": [
                 "__type": "UpdateItemRequest:#Exchange",
-                "ItemChanges": refs.map { ref in [
+                "ItemChanges": targets.map { target in [
                     "__type": "ItemChange:#Exchange",
-                    "Updates": [["__type": "SetItemField:#Exchange", "Path": propertyURI(field), "Item": item]],
-                    "ItemId": itemID(ref),
+                    "Updates": [[
+                        "__type": "SetItemField:#Exchange",
+                        "Path": propertyURI(field),
+                        "Item": ["__type": itemType(for: update, kind: target.kind), value.0: value.1] as [String: Any],
+                    ]],
+                    "ItemId": itemID(target.ref),
                 ] as [String: Any] },
                 "ConflictResolution": "AlwaysOverwrite",
                 "ClientSupportsIrm": true,
@@ -419,13 +436,23 @@ enum OWAMailPayloads {
     // MARK: - Sending (EWS SOAP)
 
     /// Plain text typed by the user, as the HTML body of an outgoing message. Every line is
-    /// escaped; nothing the user typed is interpreted as markup.
-    static func outgoingBodyHTML(plainText: String) -> String {
+    /// escaped; nothing the user typed is interpreted as markup. Each U+FFFC becomes the next of
+    /// `inlineImages` by its `cid:`; one with no picture left is dropped.
+    static func outgoingBodyHTML(plainText: String, inlineImages: [MailInlineImage] = []) -> String {
         let lines = plainText
             .replacingOccurrences(of: "\r\n", with: "\n")
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { escapeHTML(String($0)) }
+        var images = inlineImages.makeIterator()
         let joined = lines.joined(separator: "<br>")
+            .split(separator: MailInlineImage.placeholder, omittingEmptySubsequences: false)
+            .map(String.init)
+            .reduce(nil as String?) { html, part in
+                guard let html else { return part }
+                guard let image = images.next() else { return html + part }
+                let tag = "<img src=\"cid:\(escapeHTML(image.contentID))\" alt=\"\(escapeHTML(image.name))\" style=\"max-width: 100%;\">"
+                return html + tag + part
+            } ?? ""
         let inner = joined.isEmpty ? "<br>" : joined
         return "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head>"
             + "<body dir=\"auto\"><div style=\"font-family: Calibri, Arial, sans-serif; font-size: 11pt;\">\(inner)</div></body></html>"
@@ -454,7 +481,7 @@ enum OWAMailPayloads {
     static func createMessageSOAP(_ outgoing: MailOutgoing) -> String {
         let disposition = outgoing.send ? "SendAndSaveCopy" : "SaveOnly"
         let savedFolder = outgoing.send ? "sentitems" : "drafts"
-        let html = outgoingBodyHTML(plainText: outgoing.body).replacingOccurrences(of: "]]>", with: "]] >")
+        let html = outgoingBodyHTML(plainText: outgoing.body, inlineImages: outgoing.inlineImages).replacingOccurrences(of: "]]>", with: "]] >")
         let subject = outgoing.subject.trimmingCharacters(in: .whitespacesAndNewlines)
         let subjectXML = subject.isEmpty ? "" : "<t:Subject>\(OWACreateCalendarEventPayload.escapeXML(subject))</t:Subject>"
         let recipients = recipientsXML("ToRecipients", outgoing.to) + recipientsXML("CcRecipients", outgoing.cc)
@@ -483,6 +510,24 @@ enum OWAMailPayloads {
               <m:SavedItemFolderId><t:DistinguishedFolderId Id="\(savedFolder)"/></m:SavedItemFolderId>
               <m:Items>\(itemXML)</m:Items>
             </m:CreateItem>
+        """)
+    }
+
+    /// Pictures pasted into the text, attached to a saved draft as inline files its body refers
+    /// to by `cid:`. A reply or a forward cannot carry attachments in `CreateItem` itself.
+    static func createInlineAttachmentsSOAP(parent ref: MailItemRef, images: [MailInlineImage]) -> String {
+        let files = images.map { image in
+            "<t:FileAttachment><t:Name>\(OWACreateCalendarEventPayload.escapeXML(image.name))</t:Name>"
+                + "<t:ContentType>\(OWACreateCalendarEventPayload.escapeXML(image.contentType))</t:ContentType>"
+                + "<t:ContentId>\(OWACreateCalendarEventPayload.escapeXML(image.contentID))</t:ContentId>"
+                + "<t:IsInline>true</t:IsInline>"
+                + "<t:Content>\(image.data.base64EncodedString())</t:Content></t:FileAttachment>"
+        }.joined()
+        return soapEnvelope("""
+            <m:CreateAttachment>
+              <m:ParentItemId Id="\(OWACreateCalendarEventPayload.escapeXML(ref.id))"\(ref.changeKey.map { " ChangeKey=\"" + OWACreateCalendarEventPayload.escapeXML($0) + "\"" } ?? "")/>
+              <m:Attachments>\(files)</m:Attachments>
+            </m:CreateAttachment>
         """)
     }
 

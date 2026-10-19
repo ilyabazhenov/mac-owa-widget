@@ -46,6 +46,21 @@ final class MailAgendaTests: XCTestCase {
         XCTAssertFalse(MailAgendaPolicy.nowLineGoesBefore(index: 0, events: running, now: now))
     }
 
+    func testDetailLineHidesLinkLocationWhileFolded() {
+        func make(location: String?, organizer: String?, isOrganizer: Bool = false) -> CalendarEvent {
+            CalendarEvent(
+                id: "e", title: "e", startDate: Date(), endDate: Date().addingTimeInterval(1800),
+                location: location, bodyPreview: nil, joinURL: nil, platform: .generic,
+                isAllDay: false, organizer: organizer, accountID: accountID, isOrganizer: isOrganizer
+            )
+        }
+        let link = make(location: "https://example.ktalk.ru/room", organizer: "Иванов")
+        XCTAssertEqual(MailAgendaPolicy.detailLine(link, expanded: false), "Иванов")
+        XCTAssertEqual(MailAgendaPolicy.detailLine(link, expanded: true), "https://example.ktalk.ru/room")
+        XCTAssertEqual(MailAgendaPolicy.detailLine(make(location: "Переговорная 5", organizer: "Иванов"), expanded: false), "Переговорная 5")
+        XCTAssertNil(MailAgendaPolicy.detailLine(make(location: "https://x.ru", organizer: "Я", isOrganizer: true), expanded: false))
+    }
+
     @MainActor
     func testFreeStatus() {
         let localization = LocalizationService(selectedLanguage: .russian)

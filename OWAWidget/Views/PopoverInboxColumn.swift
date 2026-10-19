@@ -9,6 +9,7 @@ struct PopoverInboxColumn: View {
     let horizontalPadding: CGFloat
     let onSelectEvent: (CalendarEvent) -> Void
     let onOpenMail: (String?) -> Void
+    let onCompose: () -> Void
 
     private var invitations: [MeetingInvitationGroup] { calendar.popoverInvitationGroups }
 
@@ -17,6 +18,7 @@ struct PopoverInboxColumn: View {
     @State private var failed: Set<String> = []
     /// The folder tree shows in place of the list while the burger is on.
     @State private var showsFolders = false
+    @State private var isRefreshing = false
 
     private var showsMail: Bool { mail.isAvailable }
 
@@ -84,20 +86,6 @@ struct PopoverInboxColumn: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
-                if showsMail {
-                    Button {
-                        Task {
-                            await mail.checkInbox()
-                            await mail.refreshPanelList(minInterval: 0)
-                            await mail.refreshFolderCounts(minInterval: 0)
-                        }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .buttonStyle(.plain)
-                    .help(localization.tr("popover.inbox.refresh"))
-                    .accessibilityLabel(localization.tr("popover.inbox.refresh"))
-                }
             }
             .frame(height: 16)
             .font(.system(size: 10))
@@ -112,11 +100,41 @@ struct PopoverInboxColumn: View {
     private var inboxList: some View {
         let list = mail.panelList
         if list.isEmpty {
-            Text(localization.tr(mail.lastChecked == nil ? "mail.popover.loading" : "popover.inbox.folderEmpty"))
+            // Empty means empty only once a request has come back: while one is on its way (a
+            // folder switch, the first look) it says so, as the mail window's list does. While
+            // sync is suspended nothing is requested at all, so it says that instead.
+            if mail.isBlocked {
+                Text(localization.tr("popover.inbox.blocked"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+            } else if mail.isLoadingPanelList || !mail.panelListAnswered {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(localization.tr("mail.popover.loading"))
+                }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, horizontalPadding)
-                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+            } else if mail.panelListFailed {
+                VStack(spacing: 6) {
+                    Text(localization.tr("popover.inbox.loadFailed"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Button(localization.tr("mail.retry")) { Task { await mail.refreshPanelList(minInterval: 0) } }
+                        .controlSize(.small)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+            } else {
+                Text(localization.tr("popover.inbox.folderEmpty"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.vertical, 10)
+            }
         } else {
             let starts = MailPresentation.sectionStarts(list.map(\.lastDelivery))
             ForEach(Array(list.enumerated()), id: \.element.id) { index, conversation in
@@ -141,7 +159,7 @@ struct PopoverInboxColumn: View {
                     )
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.mailRow(cornerRadius: 0))
                 Divider().padding(.leading, 21)
             }
         }
@@ -174,18 +192,22 @@ struct PopoverInboxColumn: View {
                     .help(localization.tr("popover.inbox.unreadHelp", folderTitle, unread))
             }
             Spacer(minLength: 4)
+            // The same row of plain icons as the calendar header beside it, with its default
+            // spacing.
             if showsMail {
-                Button {
-                    onOpenMail(nil)
-                } label: {
-                    HStack(spacing: 3) {
-                        Text(localization.tr("mail.popover.open"))
-                        Image(systemName: "arrow.right").font(.system(size: 9, weight: .semibold))
+                HStack {
+                    // Spins for the refresh button and for the panel's own background loads.
+                    if isRefreshing || mail.isLoadingPanelList {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                            .frame(width: 16, height: 16)
+                            .accessibilityLabel(localization.tr("popover.inbox.refresh"))
+                    } else {
+                        headerButton("arrow.clockwise", "popover.inbox.refresh") { refresh() }
                     }
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.accentColor)
+                    headerButton("square.and.pencil", "popover.inbox.compose") { onCompose() }
+                    headerButton("arrow.up.forward.square", "popover.inbox.openWindow") { onOpenMail(nil) }
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, horizontalPadding)
@@ -210,7 +232,8 @@ struct PopoverInboxColumn: View {
                 .frame(width: 16, height: 16)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MailIconButtonStyle(horizontalPadding: 3, verticalPadding: 3))
+        .padding(-3)
         .help(localization.tr(showsFolders ? "popover.inbox.foldersClose" : "popover.inbox.folders"))
         .accessibilityLabel(localization.tr(showsFolders ? "popover.inbox.foldersClose" : "popover.inbox.folders"))
     }
@@ -264,8 +287,32 @@ struct PopoverInboxColumn: View {
             .background(RoundedRectangle(cornerRadius: 6).fill(isShown ? Color.accentColor.opacity(0.16) : .clear))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.mailRow)
         .padding(.horizontal, horizontalPadding - 6)
+    }
+
+    private func headerButton(_ icon: String, _ key: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+                .frame(width: 16, height: 16)
+        }
+        .buttonStyle(MailIconButtonStyle(horizontalPadding: 3, verticalPadding: 3))
+        .padding(-3)
+        .help(localization.tr(key))
+        .accessibilityLabel(localization.tr(key))
+    }
+
+    private func refresh() {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        Task {
+            await mail.checkInbox()
+            // The check reloads the list itself when the unread count moved: not twice then.
+            await mail.refreshPanelList(minInterval: 3)
+            await mail.refreshFolderCounts(minInterval: 0)
+            isRefreshing = false
+        }
     }
 
     private func sectionTitle(_ title: String, count: Int?) -> some View {

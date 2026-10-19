@@ -23,12 +23,12 @@ final class MailReviewTests: XCTestCase {
         return MailService(backend: backend, defaults: defaults)
     }
 
-    private func conversation(_ id: String, from sender: String, unread: Int = 1, replied: Bool = false, refs: Int = 1) -> MailConversationSummary {
+    private func conversation(_ id: String, from sender: String, unread: Int = 1, replied: Bool = false, refs: Int = 1, folder: String = "INBOX") -> MailConversationSummary {
         MailConversationSummary(
             id: id, topic: "Topic \(id)", senders: [sender], recipients: [], lastDelivery: Date(), messageCount: 1,
             globalMessageCount: replied ? 2 : 1, unreadCount: unread, hasAttachments: false, importance: .normal, preview: "Hi",
             itemRefs: (0..<refs).map { MailItemRef(id: "I-\(id)-\($0)", changeKey: "CK") }, categories: [], isFlagged: false,
-            isProtected: false, instanceKey: "K-\(id)", parentFolderID: "INBOX"
+            isProtected: false, instanceKey: "K-\(id)", parentFolderID: folder
         )
     }
 
@@ -129,6 +129,70 @@ final class MailReviewTests: XCTestCase {
         XCTAssertEqual(after, 6, "unread marks only the newest message")
     }
 
+    /// `FindConversation` names a thread's classes, not which message has which: a thread with an
+    /// invitation and replies to it is looked up, so the reply is changed as a meeting response.
+    func testFlaggingAMixedThreadNamesEachMessagesType() async throws {
+        let service = makeService()
+        var mixed = conversation("M", from: "x y", refs: 2)
+        mixed.itemClasses = ["IPM.Schedule.Meeting.Resp.Tent", "IPM.Note"]
+        await provider.setThread(MailThread(id: "M", messages: [
+            MailFixtures.message("I-M-0", conversation: "M", kind: .meetingResponse),
+            MailFixtures.message("I-M-1", conversation: "M"),
+        ], totalMessageCount: 2))
+        try await service.setFlag(conversations: [mixed], true)
+        let kinds = await provider.updateKinds
+        XCTAssertEqual(kinds, [.meetingResponse])
+    }
+
+    /// `IsRead` binds every message as `Message`: marking a mixed thread read reads no thread.
+    func testMarkingAMixedThreadReadNeedsNoLookup() async throws {
+        let service = makeService()
+        var mixed = conversation("M", from: "x y", refs: 2)
+        mixed.itemClasses = ["IPM.Schedule.Meeting.Resp.Tent", "IPM.Note"]
+        try await service.setRead(conversations: [mixed], true)
+        let calls = await provider.calls
+        let count = await provider.updateCount
+        XCTAssertFalse(calls.contains("thread"))
+        XCTAssertEqual(count, 2)
+    }
+
+    /// A thread opened without Deleted Items has none of the messages of a conversation listed
+    /// there: it is looked up with that folder.
+    func testFlaggingAMixedThreadInDeletedItemsLooksThere() async throws {
+        await provider.setFolders([
+            MailFolder(id: "INBOX", distinguishedID: "inbox", displayName: "Inbox", parentID: "ROOT", unreadCount: 0, totalCount: 0, childFolderCount: 0),
+            MailFolder(id: "TRASH", distinguishedID: "deleteditems", displayName: "Deleted Items", parentID: "ROOT", unreadCount: 0, totalCount: 0, childFolderCount: 0),
+        ])
+        let service = makeService()
+        try await service.loadFolders()
+        var mixed = conversation("D", from: "x y", folder: "TRASH")
+        mixed.itemClasses = ["IPM.Schedule.Meeting.Request", "IPM.Note"]
+        await provider.setThread(MailThread(id: "D", messages: [MailFixtures.message("I-D-0", conversation: "D", kind: .meetingRequest)], totalMessageCount: 1))
+        try await service.setFlag(conversations: [mixed], true)
+        let ignored = await provider.lastIgnoredFolders
+        let kinds = await provider.updateKinds
+        XCTAssertEqual(ignored, [])
+        XCTAssertEqual(kinds, [.meetingRequest])
+    }
+
+    func testAUniformThreadNeedsNoLookup() async throws {
+        let service = makeService()
+        var invitation = conversation("Q", from: "x y")
+        invitation.itemClasses = ["IPM.Schedule.Meeting.Request"]
+        try await service.setFlag(conversations: [invitation], true)
+        let kinds = await provider.updateKinds
+        let calls = await provider.calls
+        XCTAssertEqual(kinds, [.meetingRequest])
+        XCTAssertFalse(calls.contains("thread"))
+    }
+
+    func testFlaggingAMessageNamesItsType() async throws {
+        let service = makeService()
+        _ = try await service.setFlag(MailFixtures.message("R", conversation: "C", kind: .meetingResponse), true)
+        let kinds = await provider.updateKinds
+        XCTAssertEqual(kinds, [.meetingResponse])
+    }
+
     func testMarkAllReadPagesUntilNothingIsLeft() async throws {
         let items = (0..<120).map { index in
             MailListItem(ref: MailItemRef(id: "M\(index)", changeKey: nil), conversationID: nil, subject: "", from: nil, displayTo: "",
@@ -187,7 +251,7 @@ final class MailReviewTests: XCTestCase {
 
     // MARK: - Window
 
-    func testFolderChangeClearsTheReaderAndModesFilter() async {
+    func testFolderChangeClearsTheReader() async {
         await provider.setConversations([
             conversation("A", from: "Bitbucket"), conversation("B", from: "Ольга Васильева", replied: true),
             conversation("C", from: "Дмитрий Орлов"),
@@ -198,10 +262,6 @@ final class MailReviewTests: XCTestCase {
         await model.start()
         await model.openConversation("B")
         XCTAssertNotNil(model.thread)
-        model.mode = .people
-        XCTAssertEqual(model.visibleConversations.map(\.id), ["B", "C"])
-        model.mode = .awaitingReply
-        XCTAssertEqual(model.visibleConversations.map(\.id), ["C"], "the user already wrote in B")
         model.select(folder: MailFolder(id: "SENT", distinguishedID: "sentitems", displayName: "Sent", parentID: nil, unreadCount: 0, totalCount: 0, childFolderCount: 0))
         XCTAssertNil(model.thread)
         XCTAssertNil(model.selectedConversationID)

@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 /// Wraps a message body (HTML the server already filtered) into the document the reader loads.
 ///
@@ -19,15 +20,18 @@ enum MailHTMLDocument {
         inlineImages: [String: (data: Data, type: String)] = [:],
         remoteImages: [String: (data: Data, type: String)] = [:]
     ) -> String {
-        let html = MailHTMLScanner.process(body, sanitize: true) { source in
+        func image(for source: String) -> (data: Data, type: String)? {
             if let cid = contentID(fromSource: source), let image = inlineImages[cid] ?? inlineImages[cid.lowercased()] {
-                return dataURI(image.data, type: image.type)
+                return image
             }
-            if let image = remoteImages[source] {
-                return dataURI(image.data, type: image.type)
-            }
-            return nil
+            return remoteImages[source]
         }
+        let html = MailHTMLScanner.process(body, sanitize: true, imageSource: { source in
+            image(for: source).map { dataURI($0.data, type: $0.type) }
+        }, zoomLink: { source in
+            guard let image = image(for: source), isZoomable(image.data) else { return nil }
+            return zoomURL(forSource: source).absoluteString
+        })
         return """
         <!DOCTYPE html>
         <html><head><meta charset="utf-8">
@@ -39,15 +43,23 @@ enum MailHTMLDocument {
                font: 13px -apple-system, "Helvetica Neue", Arial, sans-serif; line-height: 1.45;
                word-wrap: break-word; overflow-wrap: anywhere; }
         img { max-width: 100%; height: auto; }
+        /* In an auto-width table cell a percentage max-width lets the cell squeeze the image:
+           an avatar sized by the sender shrank to a sliver while its height stayed (an oval).
+           A sized image keeps its size there; a message that ends up too wide is scaled as a whole. */
+        td img[width], th img[width], td img[style*="width"], th img[style*="width"] { max-width: none; }
         table { max-width: 100% !important; }
         pre { white-space: pre-wrap; }
         /* Generated mail often zeroes list padding; the bullets would hang outside the page. */
         #owaw-root ul, #owaw-root ol { padding-inline-start: 1.6em !important; }
         blockquote { margin-left: 0; padding-left: 10px; border-left: 2px solid #d0d0d5; color: #555; }
         a { color: #0a66d6; }
+        a.owaw-zoom { cursor: zoom-in; text-decoration: none; }
         #owaw-root { display: flow-root; padding: 12px 14px; box-sizing: border-box; }
-        /* Remote images stay blocked: show a quiet placeholder instead of an empty frame. */
-        img[src^="http"], img[src^="HTTP"] { background: #f2f2f4 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a0a0a8' stroke-width='2'%3E%3Crect x='3' y='4' width='18' height='16' rx='2'/%3E%3Ccircle cx='9' cy='10' r='2'/%3E%3Cpath d='m21 17-5-5-9 8'/%3E%3C/svg%3E") center no-repeat; min-width: 20px; min-height: 20px; outline: 1px dashed #d4d4da; outline-offset: -1px; color: transparent; }
+        /* Remote images stay blocked: show a quiet placeholder instead of an empty frame. It keeps
+           the size the sender gave (a 12 px badge over an avatar stays 12 px, the icon shrinks to
+           fit); only an image with no size of its own gets a minimum, or it would vanish. */
+        img[src^="http" i] { background: #f2f2f4 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a0a0a8' stroke-width='2'%3E%3Crect x='3' y='4' width='18' height='16' rx='2'/%3E%3Ccircle cx='9' cy='10' r='2'/%3E%3Cpath d='m21 17-5-5-9 8'/%3E%3C/svg%3E") center / min(16px, 75%) no-repeat; outline: 1px dashed #d4d4da; outline-offset: -1px; color: transparent; }
+        img[src^="http" i]:not([width]):not([height]):not([style*="width"]):not([style*="height"]) { min-width: 20px; min-height: 20px; }
         </style></head>
         <body><div id="owaw-root">\(html)</div></body></html>
         """
@@ -68,6 +80,40 @@ enum MailHTMLDocument {
         return value.isEmpty ? nil : value
     }
 
+    /// The scheme of the links that open a message's image in Quick Look; the reader intercepts
+    /// every link, so these never leave the app.
+    static let zoomScheme = "owaw-image"
+
+    /// Images at least this big (in pixels, either side) open in Quick Look on a click: the
+    /// reader fits them to the column, and a screenshot is then too small to read. Avatars and
+    /// logos stay plain.
+    static let zoomMinimumPixels = 400
+
+    static func zoomURL(forSource source: String) -> URL {
+        let encoded = Data(source.utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        return URL(string: zoomScheme + ":" + encoded)!
+    }
+
+    /// The image source a zoom link was made for; `nil` for any other link.
+    static func zoomSource(from url: URL) -> String? {
+        guard url.scheme?.lowercased() == zoomScheme else { return nil }
+        var encoded = String(url.absoluteString.dropFirst(zoomScheme.count + 1))
+            .replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while encoded.count % 4 != 0 { encoded += "=" }
+        guard let data = Data(base64Encoded: encoded) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Reads the pixel size from the image header only; nothing is decoded.
+    static func isZoomable(_ data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else { return false }
+        return max(width, height) >= zoomMinimumPixels
+    }
+
     static func dataURI(_ data: Data, type: String) -> String {
         let safeType = type.range(of: "^[a-zA-Z0-9.+/-]+$", options: .regularExpression) != nil ? type : "application/octet-stream"
         return "data:\(safeType);base64,\(data.base64EncodedString())"
@@ -81,6 +127,17 @@ enum MailHTMLDocument {
             if (lower.hasPrefix("https://") || lower.hasPrefix("http://")), !result.contains(source) {
                 result.append(source)
             }
+            return nil
+        }
+        return result
+    }
+
+    /// The `ContentId`s a body's images refer to (`cid:` in `src` or OWA's `originalsrc`),
+    /// lowercased, without duplicates.
+    static func inlineImageReferences(in html: String) -> [String] {
+        var result: [String] = []
+        _ = MailHTMLScanner.process(html, sanitize: false) { source in
+            if let cid = contentID(fromSource: source)?.lowercased(), !result.contains(cid) { result.append(cid) }
             return nil
         }
         return result
@@ -157,11 +214,15 @@ enum MailHTMLScanner {
     /// Elements without content: hiding one hides nothing after it.
     private static let voidElements: Set<String> = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]
 
-    static func process(_ html: String, sanitize: Bool, dropHidden: Bool = false, imageSource: (String) -> String?) -> String {
+    /// - Parameter zoomLink: for an image whose source `imageSource` replaced, the address of a
+    ///   link to wrap it in (`nil`: none). Images already inside a sender's link are left alone:
+    ///   anchors do not nest, and the sender's link would break.
+    static func process(_ html: String, sanitize: Bool, dropHidden: Bool = false, imageSource: (String) -> String?, zoomLink: ((String) -> String?)? = nil) -> String {
         let s = Array(html.unicodeScalars)
         let n = s.count
         var out = String.UnicodeScalarView()
         out.reserveCapacity(n)
+        var anchorDepth = 0
         var i = 0
         while i < n {
             guard let lt = index(of: "<", in: s, from: i) else {
@@ -221,10 +282,12 @@ enum MailHTMLScanner {
                 continue
             }
             if closing {
+                if name == "a" { anchorDepth = max(0, anchorDepth - 1) }
                 out.append(contentsOf: s[lt..<tagEnd])
                 i = tagEnd
                 continue
             }
+            if name == "a", !parsed.selfClosing { anchorDepth += 1 }
             if dropHidden, isHidden(parsed.list, in: s) {
                 if parsed.selfClosing || voidElements.contains(name) {
                     i = tagEnd
@@ -238,17 +301,33 @@ enum MailHTMLScanner {
 
             var rebuilt = false
             var parts: [String] = []
+            // OWA puts its URL template (here a blank pixel) into `src` of an inline image and keeps
+            // the `cid:` reference in `originalsrc`: that one is tried first.
+            var originalReplacement: String?
+            var matchedSource: String?
+            if name == "img", let original = parsed.list.first(where: { $0.name == "originalsrc" })?.value {
+                let source = unescaped(String(String.UnicodeScalarView(s[original])))
+                originalReplacement = imageSource(source)
+                if originalReplacement != nil { matchedSource = source }
+            }
+            var replacedSource = false
             for attribute in parsed.list {
                 if sanitize, attribute.name.hasPrefix("on") || attribute.name == "ping" {
                     rebuilt = true
                     continue
                 }
                 if name == "img", attribute.name == "src", let value = attribute.value,
-                   let replacement = imageSource(unescaped(String(String.UnicodeScalarView(s[value])))) {
+                   let replacement = originalReplacement ?? {
+                       let source = unescaped(String(String.UnicodeScalarView(s[value])))
+                       let replacement = imageSource(source)
+                       if replacement != nil { matchedSource = source }
+                       return replacement
+                   }() {
                     let quote = attribute.quote.map(String.init) ?? "\""
                     parts.append(String(String.UnicodeScalarView(s[attribute.range.lowerBound..<value.lowerBound])).trimmingCharacters(in: .whitespaces)
                         .replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "'", with: "") + quote + replacement + quote)
                     rebuilt = true
+                    replacedSource = true
                     continue
                 }
                 if sanitize, urlAttributes.contains(attribute.name), let value = attribute.value,
@@ -260,6 +339,12 @@ enum MailHTMLScanner {
                 }
                 parts.append(String(String.UnicodeScalarView(s[attribute.range])))
             }
+            if let originalReplacement, !replacedSource, !parsed.list.contains(where: { $0.name == "src" }) {
+                parts.append("src=\"" + originalReplacement + "\"")
+                rebuilt = true
+            }
+            let zoomHref = anchorDepth == 0 ? matchedSource.flatMap { zoomLink?($0) } : nil
+            if let zoomHref { out.append(contentsOf: "<a class=\"owaw-zoom\" href=\"\(zoomHref)\">".unicodeScalars) }
             if rebuilt {
                 var tag = "<" + String(String.UnicodeScalarView(s[nameStart..<j]))
                 for part in parts { tag += " " + part }
@@ -268,6 +353,7 @@ enum MailHTMLScanner {
             } else {
                 out.append(contentsOf: s[lt..<tagEnd])
             }
+            if zoomHref != nil { out.append(contentsOf: "</a>".unicodeScalars) }
             i = tagEnd
         }
         return String(out)

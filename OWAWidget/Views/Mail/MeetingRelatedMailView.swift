@@ -34,7 +34,9 @@ struct MeetingRelatedMailView: View {
                     Label(localization.tr("mail.related.show"), systemImage: "tray.full")
                         .font(.system(size: 12))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(MailIconButtonStyle(horizontalPadding: 4, verticalPadding: 2))
+                .foregroundStyle(Color.accentColor)
+                .padding(.leading, -4)
             case .loading:
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
@@ -42,7 +44,9 @@ struct MeetingRelatedMailView: View {
                 }
             case .failed:
                 Button(localization.tr("mail.related.failed")) { load() }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(MailIconButtonStyle(horizontalPadding: 4, verticalPadding: 2))
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.leading, -4)
                     .font(.system(size: 12))
             case .loaded(let conversations):
                 Label(localization.tr("mail.related.title"), systemImage: "tray.full")
@@ -72,9 +76,12 @@ struct MeetingRelatedMailView: View {
                                     .foregroundStyle(.secondary)
                                     .fixedSize()
                             }
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.mailRow(cornerRadius: 5))
+                        .padding(.horizontal, -4)
                         .help(conversation.preview)
                     }
                 }

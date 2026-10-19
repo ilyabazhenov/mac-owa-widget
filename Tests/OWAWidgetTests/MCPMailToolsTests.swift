@@ -53,9 +53,9 @@ final class MCPMailToolsTests: XCTestCase {
             return message
         }
         func mailAttachment(id: String, maxBytes: Int) async throws -> Data { Data() }
-        func mailUpdate(_ refs: [MailItemRef], _ update: MailItemUpdate) async throws -> [MailItemRef] {
+        func mailUpdate(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [MailItemRef] {
             calls.append("update")
-            return refs
+            return targets.map(\.ref)
         }
         func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef] {
             calls.append("move")

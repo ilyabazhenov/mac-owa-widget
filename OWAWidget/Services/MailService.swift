@@ -117,6 +117,8 @@ enum MailCancellation {
 /// A request to show a conversation in the mail window (from the popover or a notification).
 struct MailOpenRequest: Equatable {
     let conversationID: String
+    /// The folder to show around it (the inbox panel's), when not the window's own.
+    var folder: MailFolderRef? = nil
     let token = UUID()
 }
 
@@ -167,8 +169,27 @@ final class MailService: ObservableObject {
     /// That folder's newest conversations, as the folder lists them. Loaded only once the panel
     /// has been shown (`refreshPanelList`).
     @Published private(set) var panelList: [MailConversationSummary] = []
-    private var panelListLoaded: Date?
+    /// When the panel's folder last loaded fine: a failed load leaves it, so the next look retries.
+    @Published private(set) var panelListLoaded: Date?
+    /// The panel has been shown since the account was set up: new mail then refreshes its list
+    /// (while the panel stays turned on).
+    private var panelWanted = false
+    /// Only the newest panel request writes the list: an older one that answers later would put
+    /// back an older page.
+    private var panelListGeneration = 0
+    /// A panel list request is on its way (a folder switch can overlap a refresh).
+    @Published private(set) var isLoadingPanelList = false
+    private var panelLoadsInFlight = 0 {
+        didSet { isLoadingPanelList = panelLoadsInFlight > 0 }
+    }
+    /// The last request for the panel's folder failed: an empty list is not an empty folder.
+    @Published private(set) var panelListFailed = false
+    /// A request for the panel's folder has come back (fine or not): until then an empty list
+    /// means "loading", not "empty folder".
+    var panelListAnswered: Bool { panelListLoaded != nil || panelListFailed }
     static let panelFolderKey = "mailPanelFolder"
+    /// The account the remembered folder belongs to: a folder id means nothing in another mailbox.
+    static let panelFolderAccountKey = "mailPanelFolderAccount"
     @Published private(set) var lastChecked: Date?
     @Published private(set) var checkState: MailLoadState = .idle
     @Published var openRequest: MailOpenRequest?
@@ -324,7 +345,9 @@ final class MailService: ObservableObject {
                 }
             }
             // New mail (or mail read elsewhere): the inbox panel, once it has been shown, follows.
-            if changed, panelListLoaded != nil, panelFolder == .distinguished(.inbox) { await refreshPanelList(minInterval: 0) }
+            if changed, panelWanted, PopoverInboxPanelStore.isShown(in: defaults), panelFolder == .distinguished(.inbox) {
+                await refreshPanelList(minInterval: 0)
+            }
         } catch {
             report(error, context: "mail.checkInbox")
             checkState = .failed(error.localizedDescription)
@@ -385,6 +408,10 @@ final class MailService: ObservableObject {
     private func report(_ error: Error, context: String) {
         if MailCancellation.isCancellation(error) { return }
         log.error("\(context, privacy: .public) failed: \(error.localizedDescription, privacy: .private)")
+        // The case alone (`notFound`, `serverError("ErrorAccessDenied")`, a URLError code):
+        // other errors' text may quote the server or the mailbox.
+        let kind = (error as? MailError).map { "\($0)" } ?? { let e = error as NSError; return "\(e.domain)#\(e.code)" }()
+        DiagnosticLog.event("Mail \(context) failed error=\(kind)")
         backend?.reportMailFailure(error, context: context)
     }
 
@@ -395,8 +422,12 @@ final class MailService: ObservableObject {
             inboxFolderID = inbox.id
             inboxUnreadCount = inbox.unreadCount
         }
-        // A remembered folder that is gone (deleted, or another account's) falls back to the inbox.
-        if case .id(let id) = panelFolder, !folders.isEmpty, !folders.contains(where: { $0.id == id }) {
+        // A remembered folder that is gone falls back to the inbox — judged only on a full tree.
+        // The GetFolder fallback (sessiondata failed) returns system folders alone, and taking
+        // that for "deleted" would throw the user's choice away over one bad request. The full
+        // tree has the root and parents; the fallback's folders have no parent at all.
+        let isFullTree = folders.contains { $0.distinguished == .msgfolderroot || $0.parentID != nil }
+        if case .id(let id) = panelFolder, isFullTree, !folders.contains(where: { $0.id == id }) {
             resetPanelFolder()
         }
     }
@@ -431,14 +462,29 @@ final class MailService: ObservableObject {
 
     /// The first page of the panel's folder; calls closer than `minInterval` apart are skipped.
     func refreshPanelList(minInterval: TimeInterval = 30) async {
+        panelWanted = true
         guard isAvailable, !isBlocked else { return }
         if let loaded = panelListLoaded, Date().timeIntervalSince(loaded) < minInterval { return }
-        panelListLoaded = Date()
+        // One at a time unless asked for a fresh one (a folder switch, the refresh button).
+        if panelLoadsInFlight > 0, minInterval > 0 { return }
         let folder = panelFolder
-        guard let page = try? await perform("mail.panelList", {
-            try await $0.mailConversations(in: folder, cursor: .first, filter: .all)
-        }), folder == panelFolder else { return }
-        panelList = page.conversations
+        panelListGeneration += 1
+        let generation = panelListGeneration
+        panelLoadsInFlight += 1
+        defer { panelLoadsInFlight -= 1 }
+        do {
+            let page = try await perform("mail.panelList") {
+                try await $0.mailConversations(in: folder, cursor: .first, filter: .all)
+            }
+            guard generation == panelListGeneration, folder == panelFolder else { return }
+            panelList = page.conversations
+            panelListFailed = false
+            panelListLoaded = Date()
+        } catch {
+            // `perform` reported it; the list keeps what it had, and an empty one says why.
+            guard generation == panelListGeneration, folder == panelFolder, !MailCancellation.isCancellation(error) else { return }
+            panelListFailed = true
+        }
     }
 
     /// Switches the panel to another folder and loads it.
@@ -446,16 +492,20 @@ final class MailService: ObservableObject {
         guard folder != panelFolder else { return }
         panelFolder = folder
         defaults.set(Self.storageValue(folder), forKey: Self.panelFolderKey)
+        defaults.set(account?.id.uuidString, forKey: Self.panelFolderAccountKey)
         panelList = []
         panelListLoaded = nil
+        panelListFailed = false
         await refreshPanelList(minInterval: 0)
     }
 
     private func resetPanelFolder() {
         panelFolder = .distinguished(.inbox)
         defaults.removeObject(forKey: Self.panelFolderKey)
+        defaults.removeObject(forKey: Self.panelFolderAccountKey)
         panelList = []
         panelListLoaded = nil
+        panelListFailed = false
     }
 
     /// The folder tree for the panel, when the mail window has not loaded it yet.
@@ -504,16 +554,20 @@ final class MailService: ObservableObject {
     }
 
     /// A thread, from the cache when `useCache` and it is there.
-    func thread(_ conversationID: String, useCache: Bool = true) async throws -> MailThread {
-        if useCache, let cached = threadCache[conversationID] {
+    ///
+    /// Deleted Items is left out of a thread, except when the conversation is opened from there
+    /// (`includingDeleted`): then it would come back empty. Such a thread bypasses the cache, so
+    /// the two shapes of one conversation never stand in for each other.
+    func thread(_ conversationID: String, useCache: Bool = true, includingDeleted: Bool = false) async throws -> MailThread {
+        if !includingDeleted, useCache, let cached = threadCache[conversationID] {
             touch(conversationID)
             return cached
         }
-        let ignored = folders.filter { $0.distinguished == .deleteditems }.map(\.id)
+        let ignored = includingDeleted ? [] : folders.filter { $0.distinguished == .deleteditems }.map(\.id)
         let loaded = try await perform("mail.thread") {
             try await $0.mailThread(conversationID: conversationID, ignoringFolders: ignored)
         }
-        store(loaded)
+        if !includingDeleted { store(loaded) }
         return loaded
     }
 
@@ -546,7 +600,8 @@ final class MailService: ObservableObject {
     @discardableResult
     func setRead(_ message: MailMessage, _ isRead: Bool) async throws -> MailMessage {
         let ref = message.ref
-        let newRef = try await perform("mail.setRead") { try await $0.mailUpdate([ref], .isRead(isRead)) }.first ?? ref
+        let target = MailItemTarget(ref, kind: message.kind)
+        let newRef = try await perform("mail.setRead") { try await $0.mailUpdate([target], .isRead(isRead)) }.first ?? ref
         let updated = message.with(ref: newRef, isRead: isRead)
         replaceInCache(updated)
         if message.parentFolderID == nil || message.parentFolderID == inboxFolderID {
@@ -560,7 +615,8 @@ final class MailService: ObservableObject {
     @discardableResult
     func setCategories(_ message: MailMessage, _ categories: [String]) async throws -> MailMessage {
         let ref = message.ref
-        let newRef = try await perform("mail.categories") { try await $0.mailUpdate([ref], .categories(categories)) }.first ?? ref
+        let target = MailItemTarget(ref, kind: message.kind)
+        let newRef = try await perform("mail.categories") { try await $0.mailUpdate([target], .categories(categories)) }.first ?? ref
         let updated = message.with(ref: newRef, categories: categories)
         replaceInCache(updated)
         changeGeneration += 1
@@ -570,7 +626,8 @@ final class MailService: ObservableObject {
     @discardableResult
     func setFlag(_ message: MailMessage, _ flagged: Bool) async throws -> MailMessage {
         let ref = message.ref
-        let newRef = try await perform("mail.flag") { try await $0.mailUpdate([ref], .flag(flagged ? .flagged : .notFlagged)) }.first ?? ref
+        let target = MailItemTarget(ref, kind: message.kind)
+        let newRef = try await perform("mail.flag") { try await $0.mailUpdate([target], .flag(flagged ? .flagged : .notFlagged)) }.first ?? ref
         let updated = message.with(ref: newRef, isFlagged: flagged)
         replaceInCache(updated)
         changeGeneration += 1
@@ -592,7 +649,11 @@ final class MailService: ObservableObject {
     /// Marks conversations read or unread in one request. "Unread" marks only the newest message,
     /// as Outlook does; "read" marks every message the folder holds.
     func setRead(conversations: [MailConversationSummary], _ isRead: Bool) async throws {
-        let refs = isRead ? conversations.flatMap(\.itemRefs) : conversations.compactMap(\.itemRefs.first)
+        // `IsRead` goes as `Message` whatever the item is (`OWAMailPayloads.itemType`): which
+        // message is an invitation does not matter here, so no thread is read to find out.
+        let refs = conversations.flatMap { conversation in
+            (isRead ? conversation.itemRefs : Array(conversation.itemRefs.prefix(1))).map { MailItemTarget($0, kind: .note) }
+        }
         guard !refs.isEmpty else { return }
         for chunk in refs.chunked(Self.bulkPageSize) {
             _ = try await perform("mail.setRead") { try await $0.mailUpdate(chunk, .isRead(isRead)) }
@@ -606,11 +667,33 @@ final class MailService: ObservableObject {
     }
 
     func setFlag(conversations: [MailConversationSummary], _ flagged: Bool) async throws {
-        let refs = conversations.compactMap(\.itemRefs.first)
+        var newest: [MailItemTarget] = []
+        for conversation in conversations {
+            if let first = await targets(in: conversation).first { newest.append(first) }
+        }
+        let refs = newest
         guard !refs.isEmpty else { return }
         _ = try await perform("mail.flag") { try await $0.mailUpdate(refs, .flag(flagged ? .flagged : .notFlagged)) }
         for conversation in conversations { evict(conversation.id) }
         changeGeneration += 1
+    }
+
+    /// The conversation's messages with what each one is. `FindConversation` names only the
+    /// classes the thread holds, not which message has which: when an invitation and replies to
+    /// it share a thread, the thread itself says (a message it does not hold counts as a note).
+    /// A conversation listed in Deleted Items is read with that folder, or its messages are not
+    /// in the thread at all.
+    private func targets(in conversation: MailConversationSummary) async -> [MailItemTarget] {
+        if let kind = conversation.uniformItemKind {
+            return conversation.itemRefs.map { MailItemTarget($0, kind: kind) }
+        }
+        let deletedItemsID = folders.first { $0.distinguished == .deleteditems }?.id
+        let inDeletedItems = conversation.parentFolderID != nil && conversation.parentFolderID == deletedItemsID
+        let kinds = Dictionary(
+            ((try? await thread(conversation.id, includingDeleted: inDeletedItems))?.messages ?? []).map { ($0.ref.id, $0.kind) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return conversation.itemRefs.map { MailItemTarget($0, kind: kinds[$0.id] ?? .note) }
     }
 
     func move(conversations: [MailConversationSummary], to folder: MailFolderRef) async throws {
@@ -635,7 +718,7 @@ final class MailService: ObservableObject {
             let page = try await perform("mail.markAllRead") {
                 try await $0.mailItems(in: folder, cursor: .first, filter: .unread, count: Self.bulkPageSize)
             }
-            let refs = page.items.filter { !$0.isRead }.map(\.ref)
+            let refs = page.items.filter { !$0.isRead }.map { MailItemTarget($0.ref, kind: $0.kind) }
             guard !refs.isEmpty else { break }
             _ = try await perform("mail.markAllRead") { try await $0.mailUpdate(refs, .isRead(true)) }
             marked += refs.count
@@ -794,8 +877,8 @@ final class MailService: ObservableObject {
 
     // MARK: - Window and compose
 
-    func open(conversationID: String) {
-        openRequest = MailOpenRequest(conversationID: conversationID)
+    func open(conversationID: String, folder: MailFolderRef? = nil) {
+        openRequest = MailOpenRequest(conversationID: conversationID, folder: folder)
     }
 
     func compose(_ request: MailComposeRequest) {
@@ -852,6 +935,13 @@ final class MailService: ObservableObject {
 
     private func providersChanged() {
         clearState()
+        // A folder id belongs to one account: another account starts from its inbox. Providers
+        // are rebuilt at launch and on every credentials edit too, so only a different account
+        // counts. (Turning mail off and on keeps the choice: `clearState` does not touch it.)
+        if case .id = panelFolder, let owner = defaults.string(forKey: Self.panelFolderAccountKey),
+           owner != account?.id.uuidString {
+            resetPanelFolder()
+        }
         if settings.enabled { Task { await checkInbox() } }
     }
 
@@ -863,8 +953,8 @@ final class MailService: ObservableObject {
         latestUnread = []
         panelList = []
         panelListLoaded = nil
-        // A folder id belongs to one account: another account starts from its inbox.
-        if case .id = panelFolder { resetPanelFolder() }
+        panelListFailed = false
+        panelWanted = false
         lastChecked = nil
         inboxFolderID = nil
         ownAddress = nil

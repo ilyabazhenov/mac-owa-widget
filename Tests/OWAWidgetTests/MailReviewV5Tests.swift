@@ -70,11 +70,6 @@ final class MailReviewV5Tests: XCTestCase {
 
     func testDigestPicksWhatNeedsAttention() {
         let unread = conversation("u", unread: 1)
-        let replied = conversation("r", messages: 1, global: 2)
-        let waiting = conversation("w")
-        let old = conversation("o", minutesAgo: 60 * 24 * 10)
-        let robot = conversation("b", from: "jenkins@example.com")
-        let invite = conversation("i", classes: ["IPM.Schedule.Meeting.Request"])
         let folders = [
             MailFolder(id: "INBOX", distinguishedID: "inbox", displayName: "Входящие", parentID: nil, unreadCount: 3, totalCount: 9, childFolderCount: 2),
             MailFolder(id: "BB", distinguishedID: nil, displayName: "Bitbucket", parentID: "INBOX", unreadCount: 16, totalCount: 20, childFolderCount: 0),
@@ -82,11 +77,10 @@ final class MailReviewV5Tests: XCTestCase {
             MailFolder(id: "QQ", distinguishedID: nil, displayName: "Quiet", parentID: "INBOX", unreadCount: 0, totalCount: 20, childFolderCount: 0),
             MailFolder(id: "JK", distinguishedID: "junkemail", displayName: "Junk", parentID: nil, unreadCount: 1, totalCount: 1, childFolderCount: 0),
         ]
-        let digest = MailDigest.build(peopleUnread: [unread], inboxList: [unread, replied, waiting, old, robot, invite], folders: folders)
+        let digest = MailDigest.build(peopleUnread: [unread], folders: folders)
         XCTAssertEqual(digest.unreadFromPeople.map(\.id), ["u"])
-        XCTAssertEqual(digest.awaitingReply.map(\.id), ["w"], "not unread twice, not replied, not old, not systems or invitations")
         XCTAssertEqual(digest.busyFolders.map(\.displayName), ["Bitbucket", "Reports"])
-        XCTAssertTrue(MailDigest.build(peopleUnread: [], inboxList: nil, folders: []).isEmpty)
+        XCTAssertTrue(MailDigest.build(peopleUnread: [], folders: []).isEmpty)
     }
 
     // MARK: - Sidebar and agenda
@@ -229,10 +223,11 @@ final class MailInboxPanelTests: XCTestCase {
         settings.enabled = true
         settings.save(to: defaults)
         let provider = FakeMailProvider(account: MailFixtures.account)
-        func folder(_ id: String, _ distinguished: String?) -> MailFolder {
-            MailFolder(id: id, distinguishedID: distinguished, displayName: id, parentID: nil, unreadCount: 2, totalCount: 9, childFolderCount: 0)
+        func folder(_ id: String, _ distinguished: String?, parent: String? = "ROOT") -> MailFolder {
+            MailFolder(id: id, distinguishedID: distinguished, displayName: id, parentID: parent, unreadCount: 2, totalCount: 9, childFolderCount: 0)
         }
-        await provider.setFolders([folder("INBOX", "inbox"), folder("DIANA", nil)])
+        let root = folder("ROOT", "msgfolderroot", parent: nil)
+        await provider.setFolders([root, folder("INBOX", "inbox"), folder("DIANA", nil)])
         let backend = FakeMailBackend(provider: provider)
         let service = MailService(backend: backend, defaults: defaults)
         try await service.loadFolders()
@@ -240,10 +235,96 @@ final class MailInboxPanelTests: XCTestCase {
         XCTAssertEqual(service.panelFolderInfo?.id, "DIANA")
         XCTAssertEqual(MailService(backend: backend, defaults: defaults).panelFolder, .id("DIANA"), "remembered between launches")
 
-        await provider.setFolders([folder("INBOX", "inbox")])
+        // The GetFolder fallback: system folders only, none with a parent.
+        await provider.setFolders([folder("INBOX", "inbox", parent: nil), folder("SENT", "sentitems", parent: nil)])
         try await service.loadFolders()
-        XCTAssertEqual(service.panelFolder, .distinguished(.inbox), "a folder that is gone falls back to the inbox")
+        XCTAssertEqual(service.panelFolder, .id("DIANA"), "a system-only tree (the GetFolder fallback) proves nothing")
+
+        // A full tree with no folders of the user's own left: the remembered one is gone all the same.
+        await provider.setFolders([root, folder("INBOX", "inbox"), folder("SENT", "sentitems")])
+        try await service.loadFolders()
+        XCTAssertEqual(service.panelFolder, .distinguished(.inbox), "a folder that is gone from a full tree falls back to the inbox")
         XCTAssertNil(defaults.string(forKey: MailService.panelFolderKey))
+        XCTAssertNil(defaults.string(forKey: MailService.panelFolderAccountKey))
+    }
+
+    func testPanelFolderSurvivesProviderRebuildsButNotAnotherAccount() async throws {
+        let defaults = UserDefaults(suiteName: "panel-account-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let provider = FakeMailProvider(account: MailFixtures.account)
+        let backend = FakeMailBackend(provider: provider)
+        let other = CalendarAccount(id: UUID(), displayName: "Other", serverURL: "https://mail.example.org", email: "EXAMPLE\\other", accountType: .owa)
+        backend.accounts.append(other)
+        backend.providers[other.id] = FakeMailProvider(account: other)
+        let service = MailService(backend: backend, defaults: defaults)
+        await service.selectPanelFolder(.id("DIANA"))
+
+        // A settings change that leaves the same account in charge (as a rebuild at launch does).
+        service.updateSettings { $0.accountID = MailFixtures.account.id }
+        XCTAssertEqual(service.panelFolder, .id("DIANA"), "the same mailbox keeps the user's folder")
+
+        service.updateSettings { $0.accountID = other.id }
+        XCTAssertEqual(service.panelFolder, .distinguished(.inbox), "another mailbox starts from its inbox")
+        XCTAssertNil(defaults.string(forKey: MailService.panelFolderKey))
+    }
+
+    func testOlderPanelAnswerDoesNotOverwriteNewerOne() async throws {
+        let defaults = UserDefaults(suiteName: "panel-race-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let provider = FakeMailProvider(account: MailFixtures.account)
+        await provider.setConversations([MailFixtures.conversation("old")])
+        await provider.setConversationDelays([300_000_000, 0])
+        // The service holds its backend weakly.
+        let backend = FakeMailBackend(provider: provider)
+        let service = MailService(backend: backend, defaults: defaults)
+
+        let slow = Task { await service.refreshPanelList(minInterval: 0) }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await provider.setConversations([MailFixtures.conversation("new")])
+        await service.refreshPanelList(minInterval: 0)
+        await slow.value
+        XCTAssertEqual(service.panelList.map(\.id), ["new"], "the slow first request answered last but is older")
+        XCTAssertFalse(service.isLoadingPanelList)
+    }
+
+    func testEmptyPanelFolderIsNotLoadingOnceAnswered() async throws {
+        let defaults = UserDefaults(suiteName: "panel-empty-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let backend = FakeMailBackend(provider: FakeMailProvider(account: MailFixtures.account))
+        let service = MailService(backend: backend, defaults: defaults)
+        XCTAssertFalse(service.panelListAnswered)
+        await service.refreshPanelList(minInterval: 0)
+        XCTAssertTrue(service.panelList.isEmpty)
+        XCTAssertNil(service.lastChecked, "no inbox check yet: the panel must not wait for one")
+        XCTAssertTrue(service.panelListAnswered)
+    }
+
+    func testFailedPanelLoadIsNotAnEmptyFolder() async throws {
+        let defaults = UserDefaults(suiteName: "panel-fail-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let provider = FakeMailProvider(account: MailFixtures.account)
+        await provider.setConversations([MailFixtures.conversation("c1")])
+        await provider.setFailure(URLError(.timedOut))
+        let backend = FakeMailBackend(provider: provider)
+        let service = MailService(backend: backend, defaults: defaults)
+
+        await service.refreshPanelList(minInterval: 0)
+        XCTAssertTrue(service.panelListFailed)
+        XCTAssertFalse(service.isLoadingPanelList)
+        XCTAssertTrue(service.panelList.isEmpty)
+
+        await provider.setFailure(nil)
+        await service.refreshPanelList(minInterval: 0)
+        XCTAssertFalse(service.panelListFailed)
+        XCTAssertEqual(service.panelList.map(\.id), ["c1"])
     }
 
     func testPanelFolderStorageRoundTrip() {
@@ -270,5 +351,206 @@ final class MailPanelFolderListTests: XCTestCase {
         XCTAssertEqual(rows.map(\.folder.id), ["INBOX", "DIANA", "NIGHT", "SENT", "Archive"])
         XCTAssertEqual(rows.map(\.depth), [0, 1, 2, 0, 0])
         XCTAssertEqual(rows.map(\.startsCustom), [false, false, false, false, true])
+    }
+}
+
+@MainActor
+final class MailOfflineListTests: XCTestCase {
+    private func makeModel() async -> (MailWindowModel, FakeMailProvider, FakeMailBackend) {
+        let defaults = UserDefaults(suiteName: "offline-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let provider = FakeMailProvider(account: MailFixtures.account)
+        await provider.setConversations([MailFixtures.conversation("c1"), MailFixtures.conversation("c2", unread: 0)])
+        let backend = FakeMailBackend(provider: provider)
+        let service = MailService(backend: backend, defaults: defaults)
+        return (MailWindowModel(service: service, defaults: defaults), provider, backend)
+    }
+
+    func testLoadedListSurvivesALostConnection() async {
+        let (model, provider, backend) = await makeModel()
+        _ = backend
+        await model.reloadList()
+        XCTAssertEqual(model.conversations.map(\.id), ["c1", "c2"])
+        XCTAssertNil(model.staleList)
+
+        await provider.setFailure(URLError(.notConnectedToInternet))
+        await model.reloadList()
+        XCTAssertEqual(model.conversations.map(\.id), ["c1", "c2"], "the list on screen stays")
+        XCTAssertEqual(model.staleList?.isConnectionError, true)
+        XCTAssertNil(model.listError)
+
+        await provider.setFailure(nil)
+        await model.reloadList()
+        XCTAssertNil(model.staleList, "the notice goes once a load succeeds")
+    }
+
+    func testFolderNeverLoadedStillShowsTheError() async {
+        let (model, provider, backend) = await makeModel()
+        _ = backend
+        await provider.setFailure(URLError(.timedOut))
+        await model.reloadList()
+        XCTAssertTrue(model.conversations.isEmpty)
+        XCTAssertNil(model.staleList)
+        XCTAssertNotNil(model.listError)
+    }
+
+    func testStaleNoticeDoesNotFollowToAnotherFolder() async {
+        let (model, provider, backend) = await makeModel()
+        _ = backend
+        await model.reloadList()
+        await provider.setFailure(URLError(.notConnectedToInternet))
+        await model.reloadList()
+        XCTAssertNotNil(model.staleList)
+        model.select(ref: .distinguished(.sentitems))
+        XCTAssertNil(model.staleList, "the inbox's notice does not stand over the folder being loaded")
+    }
+
+    func testStartOnAGivenFolderLoadsOnlyThatFolder() async {
+        let (model, provider, backend) = await makeModel()
+        _ = backend
+        await model.start(folder: .distinguished(.sentitems))
+        XCTAssertEqual(model.selectedFolder, .distinguished(.sentitems))
+        let lists = await provider.calls.filter { $0.hasPrefix("conversations:") }
+        XCTAssertEqual(lists.count, 1, "the window's previous folder is not loaded first")
+    }
+
+    func testConnectionErrorsAreToldApartFromServerErrors() {
+        XCTAssertTrue(MailConnectivity.isConnectionError(URLError(.cannotFindHost)))
+        XCTAssertTrue(MailConnectivity.isConnectionError(NSError(domain: "Wrapper", code: 1, userInfo: [NSUnderlyingErrorKey: URLError(.timedOut)])))
+        XCTAssertFalse(MailConnectivity.isConnectionError(URLError(.badServerResponse)))
+        XCTAssertFalse(MailConnectivity.isConnectionError(MailError.notSupported))
+    }
+
+    func testStaleNoticeText() {
+        let localization = LocalizationService(selectedLanguage: .russian)
+        // Noon, so "ten minutes ago" is today whenever the suite runs.
+        let now = AppTimeZone.calendar.date(bySettingHour: 12, minute: 0, second: 0, of: Date())!
+        let today = MailStaleListNotice(loadedAt: now.addingTimeInterval(-600), isConnectionError: true)
+        XCTAssertEqual(MailPresentation.staleListText(today, now: now, localization: localization),
+                       "Нет связи с сервером — показано то, что было загружено в " + localization.shortTime(today.loadedAt))
+        let earlier = MailStaleListNotice(loadedAt: now.addingTimeInterval(-3 * 86_400), isConnectionError: false)
+        XCTAssertTrue(MailPresentation.staleListText(earlier, now: now, localization: localization).hasPrefix("Не удалось обновить список — показано то, что было загружено "))
+    }
+}
+
+@MainActor
+final class MailReviewFixesTests: XCTestCase {
+    private func makeService(folders: [MailFolder] = []) async throws -> (MailService, FakeMailProvider, FakeMailBackend, UserDefaults) {
+        let defaults = UserDefaults(suiteName: "fixes-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let provider = FakeMailProvider(account: MailFixtures.account)
+        await provider.setFolders(folders)
+        let backend = FakeMailBackend(provider: provider)
+        let service = MailService(backend: backend, defaults: defaults)
+        if !folders.isEmpty { try await service.loadFolders() }
+        return (service, provider, backend, defaults)
+    }
+
+    private func folder(_ id: String, _ distinguished: String?) -> MailFolder {
+        MailFolder(id: id, distinguishedID: distinguished, displayName: id, parentID: nil, unreadCount: 0, totalCount: 1, childFolderCount: 0)
+    }
+
+    func testThreadOpenedFromDeletedItemsKeepsThatFolderAndSkipsTheCache() async throws {
+        let (service, provider, backend, _) = try await makeService(folders: [folder("INBOX", "inbox"), folder("DEL", "deleteditems")])
+        _ = backend
+        await provider.setThread(MailThread(id: "C", messages: [MailFixtures.message("m", conversation: "C")], totalMessageCount: 1))
+        _ = try await service.thread("C")
+        let normal = await provider.lastIgnoredFolders
+        XCTAssertEqual(normal, ["DEL"])
+        let cached = service.cachedThreadCount
+        _ = try await service.thread("C", useCache: false, includingDeleted: true)
+        let fromDeleted = await provider.lastIgnoredFolders
+        XCTAssertEqual(fromDeleted, [])
+        XCTAssertEqual(service.cachedThreadCount, cached, "the deleted-items shape is not cached")
+    }
+
+    func testPanelRetriesOnNextLookAfterAFailure() async throws {
+        let (service, provider, backend, _) = try await makeService()
+        _ = backend
+        await provider.setConversations([MailFixtures.conversation("c1")])
+        await provider.setFailure(URLError(.timedOut))
+        await service.refreshPanelList()
+        XCTAssertTrue(service.panelListFailed)
+        await provider.setFailure(nil)
+        await service.refreshPanelList()
+        XCTAssertEqual(service.panelList.map(\.id), ["c1"], "a failed load does not hold the next one back for 30 s")
+    }
+
+    func testBlockedPanelMakesNoRequestAndIsNotAFailure() async throws {
+        let (service, provider, backend, _) = try await makeService()
+        backend.isMailBlocked = true
+        await service.refreshPanelList(minInterval: 0)
+        XCTAssertTrue(service.isBlocked)
+        XCTAssertFalse(service.panelListFailed)
+        let lists = await provider.calls.filter { $0.hasPrefix("conversations") }
+        XCTAssertTrue(lists.isEmpty)
+    }
+
+    func testClearedSearchResultsDoNotReplaceTheFolderSnapshot() async throws {
+        let (service, provider, backend, defaults) = try await makeService()
+        _ = backend
+        await provider.setConversations([MailFixtures.conversation("inbox1"), MailFixtures.conversation("inbox2")])
+        let model = MailWindowModel(service: service, defaults: defaults)
+        await model.reloadList()
+        XCTAssertEqual(model.conversations.map(\.id), ["inbox1", "inbox2"])
+
+        await provider.setSearchPages([MailSearchPage(conversations: [MailFixtures.conversation("found")], moreAvailable: false, searchTerms: [], refiners: [], offset: 0)])
+        model.searchFilters.text = "report"
+        await model.submitSearch()
+        XCTAssertEqual(model.conversations.map(\.id), ["found"])
+
+        model.clearSearch()
+        await model.markRead(model.conversations, true)   // a change made before the folder reloads
+        await provider.setFailure(URLError(.notConnectedToInternet))
+        await model.reloadList()
+        XCTAssertEqual(model.conversations.map(\.id), ["inbox1", "inbox2"], "the snapshot is still the folder's")
+        XCTAssertNotNil(model.staleList)
+    }
+}
+
+
+@MainActor
+final class MailThreadInlineImageTests: XCTestCase {
+    private func message(_ id: String, body: String, attachments: [MailAttachmentInfo]) -> MailMessage {
+        MailMessage(
+            ref: MailItemRef(id: id, changeKey: "CK"), conversationID: "C1", parentFolderID: "INBOX", kind: .note,
+            subject: "Subject", from: MailAddress(name: "Grace Miller", email: "g.miller@example.com"), to: [], cc: [], bcc: [],
+            hiddenRecipientCount: 0, received: Date(), sent: Date(), isRead: true, isDraft: false, importance: .normal,
+            bodyHTML: body, preview: "Hello", attachments: attachments, categories: [], isFlagged: false,
+            actions: [.reply, .replyAll, .forward], meeting: nil, internetMessageID: nil
+        )
+    }
+
+    /// The conversation leaves out an older message's inline attachments: the message is read on
+    /// its own and its screenshot shows instead of OWA's blank pixel.
+    func testMissingInlineAttachmentsAreReadFromTheItem() async throws {
+        let defaults = UserDefaults(suiteName: "inline-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let provider = FakeMailProvider(account: MailFixtures.account)
+        let body = #"<p>RAM</p><img originalsrc="cid:shot@01" src="data:image/gif;base64,R0lGOD">"#
+        let inThread = message("M1", body: body, attachments: [])
+        let attachment = MailAttachmentInfo(id: "A1", name: "image001.png", contentType: "image/png", size: 1, isInline: true, contentID: "shot@01", isItemAttachment: false)
+        await provider.setThread(MailThread(id: "C1", messages: [inThread], totalMessageCount: 1))
+        await provider.setFullMessage(message("M1", body: body, attachments: [attachment]))
+        let backend = FakeMailBackend(provider: provider)
+        let service = MailService(backend: backend, defaults: defaults)
+        let model = MailWindowModel(service: service, defaults: defaults)
+
+        await model.openConversation("C1")
+        XCTAssertNil(model.threadError)
+        for _ in 0..<200 where model.inlineImages["M1"]?.isEmpty ?? true {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(model.inlineImages["M1"]?["shot@01"]?.data, Data("x".utf8))
+        XCTAssertTrue(model.document(for: inThread).contains(#"src="data:image/png;base64,eA==""#))
+        let calls = await provider.calls
+        XCTAssertTrue(calls.contains("message") && calls.contains("attachment"), "\(calls)")
+        withExtendedLifetime(backend) {}
     }
 }

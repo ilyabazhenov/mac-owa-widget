@@ -13,6 +13,7 @@ actor FakeMailProvider: MailProvider {
     private(set) var calls: [String] = []
     private(set) var sent: [MailOutgoing] = []
     private(set) var updates: [(MailItemRef, MailItemUpdate)] = []
+    private(set) var updateKinds: [MailItemKind] = []
 
     init(account: CalendarAccount) { self.account = account }
 
@@ -22,6 +23,10 @@ actor FakeMailProvider: MailProvider {
     func setThread(_ thread: MailThread) { threads[thread.id] = thread }
     func setFolders(_ value: [MailFolder]) { folderList = value }
     func setSearchPages(_ value: [MailSearchPage]) { searchPages = value }
+    /// Delays of the next `mailConversations` calls, one per call in order: lets an earlier
+    /// request answer after a later one.
+    var conversationDelays: [UInt64] = []
+    func setConversationDelays(_ value: [UInt64]) { conversationDelays = value }
 
     private func record(_ name: String) throws {
         calls.append(name)
@@ -44,7 +49,10 @@ actor FakeMailProvider: MailProvider {
 
     func mailConversations(in folder: MailFolderRef, cursor: MailListCursor, filter: MailListFilter) async throws -> MailConversationPage {
         try record("conversations:\(filter.rawValue)")
-        return MailConversationPage(conversations: conversations, totalInView: conversations.count, nextCursor: nil)
+        // What the mailbox held when the request came in, however late the answer.
+        let page = conversations
+        if !conversationDelays.isEmpty { try await Task.sleep(nanoseconds: conversationDelays.removeFirst()) }
+        return MailConversationPage(conversations: page, totalInView: page.count, nextCursor: nil)
     }
 
     var unreadItems: [MailListItem] = []
@@ -56,22 +64,37 @@ actor FakeMailProvider: MailProvider {
         return MailItemPage(items: page, totalInView: unreadItems.count, nextCursor: unreadItems.count > count ? .after(instanceKey: "next") : nil)
     }
 
+    private(set) var lastIgnoredFolders: [String]?
     func mailThread(conversationID: String, ignoringFolders: [String]) async throws -> MailThread {
         try record("thread")
+        lastIgnoredFolders = ignoringFolders
         guard let thread = threads[conversationID] else { throw MailError.notFound }
         return thread
     }
 
+    /// What `mailMessage` answers for an item instead of its copy in a thread: a conversation
+    /// can leave out what a single item read returns (inline attachments).
+    var fullMessages: [String: MailMessage] = [:]
+    func setFullMessage(_ message: MailMessage) { fullMessages[message.ref.id] = message }
+
     func mailMessage(_ ref: MailItemRef) async throws -> MailMessage {
         try record("message")
+        if let full = fullMessages[ref.id] { return full }
         guard let message = threads.values.flatMap(\.messages).first(where: { $0.ref.id == ref.id }) else { throw MailError.notFound }
         return message
     }
 
     func mailAttachment(id: String, maxBytes: Int) async throws -> Data { try record("attachment"); return Data("x".utf8) }
 
-    func mailUpdate(_ refs: [MailItemRef], _ update: MailItemUpdate) async throws -> [MailItemRef] {
+    /// Updates after this many succeed are refused: lets a later change of a run fail alone.
+    var updatesBeforeFailure: Int?
+    func setUpdatesBeforeFailure(_ value: Int?) { updatesBeforeFailure = value }
+
+    func mailUpdate(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [MailItemRef] {
         try record("update")
+        if let limit = updatesBeforeFailure, updates.count >= limit { throw URLError(.timedOut) }
+        let refs = targets.map(\.ref)
+        for target in targets { updateKinds.append(target.kind) }
         for ref in refs { updates.append((ref, update)) }
         if case .isRead(true) = update {
             let marked = Set(refs.map(\.id))
@@ -163,7 +186,8 @@ final class FakeMailBackend: MailBackend {
     func mailProvider(accountID: UUID) -> (any MailProvider)? { providers[accountID] }
     func reportMailFailure(_ error: Error, context: String) { reported.append(context) }
     func ownMailAddress(accountID: UUID) async -> String? { "a.morgan@example.com" }
-    func findMailPeople(query: String, accountID: UUID) async throws -> [ResolvedAttendee] { [] }
+    var people: [ResolvedAttendee] = []
+    func findMailPeople(query: String, accountID: UUID) async throws -> [ResolvedAttendee] { people }
     var vipNames: Set<String> = []
     var meetingAnswers: [(String, MeetingResponseAction)] = []
     var knownMeetings: Set<String> = []
@@ -187,9 +211,9 @@ enum MailFixtures {
         )
     }
 
-    static func message(_ id: String, conversation: String, isRead: Bool = false) -> MailMessage {
+    static func message(_ id: String, conversation: String, isRead: Bool = false, kind: MailItemKind = .note) -> MailMessage {
         MailMessage(
-            ref: MailItemRef(id: id, changeKey: "CK"), conversationID: conversation, parentFolderID: "INBOX", kind: .note,
+            ref: MailItemRef(id: id, changeKey: "CK"), conversationID: conversation, parentFolderID: "INBOX", kind: kind,
             subject: "Subject", from: MailAddress(name: "Grace Miller", email: "g.miller@example.com"), to: [], cc: [], bcc: [],
             hiddenRecipientCount: 0, received: Date(), sent: Date(), isRead: isRead, isDraft: false, importance: .normal,
             bodyHTML: "<p>Hello</p>", preview: "Hello", attachments: [], categories: [], isFlagged: false,

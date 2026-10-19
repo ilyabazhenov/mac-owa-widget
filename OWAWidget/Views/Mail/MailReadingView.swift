@@ -31,7 +31,7 @@ struct MailReadingView: View {
                     }
                 }
             } else if model.isLoadingThread {
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+                loadingView
             } else if let error = model.threadError {
                 VStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
@@ -71,6 +71,39 @@ struct MailReadingView: View {
         }
     }
 
+    /// Right after a click: the conversation's subject and sender from the list, and a spinner
+    /// where the messages will be. The reader answers the click at once instead of keeping the
+    /// previous view until the thread arrives.
+    private var loadingView: some View {
+        let summary = model.conversations.first { $0.id == model.selectedConversationID }
+        return VStack(alignment: .leading, spacing: 10) {
+            if let summary {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(summary.topic.isEmpty ? localization.tr("mail.noSubject") : summary.topic)
+                        .font(.system(size: 17, weight: .semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(summary.senders.joined(separator: ", "))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(localization.tr("mail.reading.loading"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, summary == nil ? 80 : 24)
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        // The action bar's height stays free, so the subject does not jump when it appears.
+        .padding(.top, MailColumnWidths.headerHeight)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
     private func open(_ url: URL) {
         switch url.scheme?.lowercased() {
         case "http", "https":
@@ -99,7 +132,7 @@ struct MailReadingView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .frame(minHeight: MailColumnWidths.headerHeight)
     }
 
     private func actionButtons(_ message: MailMessage, labelled: Bool) -> some View {
@@ -150,10 +183,9 @@ struct MailReadingView: View {
                 Text(localization.tr("mail.action.noCategories"))
             }
         } label: {
-            Image(systemName: "tag")
+            MailActionIcon("tag")
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
+        .mailIconMenu()
         .help(localization.tr("mail.action.category"))
     }
 
@@ -165,10 +197,9 @@ struct MailReadingView: View {
                 }
             }
         } label: {
-            Image(systemName: "folder")
+            MailActionIcon("folder")
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
+        .mailIconMenu()
         .help(localization.tr("mail.action.move"))
     }
 
@@ -181,25 +212,27 @@ struct MailReadingView: View {
     private func primary(_ icon: String, _ key: String, labelled: Bool, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             if labelled {
-                Label(localization.tr(key), systemImage: icon)
-                    .font(.system(size: 12))
-                    .lineLimit(1)
-                    .fixedSize()
+                // The icon at the size of the icon-only buttons beside it, the text a step smaller.
+                HStack(spacing: 4) {
+                    Image(systemName: icon).font(.system(size: 13))
+                    Text(localization.tr(key)).font(.system(size: 12))
+                }
+                .frame(height: 16)
+                .lineLimit(1)
+                .fixedSize()
             } else {
-                Image(systemName: icon).font(.system(size: 13))
+                MailActionIcon(icon)
             }
         }
-        .buttonStyle(.borderless)
-        .padding(.horizontal, labelled ? 4 : 5)
+        .buttonStyle(MailIconButtonStyle(horizontalPadding: labelled ? 6 : 4))
         .disabled(!enabled)
         .help(localization.tr(key))
         .accessibilityLabel(localization.tr(key))
     }
 
     private func iconButton(_ icon: String, _ key: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: icon).font(.system(size: 13)) }
-            .buttonStyle(.borderless)
-            .padding(.horizontal, 5)
+        Button(action: action) { MailActionIcon(icon) }
+            .buttonStyle(MailIconButtonStyle(horizontalPadding: 4))
             .help(localization.tr(key))
             .accessibilityLabel(localization.tr(key))
     }
@@ -243,6 +276,7 @@ struct MailMessageCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+                .mailHover(cornerRadius: 10)
                 .contentShape(Rectangle())
                 .onTapGesture { model.toggleExpanded(message) }
             if isExpanded {
@@ -358,8 +392,7 @@ struct MailMessageCard: View {
             default:
                 webBody
             }
-            let body = model.fullBodies[message.id] ?? message.bodyHTML ?? ""
-            let offersImages = MailHTMLDocument.hasRemoteImages(body) && model.remoteImages[message.id] == nil
+            let offersImages = (model.readerDocument(for: message)?.hasRemoteImages ?? false) && model.remoteImages[message.id] == nil
             let offersQuoted = model.fullBodies[message.id] == nil && message.kind.hasReadableBody && (model.thread?.messages.count ?? 0) > 1
             if offersImages || offersQuoted {
             HStack(spacing: 12) {
@@ -367,19 +400,21 @@ struct MailMessageCard: View {
                     Button {
                         model.loadRemoteImages(for: message)
                     } label: {
-                        Label(localization.tr("mail.images.load"), systemImage: "photo")
+                        pendingLabel(localization.tr("mail.images.load"), icon: "photo", isPending: model.isPending(.remoteImages(message.id)))
                     }
+                    .disabled(model.isPending(.remoteImages(message.id)))
                     .help(localization.tr("mail.images.blocked"))
                 }
                 if offersQuoted {
                     Button {
                         Task { await model.loadFullBody(message) }
                     } label: {
-                        Label(localization.tr("mail.reading.showQuoted"), systemImage: "text.quote")
+                        pendingLabel(localization.tr("mail.reading.showQuoted"), icon: "text.quote", isPending: model.isPending(.fullBody(message.id)))
                     }
+                    .disabled(model.isPending(.fullBody(message.id)))
                 }
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.mailIcon)
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
             }
@@ -393,20 +428,44 @@ struct MailMessageCard: View {
         }
     }
 
+    /// A button label whose icon turns into a spinner while its request runs.
+    private func pendingLabel(_ title: String, icon: String, isPending: Bool) -> some View {
+        HStack(spacing: 4) {
+            if isPending {
+                ProgressView().controlSize(.mini).frame(width: 14, height: 12)
+            } else {
+                Image(systemName: icon).frame(width: 14, height: 12)
+            }
+            Text(title)
+        }
+    }
+
     @ViewBuilder
     private var webBody: some View {
-        if let html = model.fullBodies[message.id] ?? message.bodyHTML {
-            if !MailHTMLDocument.isVisuallyEmpty(html) {
-                bodyView
+        if model.fullBodies[message.id] ?? message.bodyHTML != nil {
+            if let document = model.readerDocument(for: message) {
+                if !document.isVisuallyEmpty { bodyView(document.html) }
+            } else {
+                bodyPlaceholder
             }
         } else if !message.preview.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             Text(message.preview).font(.system(size: 13)).textSelection(.enabled)
         }
     }
 
-    private var bodyView: some View {
-        MailMessageWebView(html: model.document(for: message), height: $bodyHeight, copyTitle: localization.tr("mail.action.copy")) { link in
-            model.pendingLink = link
+    /// While the body is being prepared: as tall as a short message, so the card does not
+    /// jump much when it arrives.
+    private var bodyPlaceholder: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(localization.tr("mail.reading.loading")).font(.system(size: 12)).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 60)
+    }
+
+    private func bodyView(_ html: String) -> some View {
+        MailMessageWebView(html: html, height: $bodyHeight, copyTitle: localization.tr("mail.action.copy")) { link in
+            if !model.openImage(link.url, in: message) { model.pendingLink = link }
         }
         .frame(height: bodyHeight)
         .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -444,12 +503,15 @@ struct MailMessageCard: View {
     @ViewBuilder
     private var rsvpButtons: some View {
         let current = model.meetingResponse(for: message)
+        let isSending = model.isPending(.meetingResponse(message.id))
         HStack(spacing: 6) {
             rsvp(.accept, "checkmark.circle", "mail.meeting.accept", isCurrent: current == .accepted, tint: .green)
             rsvp(.tentative, "questionmark.circle", "mail.meeting.tentative", isCurrent: current == .tentative, tint: .orange)
             rsvp(.decline, "xmark.circle", "mail.meeting.decline", isCurrent: current == .declined, tint: .red)
+            if isSending { ProgressView().controlSize(.small) }
         }
         .controlSize(.small)
+        .disabled(isSending)
     }
 
     private func rsvp(_ action: MeetingResponseAction, _ icon: String, _ key: String, isCurrent: Bool, tint: Color) -> some View {
@@ -491,14 +553,20 @@ struct MailMessageCard: View {
             }
             if attachment.isItemAttachment {
                 Button { model.openInOWA(message) } label: { Image(systemName: "arrow.up.forward.square") }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.mailIcon)
                     .help(localization.tr("mail.action.openInOWA"))
+            } else if model.isPending(.attachment(attachment.id)) {
+                // Downloading: a preview or a save of a large file takes a few seconds.
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 52)
+                    .help(localization.tr("mail.attachment.downloading"))
             } else {
                 Button { Task { await model.preview(attachment) } } label: { Image(systemName: "eye") }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.mailIcon)
                     .help(localization.tr("mail.attachment.preview"))
                 Button { Task { await model.save(attachment) } } label: { Image(systemName: "arrow.down.circle") }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.mailIcon)
                     .help(localization.tr("mail.attachment.save"))
             }
         }
@@ -556,7 +624,6 @@ struct MailWindowView: View {
     @AppStorage(MailColumnWidths.list.key) private var listWidth: Double = 0
     @AppStorage(MailColumnWidths.agenda.key) private var agendaWidth: Double = 0
     @AppStorage("mailShowsAgenda") private var showsAgenda = true
-    @State private var windowWidth: CGFloat = 1400
     /// The calendar column needs the calendar; tests and previews may build the window without one.
     var hasCalendar = true
 
@@ -578,6 +645,9 @@ struct MailWindowView: View {
                     }
                     if let error = model.actionError {
                         banner(error, icon: "exclamationmark.triangle") { model.actionError = nil }
+                    }
+                    if let stale = model.staleList, !service.isBlocked {
+                        staleBanner(stale)
                     }
                     GeometryReader { proxy in
                         let fit = MailColumnWidths.fit(
@@ -602,8 +672,6 @@ struct MailWindowView: View {
                             }
                         }
                         .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
-                        .onAppear { windowWidth = proxy.size.width }
-                        .onChange(of: proxy.size.width) { windowWidth = $0 }
                     }
                     .clipped()
                     .environment(\.scrollerInset, scrollers.trailingInset)
@@ -625,17 +693,6 @@ struct MailWindowView: View {
                     localization: localization
                 ))
                 .toolbar {
-                    // A centered item hides the window title once the toolbar gets tight, so a
-                    // narrow window keeps the filters as a drop-down among the trailing buttons.
-                    if isCompactToolbar {
-                        ToolbarItemGroup(placement: .primaryAction) {
-                            MailModePicker(model: model, compact: true)
-                        }
-                    } else {
-                        ToolbarItem(placement: .principal) {
-                            MailModePicker(model: model)
-                        }
-                    }
                     ToolbarItemGroup(placement: .primaryAction) {
                         MailListOptionsMenu(model: model, service: service)
                         Button {
@@ -645,12 +702,20 @@ struct MailWindowView: View {
                             Label(localization.tr("mail.action.new"), systemImage: "square.and.pencil")
                         }
                         .help(localization.tr("mail.action.new"))
-                        Button {
-                            Task { await model.refresh() }
-                        } label: {
-                            Label(localization.tr("mail.action.refresh"), systemImage: "arrow.clockwise")
+                        if model.isPending(.refresh) {
+                            // Same width as the button, so the toolbar does not shift.
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(width: 28)
+                                .help(localization.tr("mail.action.refresh"))
+                        } else {
+                            Button {
+                                Task { await model.refresh() }
+                            } label: {
+                                Label(localization.tr("mail.action.refresh"), systemImage: "arrow.clockwise")
+                            }
+                            .help(localization.tr("mail.action.refresh"))
                         }
-                        .help(localization.tr("mail.action.refresh"))
                         if hasCalendar {
                             // A toggle, not a button: the toolbar shows it pressed while the column is on.
                             Toggle(isOn: Binding(
@@ -668,7 +733,9 @@ struct MailWindowView: View {
                     await service.resolveOwnAddress()
                 }
                 .task(id: service.account?.id) {
-                    await model.start()
+                    // Opened from the inbox panel: start on its folder rather than load the
+                    // window's own first and switch right after.
+                    await model.start(folder: service.openRequest?.folder)
                     consumeOpenRequest()
                 }
                 .onChange(of: service.openRequest) { _ in consumeOpenRequest() }
@@ -679,14 +746,14 @@ struct MailWindowView: View {
         .onAppear {
             service.windowDidAppear()
             MailContentBlocker.prepare()
+            MailReaderWebKit.prewarm()
         }
         .onDisappear {
             service.windowDidDisappear()
             MailAttachmentFiles.clearPreviews()
+            MailReaderWebKit.release()
         }
     }
-
-    private var isCompactToolbar: Bool { windowWidth < MailColumnWidths.compactToolbarWidth }
 
     private var windowTitle: String {
         if model.isSearching { return localization.tr("mail.search.title") }
@@ -743,6 +810,9 @@ struct MailWindowView: View {
     private func consumeOpenRequest() {
         guard let request = service.openRequest else { return }
         service.openRequest = nil
+        // Opened from the inbox panel: show the folder the panel shows, so the conversation sits
+        // in its own list (and one in Deleted Items loads with that folder included).
+        if let folder = request.folder { model.select(ref: folder) }
         guard !request.conversationID.isEmpty else { return }
         model.clearSearch()
         Task { await model.openConversation(request.conversationID) }
@@ -756,13 +826,28 @@ struct MailWindowView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// The list shows an earlier load: say so, how old it is, and offer to try again.
+    private func staleBanner(_ notice: MailStaleListNotice) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: notice.isConnectionError ? "wifi.slash" : "exclamationmark.triangle").foregroundStyle(.orange)
+            Text(MailPresentation.staleListText(notice, localization: localization)).font(.system(size: 12)).lineLimit(2)
+            Spacer()
+            Button(localization.tr("mail.retry")) { Task { await model.refresh() } }
+                .controlSize(.small)
+                .disabled(model.isLoadingList)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Color.orange.opacity(0.12))
+    }
+
     private func banner(_ text: String, icon: String, onClose: (() -> Void)? = nil) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon).foregroundStyle(.orange)
             Text(text).font(.system(size: 12)).lineLimit(2)
             Spacer()
             if let onClose {
-                Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.borderless)
+                Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.mailIcon)
             }
         }
         .padding(.horizontal, 12)

@@ -16,13 +16,15 @@ struct PopoverInboxPanelAttachment: NSViewRepresentable {
     let content: AnyView
     /// Called each time the panel comes on screen with the popover.
     let onShow: () -> Void
+    /// Whether the panel found room beside the popover (`false`: the popover keeps its strips).
+    let onPlacementChange: (Bool) -> Void
 
     func makeNSView(context: Context) -> InboxPanelAttachmentView {
         InboxPanelAttachmentView()
     }
 
     func updateNSView(_ view: InboxPanelAttachmentView, context: Context) {
-        view.update(isEnabled: isEnabled, width: width, content: content, onShow: onShow)
+        view.update(isEnabled: isEnabled, width: width, content: content, onShow: onShow, onPlacementChange: onPlacementChange)
     }
 
     static func dismantleNSView(_ view: InboxPanelAttachmentView, coordinator: ()) {
@@ -35,21 +37,32 @@ final class InboxPanelAttachmentView: NSView {
 
     private var panel: InboxPanel?
     private var hosting: FirstMouseHostingView<AnyView>?
+    /// The "glass" under the content, matched to the popover's: on it AppKit draws labels and
+    /// icons vibrant (brighter), so without it the same icon looks dimmer than in the popover.
+    private var backdrop: NSVisualEffectView?
     private var isEnabled = false
     private var width: CGFloat = 340
     private var onShow: () -> Void = {}
+    private var onPlacementChange: (Bool) -> Void = { _ in }
+    private var reportedPlacement: Bool?
     private var observers: [NSObjectProtocol] = []
 
-    func update(isEnabled: Bool, width: CGFloat, content: AnyView, onShow: @escaping () -> Void) {
+    /// Called on every update of the popover's view. The content is set once: it observes the
+    /// services itself, so re-rooting it on each update would only redo the whole column. The
+    /// placement is redone only when something it depends on changed; the window notifications
+    /// cover moves, resizes and the popover opening or closing.
+    func update(isEnabled: Bool, width: CGFloat, content: AnyView, onShow: @escaping () -> Void, onPlacementChange: @escaping (Bool) -> Void) {
+        self.onShow = onShow
+        self.onPlacementChange = onPlacementChange
+        let changed = isEnabled != self.isEnabled || width != self.width
         self.isEnabled = isEnabled
         self.width = width
-        self.onShow = onShow
-        if let hosting {
-            hosting.rootView = content
-        } else if isEnabled {
+        var created = false
+        if hosting == nil, isEnabled {
             makePanel(content)
+            created = true
         }
-        sync()
+        if changed || created { sync() }
     }
 
     func detach() {
@@ -96,36 +109,55 @@ final class InboxPanelAttachmentView: NSView {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
-        let hosting = FirstMouseHostingView(rootView: content)
-        hosting.frame = panel.contentRect(forFrameRect: panel.frame)
-        hosting.autoresizingMask = [.width, .height]
+        let backdrop = NSVisualEffectView(frame: panel.contentRect(forFrameRect: panel.frame))
+        backdrop.material = .popover
+        backdrop.blendingMode = .behindWindow
+        // Never key, so following the window state would leave it looking inactive.
+        backdrop.state = .active
         // Corners are cut on the layer, so the window shadow follows them too.
-        hosting.wantsLayer = true
-        hosting.layer?.masksToBounds = true
-        hosting.layer?.cornerCurve = .continuous
-        hosting.layer?.borderWidth = 0.5
-        panel.contentView = hosting
+        backdrop.wantsLayer = true
+        backdrop.layer?.masksToBounds = true
+        backdrop.layer?.cornerCurve = .continuous
+        backdrop.layer?.borderWidth = 0.5
+        let hosting = FirstMouseHostingView(rootView: content)
+        hosting.frame = backdrop.bounds
+        hosting.autoresizingMask = [.width, .height]
+        backdrop.addSubview(hosting)
+        panel.contentView = backdrop
         self.panel = panel
         self.hosting = hosting
+        self.backdrop = backdrop
     }
 
     /// Shows the panel beside a visible popover, hides it otherwise.
     private func sync() {
-        guard isEnabled, let window, let panel, window.isVisible, window.occlusionState.contains(.visible),
-              let frame = Self.panelFrame(beside: window.frame, width: width, screen: window.screen?.visibleFrame) else {
+        guard isEnabled, let window, let panel, window.isVisible, window.occlusionState.contains(.visible) else {
             hidePanel()
             return
         }
+        guard let frame = Self.panelFrame(beside: window.frame, width: width, screen: window.screen?.visibleFrame) else {
+            hidePanel()
+            reportPlacement(false)
+            return
+        }
+        reportPlacement(true)
+        applyAppearance()
         let wasVisible = panel.isVisible
-        panel.appearance = window.effectiveAppearance
+        // Already in place beside this popover: nothing to redo.
+        if wasVisible, panel.parent === window, panel.frame == frame { return }
         panel.level = window.level
         let radius = Self.cornerRadius(of: window)
-        if hosting?.layer?.cornerRadius != radius {
-            hosting?.layer?.cornerRadius = radius
-            DiagnosticLog.event("Inbox panel corner radius=\(radius)")
+        if let source = Self.visualEffectView(in: window), let backdrop {
+            backdrop.material = source.material
+            backdrop.blendingMode = source.blendingMode
         }
-        window.effectiveAppearance.performAsCurrentDrawingAppearance {
-            hosting?.layer?.borderColor = NSColor.separatorColor.cgColor
+        if backdrop?.layer?.cornerRadius != radius {
+            backdrop?.layer?.cornerRadius = radius
+            // The window server draws the behind-window blur itself and ignores the layer's
+            // corners: without a mask the material shows as square corners under the rounded
+            // content, and the shadow stays square too.
+            backdrop?.maskImage = Self.roundedMask(radius: radius)
+            DiagnosticLog.event("Inbox panel corner radius=\(radius)")
         }
         panel.setFrame(frame, display: true)
         panel.invalidateShadow()
@@ -137,10 +169,62 @@ final class InboxPanelAttachmentView: NSView {
         if !wasVisible { onShow() }
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyAppearance()
+    }
+
+    /// Gives the panel the appearance the popover's content is drawn in: this view's, not the
+    /// popover window's, and again whenever it changes. Taken from the window only on placement,
+    /// the panel stayed dark beside a light calendar after macOS switched to light mode on its own.
+    private func applyAppearance() {
+        guard let panel else { return }
+        let appearance = effectiveAppearance
+        panel.appearance = appearance
+        appearance.performAsCurrentDrawingAppearance {
+            backdrop?.layer?.borderColor = NSColor.separatorColor.cgColor
+        }
+    }
+
+    /// Tells the popover once per change, outside the view update that may have caused it.
+    private func reportPlacement(_ placed: Bool) {
+        guard reportedPlacement != placed else { return }
+        reportedPlacement = placed
+        let callback = onPlacementChange
+        DispatchQueue.main.async { callback(placed) }
+    }
+
     private func hidePanel() {
         guard let panel else { return }
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)
+    }
+
+    /// The first visual effect view in the popover window (its frame view included).
+    static func visualEffectView(in window: NSWindow) -> NSVisualEffectView? {
+        func find(_ view: NSView) -> NSVisualEffectView? {
+            if let effect = view as? NSVisualEffectView { return effect }
+            for child in view.subviews {
+                if let found = find(child) { return found }
+            }
+            return nil
+        }
+        guard let root = window.contentView?.superview ?? window.contentView else { return nil }
+        return find(root)
+    }
+
+    /// A stretchable rounded rectangle for `NSVisualEffectView.maskImage`: only the corners are
+    /// fixed, so one image fits the panel at any height.
+    static func roundedMask(radius: CGFloat) -> NSImage {
+        let edge = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
     }
 
     /// The popover window's own corner radius, so both windows round alike on every macOS

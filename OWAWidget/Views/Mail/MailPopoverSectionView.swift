@@ -41,7 +41,7 @@ struct MailPopoverSectionView: View {
                 .padding(.vertical, 6)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.mailRow(cornerRadius: 0))
             .accessibilityLabel(localization.tr("mail.popover.a11y", mail.popoverUnreadCount ?? 0))
 
             if isExpanded {
@@ -130,7 +130,7 @@ struct MailPopoverSectionView: View {
             .padding(.vertical, 4)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.mailRow(cornerRadius: 0))
         .help(conversation.preview)
     }
 }

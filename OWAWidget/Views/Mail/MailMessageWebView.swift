@@ -37,6 +37,31 @@ enum MailContentBlocker {
     }
 }
 
+/// What every reader web view shares. One store for all of them: a store of its own per view
+/// started a new WebKit process for each message (about a quarter of a second before the first
+/// body showed). Sharing is safe here: no page script runs and nothing loads from the network,
+/// so one message has no way to leave anything for another.
+@MainActor
+enum MailReaderWebKit {
+    static let dataStore = WKWebsiteDataStore.nonPersistent()
+    private static var warmView: WKWebView?
+
+    /// Starts WebKit's processes while the window opens, before the first message is clicked.
+    static func prewarm() {
+        guard warmView == nil else { return }
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = dataStore
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        let view = WKWebView(frame: .zero, configuration: configuration)
+        view.loadHTMLString("<!DOCTYPE html><html><body></body></html>", baseURL: nil)
+        warmView = view
+    }
+
+    static func release() {
+        warmView = nil
+    }
+}
+
 /// A link the user clicked in a message: where it goes and what it said.
 struct MailLinkActivation: Identifiable, Equatable {
     let id = UUID()
@@ -60,7 +85,7 @@ struct MailMessageWebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> MailReaderWebView {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
+        configuration.websiteDataStore = MailReaderWebKit.dataStore
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         configuration.mediaTypesRequiringUserActionForPlayback = .all
@@ -144,14 +169,15 @@ struct MailMessageWebView: NSViewRepresentable {
         }
 
         /// Fits a wide message (fixed-width newsletter tables) to the view by scaling it down, as
-        /// Mail does, then reports the height of the content itself. The viewport is not measured:
-        /// it is as tall as the frame, so the frame could only ever grow.
+        /// Mail does, then reports the height of the content itself and the width the page laid
+        /// out against. The viewport is not measured: it is as tall as the frame, so the frame
+        /// could only ever grow.
         static let fitScript = """
         (function () {
           var r = document.getElementById('owaw-root');
-          if (!r) { return document.documentElement.scrollHeight; }
-          r.style.transform = ''; r.style.width = '';
           var w = document.documentElement.clientWidth;
+          if (!r) { return [document.documentElement.scrollHeight, w]; }
+          r.style.transform = ''; r.style.width = '';
           var s = r.scrollWidth;
           var z = 1;
           if (s > w + 1) {
@@ -160,16 +186,36 @@ struct MailMessageWebView: NSViewRepresentable {
             r.style.transformOrigin = '0 0';
             r.style.transform = 'scale(' + z + ')';
           }
-          return Math.ceil(r.offsetHeight * z);
+          return [Math.ceil(r.offsetHeight * z), w];
         })()
         """
 
+        /// Bumped by every new measurement, so retries of an older one stop.
+        private var measureGeneration = 0
+
         func measure(_ webView: WKWebView) {
-            webView.evaluateJavaScript(Self.fitScript, in: nil, in: .defaultClient) { [weak self] result in
-                guard case .success(let value) = result, let number = value as? NSNumber else { return }
+            measureGeneration += 1
+            measure(webView, generation: measureGeneration, attempt: 0)
+        }
+
+        /// During a live resize WebKit hands the page its new size a little after the frame
+        /// changes: a fit made against the old width pins the message to it (`#owaw-root` gets
+        /// that width and a scale), and a window made wider kept the narrow layout. Until the page
+        /// reports the view's own width the fit is made again.
+        private func measure(_ webView: WKWebView, generation: Int, attempt: Int) {
+            webView.evaluateJavaScript(Self.fitScript, in: nil, in: .defaultClient) { [weak self, weak webView] result in
+                guard case .success(let value) = result, let pair = value as? [NSNumber], pair.count == 2 else { return }
                 Task { @MainActor in
-                    let height = CGFloat(truncating: number)
-                    if abs((self?.parent.height ?? 0) - height) > 1 { self?.parent.height = max(20, height) }
+                    guard let self, let webView, generation == self.measureGeneration else { return }
+                    let height = CGFloat(truncating: pair[0])
+                    if abs(self.parent.height - height) > 1 { self.parent.height = max(20, height) }
+                    let pageWidth = CGFloat(truncating: pair[1])
+                    if abs(pageWidth - webView.bounds.width) > 1, attempt < 20 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak webView] in
+                            guard let self, let webView else { return }
+                            self.measure(webView, generation: generation, attempt: attempt + 1)
+                        }
+                    }
                 }
             }
         }

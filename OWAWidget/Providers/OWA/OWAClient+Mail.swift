@@ -239,11 +239,11 @@ extension OWAClient {
 
     // MARK: - Changes in the user's own mailbox
 
-    func mailUpdate(_ refs: [MailItemRef], _ update: MailItemUpdate) async throws -> [MailItemRef] {
-        guard !refs.isEmpty else { return [] }
-        let data = try await mailServiceCall(action: "UpdateItem", payload: OWAMailPayloads.updateItems(refs, update: update, timeZoneID: windowsTimezoneID()))
+    func mailUpdate(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [MailItemRef] {
+        guard !targets.isEmpty else { return [] }
+        let data = try await mailServiceCall(action: "UpdateItem", payload: OWAMailPayloads.updateItems(targets, update: update, timeZoneID: windowsTimezoneID()))
         let updated = try OWAMailParsers.updatedRefs(data)
-        return updated.count == refs.count ? updated : refs
+        return updated.count == targets.count ? updated : targets.map(\.ref)
     }
 
     func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef] {
@@ -290,13 +290,63 @@ extension OWAClient {
     /// A save that is dropped and repeated at worst leaves a second draft, never a second email;
     /// an outright send (`send == true`) is never repeated automatically.
     func mailSend(_ outgoing: MailOutgoing) async throws -> MailItemRef? {
+        do {
+            return try await createMessage(outgoing)
+        } catch OWAError.ewsError("ErrorStaleObject") where outgoing.reference != nil {
+            // The original changed after the reply window took it (marked read, flagged, a
+            // reply in another client): Exchange refuses a reply to an older version and creates
+            // nothing. Once more against its current change key.
+            let current = try await mailMessage(MailItemRef(id: outgoing.reference!.id, changeKey: nil)).ref
+            DiagnosticLog.event("Mail CreateItem stale reference, retrying with the current change key")
+            var retry = outgoing
+            retry.reference = current
+            return try await createMessage(retry)
+        }
+    }
+
+    /// With pasted pictures the message is always saved first, the pictures attached to the draft
+    /// and only then sent: a reply or a forward cannot carry them in `CreateItem` itself.
+    private func createMessage(_ outgoing: MailOutgoing) async throws -> MailItemRef? {
+        var draft = outgoing
+        if !outgoing.inlineImages.isEmpty { draft.send = false }
         let body = try await ewsCall(
             action: "CreateItem",
-            soap: OWAMailPayloads.createMessageSOAP(outgoing),
-            mayRepeat: !outgoing.send,
-            note: "kind=\(outgoing.kind.rawValue) send=\(outgoing.send) to=\(outgoing.to.count) cc=\(outgoing.cc.count)"
+            soap: OWAMailPayloads.createMessageSOAP(draft),
+            mayRepeat: !draft.send,
+            note: "kind=\(outgoing.kind.rawValue) send=\(draft.send) to=\(outgoing.to.count) cc=\(outgoing.cc.count) images=\(outgoing.inlineImages.count)"
         )
-        return OWAMailParsers.createdItemRef(fromSOAP: body)
+        let created = OWAMailParsers.createdItemRef(fromSOAP: body)
+        guard !outgoing.inlineImages.isEmpty else { return created }
+        guard let created else { throw MailError.serverError("no draft id") }
+        let ref: MailItemRef
+        do {
+            ref = try await attachInlineImages(outgoing.inlineImages, to: created)
+        } catch {
+            // A draft without its pictures would show empty frames: it goes, and the user retries.
+            try? await mailDeleteDraft(created)
+            throw error
+        }
+        if outgoing.send {
+            try await mailSendDraft(ref)
+            return nil
+        }
+        return ref
+    }
+
+    /// Repeating it is harmless at worst (a picture attached twice to an unsent draft).
+    private func attachInlineImages(_ images: [MailInlineImage], to draft: MailItemRef) async throws -> MailItemRef {
+        let body = try await ewsCall(
+            action: "CreateAttachment",
+            // No change key: a repeat after a lost answer would be refused as stale.
+            soap: OWAMailPayloads.createInlineAttachmentsSOAP(parent: MailItemRef(id: draft.id, changeKey: nil), images: images),
+            mayRepeat: true,
+            note: "count=\(images.count) bytes=\(images.reduce(0) { $0 + $1.data.count })"
+        )
+        guard let updated = OWAMailParsers.attachmentRootItemRef(fromSOAP: body) else {
+            // Without the new change key `SendItem` would be refused as stale.
+            return try await mailMessage(MailItemRef(id: draft.id, changeKey: nil)).ref
+        }
+        return updated
     }
 
     /// The draft as Exchange holds it, every recipient included: what will actually be sent.
@@ -323,7 +373,8 @@ extension OWAClient {
     ///   Only for requests whose repetition is harmless; a 401/440 is always retried once, as the
     ///   server answered it without acting on it.
     private func ewsCall(action: String, soap: String, mayRepeat: Bool, note: String, attempt: Int = 0) async throws -> String {
-        var request = URLRequest(url: try url("/EWS/Exchange.asmx"), timeoutInterval: 30)
+        // Pictures make a request megabytes long: time to upload them at a slow ~50 KB/s.
+        var request = URLRequest(url: try url("/EWS/Exchange.asmx"), timeoutInterval: max(30, Double(soap.utf8.count) / 50_000))
         request.httpMethod = "POST"
         request.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
         request.setValue("\"http://schemas.microsoft.com/exchange/services/2006/messages/\(action)\"", forHTTPHeaderField: "SOAPAction")

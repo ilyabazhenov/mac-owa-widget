@@ -3,42 +3,20 @@ import SwiftUI
 /// What needs the user's attention, from data the window already has (no extra requests).
 struct MailDigest: Equatable {
     var unreadFromPeople: [MailConversationSummary]
-    var awaitingReply: [MailConversationSummary]
     /// Folders other than the inbox with unread mail: mostly rule folders of systems.
     var busyFolders: [MailFolder]
 
-    var isEmpty: Bool { unreadFromPeople.isEmpty && awaitingReply.isEmpty && busyFolders.isEmpty }
+    var isEmpty: Bool { unreadFromPeople.isEmpty && busyFolders.isEmpty }
 
     static let limit = 6
-    static let awaitingDays = 7
 
-    /// People's recent conversations the user has not written in (and that are not already listed
-    /// as unread): a heuristic, as in the MCP digest.
-    static func awaitingReply(in list: [MailConversationSummary], excluding ids: Set<String>, now: Date = Date()) -> [MailConversationSummary] {
-        let since = now.addingTimeInterval(-Double(awaitingDays) * 86_400)
-        return list.filter {
-            !$0.isAutomated && !$0.userHasReplied && !$0.isMeetingRequest && !$0.isMeetingCancellation
-                && ($0.lastDelivery ?? .distantPast) >= since && !ids.contains($0.id)
-        }
-    }
-
-    /// - Parameters:
-    ///   - inboxList: the inbox conversations the list shows, or `nil` when it shows something
-    ///     else (another folder, a search): "awaiting reply" is then left out.
-    static func build(
-        peopleUnread: [MailConversationSummary],
-        inboxList: [MailConversationSummary]?,
-        folders: [MailFolder],
-        now: Date = Date()
-    ) -> MailDigest {
-        let awaiting = awaitingReply(in: inboxList ?? [], excluding: Set(peopleUnread.map(\.id)), now: now)
+    static func build(peopleUnread: [MailConversationSummary], folders: [MailFolder]) -> MailDigest {
         let skipped: Set<MailDistinguishedFolder> = [.inbox, .drafts, .sentitems, .deleteditems, .junkemail, .outbox]
         let busy = MailSidebarPolicy.visibleFolders(folders)
             .filter { $0.unreadCount > 0 && !($0.distinguished.map(skipped.contains) ?? false) }
             .sorted { $0.unreadCount > $1.unreadCount }
         return MailDigest(
             unreadFromPeople: Array(peopleUnread.prefix(limit)),
-            awaitingReply: Array(awaiting.prefix(limit)),
             busyFolders: Array(busy.prefix(8))
         )
     }
@@ -51,12 +29,7 @@ struct MailDigestView: View {
     @EnvironmentObject private var localization: LocalizationService
 
     private var digest: MailDigest {
-        let showsInbox = model.selectedFolder == .distinguished(.inbox) && !model.isSearching
-        return MailDigest.build(
-            peopleUnread: service.peopleUnread,
-            inboxList: showsInbox ? model.conversations : nil,
-            folders: model.folders
-        )
+        MailDigest.build(peopleUnread: service.peopleUnread, folders: model.folders)
     }
 
     var body: some View {
@@ -76,11 +49,6 @@ struct MailDigestView: View {
                         ForEach(digest.unreadFromPeople) { conversationRow($0) }
                     }
                 }
-                if !digest.awaitingReply.isEmpty {
-                    section(localization.tr("mail.digest.awaiting"), count: nil, icon: "arrowshape.turn.up.left") {
-                        ForEach(digest.awaitingReply) { conversationRow($0) }
-                    }
-                }
                 if !digest.busyFolders.isEmpty {
                     section(localization.tr("mail.digest.folders"), count: nil, icon: "folder") {
                         FlowRow(spacing: 6) {
@@ -95,7 +63,7 @@ struct MailDigestView: View {
                                     .padding(.vertical, 4)
                                     .background(Capsule().fill(Color.secondary.opacity(0.12)))
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.mailRow(cornerRadius: 12))
                             }
                         }
                     }
@@ -151,6 +119,6 @@ struct MailDigestView: View {
             .background(RoundedRectangle(cornerRadius: 7).fill(Color.secondary.opacity(0.07)))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.mailRow(cornerRadius: 7))
     }
 }

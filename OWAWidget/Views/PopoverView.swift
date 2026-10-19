@@ -15,6 +15,8 @@ struct PopoverView: View {
     private var fullVersion: String { "\(appVersion).\(appBuild)" }
     let contentHorizontalPadding: CGFloat = 12
     @AppStorage(PopoverInboxPanelStore.key) private var inboxPanelShown = false
+    /// The panel found room beside the popover; until it says otherwise, assume it did.
+    @State private var inboxPanelPlaced = true
     @State private var selectedDayOffset: Int = 0
     /// Direction of the last day step, which is what the page slide follows.
     @State private var isPagingForward: Bool = true
@@ -136,7 +138,8 @@ struct PopoverView: View {
                         await mail.refreshPanelList()
                         await mail.refreshFolderCounts()
                     }
-                }
+                },
+                onPlacementChange: { inboxPanelPlaced = $0 }
             )
             .frame(width: 0, height: 0)
         }
@@ -324,9 +327,9 @@ struct PopoverView: View {
                     selectedEventID: selectedEvent?.id,
                     onSelect: selectEvent
                 )
-            } else if showsInboxPanel {
+            } else if showsInboxPanel, inboxPanelPlaced {
                 // The inbox has its own panel beside the popover: no strips that would read as
-                // belonging to the date above them.
+                // belonging to the date above them. With no room for the panel the strips stay.
                 calendarColumn(showsInboxStrips: false)
             } else {
                 calendarColumn(showsInboxStrips: true)
@@ -339,15 +342,19 @@ struct PopoverView: View {
 
     private var inboxPanelContent: AnyView {
         AnyView(
-            PopoverInboxColumn(
-                calendar: service,
-                mail: mail,
-                horizontalPadding: contentHorizontalPadding,
-                onSelectEvent: focus(on:),
-                onOpenMail: openMail
-            )
-            .environmentObject(localization)
-            .environment(\.locale, localization.locale)
+            InboxPanelRoot(localization: localization) {
+                PopoverInboxColumn(
+                    calendar: service,
+                    mail: mail,
+                    horizontalPadding: contentHorizontalPadding,
+                    onSelectEvent: focus(on:),
+                    onOpenMail: openMail,
+                    onCompose: openMailCompose
+                )
+            }
+            // The panel never becomes key (that would close the popover), and AppKit draws the
+            // controls of a non-key window dimmed: they would not match the popover's beside it.
+            .environment(\.controlActiveState, .key)
         )
     }
 
@@ -543,9 +550,18 @@ struct PopoverView: View {
         openWindow(id: "create-meeting")
     }
 
+    private func openMailCompose() {
+        NSApp.activate(ignoringOtherApps: true)
+        mail.compose(MailComposeRequest(kind: .new, original: nil, to: [], cc: [], subject: "", body: ""))
+        openWindow(id: "mail-compose")
+        PostJoinDismissController.shared.dismissPopover()
+    }
+
     private func openMail(_ conversationID: String?) {
         NSApp.activate(ignoringOtherApps: true)
-        if let conversationID { mail.open(conversationID: conversationID) }
+        // With the inbox panel on, the window opens on the panel's folder.
+        let folder = showsInboxPanel ? mail.panelFolder : nil
+        if conversationID != nil || folder != nil { mail.open(conversationID: conversationID ?? "", folder: folder) }
         openWindow(id: "mail")
         // The mail window takes over; a click in the inbox panel never takes focus from the
         // popover, so the popover would otherwise stay open on top of it.
@@ -886,5 +902,18 @@ struct PopoverView: View {
                 dayEnd: dayEnd
             )
         ]
+    }
+}
+
+/// The root of the inbox panel. Its content is set once (the panel is a window of its own), so
+/// the locale follows the language from in here rather than being read when the content is built.
+private struct InboxPanelRoot<Content: View>: View {
+    @ObservedObject var localization: LocalizationService
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .environmentObject(localization)
+            .environment(\.locale, localization.locale)
     }
 }

@@ -20,10 +20,24 @@ enum OWAMailParsers {
         return nil
     }
 
+    /// `MessageText` next to the first error code, from the same two shapes as `errorCode(in:)`.
+    static func errorText(in json: Any) -> String? {
+        guard let body = (json as? [String: Any])?["Body"] as? [String: Any] else { return nil }
+        if let code = body["ResponseCode"] as? String, code != "NoError" { return body["MessageText"] as? String }
+        let items = (body["ResponseMessages"] as? [String: Any])?["Items"] as? [[String: Any]] ?? []
+        return items.first { ($0["ResponseCode"] as? String).map { $0 != "NoError" } ?? false }?["MessageText"] as? String
+    }
+
     static func json(_ data: Data) throws -> Any {
         guard let json = try? JSONSerialization.jsonObject(with: data) else { throw OWAError.invalidResponse }
         if let code = errorCode(in: json) {
-            if code == "ErrorItemNotFound" || code == "ErrorInvalidIdMalformed" || code == "ErrorInvalidIdNotAnItemAttachmentId" {
+            let isIDError = code == "ErrorItemNotFound" || code == "ErrorInvalidIdMalformed" || code == "ErrorInvalidIdNotAnItemAttachmentId"
+            // The server's wording only for a wrong id: it names id types ("ID type 9; actual
+            // type 12"), which tells a stale id from a request bound to the wrong type. Other
+            // errors may quote addresses or file names in it, and the code alone goes.
+            let text = isIDError ? errorText(in: json).map { " text=" + String($0.prefix(200)) } ?? "" : ""
+            DiagnosticLog.event("Mail server error code=\(code)\(text)")
+            if isIDError {
                 throw MailError.notFound
             }
             throw MailError.serverError(code)
@@ -186,6 +200,7 @@ enum OWAMailParsers {
     static func conversation(from dict: [String: Any]) -> MailConversationSummary? {
         guard let id = idValue(dict["ConversationId"]) else { return nil }
         let refs = (dict["ItemIds"] as? [Any] ?? []).compactMap(itemRef)
+        let preview = MailExternalBanner.strip(previewText(dict["Preview"]))
         var summary = MailConversationSummary(
             id: id,
             topic: (dict["ConversationTopic"] as? String) ?? "",
@@ -197,7 +212,7 @@ enum OWAMailParsers {
             unreadCount: int(dict["UnreadCount"]) ?? 0,
             hasAttachments: bool(dict["HasAttachments"]),
             importance: MailImportance(owaValue: dict["Importance"] as? String),
-            preview: MailExternalBanner.strip(previewText(dict["Preview"])).text,
+            preview: preview.text,
             itemRefs: refs,
             categories: categories(dict["Categories"]),
             isFlagged: isFlagged(dict["FlagStatus"]),
@@ -207,7 +222,7 @@ enum OWAMailParsers {
         )
         summary.senderEmail = string(dict["SenderSMTPAddress"]) ?? address(dict["From"])?.email
         summary.itemClasses = (dict["ItemClasses"] as? [Any] ?? []).compactMap { $0 as? String }
-        summary.hasExternalBanner = MailExternalBanner.strip(previewText(dict["Preview"])).found
+        summary.hasExternalBanner = preview.found
         return summary
     }
 
@@ -244,7 +259,8 @@ enum OWAMailParsers {
                 hasAttachments: bool(dict["HasAttachments"]),
                 importance: MailImportance(owaValue: dict["Importance"] as? String),
                 preview: MailExternalBanner.strip(previewText(dict["Preview"])).text,
-                instanceKey: string(dict["InstanceKey"])
+                instanceKey: string(dict["InstanceKey"]),
+                kind: MailItemKind(itemClass: dict["ItemClass"] as? String)
             )
         }
         let isLast = bool(root["IncludesLastItemInRange"])
@@ -404,5 +420,14 @@ enum OWAMailParsers {
         let id = ns.substring(with: match.range(at: 1))
         let changeKey = match.range(at: 2).location == NSNotFound ? nil : ns.substring(with: match.range(at: 2))
         return MailItemRef(id: id, changeKey: changeKey)
+    }
+
+    /// The draft after `CreateAttachment`: attaching changes its change key, which sending
+    /// needs. The last attachment carries the latest one.
+    static func attachmentRootItemRef(fromSOAP body: String) -> MailItemRef? {
+        guard let re = try? NSRegularExpression(pattern: #"<t:AttachmentId\b[^>]*?\bRootItemId="([^"]+)"[^>]*?\bRootItemChangeKey="([^"]+)""#) else { return nil }
+        let ns = body as NSString
+        guard let match = re.matches(in: body, range: NSRange(location: 0, length: ns.length)).last else { return nil }
+        return MailItemRef(id: ns.substring(with: match.range(at: 1)), changeKey: ns.substring(with: match.range(at: 2)))
     }
 }
