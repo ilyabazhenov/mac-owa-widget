@@ -738,7 +738,9 @@ actor OWAClient {
         } catch {
             // Startup retries only run when this invocation authenticated first. If we reused an
             // existing CANARY from a prior sync, a transient Exchange 500 "abstract class" fault
-            // used to surface immediately — one forced reauth restores the retry path.
+            // used to surface immediately — one forced reauth restores the retry path. Most of
+            // these faults were the request's own key order (see `executeCalendarViewRequest`);
+            // this stays for the ones the server produces by itself.
             if OWAError.isAbstractClassHTTPError(error), hasCanary {
                 log.warning(
                     "Calendar view abstract-class fault with existing session sync=\(syncID, privacy: .public); reauthenticating once"
@@ -839,8 +841,10 @@ actor OWAClient {
             folderIdentifier: folderIdentifier
         )
 
-        let jsonData = try JSONSerialization.data(withJSONObject: requestDict)
-        guard let jsonString = String(data: jsonData, encoding: .utf8) else { throw OWAError.encodingFailed }
+        // `__type` first in every object: `BaseFolderId` is abstract on the server, and
+        // `JSONSerialization` follows the dictionary's order, which differs from one instance to the
+        // next. Half the requests used to fail with "Cannot create an abstract class".
+        let jsonString = Self.serializeJSONTypeFirst(requestDict)
 
         requestSequence += 1
         let requestID = requestSequence
@@ -1280,8 +1284,7 @@ actor OWAClient {
     private func getUserAvailabilityInternal(emails: [String], from start: Date, to end: Date, attempt: Int) async throws -> [AttendeeAvailability] {
         let canary = try await ensureCanary()
         let payload = OWAUserAvailabilityPayload.make(emails: emails, start: start, end: end, serverTimeZone: .current)
-        let jsonData = try JSONSerialization.data(withJSONObject: payload)
-        let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+        let jsonString = Self.serializeJSONTypeFirst(payload)
 
         var req = try serviceRequest(action: "GetUserAvailabilityInternal", canary: canary)
         req.setValue(jsonString.formEncoded, forHTTPHeaderField: "X-OWA-UrlPostData")

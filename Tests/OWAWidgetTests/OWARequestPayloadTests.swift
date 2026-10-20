@@ -2,6 +2,29 @@ import XCTest
 @testable import OWAWidget
 
 final class OWARequestPayloadTests: XCTestCase {
+    /// Exchange reads `BaseFolderId` as an abstract type and needs `__type` before anything else
+    /// in it; with the dictionary's own order half the requests came back "Cannot create an
+    /// abstract class".
+    func testServiceRequestsPutTypeFirstInEveryObject() throws {
+        let folder = OWAFolderIdentifier(id: "folder-id", changeKey: "change-key")
+        let payloads: [[String: Any]] = [
+            OWACalendarViewRequestPayload.make(start: Date(timeIntervalSince1970: 0), end: Date(timeIntervalSince1970: 3_600), serverTimeZone: .fallback, folderIdentifier: nil),
+            OWACalendarViewRequestPayload.make(start: Date(timeIntervalSince1970: 0), end: Date(timeIntervalSince1970: 3_600), serverTimeZone: .fallback, folderIdentifier: folder),
+            OWAUserAvailabilityPayload.make(emails: ["a@example.com", "b@example.com"], start: Date(timeIntervalSince1970: 0), end: Date(timeIntervalSince1970: 3_600), serverTimeZone: .fallback),
+        ]
+        for payload in payloads {
+            for _ in 0..<20 {
+                let json = OWAClient.serializeJSONTypeFirst(payload)
+                let decoded = try JSONSerialization.jsonObject(with: Data(json.utf8))
+                XCTAssertEqual(decoded as? NSDictionary, payload as NSDictionary, "the same content")
+                for object in json.components(separatedBy: "{").dropFirst() where object.contains("__type") {
+                    XCTAssertTrue(object.hasPrefix("\"__type\""), "type is not first in {\(object.prefix(60))")
+                }
+            }
+        }
+        XCTAssertTrue(OWAClient.serializeJSONTypeFirst(payloads[2]).contains("\"MergedFreeBusyIntervalInMinutes\":30"), "a number stays a number")
+    }
+
     func testCalendarViewRequestUsesOWAContractVersion() throws {
         let payload = OWACalendarViewRequestPayload.make(
             start: Date(timeIntervalSince1970: 0),
