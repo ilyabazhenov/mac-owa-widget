@@ -60,9 +60,10 @@ final class MailReviewV5Tests: XCTestCase {
         let start = Date().addingTimeInterval(86_400)
         let line = MailPresentation.meetingLine(conversation("1", classes: ["IPM.Schedule.Meeting.Request"]),
                                                 interval: DateInterval(start: start, duration: 1800), localization: localization)
-        XCTAssertTrue(line?.hasPrefix("Приглашение · ") == true)
-        XCTAssertEqual(MailPresentation.meetingLine(conversation("2", classes: ["IPM.Schedule.Meeting.Request"]), interval: nil, localization: localization), "Приглашение на встречу")
-        XCTAssertEqual(MailPresentation.meetingLine(conversation("3", classes: ["IPM.Schedule.Meeting.Canceled"]), interval: nil, localization: localization), "Встреча отменена")
+        XCTAssertEqual(line?.hasSuffix(localization.shortTime(start) + "–" + localization.shortTime(start.addingTimeInterval(1800))), true, "the tag says invitation, the line says when")
+        XCTAssertNil(MailPresentation.meetingLine(conversation("2", classes: ["IPM.Schedule.Meeting.Request"]), interval: nil, localization: localization))
+        XCTAssertEqual(conversation("5", classes: ["IPM.Schedule.Meeting.Request"]).meetingStatus, .invitation)
+        XCTAssertNil(MailPresentation.meetingLine(conversation("3", classes: ["IPM.Schedule.Meeting.Canceled"]), interval: nil, localization: localization), "the cancelled tag says it")
         XCTAssertNil(MailPresentation.meetingLine(conversation("4", classes: ["IPM.Note"]), interval: nil, localization: localization))
     }
 
@@ -206,6 +207,36 @@ final class MailInboxPanelTests: XCTestCase {
         await service.refreshPanelList()
         let lists = await provider.calls.filter { $0.hasPrefix("conversations:All") }
         XCTAssertEqual(lists.count, 1, "a second call within 30 s makes no request")
+    }
+
+    func testPanelLoadsMorePagesAndARefreshKeepsThem() async throws {
+        let defaults = UserDefaults(suiteName: "panel-more-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let provider = FakeMailProvider(account: MailFixtures.account)
+        await provider.setConversations((1...5).map { MailFixtures.conversation("c\($0)") })
+        await provider.setConversationPageSize(2)
+        let backend = FakeMailBackend(provider: provider)
+        let service = MailService(backend: backend, defaults: defaults)
+        await service.refreshPanelList()
+        XCTAssertEqual(service.panelList.map(\.id), ["c1", "c2"])
+        await service.loadMorePanelList()
+        await service.loadMorePanelList()
+        XCTAssertEqual(service.panelList.map(\.id), ["c1", "c2", "c3", "c4", "c5"])
+        XCTAssertNil(service.panelNextCursor, "the folder's end")
+
+        // New mail on top: the first page is fresh, the rows scrolled to stay.
+        await provider.setConversations([MailFixtures.conversation("new")] + (1...5).map { MailFixtures.conversation("c\($0)") })
+        await service.refreshPanelList(minInterval: 0)
+        XCTAssertEqual(service.panelList.map(\.id), ["new", "c1", "c2", "c3", "c4", "c5"])
+        XCTAssertNil(service.panelNextCursor, "still the folder's end")
+
+        // More new mail than a page: the old rows no longer join on, so the list starts over.
+        await provider.setConversations(["n1", "n2", "n3"].map { MailFixtures.conversation($0) } + (1...5).map { MailFixtures.conversation("c\($0)") })
+        await service.refreshPanelList(minInterval: 0)
+        XCTAssertEqual(service.panelList.map(\.id), ["n1", "n2"])
+        XCTAssertNotNil(service.panelNextCursor)
     }
 
     func testPanelStatusReadsLikeThePopoverSyncLine() {

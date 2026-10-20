@@ -23,6 +23,8 @@ enum MailMarkReadPolicy: String, CaseIterable, Identifiable, Sendable {
 /// When a new message deserves a system notification.
 enum MailNotifyMode: String, CaseIterable, Identifiable, Sendable {
     case off
+    /// Any new message, systems (CI, trackers, no-reply) included.
+    case all
     /// Any new message from a person (not from a system).
     case people
     /// Only from people the user deals with: today's meeting participants and watched colleagues.

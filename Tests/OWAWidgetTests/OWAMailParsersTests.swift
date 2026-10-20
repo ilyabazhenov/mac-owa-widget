@@ -168,6 +168,58 @@ final class OWAMailParsersTests: XCTestCase {
         XCTAssertEqual(message.actions, [.acceptMeeting, .declineMeeting])
     }
 
+    func testMeetingResponseCarriesAnswer() throws {
+        let json = """
+        {"Body":{"ResponseMessages":{"Items":[{"ResponseCode":"NoError","Items":[
+          {"ItemId":{"Id":"I1"},"ItemClass":"IPM.Schedule.Meeting.Resp.Pos","Start":"2026-10-21T12:30:00+03:00"},
+          {"ItemId":{"Id":"I2"},"ItemClass":"IPM.Schedule.Meeting.Resp.Tent"},
+          {"ItemId":{"Id":"I3"},"ItemClass":"IPM.Schedule.Meeting.Resp.Neg"},
+          {"ItemId":{"Id":"I4"},"ItemClass":"IPM.Schedule.Meeting.Request"}]}]}}}
+        """
+        let messages = try OWAMailParsers.messages(data(json))
+        XCTAssertEqual(messages.map(\.meeting?.response), [.accepted, .tentative, .declined, nil])
+        XCTAssertEqual(messages[0].kind, .meetingResponse)
+    }
+
+    @MainActor
+    func testConversationMeetingResponse() {
+        var summary = MailConversationSummary(
+            id: "C1", topic: "Принято: Репетиция", senders: [], recipients: [], lastDelivery: nil, messageCount: 1,
+            unreadCount: 0, hasAttachments: false, importance: .normal, preview: "", itemRefs: [], categories: [],
+            isFlagged: false, isProtected: false, instanceKey: nil, parentFolderID: nil
+        )
+        summary.itemClasses = ["IPM.Schedule.Meeting.Resp.Pos"]
+        XCTAssertEqual(summary.meetingResponse, .accepted)
+        summary.itemClasses = ["IPM.Schedule.Meeting.Resp.Pos", "IPM.Schedule.Meeting.Resp.Neg"]
+        XCTAssertNil(summary.meetingResponse, "answers that disagree carry no single tag")
+        summary.itemClasses = ["IPM.Note"]
+        XCTAssertNil(summary.meetingResponse)
+        XCTAssertEqual(MailPresentation.strippingMeetingPrefix("Принято: Репетиция"), "Репетиция")
+        XCTAssertEqual(MailPresentation.strippingMeetingPrefix("accepted: Demo"), "Demo")
+        XCTAssertEqual(MailPresentation.strippingMeetingPrefix("Репетиция"), "Репетиция")
+        XCTAssertEqual(MailPresentation.strippingMeetingPrefix("Отменено: Репетиция"), "Репетиция")
+        summary.itemClasses = ["IPM.Schedule.Meeting.Request", "IPM.Schedule.Meeting.Canceled"]
+        XCTAssertEqual(summary.meetingStatus, .cancelled, "a cancellation outweighs the invitation")
+        summary.itemClasses = ["IPM.Schedule.Meeting.Resp.Tent"]
+        XCTAssertEqual(summary.meetingStatus, .response(.tentative))
+    }
+
+    func testForwardedInvitationKeepsActualSender() throws {
+        let json = """
+        {"Body":{"ResponseMessages":{"Items":[{"ResponseCode":"NoError","Items":[
+          {"ItemId":{"Id":"I1"},"ItemClass":"IPM.Schedule.Meeting.Request",
+           "From":{"Mailbox":{"Name":"Organizer","EmailAddress":"organizer@example.com","RoutingType":"SMTP"}},
+           "Sender":{"Mailbox":{"Name":"Forwarder","EmailAddress":"forwarder@example.com","RoutingType":"SMTP"}}},
+          {"ItemId":{"Id":"I2"},"ItemClass":"IPM.Note",
+           "From":{"Mailbox":{"Name":"Grace","EmailAddress":"G@example.com","RoutingType":"SMTP"}},
+           "Sender":{"Mailbox":{"Name":"Grace Miller","EmailAddress":"g@example.com","RoutingType":"SMTP"}}}]}]}}}
+        """
+        let messages = try OWAMailParsers.messages(data(json))
+        XCTAssertEqual(messages[0].from?.displayName, "Organizer")
+        XCTAssertEqual(messages[0].sender, MailAddress(name: "Forwarder", email: "forwarder@example.com"))
+        XCTAssertNil(messages[1].sender, "the same mailbox is no delegate")
+    }
+
     // MARK: - Folders
 
     func testFoldersFromGetFolder() throws {

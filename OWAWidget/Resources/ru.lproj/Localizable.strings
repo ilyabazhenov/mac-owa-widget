@@ -523,6 +523,7 @@
 "mail.retry" = "Повторить";
 "mail.noSubject" = "(без темы)";
 "mail.unknownSender" = "Неизвестный отправитель";
+"mail.onBehalf" = "%@ от лица %@";
 "mail.external" = "внешний";
 "mail.time.yesterday" = "Вчера";
 "mail.search.placeholder" = "Поиск в почте";
@@ -664,6 +665,14 @@
 "mail.meeting.accept" = "Принять";
 "mail.meeting.tentative" = "Под вопросом";
 "mail.meeting.decline" = "Отклонить";
+"mail.meeting.response.accepted" = "Пользователь %@ принял это событие";
+"mail.meeting.response.tentative" = "Пользователь %@ предварительно принял это событие";
+"mail.meeting.response.declined" = "Пользователь %@ отклонил это событие";
+"mail.meeting.tag.accepted" = "Принято";
+"mail.meeting.tag.tentative" = "Под вопросом";
+"mail.meeting.tag.declined" = "Отклонено";
+"mail.meeting.tag.invitation" = "Приглашение";
+"mail.meeting.tag.cancelled" = "Отменено";
 "mail.mode.help" = "Показывать все письма или только новые (непрочитанные)";
 "mail.popover.titlePeople" = "Почта от людей";
 "mail.popover.noPeople" = "От людей ничего нового — только письма систем";
@@ -677,6 +686,7 @@
 "mail.related.empty" = "Писем с этой темой или от участников за 30 дней нет";
 "mail.settings.notify" = "Уведомлять о новых письмах";
 "mail.settings.notify.off" = "Никогда";
+"mail.settings.notify.all" = "Обо всех письмах";
 "mail.settings.notify.people" = "От людей";
 "mail.settings.notify.important" = "От участников сегодняшних встреч и коллег";
 "mail.settings.peopleOnly" = "Считать и показывать только письма от людей";
@@ -703,8 +713,7 @@
 "mail.section.today" = "Сегодня";
 "mail.section.yesterday" = "Вчера";
 "mail.section.earlier" = "Ранее";
-"mail.list.invitation" = "Приглашение на встречу";
-"mail.list.invitationAt" = "Приглашение · %@, %@–%@";
+"mail.list.invitationAt" = "%@, %@–%@";
 "mail.list.meetingCancelled" = "Встреча отменена";
 "mail.digest.allClear" = "Всё прочитано";
 "mail.digest.unread" = "Непрочитанные от людей";
@@ -745,6 +754,9 @@
 "popover.inbox.compose" = "Написать письмо";
 "popover.inbox.openWindow" = "Открыть в окне почты";
 "popover.inbox.loadFailed" = "Не удалось загрузить папку";
+"popover.inbox.markAllRead" = "Отметить всё прочитанным (%d)";
+"popover.inbox.markingRead" = "Отмечаем прочитанным";
+"popover.inbox.markReadFailed" = "Не удалось отметить всё прочитанным — попробуйте ещё раз";
 "mail.window.stale.offline" = "Нет связи с сервером — показано то, что было загружено %@";
 "mail.window.stale.failed" = "Не удалось обновить список — показано то, что было загружено %@";
 "mail.window.stale.at" = "в %@";

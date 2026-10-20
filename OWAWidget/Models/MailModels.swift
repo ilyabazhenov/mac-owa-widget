@@ -159,6 +159,20 @@ struct MailConversationSummary: Identifiable, Hashable, Sendable {
 
     var isMeetingRequest: Bool { itemClasses.contains { $0.hasPrefix("IPM.Schedule.Meeting.Request") } }
     var isMeetingCancellation: Bool { itemClasses.contains { $0.hasPrefix("IPM.Schedule.Meeting.Canceled") } }
+    /// What the row tags the conversation with: a cancellation outweighs the invitation and the
+    /// answers to it, and an answer the invitation it answers.
+    var meetingStatus: MailMeetingStatus? {
+        if isMeetingCancellation { return .cancelled }
+        if let meetingResponse { return .response(meetingResponse) }
+        return isMeetingRequest ? .invitation : nil
+    }
+
+    /// The answer the conversation's meeting responses carry, when they agree. A response that
+    /// lands in the invitation's conversation keeps its topic, so "Accepted:" is not in it.
+    var meetingResponse: MeetingResponseType? {
+        let answers = Set(itemClasses.compactMap(MailMeetingInfo.response(itemClass:)))
+        return answers.count == 1 ? answers.first : nil
+    }
 
     /// What every message of the conversation is, when one kind covers them all (as far as
     /// changing them goes); `nil` when an invitation and replies to it share the thread.
@@ -257,11 +271,30 @@ struct MailAttachmentInfo: Identifiable, Hashable, Sendable {
     let isItemAttachment: Bool
 }
 
+enum MailMeetingStatus: Hashable, Sendable {
+    case invitation
+    case response(MeetingResponseType)
+    case cancelled
+}
+
 struct MailMeetingInfo: Hashable, Sendable {
     let start: Date?
     let end: Date?
     let location: String?
     let associatedCalendarItemID: String?
+    /// What an attendee answered, for a meeting response: its body is usually empty, and OWA
+    /// shows "X accepted this event" from the message class alone.
+    var response: MeetingResponseType? = nil
+
+    /// `IPM.Schedule.Meeting.Resp.Pos` / `.Tent` / `.Neg`.
+    static func response(itemClass: String?) -> MeetingResponseType? {
+        guard let value = itemClass, value.hasPrefix("IPM.Schedule.Meeting.Resp.") else { return nil }
+        let suffix = value.dropFirst("IPM.Schedule.Meeting.Resp.".count)
+        if suffix.hasPrefix("Pos") { return .accepted }
+        if suffix.hasPrefix("Tent") { return .tentative }
+        if suffix.hasPrefix("Neg") { return .declined }
+        return nil
+    }
 }
 
 struct MailMessage: Identifiable, Hashable, Sendable {
@@ -291,6 +324,10 @@ struct MailMessage: Identifiable, Hashable, Sendable {
     let actions: Set<MailAction>
     let meeting: MailMeetingInfo?
     let internetMessageID: String?
+    /// Who actually sent the message when it differs from `from`: a delegate sending on the
+    /// owner's behalf, or an attendee forwarding the organizer's invitation. OWA shows it as
+    /// "Sender on behalf of From".
+    var sender: MailAddress? = nil
 
     var visibleAttachments: [MailAttachmentInfo] { attachments.filter { !$0.isInline } }
 
@@ -300,7 +337,8 @@ struct MailMessage: Identifiable, Hashable, Sendable {
             subject: subject, from: from, to: to, cc: cc, bcc: bcc, hiddenRecipientCount: hiddenRecipientCount,
             received: received, sent: sent, isRead: isRead ?? self.isRead, isDraft: isDraft, importance: importance,
             bodyHTML: bodyHTML, preview: preview, attachments: attachments, categories: categories ?? self.categories,
-            isFlagged: isFlagged ?? self.isFlagged, actions: actions, meeting: meeting, internetMessageID: internetMessageID
+            isFlagged: isFlagged ?? self.isFlagged, actions: actions, meeting: meeting, internetMessageID: internetMessageID,
+            sender: sender
         )
     }
 }

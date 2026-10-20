@@ -134,6 +134,54 @@ struct MailComposeRequest: Identifiable, Equatable {
     /// The original as the reader shows it (`MailHTMLDocument.document`), for a reply or a
     /// forward opened from the mail window; `nil` shows its preview text instead.
     var originalDocument: String? = nil
+
+    /// A new message from a `mailto:` link (RFC 6068): the addresses before `?`, then `to`, `cc`,
+    /// `subject` and `body` from the query. Approval portals put the request's number in the
+    /// subject or the body, so neither may be lost. `+` stays a plus (RFC 6068), and `bcc` is
+    /// dropped: the compose window has no hidden copy, and putting it in `cc` would show it.
+    static func mailto(_ url: URL) -> MailComposeRequest? {
+        let text = url.absoluteString
+        guard text.lowercased().hasPrefix("mailto:") else { return nil }
+        let rest = text.dropFirst("mailto:".count)
+        let parts = rest.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        var to = addresses(parts.first.map(String.init) ?? "")
+        var cc: [String] = []
+        var subject = ""
+        var body = ""
+        for pair in (parts.count > 1 ? parts[1] : "").split(separator: "&") {
+            let field = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            let value = field.count > 1 ? String(field[1]) : ""
+            switch decoded(String(field[0])).lowercased() {
+            case "to": to += addresses(value)
+            case "cc": cc += addresses(value)
+            case "subject" where subject.isEmpty: subject = decoded(value)
+            case "body" where body.isEmpty:
+                body = decoded(value).replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+            default: break
+            }
+        }
+        return MailComposeRequest(kind: .new, original: nil, to: unique(to), cc: unique(cc), subject: subject, body: body)
+    }
+
+    private static func decoded(_ text: String) -> String {
+        text.removingPercentEncoding ?? text
+    }
+
+    /// Comma-separated addresses, each possibly written as `Name <address>`.
+    private static func addresses(_ encoded: String) -> [String] {
+        decoded(encoded).split(separator: ",").compactMap { part in
+            var address = part.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let open = address.lastIndex(of: "<"), let close = address.lastIndex(of: ">"), open < close {
+                address = address[address.index(after: open)..<close].trimmingCharacters(in: .whitespaces)
+            }
+            return address.isEmpty ? nil : address
+        }
+    }
+
+    private static func unique(_ addresses: [String]) -> [String] {
+        var seen = Set<String>()
+        return addresses.filter { seen.insert($0.lowercased()).inserted }
+    }
 }
 
 enum MailLoadState: Equatable {
@@ -172,6 +220,10 @@ final class MailService: ObservableObject {
     /// That folder's newest conversations, as the folder lists them. Loaded only once the panel
     /// has been shown (`refreshPanelList`).
     @Published private(set) var panelList: [MailConversationSummary] = []
+    /// Where the panel's next page starts; `nil` when the folder has nothing more.
+    @Published private(set) var panelNextCursor: MailListCursor?
+    /// The next page is on its way (scrolling to the bottom asked for it).
+    @Published private(set) var isLoadingMorePanelList = false
     /// When the panel's folder last loaded fine: a failed load leaves it, so the next look retries.
     @Published private(set) var panelListLoaded: Date?
     /// The panel has been shown since the account was set up: new mail then refreshes its list
@@ -384,7 +436,9 @@ final class MailService: ObservableObject {
         guard let seen = seenUnreadIDs, settings.notifyMode != .off else { return }
         let vip = settings.notifyMode == .important ? (backend?.mailVIPNames ?? []) : []
         let fresh = conversations.filter { conversation in
-            guard !seen.contains(conversation.id), !conversation.isAutomated else { return false }
+            guard !seen.contains(conversation.id) else { return false }
+            if settings.notifyMode == .all { return true }
+            guard !conversation.isAutomated else { return false }
             return settings.notifyMode == .people || MailVIP.matches(conversation.primarySender, in: vip) || conversation.importance == .high
         }
         for conversation in fresh.prefix(Self.notificationsPerCheck) {
@@ -480,13 +534,41 @@ final class MailService: ObservableObject {
                 try await $0.mailConversations(in: folder, cursor: .first, filter: .all)
             }
             guard generation == panelListGeneration, folder == panelFolder else { return }
-            panelList = page.conversations
+            // Pages scrolled to stay: the rows after the fresh first page's last one are kept
+            // (less what moved up into it), and so is the cursor after them. When the first page
+            // no longer reaches the old rows (much new mail), there would be a gap: start over.
+            let firstIDs = Set(page.conversations.map(\.id))
+            let boundary = page.nextCursor == nil ? nil : page.conversations.last.flatMap { last in panelList.firstIndex { $0.id == last.id } }
+            let tail = boundary.map { panelList[($0 + 1)...].filter { !firstIDs.contains($0.id) } } ?? []
+            if boundary == nil || tail.isEmpty { panelNextCursor = page.nextCursor }
+            panelList = page.conversations + tail
             panelListFailed = false
             panelListLoaded = Date()
         } catch {
             // `perform` reported it; the list keeps what it had, and an empty one says why.
             guard generation == panelListGeneration, folder == panelFolder, !MailCancellation.isCancellation(error) else { return }
             panelListFailed = true
+        }
+    }
+
+    /// The panel's next page, when the list is scrolled to its end.
+    func loadMorePanelList() async {
+        guard let cursor = panelNextCursor, !isLoadingMorePanelList, panelLoadsInFlight == 0, isAvailable, !isBlocked else { return }
+        let folder = panelFolder
+        let generation = panelListGeneration
+        isLoadingMorePanelList = true
+        defer { isLoadingMorePanelList = false }
+        do {
+            let page = try await perform("mail.panelList") {
+                try await $0.mailConversations(in: folder, cursor: cursor, filter: .all)
+            }
+            // A refresh or a folder switch in the meantime has the list now.
+            guard generation == panelListGeneration, folder == panelFolder, cursor == panelNextCursor else { return }
+            let known = Set(panelList.map(\.id))
+            panelNextCursor = page.nextCursor
+            panelList += page.conversations.filter { !known.contains($0.id) }
+        } catch {
+            // `perform` reported it; the footer stays, so scrolling to it again retries.
         }
     }
 
@@ -497,6 +579,7 @@ final class MailService: ObservableObject {
         defaults.set(Self.storageValue(folder), forKey: Self.panelFolderKey)
         defaults.set(account?.id.uuidString, forKey: Self.panelFolderAccountKey)
         panelList = []
+        panelNextCursor = nil
         panelListLoaded = nil
         panelListFailed = false
         await refreshPanelList(minInterval: 0)
@@ -507,6 +590,7 @@ final class MailService: ObservableObject {
         defaults.removeObject(forKey: Self.panelFolderKey)
         defaults.removeObject(forKey: Self.panelFolderAccountKey)
         panelList = []
+        panelNextCursor = nil
         panelListLoaded = nil
         panelListFailed = false
     }
@@ -515,6 +599,32 @@ final class MailService: ObservableObject {
     func loadFoldersIfNeeded() async {
         guard folders.isEmpty, isAvailable, !isBlocked else { return }
         try? await loadFolders()
+    }
+
+    /// Marks everything in the panel's folder read and shows it at once: the rows lose their
+    /// unread mark and the folder its count before the fresh counts come back. The counts are
+    /// asked for even when marking stopped halfway, so the panel shows what the server has.
+    func markPanelFolderRead() async throws {
+        let folder = panelFolder
+        let folderID = panelFolderInfo?.id
+        do {
+            try await markAllRead(in: folder)
+        } catch {
+            await refreshFolderCounts(minInterval: 0)
+            await checkInbox()
+            throw error
+        }
+        if folder == panelFolder { panelList = panelList.map { $0.with(unreadCount: 0) } }
+        if let folderID {
+            folders = folders.map { entry in
+                guard entry.id == folderID else { return entry }
+                var copy = entry
+                copy.unreadCount = 0
+                return copy
+            }
+        }
+        await refreshFolderCounts(minInterval: 0)
+        await checkInbox()
     }
 
     /// The panel folder's entry in the tree (for its name and unread count).
@@ -955,6 +1065,7 @@ final class MailService: ObservableObject {
         inboxUnreadCount = nil
         latestUnread = []
         panelList = []
+        panelNextCursor = nil
         panelListLoaded = nil
         panelListFailed = false
         panelWanted = false

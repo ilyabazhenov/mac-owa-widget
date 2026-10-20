@@ -124,6 +124,16 @@ enum OWAMailParsers {
         return MailAddress(name: name, email: email)
     }
 
+    /// `Sender` when it is someone other than `From`, nil otherwise.
+    static func onBehalfSender(from: MailAddress?, sender: MailAddress?) -> MailAddress? {
+        guard let from, let sender else { return nil }
+        if let a = from.email?.lowercased(), let b = sender.email?.lowercased() {
+            return a == b ? nil : sender
+        }
+        let fromName = from.displayName.lowercased(), senderName = sender.displayName.lowercased()
+        return fromName.isEmpty || senderName.isEmpty || fromName == senderName ? nil : sender
+    }
+
     static func addresses(_ value: Any?) -> [MailAddress] {
         (value as? [Any] ?? []).compactMap(address)
     }
@@ -313,7 +323,8 @@ enum OWAMailParsers {
                     start: date(dict["Start"]),
                     end: date(dict["End"]),
                     location: string((dict["Location"] as? [String: Any])?["DisplayName"]) ?? string(dict["Location"]),
-                    associatedCalendarItemID: idValue(dict["AssociatedCalendarItemId"])
+                    associatedCalendarItemID: idValue(dict["AssociatedCalendarItemId"]),
+                    response: MailMeetingInfo.response(itemClass: itemClass)
                 )
             default:
                 return nil
@@ -342,7 +353,8 @@ enum OWAMailParsers {
             isFlagged: isFlagged(dict["Flag"]),
             actions: actions,
             meeting: meeting,
-            internetMessageID: string(dict["InternetMessageId"])
+            internetMessageID: string(dict["InternetMessageId"]),
+            sender: onBehalfSender(from: address(dict["From"]), sender: address(dict["Sender"]))
         )
     }
 

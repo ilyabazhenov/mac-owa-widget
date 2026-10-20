@@ -243,4 +243,23 @@ final class MailComposeTests: XCTestCase {
         XCTAssertTrue(model.imagesTooLarge)
         XCTAssertFalse(model.canSend)
     }
+
+    func testMailtoLinkKeepsSubjectBodyAndRecipients() throws {
+        let url = try XCTUnwrap(URL(string: "mailto:approve@corp.ru,Desk%20%3Cdesk@corp.ru%3E?Subject=%D0%A1%D0%BE%D0%B3%D0%BB%D0%B0%D1%81%D0%BE%D0%B2%D0%B0%D1%82%D1%8C%20C12932859&cc=a@corp.ru&to=APPROVE@corp.ru&body=line%201%0D%0Aa+b%26c&bcc=hidden@corp.ru"))
+        let request = try XCTUnwrap(MailComposeRequest.mailto(url))
+        XCTAssertEqual(request.kind, .new)
+        XCTAssertEqual(request.to, ["approve@corp.ru", "desk@corp.ru"])
+        XCTAssertEqual(request.cc, ["a@corp.ru"])
+        XCTAssertEqual(request.subject, "Согласовать C12932859")
+        XCTAssertEqual(request.body, "line 1\na+b&c")
+    }
+
+    func testMailtoLinkWithAddressOnly() throws {
+        let request = try XCTUnwrap(MailComposeRequest.mailto(XCTUnwrap(URL(string: "MAILTO:user+tag@corp.ru"))))
+        XCTAssertEqual(request.to, ["user+tag@corp.ru"])
+        XCTAssertEqual(request.subject, "")
+        XCTAssertEqual(request.body, "")
+        XCTAssertNil(MailComposeRequest.mailto(try XCTUnwrap(URL(string: "https://corp.ru"))))
+        XCTAssertEqual(MailComposeRequest.mailto(try XCTUnwrap(URL(string: "mailto:?subject=Hi")))?.to, [])
+    }
 }

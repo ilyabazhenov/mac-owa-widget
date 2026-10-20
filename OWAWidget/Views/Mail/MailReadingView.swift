@@ -109,8 +109,8 @@ struct MailReadingView: View {
         case "http", "https":
             NSWorkspace.shared.open(url)
         case "mailto":
-            let address = url.absoluteString.dropFirst("mailto:".count).split(separator: "?").first.map(String.init)?.removingPercentEncoding ?? ""
-            service.compose(MailComposeRequest(kind: .new, original: nil, to: address.isEmpty ? [] : [address], cc: [], subject: "", body: ""))
+            guard let request = MailComposeRequest.mailto(url) else { return }
+            service.compose(request)
             openWindow(id: "mail-compose")
         default:
             break
@@ -332,6 +332,15 @@ struct MailMessageCard: View {
                         .help(MailPresentation.fullTime(message.received, localization: localization))
                 }
                 if isExpanded {
+                    if let sender = message.sender {
+                        Text(localization.tr("mail.onBehalf", sender.displayName, message.from?.displayName ?? ""))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .textSelection(.enabled)
+                            .help(sender.email ?? sender.displayName)
+                    }
                     recipients
                 } else {
                     Text(message.preview)
@@ -493,7 +502,7 @@ struct MailMessageCard: View {
     private func meetingRow(_ meeting: MailMeetingInfo) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: message.kind == .meetingCancellation ? "calendar.badge.minus" : "calendar")
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(message.kind == .meetingCancellation ? Color.red : Color.accentColor)
             VStack(alignment: .leading, spacing: 6) {
                 VStack(alignment: .leading, spacing: 2) {
                     if let start = meeting.start {
@@ -509,12 +518,38 @@ struct MailMessageCard: View {
                 if message.kind == .meetingRequest {
                     rsvpButtons
                 }
+                if message.kind == .meetingCancellation {
+                    Label {
+                        Text(localization.tr("mail.list.meetingCancelled"))
+                    } icon: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                    }
+                    .font(.system(size: 12))
+                } else if let response = meeting.response {
+                    responseLine(response)
+                }
             }
             Spacer(minLength: 0)
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.08)))
+    }
+
+    /// "X accepted this event": what a meeting response says, since its body is usually empty.
+    private func responseLine(_ response: MeetingResponseType) -> some View {
+        let name = message.from?.displayName ?? ""
+        let (icon, tint, key): (String, Color, String) = switch response {
+        case .tentative: ("questionmark.circle.fill", .orange, "mail.meeting.response.tentative")
+        case .declined: ("xmark.circle.fill", .red, "mail.meeting.response.declined")
+        default: ("checkmark.circle.fill", .green, "mail.meeting.response.accepted")
+        }
+        return Label {
+            Text(localization.tr(key, name)).fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: icon).foregroundStyle(tint)
+        }
+        .font(.system(size: 12))
     }
 
     /// Accept / Tentative / Decline through the calendar, when the meeting is in it; the current

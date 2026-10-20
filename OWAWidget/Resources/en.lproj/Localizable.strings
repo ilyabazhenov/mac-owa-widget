@@ -523,6 +523,7 @@
 "mail.retry" = "Try Again";
 "mail.noSubject" = "(no subject)";
 "mail.unknownSender" = "Unknown sender";
+"mail.onBehalf" = "%@ on behalf of %@";
 "mail.external" = "external";
 "mail.time.yesterday" = "Yesterday";
 "mail.search.placeholder" = "Search mail";
@@ -664,6 +665,14 @@
 "mail.meeting.accept" = "Accept";
 "mail.meeting.tentative" = "Maybe";
 "mail.meeting.decline" = "Decline";
+"mail.meeting.response.accepted" = "%@ accepted this event";
+"mail.meeting.response.tentative" = "%@ tentatively accepted this event";
+"mail.meeting.response.declined" = "%@ declined this event";
+"mail.meeting.tag.accepted" = "Accepted";
+"mail.meeting.tag.tentative" = "Tentative";
+"mail.meeting.tag.declined" = "Declined";
+"mail.meeting.tag.invitation" = "Invitation";
+"mail.meeting.tag.cancelled" = "Cancelled";
 "mail.mode.help" = "Show all mail or only unread";
 "mail.popover.titlePeople" = "Mail from people";
 "mail.popover.noPeople" = "Nothing new from people — only system mail";
@@ -677,6 +686,7 @@
 "mail.related.empty" = "No mail with this subject or from these people in the last 30 days";
 "mail.settings.notify" = "Notify about new mail";
 "mail.settings.notify.off" = "Never";
+"mail.settings.notify.all" = "All mail";
 "mail.settings.notify.people" = "From people";
 "mail.settings.notify.important" = "From today’s meeting people and colleagues";
 "mail.settings.peopleOnly" = "Count and list mail from people only";
@@ -703,8 +713,7 @@
 "mail.section.today" = "Today";
 "mail.section.yesterday" = "Yesterday";
 "mail.section.earlier" = "Earlier";
-"mail.list.invitation" = "Meeting invitation";
-"mail.list.invitationAt" = "Invitation · %@, %@–%@";
+"mail.list.invitationAt" = "%@, %@–%@";
 "mail.list.meetingCancelled" = "Meeting cancelled";
 "mail.digest.allClear" = "All read";
 "mail.digest.unread" = "Unread from people";
@@ -745,6 +754,9 @@
 "popover.inbox.compose" = "New message";
 "popover.inbox.openWindow" = "Open in the mail window";
 "popover.inbox.loadFailed" = "Couldn't load the folder";
+"popover.inbox.markAllRead" = "Mark All %d as Read";
+"popover.inbox.markingRead" = "Marking as read";
+"popover.inbox.markReadFailed" = "Could not mark everything as read — try again";
 "mail.window.stale.offline" = "Can't reach the server — showing what was loaded %@";
 "mail.window.stale.failed" = "Couldn't refresh the list — showing what was loaded %@";
 "mail.window.stale.at" = "at %@";

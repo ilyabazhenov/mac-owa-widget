@@ -177,6 +177,13 @@ struct MailMessageWebView: NSViewRepresentable {
           var r = document.getElementById('owaw-root');
           var w = document.documentElement.clientWidth;
           if (!r) { return [document.documentElement.scrollHeight, w]; }
+          if (!r.hasAttribute('data-owaw-cells')) {
+            r.setAttribute('data-owaw-cells', '');
+            var cells = r.querySelectorAll('td, th');
+            for (var i = 0; i < cells.length && i < 3000; i++) {
+              if (/\\S{40,}/.test(cells[i].textContent)) { cells[i].classList.add('owaw-wrap-any'); }
+            }
+          }
           r.style.transform = ''; r.style.width = '';
           var s = r.scrollWidth;
           var z = 1;

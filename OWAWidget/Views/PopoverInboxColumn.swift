@@ -19,6 +19,9 @@ struct PopoverInboxColumn: View {
     /// The folder tree shows in place of the list while the burger is on.
     @State private var showsFolders = false
     @State private var isRefreshing = false
+    @State private var isMarkingRead = false
+    /// The last "mark all read" failed: the badge is outlined and its tooltip says so.
+    @State private var markReadFailed = false
 
     private var showsMail: Bool { mail.isAvailable }
 
@@ -95,7 +98,7 @@ struct PopoverInboxColumn: View {
         }
     }
 
-    /// The inbox's first page with the day sections and rows of the mail window.
+    /// The folder's conversations with the day sections and rows of the mail window; scrolling to the end loads the next page.
     @ViewBuilder
     private var inboxList: some View {
         let list = mail.panelList
@@ -162,6 +165,17 @@ struct PopoverInboxColumn: View {
                 .buttonStyle(.mailRow(cornerRadius: 0))
                 Divider().padding(.leading, 21)
             }
+            if mail.panelNextCursor != nil {
+                HStack(spacing: 6) {
+                    if mail.isLoadingMorePanelList { ProgressView().controlSize(.small) }
+                    Text(localization.tr("mail.list.loadingMore"))
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(10)
+                .onAppear { Task { await mail.loadMorePanelList() } }
+            }
         }
     }
 
@@ -181,15 +195,13 @@ struct PopoverInboxColumn: View {
             Text(folderTitle)
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
-            if showsMail, let unread = folderUnread, unread > 0 {
-                Text("\(unread)")
-                    .font(.system(size: 10, weight: .semibold))
-                    .monospacedDigit()
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(Color.accentColor.opacity(0.18)))
-                    .foregroundStyle(Color.accentColor)
-                    .help(localization.tr("popover.inbox.unreadHelp", folderTitle, unread))
+            if showsMail, isMarkingRead {
+                ProgressView()
+                    .scaleEffect(0.5)
+                    .frame(width: 16, height: 16)
+                    .accessibilityLabel(localization.tr("popover.inbox.markingRead"))
+            } else if showsMail, let unread = folderUnread, unread > 0 {
+                unreadBadge(unread)
             }
             Spacer(minLength: 4)
             // The same row of plain icons as the calendar header beside it, with its default
@@ -289,6 +301,45 @@ struct PopoverInboxColumn: View {
         }
         .buttonStyle(.mailRow)
         .padding(.horizontal, horizontalPadding - 6)
+    }
+
+    /// The unread count opens a one-item menu to mark the folder read: the second click is the
+    /// confirmation, with no dialog over the panel.
+    private func unreadBadge(_ unread: Int) -> some View {
+        Menu {
+            Button(localization.tr("popover.inbox.markAllRead", unread)) { markAllRead() }
+        } label: {
+            Text("\(unread)")
+                .font(.system(size: 10, weight: .semibold))
+                .monospacedDigit()
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(Capsule().fill(Color.accentColor.opacity(markReadFailed ? 0 : 0.18)))
+                .overlay(Capsule().stroke(Color.orange, lineWidth: markReadFailed ? 1 : 0))
+                .foregroundStyle(Color.accentColor)
+                .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(markReadFailed
+              ? localization.tr("popover.inbox.markReadFailed")
+              : localization.tr("popover.inbox.unreadHelp", folderTitle, unread))
+    }
+
+    private func markAllRead() {
+        guard !isMarkingRead else { return }
+        isMarkingRead = true
+        markReadFailed = false
+        Task {
+            do {
+                try await mail.markPanelFolderRead()
+            } catch {
+                markReadFailed = true
+            }
+            isMarkingRead = false
+        }
     }
 
     private func headerButton(_ icon: String, _ key: String, action: @escaping () -> Void) -> some View {

@@ -102,6 +102,18 @@ final class MailReviewTests: XCTestCase {
         XCTAssertTrue(service.isExternalSender(outside))
     }
 
+    func testAllNotificationsIncludeSystems() async {
+        await provider.setConversations([conversation("A", from: "Ольга Васильева")])
+        let service = makeService { $0.notifyMode = .all }
+        var notified: [String] = []
+        service.notifier = { conversation, _ in notified.append(conversation.id) }
+        await service.checkInbox()
+        await provider.setConversations([conversation("B", from: "Jira"), conversation("C", from: "Дмитрий Орлов"), conversation("A", from: "Ольга Васильева")])
+        await provider.setUnread(4)
+        await service.checkInbox()
+        XCTAssertEqual(notified, ["B", "C"])
+    }
+
     func testImportantNotificationsNeedTodaysPeople() async {
         await provider.setConversations([conversation("A", from: "Ольга Васильева")])
         let service = makeService { $0.notifyMode = .important }

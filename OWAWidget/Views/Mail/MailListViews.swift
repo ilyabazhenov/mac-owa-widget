@@ -4,6 +4,22 @@ import SwiftUI
 /// Small presentation helpers shared by the mail views.
 @MainActor
 enum MailPresentation {
+    /// The prefixes Exchange puts on a meeting response's or cancellation's subject (in the
+    /// sender's language).
+    nonisolated private static let meetingPrefixes = [
+        "Принято:", "Под вопросом:", "Предварительно принято:", "Отклонено:", "Отменено:", "Отменена:",
+        "Accepted:", "Tentative:", "Declined:", "Canceled:", "Cancelled:",
+    ]
+
+    /// A response's or cancellation's topic without its "Accepted:" / "Canceled:" prefix: the
+    /// row shows it as a tag.
+    nonisolated static func strippingMeetingPrefix(_ topic: String) -> String {
+        for prefix in meetingPrefixes where topic.range(of: prefix, options: [.anchored, .caseInsensitive]) != nil {
+            return topic.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+        }
+        return topic
+    }
+
     /// "Нет связи с сервером — показано то, что было загружено в 12:40" (with the day when the
     /// load was not today).
     static func staleListText(_ notice: MailStaleListNotice, now: Date = Date(), localization: LocalizationService) -> String {
@@ -122,9 +138,8 @@ enum MailPresentation {
 
     /// The line an invitation shows in place of an empty preview.
     static func meetingLine(_ conversation: MailConversationSummary, interval: DateInterval?, localization: LocalizationService) -> String? {
-        if conversation.isMeetingCancellation { return localization.tr("mail.list.meetingCancelled") }
-        guard conversation.isMeetingRequest else { return nil }
-        guard let interval else { return localization.tr("mail.list.invitation") }
+        // The tag says what it is; the line adds when, once the calendar knows.
+        guard conversation.meetingStatus == .invitation, let interval else { return nil }
         let day = localization.formatDate(interval.start, format: "EE, d MMM")
         return localization.tr("mail.list.invitationAt", day, localization.shortTime(interval.start), localization.shortTime(interval.end))
     }
@@ -943,6 +958,28 @@ struct MailConversationListView: View {
     }
 }
 
+/// "Invitation" / "Accepted" / "Tentative" / "Declined" / "Cancelled" before a meeting message's topic, as
+/// OWA's subject has it.
+struct MailMeetingStatusTag: View {
+    let status: MailMeetingStatus
+    @EnvironmentObject private var localization: LocalizationService
+
+    var body: some View {
+        let (icon, tint, key): (String, Color, String) = switch status {
+        case .invitation: ("calendar", .accentColor, "mail.meeting.tag.invitation")
+        case .cancelled: ("calendar.badge.minus", .red, "mail.meeting.tag.cancelled")
+        case .response(.tentative): ("questionmark.circle.fill", .orange, "mail.meeting.tag.tentative")
+        case .response(.declined): ("xmark.circle.fill", .red, "mail.meeting.tag.declined")
+        case .response: ("checkmark.circle.fill", .green, "mail.meeting.tag.accepted")
+        }
+        HStack(spacing: 3) {
+            Image(systemName: icon).font(.system(size: 10)).foregroundStyle(tint)
+            Text(localization.tr(key)).font(.system(size: 12, weight: .medium)).foregroundStyle(tint)
+        }
+        .fixedSize()
+    }
+}
+
 struct MailConversationRow: View {
     let conversation: MailConversationSummary
     let isSelected: Bool
@@ -991,10 +1028,8 @@ struct MailConversationRow: View {
                         .fixedSize()
                 }
                 HStack(spacing: 5) {
-                    if conversation.isMeetingRequest || conversation.isMeetingCancellation {
-                        Image(systemName: conversation.isMeetingCancellation ? "calendar.badge.minus" : "calendar")
-                            .font(.system(size: 10))
-                            .foregroundStyle(conversation.isMeetingCancellation ? Color.secondary : Color.accentColor)
+                    if let status = conversation.meetingStatus {
+                        MailMeetingStatusTag(status: status)
                     }
                     if conversation.importance == .high {
                         Text("!").font(.system(size: 12, weight: .bold)).foregroundStyle(.red)
@@ -1003,7 +1038,8 @@ struct MailConversationRow: View {
                         RoundedRectangle(cornerRadius: 2).fill(MailPresentation.categoryColor(name)).frame(width: 8, height: 8).help(name)
                     }
                     if conversation.isProtected { Image(systemName: "lock.fill").font(.system(size: 9)).foregroundStyle(.secondary) }
-                    Text(MailPresentation.highlighted(conversation.topic.isEmpty ? localization.tr("mail.noSubject") : conversation.topic, terms: terms))
+                    let topic = conversation.meetingStatus == nil ? conversation.topic : MailPresentation.strippingMeetingPrefix(conversation.topic)
+                    Text(MailPresentation.highlighted(topic.isEmpty ? localization.tr("mail.noSubject") : topic, terms: terms))
                         .font(.system(size: 12, weight: conversation.isUnread ? .medium : .regular))
                         .lineLimit(1)
                     Spacer(minLength: 2)

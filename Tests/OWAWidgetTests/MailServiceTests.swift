@@ -20,6 +20,9 @@ actor FakeMailProvider: MailProvider {
     func setUnread(_ value: Int) { unread = value }
     func setFailure(_ error: Error?) { failure = error }
     func setConversations(_ value: [MailConversationSummary]) { conversations = value }
+    /// Pages of this size, the cursor being the offset; `nil` gives everything at once.
+    var conversationPageSize: Int?
+    func setConversationPageSize(_ value: Int?) { conversationPageSize = value }
     func setThread(_ thread: MailThread) { threads[thread.id] = thread }
     func setFolders(_ value: [MailFolder]) { folderList = value }
     func setSearchPages(_ value: [MailSearchPage]) { searchPages = value }
@@ -50,9 +53,15 @@ actor FakeMailProvider: MailProvider {
     func mailConversations(in folder: MailFolderRef, cursor: MailListCursor, filter: MailListFilter) async throws -> MailConversationPage {
         try record("conversations:\(filter.rawValue)")
         // What the mailbox held when the request came in, however late the answer.
-        let page = conversations
+        var page = conversations
+        var next: MailListCursor?
+        if let size = conversationPageSize {
+            let start = if case .after(let key) = cursor { Int(key) ?? 0 } else { 0 }
+            page = Array(conversations.dropFirst(start).prefix(size))
+            if start + size < conversations.count { next = .after(instanceKey: String(start + size)) }
+        }
         if !conversationDelays.isEmpty { try await Task.sleep(nanoseconds: conversationDelays.removeFirst()) }
-        return MailConversationPage(conversations: page, totalInView: page.count, nextCursor: nil)
+        return MailConversationPage(conversations: page, totalInView: conversations.count, nextCursor: next)
     }
 
     var unreadItems: [MailListItem] = []

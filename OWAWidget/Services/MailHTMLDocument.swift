@@ -92,6 +92,12 @@ enum MailHTMLDocument {
            A sized image keeps its size there; a message that ends up too wide is scaled as a whole. */
         td img[width], th img[width], td img[style*="width"], th img[style*="width"] { max-width: none; }
         table { max-width: 100% !important; }
+        /* `anywhere` counts a break after every letter into a cell's minimum width, so a table
+           squeezed a short column to one letter per line ("Ст/ат/ус"). A cell keeps its words
+           whole; one with a long unbroken run (a URL) gets `owaw-wrap-any` from the reader's fit
+           script and breaks it anywhere, rather than widening the table and shrinking the message. */
+        td, th { overflow-wrap: break-word; }
+        td.owaw-wrap-any, th.owaw-wrap-any { overflow-wrap: anywhere; }
         pre { white-space: pre-wrap; }
         /* Generated mail often zeroes list padding; the bullets would hang outside the page. */
         #owaw-root ul, #owaw-root ol { padding-inline-start: 1.6em !important; }

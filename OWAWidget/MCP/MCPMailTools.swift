@@ -347,6 +347,7 @@ final class MCPMailTools {
             "is_read": .bool(message.isRead),
             "kind": .string(Self.kindName(message.kind)),
         ]
+        if let sender = message.sender { fields["sent_by"] = addressJSON(sender, ownDomain: ownDomain) }
         if !message.cc.isEmpty { fields["cc"] = .array(message.cc.map { addressJSON($0, ownDomain: ownDomain) }) }
         if !message.bcc.isEmpty { fields["bcc"] = .array(message.bcc.map { addressJSON($0, ownDomain: ownDomain) }) }
         if message.hiddenRecipientCount > 0 { fields["more_recipients"] = .int(Int64(message.hiddenRecipientCount)) }
@@ -366,11 +367,13 @@ final class MCPMailTools {
             })
         }
         if let meeting = message.meeting {
-            fields["meeting"] = .object([
+            var info: [String: JSONValue] = [
                 "start": .optional(meeting.start.map(coder.string)),
                 "end": .optional(meeting.end.map(coder.string)),
                 "location": .optional(meeting.location),
-            ])
+            ]
+            if let response = meeting.response { info["response"] = .string(response.rawValue) }
+            fields["meeting"] = .object(info)
         }
         switch message.kind {
         case .protected:
