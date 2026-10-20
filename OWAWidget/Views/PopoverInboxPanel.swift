@@ -39,7 +39,7 @@ final class InboxPanelAttachmentView: NSView {
     private var hosting: FirstMouseHostingView<AnyView>?
     /// The "glass" under the content, matched to the popover's: on it AppKit draws labels and
     /// icons vibrant (brighter), so without it the same icon looks dimmer than in the popover.
-    private var backdrop: NSVisualEffectView?
+    private var backdrop: InboxPanelBackdrop?
     private var isEnabled = false
     private var width: CGFloat = 340
     private var onShow: () -> Void = {}
@@ -109,7 +109,10 @@ final class InboxPanelAttachmentView: NSView {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
-        let backdrop = NSVisualEffectView(frame: panel.contentRect(forFrameRect: panel.frame))
+        // No `appearance` of its own: like the popover and the mail window, the panel follows the
+        // app's (the theme setting, or macOS's light/dark switching on its own). A copied one stays
+        // pinned: twice the panel stayed dark beside a light calendar after macOS turned light.
+        let backdrop = InboxPanelBackdrop(frame: panel.contentRect(forFrameRect: panel.frame))
         backdrop.material = .popover
         backdrop.blendingMode = .behindWindow
         // Never key, so following the window state would leave it looking inactive.
@@ -141,7 +144,7 @@ final class InboxPanelAttachmentView: NSView {
             return
         }
         reportPlacement(true)
-        applyAppearance()
+        backdrop?.refreshBorder()
         let wasVisible = panel.isVisible
         // Already in place beside this popover: nothing to redo.
         if wasVisible, panel.parent === window, panel.frame == frame { return }
@@ -167,23 +170,6 @@ final class InboxPanelAttachmentView: NSView {
         }
         panel.orderFront(nil)
         if !wasVisible { onShow() }
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        applyAppearance()
-    }
-
-    /// Gives the panel the appearance the popover's content is drawn in: this view's, not the
-    /// popover window's, and again whenever it changes. Taken from the window only on placement,
-    /// the panel stayed dark beside a light calendar after macOS switched to light mode on its own.
-    private func applyAppearance() {
-        guard let panel else { return }
-        let appearance = effectiveAppearance
-        panel.appearance = appearance
-        appearance.performAsCurrentDrawingAppearance {
-            backdrop?.layer?.borderColor = NSColor.separatorColor.cgColor
-        }
     }
 
     /// Tells the popover once per change, outside the view update that may have caused it.
@@ -250,6 +236,20 @@ final class InboxPanelAttachmentView: NSView {
 }
 
 /// Never key, never main: the popover keeps focus, so a click here does not close it.
+/// The panel's glass. The border is a `CGColor`, which does not follow the appearance by itself.
+final class InboxPanelBackdrop: NSVisualEffectView {
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshBorder()
+    }
+
+    func refreshBorder() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.borderColor = NSColor.separatorColor.cgColor
+        }
+    }
+}
+
 final class InboxPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
