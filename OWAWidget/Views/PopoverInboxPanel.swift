@@ -46,6 +46,9 @@ final class InboxPanelAttachmentView: NSView {
     private var onPlacementChange: (Bool) -> Void = { _ in }
     private var reportedPlacement: Bool?
     private var observers: [NSObjectProtocol] = []
+    private var appearanceObservation: NSKeyValueObservation?
+    private var content: AnyView?
+    private var suppressNextShow = false
 
     /// Called on every update of the popover's view. The content is set once: it observes the
     /// services itself, so re-rooting it on each update would only redo the whole column. The
@@ -59,6 +62,7 @@ final class InboxPanelAttachmentView: NSView {
         self.width = width
         var created = false
         if hosting == nil, isEnabled {
+            self.content = content
             makePanel(content)
             created = true
         }
@@ -69,9 +73,29 @@ final class InboxPanelAttachmentView: NSView {
         hidePanel()
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
+        appearanceObservation = nil
         panel?.close()
         panel = nil
         hosting = nil
+        backdrop = nil
+    }
+
+    /// Rebuilds the panel when the app's look (AppearanceService sets it on `NSApp`) is no longer
+    /// the one the panel was made in. Setting `appearance` on the existing panel is not enough:
+    /// AppKit then reports the new look for the panel and its views, yet the window keeps
+    /// showing the old one (a light inbox beside a dark calendar, and the other way round).
+    /// A panel made afresh always draws in the current look. Returns whether it was rebuilt.
+    @discardableResult
+    private func rebuildIfAppearanceChanged() -> Bool {
+        guard let panel, let content, panel.appearance?.name != NSApp.appearance?.name else { return false }
+        DiagnosticLog.event("Inbox panel rebuilt for appearance=\(NSApp.appearance?.name.rawValue ?? "nil")")
+        let wasVisible = panel.isVisible
+        hidePanel()
+        panel.close()
+        makePanel(content)
+        // Already on screen with the popover: the reopened panel is not a new showing.
+        if wasVisible { suppressNextShow = true }
+        return true
     }
 
     override func viewDidMoveToWindow() {
@@ -109,9 +133,18 @@ final class InboxPanelAttachmentView: NSView {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
-        // No `appearance` of its own: like the popover and the mail window, the panel follows the
-        // app's (the theme setting, or macOS's light/dark switching on its own). A copied one stays
-        // pinned: twice the panel stayed dark beside a light calendar after macOS turned light.
+        // The look comes from the same place as the popover's: `NSApp.appearance`, which
+        // AppearanceService always sets explicitly. When it changes, the panel is made anew
+        // (see `rebuildIfAppearanceChanged`).
+        panel.appearance = NSApp.appearance
+        appearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, self.rebuildIfAppearanceChanged() else { return }
+                    self.sync()
+                }
+            }
+        }
         let backdrop = InboxPanelBackdrop(frame: panel.contentRect(forFrameRect: panel.frame))
         backdrop.material = .popover
         backdrop.blendingMode = .behindWindow
@@ -134,7 +167,7 @@ final class InboxPanelAttachmentView: NSView {
 
     /// Shows the panel beside a visible popover, hides it otherwise.
     private func sync() {
-        guard isEnabled, let window, let panel, window.isVisible, window.occlusionState.contains(.visible) else {
+        guard isEnabled, let window, self.panel != nil, window.isVisible, window.occlusionState.contains(.visible) else {
             hidePanel()
             return
         }
@@ -144,7 +177,8 @@ final class InboxPanelAttachmentView: NSView {
             return
         }
         reportPlacement(true)
-        backdrop?.refreshBorder()
+        rebuildIfAppearanceChanged()
+        guard let panel else { return }
         let wasVisible = panel.isVisible
         // Already in place beside this popover: nothing to redo.
         if wasVisible, panel.parent === window, panel.frame == frame { return }
@@ -169,7 +203,8 @@ final class InboxPanelAttachmentView: NSView {
             window.addChildWindow(panel, ordered: .above)
         }
         panel.orderFront(nil)
-        if !wasVisible { onShow() }
+        if !wasVisible, !suppressNextShow { onShow() }
+        suppressNextShow = false
     }
 
     /// Tells the popover once per change, outside the view update that may have caused it.
@@ -181,6 +216,7 @@ final class InboxPanelAttachmentView: NSView {
     }
 
     private func hidePanel() {
+        suppressNextShow = false
         guard let panel else { return }
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)
@@ -235,7 +271,6 @@ final class InboxPanelAttachmentView: NSView {
     }
 }
 
-/// Never key, never main: the popover keeps focus, so a click here does not close it.
 /// The panel's glass. The border is a `CGColor`, which does not follow the appearance by itself.
 final class InboxPanelBackdrop: NSVisualEffectView {
     override func viewDidChangeEffectiveAppearance() {
@@ -250,6 +285,7 @@ final class InboxPanelBackdrop: NSVisualEffectView {
     }
 }
 
+/// Never key, never main: the popover keeps focus, so a click here does not close it.
 final class InboxPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
