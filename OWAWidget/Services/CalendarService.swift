@@ -892,6 +892,22 @@ final class CalendarService: ObservableObject {
         }
     }
 
+    /// Accounts that have a provider now, in provider order: those whose calendar can be read.
+    var readableAccounts: [CalendarAccount] {
+        providers.map(\.account)
+    }
+
+    /// One account's meetings in a period, straight from its provider, for the MCP server's
+    /// reads outside the sync window. Nothing is kept: `events`, the disk cache and
+    /// `eventCoverage` stay as the last sync left them, and so do the invitation tracker and
+    /// reminders, which must only ever see the sync window.
+    func fetchEventsOutsideSync(accountID: UUID, from start: Date, to end: Date) async throws -> [CalendarEvent] {
+        guard let provider = providers.first(where: { $0.account.id == accountID }) else {
+            throw CalendarProviderError.notSupported
+        }
+        return try await provider.fetchEvents(from: start, to: end)
+    }
+
     /// Lazily loads attendees and the full agenda for a meeting (one `GetCalendarEvent` request)
     /// and caches both back onto the event in `events`. Returns the cached payload immediately if
     /// already loaded, so re-opening the same meeting performs no network request until the next

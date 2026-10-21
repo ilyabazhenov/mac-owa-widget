@@ -5,9 +5,11 @@ import Foundation
 /// `create_meeting`.
 ///
 /// The calendar tools read the in-memory calendar: no network, no load on Exchange, except for
-/// meeting details. Data is limited to the sync window (start of day -7 days ... now +30 days), and every
-/// answer says how fresh it is (`data_as_of`, `coverage`, `sync_state`), because `events` may come
-/// from a days-old disk cache or survive a failed sync.
+/// meeting details and periods beyond the sync window (start of day -7 days ... now +30 days),
+/// which `list_events`, `get_schedule_stats`, `find_events_with_person` and `match_event` load on
+/// demand through `MCPCalendarArchive`. Every answer says how fresh the synced data is
+/// (`data_as_of`, `coverage`, `sync_state`), because `events` may come from a days-old disk cache
+/// or survive a failed sync.
 @MainActor
 final class MCPCalendarTools {
     static let maxNetworkRequestsPerPersonSearch = 40
@@ -36,6 +38,7 @@ final class MCPCalendarTools {
     private let calendarService: CalendarService
     private let accessGuard: MCPAccessGuard
     private let detailsCache: MCPEventDetailsCache
+    private let archive: MCPCalendarArchive
     private let clock: () -> Date
     private let isEnabled: () -> Bool
     private let canCreateMeetings: () -> Bool
@@ -57,6 +60,7 @@ final class MCPCalendarTools {
         calendarService: CalendarService,
         accessGuard: MCPAccessGuard? = nil,
         detailsCache: MCPEventDetailsCache = MCPEventDetailsCache(),
+        archive: MCPCalendarArchive = MCPCalendarArchive(),
         confirmer: MCPMeetingConfirming? = nil,
         handOff: @escaping (MeetingDraftSeed) -> Void = { MeetingDraftInbox.shared.deliver($0) },
         confirmationTimeout: TimeInterval = MCPCalendarTools.confirmationTimeout,
@@ -68,6 +72,7 @@ final class MCPCalendarTools {
         self.calendarService = calendarService
         self.accessGuard = accessGuard ?? MCPAccessGuard(calendarService: calendarService, clock: clock)
         self.detailsCache = detailsCache
+        self.archive = archive
         self.confirmer = confirmer ?? MCPMeetingConfirmationController()
         self.handOff = handOff
         self.confirmationTimeout = confirmationTimeout
@@ -86,8 +91,8 @@ final class MCPCalendarTools {
             switch name {
             case "get_status": return await getStatus(context)
             case "get_current_and_next": return try getCurrentAndNext(arguments, context)
-            case "list_events": return try listEvents(arguments, context)
-            case "get_schedule_stats": return try getScheduleStats(arguments, context)
+            case "list_events": return try await listEvents(arguments, context)
+            case "get_schedule_stats": return try await getScheduleStats(arguments, context)
             case "find_events_with_person": return try await findEventsWithPerson(arguments, context)
             case "get_event_details": return try await getEventDetails(arguments, context)
             case "find_people": return try await findPeople(arguments, context)
@@ -196,22 +201,23 @@ final class MCPCalendarTools {
 
     // MARK: - list_events
 
-    private func listEvents(_ arguments: [String: JSONValue], _ context: CallContext) throws -> MCPToolResult {
+    private func listEvents(_ arguments: [String: JSONValue], _ context: CallContext) async throws -> MCPToolResult {
         let todayStart = context.coder.calendar.startOfDay(for: context.now)
         let today = DateInterval(start: todayStart, end: context.coder.calendar.date(byAdding: .day, value: 1, to: todayStart) ?? context.now)
         let seriesID = arguments["series_id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let seriesID, seriesID.isEmpty { throw ArgumentError("`series_id` is empty; take it from another event's `series_id`") }
         // A series is asked for as a whole: every occurrence the calendar holds, not just today's.
         let defaultRange = seriesID == nil ? today : try requireCoverage()
-        let resolved = try resolveRange(arguments, default: defaultRange, spanWhenOnlyFrom: .day, context)
+        let resolved = try resolveRange(arguments, default: defaultRange, spanWhenOnlyFrom: .day, onDemand: true, context)
         let accountID = try optionalAccountID(arguments)
         let query = arguments["query"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
         let responses = try responseFilter(arguments["response"])
         let includeCancelled = try optionalBool(arguments, "include_cancelled") ?? false
         let includeAllDay = try optionalBool(arguments, "include_all_day") ?? true
         let limit = try optionalInt(arguments, "limit", range: 1...300) ?? 100
+        let lookup = try await calendarEvents(for: resolved, accountID: accountID, context)
 
-        let matching = calendarService.events
+        let matching = lookup.events
             .filter { Self.overlaps($0, resolved.range) }
             .filter { accountID == nil || $0.accountID == accountID }
             .filter { includeCancelled || !$0.isEffectivelyCancelled }
@@ -228,6 +234,7 @@ final class MCPCalendarTools {
 
         var result = commonFields(context)
         result["range"] = rangeJSON(resolved, context)
+        lookup.annotate(&result)
         result["events"] = .array(matching.prefix(limit).map { .object(eventFields($0, context)) })
         result["total"] = .int(Int64(matching.count))
         result["truncated"] = .bool(matching.count > limit)
@@ -236,14 +243,14 @@ final class MCPCalendarTools {
 
     // MARK: - get_schedule_stats
 
-    private func getScheduleStats(_ arguments: [String: JSONValue], _ context: CallContext) throws -> MCPToolResult {
+    private func getScheduleStats(_ arguments: [String: JSONValue], _ context: CallContext) async throws -> MCPToolResult {
         let calendar = context.coder.calendar
         let todayStart = calendar.startOfDay(for: context.now)
         // Current week, Monday to Sunday.
         let mondayOffset = (calendar.component(.weekday, from: todayStart) + 5) % 7
         let weekStart = calendar.date(byAdding: .day, value: -mondayOffset, to: todayStart) ?? todayStart
         let week = DateInterval(start: weekStart, end: calendar.date(byAdding: .day, value: 7, to: weekStart) ?? context.now)
-        let resolved = try resolveRange(arguments, default: week, spanWhenOnlyFrom: .week, context)
+        let resolved = try resolveRange(arguments, default: week, spanWhenOnlyFrom: .week, onDemand: true, context)
         let accountID = try optionalAccountID(arguments)
 
         var options = ScheduleStatsCalculator.Options()
@@ -254,12 +261,14 @@ final class MCPCalendarTools {
         options.minFocusMinutes = try optionalInt(arguments, "min_focus_minutes", range: 15...480) ?? 60
         options.countUnanswered = try optionalBool(arguments, "count_unanswered") ?? true
 
-        let events = calendarService.events.filter { accountID == nil || $0.accountID == accountID }
+        let lookup = try await calendarEvents(for: resolved, accountID: accountID, context)
+        let events = lookup.events.filter { accountID == nil || $0.accountID == accountID }
         let stats = ScheduleStatsCalculator.compute(events: events, range: resolved.range, calendar: calendar, options: options)
         let coder = context.coder
 
         var result = commonFields(context)
         result["range"] = rangeJSON(resolved, context)
+        lookup.annotate(&result)
         result["totals"] = [
             "meeting_count": .int(Int64(stats.meetingCount)),
             "meeting_minutes": .int(Self.minutes(stats.meetingSeconds)),
@@ -438,7 +447,7 @@ final class MCPCalendarTools {
             throw ArgumentError("`person` is required: a name (any word order) or an email address")
         }
         let coverage = try requireCoverage()
-        let resolved = try resolveRange(arguments, default: coverage, spanWhenOnlyFrom: nil, context)
+        let resolved = try resolveRange(arguments, default: coverage, spanWhenOnlyFrom: nil, onDemand: true, context)
         let accountID = try optionalAccountID(arguments)
         let directionText = arguments["direction"]?.stringValue ?? Direction.both.rawValue
         guard let direction = Direction(rawValue: directionText) else {
@@ -449,7 +458,8 @@ final class MCPCalendarTools {
         let includeSkipped = try optionalBool(arguments, "include_declined_and_cancelled") ?? false
 
         let now = context.now
-        let inRange = calendarService.events
+        let lookup = try await calendarEvents(for: resolved, accountID: accountID, context)
+        let inRange = lookup.events
             .filter { Self.overlaps($0, resolved.range) }
             .filter { accountID == nil || $0.accountID == accountID }
         // A declined or cancelled meeting is not "the last time we met", as in the other tools.
@@ -527,6 +537,7 @@ final class MCPCalendarTools {
 
         var result = commonFields(context)
         result["range"] = rangeJSON(resolved, context)
+        lookup.annotate(&result)
         result["past"] = .array(pastHits.map { hitJSON($0, context) })
         result["upcoming"] = .array(upcomingHits.map { hitJSON($0, context) })
         result["partial"] = .bool(unchecked > 0)
@@ -598,7 +609,8 @@ final class MCPCalendarTools {
         guard let handle = arguments["event_id"]?.stringValue, !handle.isEmpty else {
             throw ArgumentError("`event_id` is required (take it from list_events)")
         }
-        guard let event = MCPEventID.resolve(handle, in: calendarService.events) else {
+        guard let event = MCPEventID.resolve(handle, in: calendarService.events)
+            ?? MCPEventID.resolve(handle, in: archive.allEvents) else {
             return .failure("Event \(handle) not found. It may have been removed, or the calendar was refreshed — call list_events again.")
         }
 
@@ -1082,14 +1094,21 @@ final class MCPCalendarTools {
         let accountID = try optionalAccountID(arguments)
         let limit = try optionalInt(arguments, "limit", range: 1...10) ?? 3
 
-        let coverage = try requireCoverage()
-        guard start < coverage.end, end >= coverage.start else {
+        // The meetings around the interval, loaded on demand when it is outside the sync window.
+        let around = DateInterval(
+            start: start.addingTimeInterval(-MeetingMatchScorer.slack),
+            end: max(end, start).addingTimeInterval(MeetingMatchScorer.slack)
+        )
+        let reach = try onDemandReach(context)
+        guard start < reach.end, end >= reach.start else {
             return .failure(
-                "\(context.coder.string(start)) is outside the calendar data OWA Widget holds (\(context.coder.string(coverage.start)) to \(context.coder.string(coverage.end))). Nothing can be matched there; do not guess."
+                "\(context.coder.string(start)) is outside the calendar data OWA Widget can read (\(context.coder.string(reach.start)) to \(context.coder.string(reach.end))). Nothing can be matched there; do not guess."
             )
         }
+        let resolved = try clip(around, onDemand: true, context)
+        let lookup = try await calendarEvents(for: resolved, accountID: accountID, context)
 
-        let events = calendarService.events.filter { accountID == nil || $0.accountID == accountID }
+        let events = lookup.events.filter { accountID == nil || $0.accountID == accountID }
         let byTime = MeetingMatchScorer.candidates(events, start: start, end: end)
             .map { (event: $0, time: MeetingMatchScorer.timeScore(event: $0, start: start, end: end)) }
             .sorted { $0.time > $1.time }
@@ -1157,6 +1176,7 @@ final class MCPCalendarTools {
         result["confidence"] = .string(scored.isEmpty ? "none" : verdict.confidence.rawValue)
         result["ambiguous"] = .bool(verdict.ambiguous)
         if let attendeesNote { result["attendees_note"] = .string(attendeesNote) }
+        lookup.annotate(&result)
         return .success(result)
     }
 
@@ -1231,6 +1251,9 @@ final class MCPCalendarTools {
     private struct ResolvedRange {
         let range: DateInterval
         let clipped: Bool
+        /// The parts of `range` outside the sync window, loaded on demand.
+        var outside: [DateInterval] = []
+        var note: String? = nil
     }
 
     private enum DefaultSpan { case day, week }
@@ -1296,11 +1319,14 @@ final class MCPCalendarTools {
     }
 
     private func rangeJSON(_ resolved: ResolvedRange, _ context: CallContext) -> JSONValue {
-        [
+        var fields: [String: JSONValue] = [
             "from": .string(context.coder.string(resolved.range.start)),
             "to": .string(context.coder.string(resolved.range.end)),
             "clipped_to_coverage": .bool(resolved.clipped),
         ]
+        if !resolved.outside.isEmpty { fields["outside_sync_window"] = true }
+        if let note = resolved.note { fields["note"] = .string(note) }
+        return .object(fields)
     }
 
     private func requireCoverage() throws -> DateInterval {
@@ -1310,10 +1336,13 @@ final class MCPCalendarTools {
         return coverage.interval
     }
 
+    /// `onDemand`: periods beyond the sync window are loaded from the calendar (see
+    /// `MCPCalendarArchive`), within its limits; otherwise the period is clipped to `coverage`.
     private func resolveRange(
         _ arguments: [String: JSONValue],
         default defaultRange: DateInterval,
         spanWhenOnlyFrom: DefaultSpan?,
+        onDemand: Bool = false,
         _ context: CallContext
     ) throws -> ResolvedRange {
         let coverage = try requireCoverage()
@@ -1344,18 +1373,197 @@ final class MCPCalendarTools {
         let start = from ?? defaultRange.start
         let end = to ?? (from == nil ? defaultRange.end : coverage.end)
         guard end > start else { throw ArgumentError("`to` must be later than `from`") }
+        return try clip(DateInterval(start: start, end: end), onDemand: onDemand, context)
+    }
 
-        let clippedStart = max(start, coverage.start)
-        let clippedEnd = min(end, coverage.end)
-        guard clippedEnd > clippedStart else {
-            throw ArgumentError(
-                "No data for that period. OWA Widget only holds meetings from \(coder.string(coverage.start)) to \(coder.string(coverage.end))."
+    /// From a year back (start of that day) to a year ahead, and never less than `coverage`.
+    private func onDemandReach(_ context: CallContext) throws -> DateInterval {
+        let coverage = try requireCoverage()
+        let start = context.coder.calendar.startOfDay(for: context.now.addingTimeInterval(-MCPCalendarArchive.horizon))
+        let end = context.now.addingTimeInterval(MCPCalendarArchive.horizon)
+        return DateInterval(start: min(start, coverage.start), end: max(end, coverage.end))
+    }
+
+    private func clip(_ requested: DateInterval, onDemand: Bool, _ context: CallContext) throws -> ResolvedRange {
+        let coverage = try requireCoverage()
+        let coder = context.coder
+        guard onDemand else {
+            let clippedStart = max(requested.start, coverage.start)
+            let clippedEnd = min(requested.end, coverage.end)
+            guard clippedEnd > clippedStart else {
+                throw ArgumentError(
+                    "No data for that period. OWA Widget only holds meetings from \(coder.string(coverage.start)) to \(coder.string(coverage.end))."
+                )
+            }
+            return ResolvedRange(
+                range: DateInterval(start: clippedStart, end: clippedEnd),
+                clipped: clippedStart != requested.start || clippedEnd != requested.end
             )
         }
+
+        let reach = try onDemandReach(context)
+        var start = max(requested.start, reach.start)
+        var end = min(requested.end, reach.end)
+        guard end > start else {
+            throw ArgumentError(
+                "No data for that period. OWA Widget reads meetings from \(coder.string(reach.start)) to \(coder.string(reach.end)) (a year back and a year ahead)."
+            )
+        }
+        var note: String?
+        if start != requested.start || end != requested.end {
+            note = "OWA Widget reads meetings from at most a year back to a year ahead."
+        }
+        // At most `maxSpan` outside the sync window, keeping what is nearest to it: "the last
+        // time" and "the next time" are found there. With both sides, the later one gets at
+        // least half.
+        let maxSpan = MCPCalendarArchive.maxSpan
+        let beforeEnd = min(end, coverage.start)
+        let before = max(0, beforeEnd.timeIntervalSince(start))
+        let afterStart = max(start, coverage.end)
+        let after = max(0, end.timeIntervalSince(afterStart))
+        if before + after > maxSpan {
+            let keptAfter = min(after, max(maxSpan / 2, maxSpan - before))
+            let keptBefore = min(before, maxSpan - keptAfter)
+            if before > 0 { start = beforeEnd.addingTimeInterval(-keptBefore) }
+            if after > 0 { end = afterStart.addingTimeInterval(keptAfter) }
+            note = "Outside the sync window (`coverage`) OWA Widget loads at most \(Int(maxSpan / 86_400)) days per call, nearest to `coverage` first: call again with `from`/`to` for the rest."
+        }
+
+        var outside: [DateInterval] = []
+        if start < coverage.start { outside.append(DateInterval(start: start, end: min(end, coverage.start))) }
+        if end > coverage.end { outside.append(DateInterval(start: max(start, coverage.end), end: end)) }
         return ResolvedRange(
-            range: DateInterval(start: clippedStart, end: clippedEnd),
-            clipped: clippedStart != start || clippedEnd != end
+            range: DateInterval(start: start, end: end),
+            clipped: start != requested.start || end != requested.end,
+            outside: outside,
+            note: note
         )
+    }
+
+    // MARK: - Meetings outside the sync window
+
+    private struct CalendarLookup {
+        let events: [CalendarEvent]
+        /// Accounts whose meetings outside the sync window could not be loaded, with the reason.
+        var unavailable: [(accountID: UUID, reason: String)] = []
+
+        func annotate(_ result: inout [String: JSONValue]) {
+            guard !unavailable.isEmpty else { return }
+            result["unavailable_accounts"] = .array(unavailable.map {
+                ["account_id": .string($0.accountID.uuidString), "reason": .string($0.reason)]
+            })
+            result["unavailable_note"] = "Meetings outside the sync window could not be loaded for these accounts, so the answer lacks them there. Tell the user rather than concluding there were none."
+        }
+    }
+
+    private struct OnDemandJob: Sendable {
+        let account: CalendarAccount
+        let interval: DateInterval
+        /// `nil` for a local calendar: read every time, never cached or budgeted.
+        let key: MCPCalendarArchive.Key?
+    }
+
+    /// Shared by the parallel loads of one call: the first failure of an account stops its
+    /// remaining loads, since every Exchange request re-submits the credentials.
+    @MainActor
+    private final class LoadProgress {
+        var failedAccounts: Set<UUID> = []
+    }
+
+    /// The synced meetings plus, when `resolved` reaches beyond the sync window, those of the
+    /// parts outside it: cached blocks first, the rest loaded from the calendars (Exchange through
+    /// `accessGuard`, its whole cost taken up front).
+    private func calendarEvents(for resolved: ResolvedRange, accountID: UUID?, _ context: CallContext) async throws -> CalendarLookup {
+        let synced = calendarService.events
+        guard !resolved.outside.isEmpty, let coverage = calendarService.eventCoverage?.interval else {
+            return CalendarLookup(events: synced)
+        }
+        let accounts = calendarService.readableAccounts.filter {
+            (accountID == nil || $0.id == accountID) && ($0.accountType == .owa || $0.accountType == .eventKit)
+        }
+        let blocks = Set(resolved.outside.flatMap(MCPCalendarArchive.blocks(covering:))).sorted()
+        var loaded: [CalendarEvent] = []
+        var jobs: [OnDemandJob] = []
+        for account in accounts {
+            guard account.accountType == .owa else {
+                // A local database: always current and free to read.
+                jobs += resolved.outside.map { OnDemandJob(account: account, interval: $0, key: nil) }
+                continue
+            }
+            for block in blocks {
+                let key = MCPCalendarArchive.Key(accountID: account.id, block: block)
+                if let cached = archive.events(for: key, now: context.now) {
+                    loaded += cached
+                } else {
+                    jobs.append(OnDemandJob(account: account, interval: MCPCalendarArchive.interval(of: block), key: key))
+                }
+            }
+        }
+        let cost = jobs.filter { $0.key != nil }.count
+        if cost > 0, let denial = accessGuard.permitRequest(count: cost) {
+            throw ArgumentError(denial.message)
+        }
+
+        let progress = LoadProgress()
+        // Started together, run at most two at a time (`accessGuard`'s slots).
+        let tasks = jobs.map { job in Task { @MainActor in (job, await self.load(job, progress)) } }
+        var outcomes: [(OnDemandJob, Result<[CalendarEvent], Error>?)] = []
+        for task in tasks { outcomes.append(await task.value) }
+
+        var unavailable: [UUID: String] = [:]
+        for (job, outcome) in outcomes {
+            switch outcome {
+            case .success(let events):
+                if let key = job.key { archive.store(events, for: key, now: context.now) }
+                loaded += events
+            case .failure(let error):
+                unavailable[job.account.id] = unavailable[job.account.id] ?? Self.loadFailureReason(error)
+            case nil:
+                break // skipped after the account's first failure, or because sync got blocked
+            }
+        }
+        if outcomes.contains(where: { $0.0.key != nil && (try? $0.1?.get()) == nil }),
+           let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
+            throw ArgumentError(reason)
+        }
+
+        // The sync's own copy wins inside `coverage`: a block loaded minutes ago may still hold a
+        // meeting that has since been moved or cancelled there.
+        var seen = Set(synced.map(\.id))
+        let extra = loaded.filter { !Self.overlaps($0, coverage) && seen.insert($0.id).inserted }
+        return CalendarLookup(
+            events: synced + extra,
+            unavailable: accounts.compactMap { account in unavailable[account.id].map { (account.id, $0) } }
+        )
+    }
+
+    private func load(_ job: OnDemandJob, _ progress: LoadProgress) async -> Result<[CalendarEvent], Error>? {
+        let accountID = job.account.id
+        guard job.key != nil else {
+            do {
+                return .success(try await calendarService.fetchEventsOutsideSync(accountID: accountID, from: job.interval.start, to: job.interval.end))
+            } catch {
+                return .failure(error)
+            }
+        }
+        await accessGuard.acquireSlot()
+        defer { accessGuard.releaseSlot() }
+        guard !progress.failedAccounts.contains(accountID), !accessGuard.isBlocked else { return nil }
+        do {
+            return .success(try await calendarService.fetchEventsOutsideSync(accountID: accountID, from: job.interval.start, to: job.interval.end))
+        } catch {
+            progress.failedAccounts.insert(accountID)
+            accessGuard.report(error, context: "mcp.calendarView")
+            MCPDebugLog.log("on-demand calendar load failed: \(error.localizedDescription)")
+            return .failure(error)
+        }
+    }
+
+    private static func loadFailureReason(_ error: Error) -> String {
+        if case CalendarProviderError.notSupported = error {
+            return "This calendar cannot be read right now."
+        }
+        return "Could not load meetings: \(error.localizedDescription)"
     }
 
     private func optionalAccountID(_ arguments: [String: JSONValue]) throws -> UUID? {

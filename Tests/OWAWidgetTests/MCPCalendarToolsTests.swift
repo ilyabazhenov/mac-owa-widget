@@ -20,6 +20,10 @@ final class MCPCalendarToolsTests: XCTestCase {
         private(set) var ownEmailCalls = 0
         private(set) var peopleSearches: [String] = []
         private let failingSearches: Set<String>
+        /// Meetings beyond the sync window, returned by `fetchEvents` when they overlap the range.
+        private let archive: [CalendarEvent]
+        private let fetchError: Error?
+        private(set) var fetchCalls: [DateInterval] = []
         private(set) var created: [(title: String, start: Date, required: [String], optional: [String])] = []
 
         init(
@@ -31,7 +35,9 @@ final class MCPCalendarToolsTests: XCTestCase {
             ownEmail: String? = nil,
             ownEmailError: Error? = nil,
             busy: [String: @Sendable (Date) -> Character] = [:],
-            failingSearches: Set<String> = []
+            failingSearches: Set<String> = [],
+            archive: [CalendarEvent] = [],
+            fetchError: Error? = nil
         ) {
             self.account = account
             self.attendeesByID = attendeesByID
@@ -42,6 +48,8 @@ final class MCPCalendarToolsTests: XCTestCase {
             self.ownEmailError = ownEmailError
             self.busy = busy
             self.failingSearches = failingSearches
+            self.archive = archive
+            self.fetchError = fetchError
         }
 
         func getUserAvailability(emails: [String], from start: Date, to end: Date) async throws -> [AttendeeAvailability] {
@@ -77,7 +85,11 @@ final class MCPCalendarToolsTests: XCTestCase {
             created.append((title, start, requiredAttendees.map(\.email), optionalAttendees.map(\.email)))
         }
 
-        func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] { [] }
+        func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] {
+            fetchCalls.append(DateInterval(start: start, end: end))
+            if let fetchError { throw fetchError }
+            return archive.filter { $0.startDate < end && $0.endDate > start }
+        }
         func validateCredentials() async throws {}
 
         func fetchDetails(for event: CalendarEvent) async throws -> CalendarEventDetails {
@@ -109,10 +121,10 @@ final class MCPCalendarToolsTests: XCTestCase {
     private let me = ResolvedAttendee(displayName: "Баженов Илья Андреевич", email: "me@corp.ru", jobTitle: nil)
     private let namesake = ResolvedAttendee(displayName: "Баженов Илья Юрьевич", email: "ibazhenov@corp.ru", jobTitle: nil)
 
-    private func date(_ day: Int, _ hour: Int, _ minute: Int = 0) -> Date {
+    private func date(_ day: Int, _ hour: Int, _ minute: Int = 0, month: Int = 10) -> Date {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
-        return calendar.date(from: DateComponents(year: 2026, month: 10, day: day, hour: hour, minute: minute))!
+        return calendar.date(from: DateComponents(year: 2026, month: month, day: day, hour: hour, minute: minute))!
     }
 
     private var now: Date { date(5, 12) }
@@ -128,9 +140,10 @@ final class MCPCalendarToolsTests: XCTestCase {
         organizer: String? = nil,
         attendees: [EventAttendee]? = nil,
         joinURL: URL? = nil,
-        series: String? = nil
+        series: String? = nil,
+        month: Int = 10
     ) -> CalendarEvent {
-        let start = date(day, hour)
+        let start = date(day, hour, month: month)
         return CalendarEvent(
             id: id, title: id, startDate: start, endDate: start.addingTimeInterval(TimeInterval(minutes * 60)),
             location: nil, bodyPreview: "preview \(id)", joinURL: joinURL, platform: joinURL == nil ? .generic : .teams,
@@ -142,12 +155,13 @@ final class MCPCalendarToolsTests: XCTestCase {
     private func makeTools(
         events: [CalendarEvent],
         provider: DetailsProvider? = nil,
+        localProvider: DetailsProvider? = nil,
         enabled: Bool = true,
         confirmer: FakeConfirmer = FakeConfirmer(.rejected),
         canCreateMeetings: Bool = true,
         handOff: @escaping (MeetingDraftSeed) -> Void = { _ in }
     ) -> (MCPCalendarTools, CalendarService) {
-        let providers: [any CalendarProvider] = [provider ?? DetailsProvider(account: exchange), DetailsProvider(account: local)]
+        let providers: [any CalendarProvider] = [provider ?? DetailsProvider(account: exchange), localProvider ?? DetailsProvider(account: local)]
         let service = CalendarService(
             providers: providers,
             notificationService: SilentNotificationService(),
@@ -314,15 +328,111 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertEqual(limited?["total"], 2)
     }
 
-    func testListEventsClipsToCoverageAndRejectsPeriodsOutsideIt() async {
-        let (tools, _) = makeTools(events: [event("a", day: 5, hour: 14)])
-        let clipped = await tools.call(name: "list_events", arguments: ["from": "2026-09-01", "to": "2026-10-06"]).structured
-        XCTAssertEqual(clipped?["range"]?["clipped_to_coverage"], true)
-        XCTAssertEqual(ids(clipped?["events"]), ["a"])
+    func testListEventsLoadsPeriodsOutsideTheSyncWindow() async {
+        let provider = DetailsProvider(account: exchange, archive: [event("august", day: 10, hour: 11, month: 8)])
+        let (tools, _) = makeTools(events: [event("a", day: 5, hour: 14)], provider: provider)
 
-        let outside = await tools.call(name: "list_events", arguments: ["from": "2026-08-01", "to": "2026-08-31"])
-        XCTAssertTrue(outside.isError)
-        XCTAssertTrue(outside.errorMessage?.contains("only holds meetings") == true)
+        let wide = await tools.call(name: "list_events", arguments: ["from": "2026-08-01", "to": "2026-10-06"]).structured
+        XCTAssertEqual(wide?["range"]?["clipped_to_coverage"], false)
+        XCTAssertEqual(wide?["range"]?["outside_sync_window"], true)
+        XCTAssertEqual(ids(wide?["events"]), ["august", "a"])
+
+        // Blocks already loaded are not asked for again.
+        let calls = await provider.fetchCalls.count
+        XCTAssertGreaterThan(calls, 0)
+        let again = await tools.call(name: "list_events", arguments: ["from": "2026-08-05", "to": "2026-08-20"]).structured
+        XCTAssertEqual(ids(again?["events"]), ["august"])
+        let callsAfter = await provider.fetchCalls.count
+        XCTAssertEqual(callsAfter, calls)
+
+        // The archived meeting can be opened like any other.
+        let handle = wide?["events"]?.arrayValue?.first?["event_id"]?.stringValue ?? ""
+        let details = await tools.call(name: "get_event_details", arguments: ["event_id": .string(handle)])
+        XCTAssertFalse(details.isError)
+        XCTAssertEqual(details.structured?["title"], "august")
+    }
+
+    func testInsideCoverageTheSyncedCopyWins() async {
+        // The block still holds a meeting the sync no longer has (moved or cancelled since).
+        let provider = DetailsProvider(account: exchange, archive: [
+            event("stale", day: 1, hour: 10),
+            event("august", day: 20, hour: 10, month: 9),
+        ])
+        let (tools, _) = makeTools(events: [event("a", day: 5, hour: 14)], provider: provider)
+        let result = await tools.call(name: "list_events", arguments: ["from": "2026-09-15", "to": "2026-10-06"]).structured
+        XCTAssertEqual(ids(result?["events"]), ["august", "a"])
+    }
+
+    func testOnDemandPeriodsAreLimited() async {
+        let provider = DetailsProvider(account: exchange)
+        let (tools, _) = makeTools(events: [], provider: provider)
+
+        let tooOld = await tools.call(name: "list_events", arguments: ["from": "2025-01-01", "to": "2025-02-01"])
+        XCTAssertTrue(tooOld.isError)
+        XCTAssertTrue(tooOld.errorMessage?.contains("a year back") == true)
+
+        // Ten months back: only the 184 days nearest to the sync window are loaded.
+        let long = await tools.call(name: "list_events", arguments: ["from": "2026-01-01", "to": "2026-10-06"]).structured
+        XCTAssertEqual(long?["range"]?["clipped_to_coverage"], true)
+        XCTAssertNotNil(long?["range"]?["note"]?.stringValue)
+        let coverageStart = date(5, 0).addingTimeInterval(-7 * 86400)
+        let expectedFrom = MCPDateCoder(timeZone: zone).string(coverageStart.addingTimeInterval(-MCPCalendarArchive.maxSpan))
+        XCTAssertEqual(long?["range"]?["from"]?.stringValue, expectedFrom)
+        let calls = await provider.fetchCalls.count
+        XCTAssertLessThanOrEqual(calls, 7)
+    }
+
+    func testAnAccountThatFailsIsReportedAndOthersStillAnswer() async {
+        let provider = DetailsProvider(account: exchange, fetchError: URLError(.timedOut))
+        let localProvider = DetailsProvider(account: local, archive: [event("dentist", day: 12, hour: 9, account: local, month: 8)])
+        let (tools, _) = makeTools(events: [], provider: provider, localProvider: localProvider)
+
+        let result = await tools.call(name: "list_events", arguments: ["from": "2026-08-01", "to": "2026-08-31"]).structured
+        XCTAssertEqual(ids(result?["events"]), ["dentist"])
+        XCTAssertEqual(result?["unavailable_accounts"]?.arrayValue?.first?["account_id"]?.stringValue, exchange.id.uuidString)
+        XCTAssertNotNil(result?["unavailable_note"])
+        // After the first failure the account's other blocks are not asked for.
+        let calls = await provider.fetchCalls.count
+        XCTAssertLessThanOrEqual(calls, MCPAccessGuard.maxConcurrentRequests)
+
+        // A local calendar is read every time: it is always current.
+        _ = await tools.call(name: "list_events", arguments: ["from": "2026-08-01", "to": "2026-08-31"])
+        let localCalls = await localProvider.fetchCalls.count
+        XCTAssertEqual(localCalls, 2)
+    }
+
+    func testOnDemandLoadsStopWhileSyncIsBlocked() async {
+        let provider = DetailsProvider(account: exchange, archive: [event("august", day: 10, hour: 11, month: 8)])
+        let (tools, service) = makeTools(events: [], provider: provider)
+        service.debugForceAuthBlock()
+
+        let result = await tools.call(name: "list_events", arguments: ["from": "2026-08-01", "to": "2026-08-31"])
+        XCTAssertTrue(result.isError)
+        let calls = await provider.fetchCalls.count
+        XCTAssertEqual(calls, 0)
+    }
+
+    func testPersonSearchReachesBeyondTheSyncWindow() async {
+        let provider = DetailsProvider(account: exchange, archive: [event("1:1", day: 14, hour: 15, organizer: "Иванов Пётр", month: 7)])
+        let (tools, _) = makeTools(events: [], provider: provider)
+
+        let byDefault = await tools.call(name: "find_events_with_person", arguments: ["person": "Пётр Иванов", "direction": "past"]).structured
+        XCTAssertEqual(ids(byDefault?["past"]), [])
+
+        let further = await tools.call(name: "find_events_with_person", arguments: [
+            "person": "Пётр Иванов", "direction": "past", "from": "2026-06-01",
+        ]).structured
+        XCTAssertEqual(ids(further?["past"]), ["1:1"])
+    }
+
+    func testScheduleStatsForAPastMonth() async {
+        let provider = DetailsProvider(account: exchange, archive: [
+            event("x", day: 3, hour: 10, month: 8), event("y", day: 4, hour: 10, minutes: 30, month: 8),
+        ])
+        let (tools, _) = makeTools(events: [], provider: provider)
+        let result = await tools.call(name: "get_schedule_stats", arguments: ["from": "2026-08-03", "to": "2026-08-09"]).structured
+        XCTAssertEqual(result?["totals"]?["meeting_count"], 2)
+        XCTAssertEqual(result?["totals"]?["meeting_minutes"], 90)
     }
 
     func testOnlyToMeansThePeriodEndingThere() async {
@@ -580,13 +690,21 @@ final class MCPCalendarToolsTests: XCTestCase {
     func testNothingIsMatchedOutsideTheCalendarData() async {
         let (tools, _) = makeTools(events: [event("old", day: 5, hour: 10)])
 
-        let result = await tools.call(name: "match_event", arguments: ["start": "2026-08-01T10:00"])
+        let result = await tools.call(name: "match_event", arguments: ["start": "2025-08-01T10:00"])
         XCTAssertTrue(result.isError)
         XCTAssertTrue(result.errorMessage?.contains("outside") == true)
 
         let empty = await tools.call(name: "match_event", arguments: ["start": "2026-10-05T03:00"]).structured
         XCTAssertEqual(empty?["confidence"], "none")
         XCTAssertEqual(empty?["candidates"]?.arrayValue?.count, 0)
+    }
+
+    func testOldRecordingsAreMatchedFromLoadedMeetings() async {
+        let provider = DetailsProvider(account: exchange, archive: [event("Demo", day: 1, hour: 10, month: 8)])
+        let (tools, _) = makeTools(events: [], provider: provider)
+        let result = await tools.call(name: "match_event", arguments: ["start": "2026-08-01T10:05", "duration_minutes": 50]).structured
+        XCTAssertEqual(ids(result?["candidates"]), ["Demo"])
+        XCTAssertEqual(result?["confidence"], "high")
     }
 
     func testAttendeeListsAreLoadedForAFewLikelyMeetingsOnly() async {

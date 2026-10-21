@@ -6,7 +6,7 @@ enum MCPToolRegistry {
     static let instructions = """
     OWA Widget gives access to the user's calendar (Microsoft Exchange and calendars synced to macOS). Everything is read-only except `create_meeting`, which the user approves in OWA Widget's own window.
     - Who the user is (their address, name and sign-in login for each account) is in `get_status`.
-    - Data covers only the app's sync window: from 7 days ago to 30 days ahead. `get_status` returns the exact `coverage` and `data_as_of`; if `sync_state` is not `ok`, tell the user the data may be stale.
+    - The app keeps its sync window in memory: from 7 days ago to 30 days ahead. `get_status` returns the exact `coverage` and `data_as_of`; if `sync_state` is not `ok`, tell the user the data may be stale. list_events, get_schedule_stats, find_events_with_person and match_event also read further — up to a year back and a year ahead — by loading that period from the calendar: at most \(onDemandDays) days beyond `coverage` per call (then `range.note` says so; ask again for the rest). Such answers carry `range.outside_sync_window: true`; with `unavailable_accounts`, some calendars could not be read there.
     - Times are ISO 8601 with the offset of the user's display time zone (`timezone`). Bare dates (YYYY-MM-DD) in arguments mean days in that zone. Use `now` from any response as the current time.
     - Take `event_id` values from list_events, get_current_and_next, find_events_with_person, match_event or get_schedule_stats.
     - To tell which meeting a time or a recording was, use match_event rather than guessing from list_events: meetings often run in parallel.
@@ -16,6 +16,7 @@ enum MCPToolRegistry {
     - `prepare_mail` sends only after the user presses Send in OWA Widget's own panel. Say an email was sent only when it returned `sent: true`.
     """
 
+    private static let onDemandDays = Int(MCPCalendarArchive.maxSpan / 86_400)
     private static let dateDescription = "Date (YYYY-MM-DD) or ISO 8601 date-time. Bare dates and times without an offset are in the user's display time zone."
     private static let accountDescription = "Limit to one account (account_id from get_status)."
     private static let exchangeAccountDescription = "Exchange account (account_id from get_status). Needed only when several Exchange accounts are connected."
@@ -40,7 +41,7 @@ enum MCPToolRegistry {
         MCPToolDefinition(
             name: "list_events",
             title: "List meetings",
-            description: "Meetings in a period (default: today), sorted by start. Declined meetings are excluded unless requested via `response`. The period is clipped to `coverage` (7 days back, 30 days ahead). `total` counts all matches; `truncated` is true when `limit` cut the list. Returns no join links, descriptions or attendees: use get_event_details for those, and find_events_with_person to find meetings with someone. Each event may carry `ical_uid` (the meeting's identity, the same in every attendee's calendar and every calendar system; for a one-off Exchange meeting known only after get_event_details), and a recurring one `is_recurring` and `series_id`: pass `series_id` to list every occurrence of that series.",
+            description: "Meetings in a period (default: today), sorted by start. Declined meetings are excluded unless requested via `response`. Beyond `coverage` (7 days back, 30 days ahead) the period is loaded from the calendar, up to a year back and ahead and \(onDemandDays) days per call; `range` shows the period actually searched. `total` counts all matches; `truncated` is true when `limit` cut the list. Returns no join links, descriptions or attendees: use get_event_details for those, and find_events_with_person to find meetings with someone. Each event may carry `ical_uid` (the meeting's identity, the same in every attendee's calendar and every calendar system; for a one-off Exchange meeting known only after get_event_details), and a recurring one `is_recurring` and `series_id`: pass `series_id` to list every occurrence of that series.",
             inputSchema: [
                 "type": "object",
                 "properties": [
@@ -64,7 +65,7 @@ enum MCPToolRegistry {
         MCPToolDefinition(
             name: "get_schedule_stats",
             title: "Schedule statistics",
-            description: "Meeting load for a period (default: the current week, Monday to Sunday): time in meetings (parallel meetings are not double-counted), share of working time (`meeting_share_of_work_time`, a fraction from 0 to 1), overlapping meetings, back-to-back meetings (less than 5 minutes apart), and free blocks in working hours long enough to focus. Declined and cancelled meetings are ignored; all-day events are counted separately. The `overlaps` and `focus_blocks` lists stop at 50 and 30 items; the counts in `totals` are complete. Only within `coverage` (7 days back, 30 days ahead).",
+            description: "Meeting load for a period (default: the current week, Monday to Sunday): time in meetings (parallel meetings are not double-counted), share of working time (`meeting_share_of_work_time`, a fraction from 0 to 1), overlapping meetings, back-to-back meetings (less than 5 minutes apart), and free blocks in working hours long enough to focus. Declined and cancelled meetings are ignored; all-day events are counted separately. The `overlaps` and `focus_blocks` lists stop at 50 and 30 items; the counts in `totals` are complete. Beyond `coverage` (7 days back, 30 days ahead) the period is loaded from the calendar, up to a year back and ahead and \(onDemandDays) days per call.",
             inputSchema: [
                 "type": "object",
                 "properties": [
@@ -87,7 +88,7 @@ enum MCPToolRegistry {
         MCPToolDefinition(
             name: "find_events_with_person",
             title: "Meetings with a person",
-            description: "Meetings where a person is the organizer or an attendee, nearest first: `past` goes back from now, `upcoming` goes forward. Answers \"when did I last meet X\" and \"when do I meet X next\" — but only within `coverage`, i.e. the last 7 days and the next 30; say so rather than claiming they never met. Matches names in any word order and in Cyrillic or Latin, or an exact email; a name finds more, since an email matches an organizer only after it was seen in an attendee list. `match` says how the person took part: organizer, required, optional or title. Declined and cancelled meetings are skipped unless `include_declined_and_cancelled` is set. May load attendee lists from Exchange; if `partial` is true, call again to continue, unless `blocked_reason` is present: then tell the user. If `ambiguous_people` is present, several people match the name: ask the user which one.",
+            description: "Meetings where a person is the organizer or an attendee, nearest first: `past` goes back from now, `upcoming` goes forward. Answers \"when did I last meet X\" and \"when do I meet X next\" By default only within `coverage` (the last 7 days and the next 30); pass `from`/`to` to look further, up to a year back and ahead and \(onDemandDays) days beyond `coverage` per call. Say which period was searched rather than claiming they never met. Matches names in any word order and in Cyrillic or Latin, or an exact email; a name finds more, since an email matches an organizer only after it was seen in an attendee list. `match` says how the person took part: organizer, required, optional or title. Declined and cancelled meetings are skipped unless `include_declined_and_cancelled` is set. May load attendee lists from Exchange; if `partial` is true, call again to continue, unless `blocked_reason` is present: then tell the user. If `ambiguous_people` is present, several people match the name: ask the user which one.",
             inputSchema: [
                 "type": "object",
                 "properties": [
@@ -175,7 +176,7 @@ enum MCPToolRegistry {
         MCPToolDefinition(
             name: "match_event",
             title: "Which meeting was it",
-            description: "Which calendar meeting a moment or a stretch of time was — a call recording, a note, \"what was I in at 15:00\". Ranks the meetings around it by how much time they share and how close they start, and, when given, by how many of `participants` are among the attendees and by `title_hint`. Each candidate has `score` (0 to 1), `overlap_minutes`, `start_offset_minutes` (meeting start minus `start`), `matched_participants`/`unmatched_participants` (or `attendees_unknown`) and `title_match`. `confidence` is high, medium, low or none; when `ambiguous` is true the best two are too close to tell apart: ask the user rather than pick. Pass only real names in `participants` — leave out placeholders such as \"Speaker 2\". May load attendee lists from Exchange for the likeliest candidates. Only within `coverage`.",
+            description: "Which calendar meeting a moment or a stretch of time was — a call recording, a note, \"what was I in at 15:00\". Ranks the meetings around it by how much time they share and how close they start, and, when given, by how many of `participants` are among the attendees and by `title_hint`. Each candidate has `score` (0 to 1), `overlap_minutes`, `start_offset_minutes` (meeting start minus `start`), `matched_participants`/`unmatched_participants` (or `attendees_unknown`) and `title_match`. `confidence` is high, medium, low or none; when `ambiguous` is true the best two are too close to tell apart: ask the user rather than pick. Pass only real names in `participants` — leave out placeholders such as \"Speaker 2\". May load attendee lists from Exchange for the likeliest candidates. Works up to a year back and ahead: outside `coverage` the meetings around the interval are loaded from the calendar.",
             inputSchema: [
                 "type": "object",
                 "properties": [
