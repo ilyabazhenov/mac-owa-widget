@@ -559,6 +559,13 @@
 "mail.action.noCategories" = "В загруженных письмах пока нет категорий";
 "mail.action.move" = "Переместить в папку";
 "mail.action.delete" = "В «Удалённые»";
+"mail.swipe.delete" = "Удалить";
+"mail.swipe.read" = "Прочитано";
+"mail.swipe.unread" = "Не прочитано";
+"mail.swipe.failed" = "Не получилось изменить письмо";
+"mail.undo.deleted" = "Перенесено в «Удалённые»";
+"mail.undo.action" = "Отменить";
+"mail.undo.failed" = "Не удалось вернуть письмо";
 "mail.action.openInOWA" = "Открыть в OWA";
 "mail.action.new" = "Новое письмо";
 "mail.action.refresh" = "Обновить";
@@ -691,6 +698,8 @@
 "mail.settings.notify.important" = "От участников сегодняшних встреч и коллег";
 "mail.settings.peopleOnly" = "Считать и показывать только письма от людей";
 "mail.settings.peopleOnly.hint" = "Письма систем (сборки, трекеры, адреса no-reply) не попадают в поповер и счётчик @N. Отличаем по имени и адресу отправителя — это эвристика.";
+"mail.settings.swipeActions" = "Жесты свайпом в списке писем";
+"mail.settings.swipeActions.hint" = "Свайп двумя пальцами по трекпаду: влево — в «Удалённые» (с отменой), вправо — прочитано или не прочитано.";
 "mail.sidebar.folders" = "Папки";
 "mail.agenda.toggle" = "Расписание";
 "mail.agenda.empty" = "Встреч нет";

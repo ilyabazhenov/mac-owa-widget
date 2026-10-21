@@ -244,6 +244,10 @@ final class MailService: ObservableObject {
     /// A request for the panel's folder has come back (fine or not): until then an empty list
     /// means "loading", not "empty folder".
     var panelListAnswered: Bool { panelListLoaded != nil || panelListFailed }
+    /// The line at the bottom of the panel after a swipe: "moved to Deleted Items" with Undo, or a
+    /// failure. Goes away by itself.
+    @Published private(set) var panelNotice: MailListNotice?
+    private var panelNoticeTask: Task<Void, Never>?
     static let panelFolderKey = "mailPanelFolder"
     /// The account the remembered folder belongs to: a folder id means nothing in another mailbox.
     static let panelFolderAccountKey = "mailPanelFolderAccount"
@@ -667,6 +671,105 @@ final class MailService: ObservableObject {
         await checkInbox()
     }
 
+    // MARK: - Panel swipes
+
+    /// A swipe to the left in the panel: the row leaves at once, the conversation goes to Deleted
+    /// Items, and the panel offers Undo. A refusal puts the row back where it was.
+    func deletePanelConversation(_ conversation: MailConversationSummary) async {
+        guard let index = panelList.firstIndex(where: { $0.id == conversation.id }) else { return }
+        let folder = panelFolder
+        let folderID = panelFolderInfo?.id
+        panelList.remove(at: index)
+        let unreadDelta = -conversation.unreadCount
+        adjustPanelUnread(folder: folder, folderID: folderID, delta: unreadDelta)
+        do {
+            let deletion = try await delete(conversations: [conversation], from: folder)
+            showPanelNotice(.deleted(deletion, positions: [conversation.id: index], folder: folder))
+            await refreshFolderCounts(minInterval: 0)
+        } catch {
+            if folder == panelFolder, !panelList.contains(where: { $0.id == conversation.id }) {
+                panelList.insert(conversation, at: min(index, panelList.count))
+            }
+            adjustPanelUnread(folder: folder, folderID: folderID, delta: -unreadDelta)
+            if !MailCancellation.isCancellation(error) { showPanelNotice(.failed) }
+        }
+    }
+
+    /// Puts what the last panel swipe deleted back in its folder and its place in the list. The
+    /// list is then read again: the messages came back under new ids.
+    func undoPanelDelete() async {
+        guard case .deleted(let deletion, let positions, let folder)? = panelNotice, deletion.canUndo else { return }
+        dismissPanelNotice()
+        let restored = deletion.conversations.filter { conversation in !panelList.contains { $0.id == conversation.id } }
+        if folder == panelFolder {
+            for conversation in restored.sorted(by: { (positions[$0.id] ?? 0) < (positions[$1.id] ?? 0) }) {
+                panelList.insert(conversation, at: min(positions[conversation.id] ?? 0, panelList.count))
+            }
+        }
+        do {
+            try await restore(deletion)
+        } catch {
+            let ids = Set(restored.map(\.id))
+            if folder == panelFolder { panelList.removeAll { ids.contains($0.id) } }
+            if !MailCancellation.isCancellation(error) { showPanelNotice(.undoFailed) }
+            return
+        }
+        await refreshPanelList(minInterval: 0)
+        await refreshFolderCounts(minInterval: 0)
+        await checkInbox()
+    }
+
+    /// A swipe to the right in the panel: an unread conversation is marked read, a read one
+    /// unread. Shown at once, put back if the server refuses.
+    func togglePanelRead(_ conversation: MailConversationSummary) async {
+        guard let current = panelList.first(where: { $0.id == conversation.id }) else { return }
+        let isRead = current.isUnread
+        let after = isRead ? 0 : max(1, current.unreadCount)
+        let folder = panelFolder
+        let folderID = panelFolderInfo?.id
+        replacePanelRow(current.with(unreadCount: after))
+        if let folderID { adjustFolderUnread([folderID: after - current.unreadCount]) }
+        do {
+            // Adjusts the inbox count itself, from the row as it was.
+            try await setRead(conversations: [current], isRead)
+        } catch {
+            if folder == panelFolder { replacePanelRow(current) }
+            if let folderID { adjustFolderUnread([folderID: current.unreadCount - after]) }
+            if !MailCancellation.isCancellation(error) { showPanelNotice(.failed) }
+        }
+    }
+
+    func dismissPanelNotice() {
+        panelNoticeTask?.cancel()
+        panelNoticeTask = nil
+        panelNotice = nil
+    }
+
+    private func showPanelNotice(_ notice: MailListNotice) {
+        panelNoticeTask?.cancel()
+        panelNotice = notice
+        panelNoticeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(notice.lifetime))
+            guard !Task.isCancelled, let self, self.panelNotice == notice else { return }
+            self.panelNotice = nil
+        }
+    }
+
+    private func replacePanelRow(_ conversation: MailConversationSummary) {
+        guard let index = panelList.firstIndex(where: { $0.id == conversation.id }) else { return }
+        panelList[index] = conversation
+    }
+
+    /// Moves the panel folder's count (and the inbox's, when that is the folder) before the
+    /// server's own counts come back.
+    private func adjustPanelUnread(folder: MailFolderRef, folderID: String?, delta: Int) {
+        guard delta != 0 else { return }
+        if let folderID { adjustFolderUnread([folderID: delta]) }
+        if folder == .distinguished(.inbox) || (folderID != nil && folderID == inboxFolderID), let count = inboxUnreadCount {
+            inboxUnreadCount = max(0, count + delta)
+        }
+    }
+
     /// The panel folder's entry in the tree (for its name and unread count).
     var panelFolderInfo: MailFolder? {
         switch panelFolder {
@@ -858,6 +961,43 @@ final class MailService: ObservableObject {
         let ids = Set(conversations.map(\.id))
         for id in ids { evict(id) }
         dropFromUnreadLists(ids)
+        changeGeneration += 1
+    }
+
+    /// "Delete" with a way back: moves the conversations to Deleted Items and keeps the ids the
+    /// messages got there, by the folder each one left. When the server does not name every new
+    /// id, the deletion stands but cannot be undone.
+    func delete(conversations: [MailConversationSummary], from folder: MailFolderRef) async throws -> MailDeletion {
+        let moves = conversations.flatMap { conversation in
+            let source: MailFolderRef = conversation.parentFolderID.map { .id($0) } ?? folder
+            return conversation.itemRefs.map { (ref: $0, source: source) }
+        }
+        var restore: [MailFolderRef: [MailItemRef]] = [:]
+        var complete = true
+        for chunk in moves.chunked(Self.bulkPageSize) {
+            let refs = chunk.map(\.ref)
+            let moved = try await perform("mail.move") { try await $0.mailMove(refs, to: .distinguished(.deleteditems)) }
+            if moved.count == chunk.count {
+                for (new, entry) in zip(moved, chunk) { restore[entry.source, default: []].append(new) }
+            } else {
+                complete = false
+            }
+        }
+        let ids = Set(conversations.map(\.id))
+        for id in ids { evict(id) }
+        dropFromUnreadLists(ids)
+        changeGeneration += 1
+        return MailDeletion(conversations: conversations, restore: complete ? restore : [:])
+    }
+
+    /// Moves what `delete` took back to the folders it came from.
+    func restore(_ deletion: MailDeletion) async throws {
+        for (folder, refs) in deletion.restore {
+            for chunk in refs.chunked(Self.bulkPageSize) {
+                _ = try await perform("mail.move") { try await $0.mailMove(chunk, to: folder) }
+            }
+        }
+        for conversation in deletion.conversations { evict(conversation.id) }
         changeGeneration += 1
     }
 
@@ -1110,10 +1250,41 @@ final class MailService: ObservableObject {
         panelListFailed = false
         panelListFailedOnConnection = false
         panelWanted = false
+        dismissPanelNotice()
         lastChecked = nil
         inboxFolderID = nil
         ownAddress = nil
         checkState = .idle
+    }
+}
+
+/// What a delete moved to Deleted Items, to move it back.
+struct MailDeletion: Equatable, Identifiable, Sendable {
+    let id = UUID()
+    /// The conversations as the list showed them.
+    let conversations: [MailConversationSummary]
+    /// The messages' new ids in Deleted Items, by the folder each one came from.
+    let restore: [MailFolderRef: [MailItemRef]]
+
+    var canUndo: Bool { !restore.isEmpty }
+}
+
+/// The short line under a mail list after a swipe or a delete.
+enum MailListNotice: Equatable, Sendable {
+    /// Moved to Deleted Items. `positions` are the rows' places in the list they left, and
+    /// `folder` that list's folder: Undo puts them back there only if it still shows that folder.
+    case deleted(MailDeletion, positions: [String: Int], folder: MailFolderRef)
+    /// The server refused a swipe; the row is back as it was.
+    case failed
+    /// Undo did not get through: the conversation stays in Deleted Items.
+    case undoFailed
+
+    /// Seconds on screen: long enough to reach Undo, short enough not to linger.
+    var lifetime: Double {
+        switch self {
+        case .deleted: 6
+        case .failed, .undoFailed: 4
+        }
     }
 }
 

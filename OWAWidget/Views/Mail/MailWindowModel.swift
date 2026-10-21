@@ -310,6 +310,9 @@ final class MailWindowModel: ObservableObject {
 
     @Published var pendingLink: MailLinkActivation?
     @Published var actionError: String?
+    /// "Moved to Deleted Items · Undo" under the list after a delete.
+    @Published private(set) var listNotice: MailListNotice?
+    private var noticeTask: Task<Void, Never>?
     /// "Mark everything in this folder as read?" is on screen.
     @Published var confirmsMarkAllRead = false
     /// Progress text of a long list action ("Marked 150…").
@@ -631,7 +634,78 @@ final class MailWindowModel: ObservableObject {
     }
 
     func move(_ targets: [MailConversationSummary], to folder: MailFolderRef) async {
-        guard !targets.isEmpty else { return }
+        await removing(targets) { try await self.service.move(conversations: targets, to: folder) }
+    }
+
+    /// Moves conversations to Deleted Items and offers Undo under the list.
+    func delete(_ targets: [MailConversationSummary]) async {
+        let ids = Set(targets.map(\.id))
+        let positions = Dictionary(
+            conversations.enumerated().filter { ids.contains($0.element.id) }.map { ($0.element.id, $0.offset) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let folder = selectedFolder
+        guard let deletion = await removing(targets, { try await self.service.delete(conversations: targets, from: folder) }) else { return }
+        showNotice(.deleted(deletion, positions: positions, folder: folder))
+    }
+
+    /// Puts the last deletion back: the rows return to their places at once, and the list is read
+    /// again once the server has moved them (they come back under new ids).
+    func undoDelete() async {
+        guard case .deleted(let deletion, let positions, let folder)? = listNotice, deletion.canUndo else { return }
+        dismissNotice()
+        let restored = deletion.conversations.filter { conversation in !conversations.contains { $0.id == conversation.id } }
+        let showsFolder = folder == selectedFolder && !isSearching
+        if showsFolder {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                for conversation in restored.sorted(by: { (positions[$0.id] ?? 0) < (positions[$1.id] ?? 0) }) {
+                    conversations.insert(conversation, at: min(positions[conversation.id] ?? 0, conversations.count))
+                }
+            }
+        }
+        do {
+            try await service.restore(deletion)
+        } catch {
+            let ids = Set(restored.map(\.id))
+            if showsFolder { withAnimation(.easeInOut(duration: 0.15)) { conversations.removeAll { ids.contains($0.id) } } }
+            show(error)
+            return
+        }
+        await reloadList()
+        await loadFolders()
+    }
+
+    /// A conversation already in Deleted Items: deleting it again means nothing.
+    func isInDeletedItems(_ conversation: MailConversationSummary) -> Bool {
+        let deletedItemsID = folders.first { $0.distinguished == .deleteditems }?.id
+        if let parent = conversation.parentFolderID, parent == deletedItemsID { return true }
+        guard !isSearching else { return false }
+        if selectedFolder == .distinguished(.deleteditems) { return true }
+        if let deletedItemsID, selectedFolder == .id(deletedItemsID) { return true }
+        return false
+    }
+
+    func dismissNotice() {
+        noticeTask?.cancel()
+        noticeTask = nil
+        listNotice = nil
+    }
+
+    private func showNotice(_ notice: MailListNotice) {
+        noticeTask?.cancel()
+        listNotice = notice
+        noticeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(notice.lifetime))
+            guard !Task.isCancelled, let self, self.listNotice == notice else { return }
+            self.listNotice = nil
+        }
+    }
+
+    /// Takes conversations off the list at once and runs `operation`; when it fails they come
+    /// back in their places. Returns what the operation returned, `nil` when it failed.
+    @discardableResult
+    private func removing<T>(_ targets: [MailConversationSummary], _ operation: () async throws -> T) async -> T? {
+        guard !targets.isEmpty else { return nil }
         let ids = Set(targets.map(\.id))
         let order = orderedVisibleIDs
         let nextID = order.first { !ids.contains($0) && (order.firstIndex(of: $0) ?? 0) > (order.firstIndex { ids.contains($0) } ?? 0) }
@@ -646,8 +720,9 @@ final class MailWindowModel: ObservableObject {
             if let nextID { Task { await openConversation(nextID) } }
         }
         do {
-            try await service.move(conversations: targets, to: folder)
+            let result = try await operation()
             await loadFolders()
+            return result
         } catch {
             // Back in their places. The conversation that was open comes back too, unless the
             // user has opened another one since.
@@ -660,6 +735,7 @@ final class MailWindowModel: ObservableObject {
                 Task { await openConversation(openID) }
             }
             show(error)
+            return nil
         }
     }
 

@@ -832,7 +832,7 @@ struct MailWindowView: View {
         case 51, 117: // ⌫, ⌦
             let targets = model.actionTargets
             guard !targets.isEmpty else { return false }
-            Task { await model.move(targets, to: .distinguished(.deleteditems)) }
+            Task { await model.delete(targets) }
             return true
         case 53: // Esc
             guard model.isSearching || model.selectedIDs.count > 1 else { return false }

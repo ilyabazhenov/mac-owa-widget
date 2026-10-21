@@ -202,6 +202,12 @@ struct MailSettingsSections: View {
             Section(localization.tr("mail.settings.section.reading")) {
                 Toggle(localization.tr("mail.list.bundle"), isOn: binding(\.bundleAutomated))
                     .disabled(!mail.settings.enabled)
+                Toggle(localization.tr("mail.settings.swipeActions"), isOn: binding(\.swipeActionsEnabled))
+                    .disabled(!mail.settings.enabled)
+                Text(localization.tr("mail.settings.swipeActions.hint"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Picker(localization.tr("mail.settings.markRead"), selection: binding(\.markReadPolicy)) {
                     ForEach(MailMarkReadPolicy.allCases) { policy in
                         Text(localization.tr(policy.localizationKey)).tag(policy)

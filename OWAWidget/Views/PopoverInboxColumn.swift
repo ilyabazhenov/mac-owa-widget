@@ -22,6 +22,7 @@ struct PopoverInboxColumn: View {
     @State private var isMarkingRead = false
     /// The last "mark all read" failed: the badge is outlined and its tooltip says so.
     @State private var markReadFailed = false
+    @StateObject private var swipes = MailSwipeController()
 
     private var showsMail: Bool { mail.isAvailable }
 
@@ -63,12 +64,25 @@ struct PopoverInboxColumn: View {
                     }
                 }
                 .padding(.bottom, 10)
+                // A row a swipe deleted (or Undo put back) closes the gap instead of jumping.
+                .animation(.easeInOut(duration: 0.18), value: mail.panelList.map(\.id))
             }
             .frame(maxHeight: .infinity)
+            .overlay(alignment: .bottom) {
+                if let notice = mail.panelNotice {
+                    MailListNoticeView(
+                        notice: notice,
+                        onUndo: { Task { await mail.undoPanelDelete() } },
+                        onClose: { mail.dismissPanelNotice() }
+                    )
+                }
+            }
+            .animation(.easeInOut(duration: 0.18), value: mail.panelNotice)
             Divider()
             footer
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .mailSwipeList(swipes, isEnabled: showsMail && mail.settings.swipeActionsEnabled && !mail.isBlocked)
     }
 
     /// Same type, padding and height as the popover's sync line, so the two bottom lines meet.
@@ -172,6 +186,13 @@ struct PopoverInboxColumn: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.mailRow(cornerRadius: 0))
+                .mailSwipeActions(
+                    swipes,
+                    isUnread: conversation.isUnread,
+                    canDelete: mail.panelFolder != .distinguished(.deleteditems) && mail.panelFolderInfo?.distinguished != .deleteditems,
+                    onDelete: { Task { await mail.deletePanelConversation(conversation) } },
+                    onToggleRead: { Task { await mail.togglePanelRead(conversation) } }
+                )
                 Divider().padding(.leading, 21)
             }
             if mail.panelNextCursor != nil {

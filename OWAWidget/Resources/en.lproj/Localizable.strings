@@ -559,6 +559,13 @@
 "mail.action.noCategories" = "No categories in loaded mail yet";
 "mail.action.move" = "Move to Folder";
 "mail.action.delete" = "Move to Deleted Items";
+"mail.swipe.delete" = "Delete";
+"mail.swipe.read" = "Read";
+"mail.swipe.unread" = "Unread";
+"mail.swipe.failed" = "Couldn’t change the message";
+"mail.undo.deleted" = "Moved to Deleted Items";
+"mail.undo.action" = "Undo";
+"mail.undo.failed" = "Couldn’t bring the message back";
 "mail.action.openInOWA" = "Open in OWA";
 "mail.action.new" = "New Message";
 "mail.action.refresh" = "Refresh";
@@ -691,6 +698,8 @@
 "mail.settings.notify.important" = "From today’s meeting people and colleagues";
 "mail.settings.peopleOnly" = "Count and list mail from people only";
 "mail.settings.peopleOnly.hint" = "Mail from systems (CI, trackers, no-reply addresses) is left out of the popover and the @N count. The split is a guess from the sender’s name and address.";
+"mail.settings.swipeActions" = "Swipe gestures in mail lists";
+"mail.settings.swipeActions.hint" = "Two-finger swipe on the trackpad: left moves the conversation to Deleted Items (with Undo), right marks it read or unread.";
 "mail.sidebar.folders" = "Folders";
 "mail.agenda.toggle" = "Schedule";
 "mail.agenda.empty" = "No meetings";

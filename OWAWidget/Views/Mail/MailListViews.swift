@@ -549,6 +549,7 @@ struct MailConversationListView: View {
     @ObservedObject var service: MailService
     @EnvironmentObject private var localization: LocalizationService
     @Environment(\.scrollerInset) private var scrollerInset
+    @StateObject private var swipes = MailSwipeController()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -556,8 +557,19 @@ struct MailConversationListView: View {
             if model.isSearching { searchFilters; Divider() }
             if model.selectedIDs.count > 1 { bulkBar; Divider() }
             content
+                .overlay(alignment: .bottom) {
+                    if let notice = model.listNotice {
+                        MailListNoticeView(
+                            notice: notice,
+                            onUndo: { Task { await model.undoDelete() } },
+                            onClose: { model.dismissNotice() }
+                        )
+                    }
+                }
+                .animation(.easeInOut(duration: 0.18), value: model.listNotice)
         }
         .frame(maxHeight: .infinity)
+        .mailSwipeList(swipes, isEnabled: service.settings.swipeActionsEnabled && !service.isBlocked)
         .confirmationDialog(
             localization.tr("mail.list.markAllRead.title", model.selectedFolderInfo?.displayName ?? ""),
             isPresented: $model.confirmsMarkAllRead
@@ -636,7 +648,7 @@ struct MailConversationListView: View {
                 Button { Task { await model.flag(targets, true) } } label: { MailActionIcon("flag") }
                     .help(localization.tr("mail.action.flag"))
                 moveMenu(targets)
-                Button { Task { await model.move(targets, to: .distinguished(.deleteditems)) } } label: { MailActionIcon("trash") }
+                Button { Task { await model.delete(targets) } } label: { MailActionIcon("trash") }
                     .help(localization.tr("mail.action.delete"))
             }
         }
@@ -827,6 +839,14 @@ struct MailConversationListView: View {
             .contentShape(Rectangle())
             .onTapGesture { model.click(conversation, modifiers: NSEvent.modifierFlags) }
             .contextMenu { contextMenu(for: conversation) }
+            // The swiped row alone, even when it is part of a selection: as on a phone.
+            .mailSwipeActions(
+                swipes,
+                isUnread: conversation.isUnread,
+                canDelete: !model.isInDeletedItems(conversation),
+                onDelete: { Task { await model.delete([conversation]) } },
+                onToggleRead: { Task { await model.markRead([conversation], !conversation.isUnread) } }
+            )
             Divider()
         }
         .id(conversation.id)
@@ -852,7 +872,7 @@ struct MailConversationListView: View {
         }
         Divider()
         Button(localization.tr("mail.action.delete"), role: .destructive) {
-            Task { await model.move(targets, to: .distinguished(.deleteditems)) }
+            Task { await model.delete(targets) }
         }
     }
 
@@ -928,7 +948,7 @@ struct MailConversationListView: View {
             .contextMenu {
                 Button(localization.tr("mail.action.markRead")) { Task { await model.markRead(conversations, true) } }
                 Button(localization.tr("mail.action.delete"), role: .destructive) {
-                    Task { await model.move(conversations, to: .distinguished(.deleteditems)) }
+                    Task { await model.delete(conversations) }
                 }
             }
             .mailHover(cornerRadius: 0)

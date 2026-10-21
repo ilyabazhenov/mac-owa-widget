@@ -55,6 +55,8 @@ struct MailSettings: Equatable, Sendable {
     /// The popover list and the menu bar count show mail from people only.
     var peopleOnly = true
     var notifyMode: MailNotifyMode = .off
+    /// Two-finger swipes on a list row: to the left deletes, to the right marks read or unread.
+    var swipeActionsEnabled = true
 
     static let pollOptions = [1, 2, 5, 10, 15]
 
@@ -72,6 +74,7 @@ struct MailSettings: Equatable, Sendable {
         static let bundleAutomated = "mailBundleBySender"
         static let peopleOnly = "mailPeopleOnly"
         static let notifyMode = "mailNotifyMode"
+        static let swipeActions = "mailSwipeActionsEnabled"
     }
 
     static func load(from defaults: UserDefaults = .standard) -> MailSettings {
@@ -91,6 +94,7 @@ struct MailSettings: Equatable, Sendable {
         if defaults.object(forKey: Key.bundleAutomated) != nil { settings.bundleAutomated = defaults.bool(forKey: Key.bundleAutomated) }
         if defaults.object(forKey: Key.peopleOnly) != nil { settings.peopleOnly = defaults.bool(forKey: Key.peopleOnly) }
         if let raw = defaults.string(forKey: Key.notifyMode), let mode = MailNotifyMode(rawValue: raw) { settings.notifyMode = mode }
+        if defaults.object(forKey: Key.swipeActions) != nil { settings.swipeActionsEnabled = defaults.bool(forKey: Key.swipeActions) }
         return settings
     }
 
@@ -105,5 +109,6 @@ struct MailSettings: Equatable, Sendable {
         defaults.set(bundleAutomated, forKey: Key.bundleAutomated)
         defaults.set(peopleOnly, forKey: Key.peopleOnly)
         defaults.set(notifyMode.rawValue, forKey: Key.notifyMode)
+        defaults.set(swipeActionsEnabled, forKey: Key.swipeActions)
     }
 }

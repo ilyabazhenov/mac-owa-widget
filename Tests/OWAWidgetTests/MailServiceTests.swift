@@ -113,9 +113,16 @@ actor FakeMailProvider: MailProvider {
     }
     var updateCount: Int { updates.count }
 
+    /// Every move, in order: which items went where.
+    private(set) var moves: [(ids: [String], folder: MailFolderRef)] = []
+    /// The server answers a move without the items' new ids (some do): nothing to undo with.
+    var moveReturnsIDs = true
+    func setMoveReturnsIDs(_ value: Bool) { moveReturnsIDs = value }
+
     func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef] {
         try record("move")
-        return refs.map { MailItemRef(id: $0.id + "-moved", changeKey: nil) }
+        moves.append((refs.map(\.id), folder))
+        return moveReturnsIDs ? refs.map { MailItemRef(id: $0.id + "-moved", changeKey: nil) } : []
     }
 
     func mailSearch(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage {
