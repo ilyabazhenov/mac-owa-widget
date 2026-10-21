@@ -781,7 +781,7 @@ final class MCPCalendarTools {
                 "Creating meetings is turned off in OWA Widget (Settings → MCP → \"Allow creating meetings\"). Nothing was created. Ask the user to turn it on."
             )
         }
-        let title = arguments["title"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let title = MCPMeetingTextPolicy.normalizedSpaces(arguments["title"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, title.count <= 255 else { throw ArgumentError("`title` is required, up to 255 characters") }
         let start = try requiredDateTime(arguments, "start", context)
         let end = try requiredDateTime(arguments, "end", context)
@@ -794,7 +794,7 @@ final class MCPCalendarTools {
         guard required.count + optional.count <= Self.maxAttendees else {
             throw ArgumentError("At most \(Self.maxAttendees) attendees")
         }
-        let location = arguments["location"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let location = MCPMeetingTextPolicy.normalizedSpaces(arguments["location"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard location.count <= 255 else { throw ArgumentError("`location` is limited to 255 characters") }
         let agenda = MCPMeetingTextPolicy.normalizedAgenda(arguments["agenda"]?.stringValue ?? "")
         guard agenda.count <= Self.maxBodyCharacters else {
@@ -805,6 +805,13 @@ final class MCPCalendarTools {
             throw ArgumentError(
                 "`\(name)` contains bidirectional control characters (U+202A–U+202E, U+2066–U+2069), "
                     + "which make text display differently from what is sent. Remove them."
+            )
+        }
+        for (name, text) in [("title", title), ("location", location), ("agenda", agenda)]
+        where MCPMeetingTextPolicy.containsHiddenCharacters(text) {
+            throw ArgumentError(
+                "`\(name)` contains invisible characters (zero-width spaces, Unicode tags, variation selectors, "
+                    + "control characters), which the user cannot see in the confirmation. Remove them."
             )
         }
         let account = try exchangeAccount(arguments)

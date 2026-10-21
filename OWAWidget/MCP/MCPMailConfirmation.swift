@@ -213,9 +213,10 @@ struct MCPMailConfirmationView: View {
                     .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
                     .onPreferenceChange(MailBodyHeightKey.self) { bodyHeight = $0 }
                     // How much text there is, and a plain warning when it runs past the box: the
-                    // user approves all of it, not the part in view.
+                    // user approves all of it, not the part in view. Characters are counted as
+                    // scalars, so anything that draws nothing still adds to the count.
                     HStack(spacing: 6) {
-                        Text(localization.tr("mcp.mail.confirm.size", Self.lineCount(proposal.body), proposal.body.count))
+                        Text(localization.tr("mcp.mail.confirm.size", Self.lineCount(proposal.body), proposal.body.unicodeScalars.count))
                         if bodyHeight > Self.bodyBoxHeight + 1 {
                             Label(localization.tr("mcp.mail.confirm.scroll"), systemImage: "arrow.down.circle")
                                 .foregroundStyle(.orange)

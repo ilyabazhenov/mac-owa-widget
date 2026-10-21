@@ -1104,6 +1104,9 @@ final class MCPCalendarToolsTests: XCTestCase {
             ["title": "x", "start": "2026-10-06T15:00", "end": "2026-10-06T15:30", "account_id": .string(local.id.uuidString)],
             ["title": "Созвон \u{202E}", "start": "2026-10-06T15:00", "end": "2026-10-06T15:30"],
             ["title": "x", "start": "2026-10-06T15:00", "end": "2026-10-06T15:30", "agenda": "итоги \u{2066}скрыто\u{2069}"],
+            ["title": "Созвон\u{E0073}\u{E0065}\u{E0063}", "start": "2026-10-06T15:00", "end": "2026-10-06T15:30"],
+            ["title": "x", "start": "2026-10-06T15:00", "end": "2026-10-06T15:30", "location": "Room\u{FE01}\u{E0110}"],
+            ["title": "x", "start": "2026-10-06T15:00", "end": "2026-10-06T15:30", "agenda": "ито\u{200B}ги"],
             ["title": "x", "start": "2026-10-06T15:00", "end": "2026-10-06T15:30", "required": ["ivan@\u{0430}lfabank.ru"]],
         ]
         for arguments in broken {

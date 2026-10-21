@@ -120,17 +120,14 @@ final class MCPMailTools {
         }
     }
 
-    /// Collapses runs of blank lines; a line of spaces, control or invisible format characters
-    /// (zero-width space and the like) is blank.
+    /// Collapses runs of blank lines (`MCPMeetingTextPolicy.isBlankLine`) and evens out spaces.
     static func normalizedBody(_ text: String) -> String {
         var lines: [String] = []
         let unified = text.replacingOccurrences(of: "\r\n", with: "\n")
         for line in unified.components(separatedBy: .newlines) {
-            let isBlank = line.unicodeScalars.allSatisfy { scalar in
-                scalar.properties.isWhitespace || scalar.properties.generalCategory == .format || scalar.properties.generalCategory == .control
-            }
+            let isBlank = MCPMeetingTextPolicy.isBlankLine(line)
             if isBlank, lines.last?.isEmpty ?? true { continue }
-            lines.append(isBlank ? "" : line)
+            lines.append(isBlank ? "" : MCPMeetingTextPolicy.normalizedSpaces(line))
         }
         while lines.last?.isEmpty == true { lines.removeLast() }
         return lines.joined(separator: "\n")
@@ -627,7 +624,7 @@ final class MCPMailTools {
 
         var to = try stringList(arguments, "to")
         var cc = try stringList(arguments, "cc")
-        let subjectArgument = arguments["subject"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let subjectArgument = MCPMeetingTextPolicy.normalizedSpaces(arguments["subject"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         // What goes out is what the panel can show: runs of blank lines (spaces or invisible
         // characters count as blank) collapse, so a harmless first line cannot push the rest of
         // the text out of sight.
@@ -636,6 +633,9 @@ final class MCPMailTools {
         guard subjectArgument.count <= 255 else { throw ToolError("`subject` is limited to 255 characters") }
         for (name, text) in [("subject", subjectArgument), ("body", body)] where MCPMeetingTextPolicy.containsBidiControls(text) {
             throw ToolError("`\(name)` contains bidirectional control characters (U+202A–U+202E, U+2066–U+2069), which make text display differently from what is sent. Remove them.")
+        }
+        for (name, text) in [("subject", subjectArgument), ("body", body)] where MCPMeetingTextPolicy.containsHiddenCharacters(text) {
+            throw ToolError("`\(name)` contains invisible characters (zero-width spaces, Unicode tags, variation selectors, control characters), which the user cannot see in the confirmation. Remove them.")
         }
 
         var original: MailMessage?
