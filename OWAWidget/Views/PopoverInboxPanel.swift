@@ -41,7 +41,7 @@ final class InboxPanelAttachmentView: NSView {
     /// icons vibrant (brighter), so without it the same icon looks dimmer than in the popover.
     private var backdrop: InboxPanelBackdrop?
     private var isEnabled = false
-    private var width: CGFloat = 340
+    private var width = CGFloat(PopoverSize.defaultValue.width)
     private var onShow: () -> Void = {}
     private var onPlacementChange: (Bool) -> Void = { _ in }
     private var reportedPlacement: Bool?

@@ -131,7 +131,7 @@ struct PopoverView: View {
         .background {
             PopoverInboxPanelAttachment(
                 isEnabled: showsInboxPanel && !service.accounts.isEmpty,
-                width: CGFloat(PopoverInboxPanelStore.width),
+                width: CGFloat(popoverSize.width),
                 content: inboxPanelContent,
                 onShow: {
                     guard mail.isAvailable else { return }

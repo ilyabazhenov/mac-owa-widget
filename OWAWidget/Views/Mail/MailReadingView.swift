@@ -250,6 +250,9 @@ struct MailMessageCard: View {
     @ObservedObject var model: MailWindowModel
     @ObservedObject var service: MailService
     let message: MailMessage
+    /// Attachments one per line across the whole width (the narrow inbox panel) instead of
+    /// chips flowing side by side (the mail window).
+    var stacksAttachments = false
     @EnvironmentObject private var localization: LocalizationService
     @Environment(\.colorScheme) private var colorScheme
     @State private var bodyHeight: CGFloat = 60
@@ -429,9 +432,17 @@ struct MailMessageCard: View {
             .foregroundStyle(.secondary)
             }
             if !message.visibleAttachments.isEmpty {
-                FlowRow(spacing: 8) {
-                    ForEach(message.visibleAttachments) { attachment in
-                        attachmentChip(attachment)
+                if stacksAttachments {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(message.visibleAttachments) { attachment in
+                            attachmentChip(attachment)
+                        }
+                    }
+                } else {
+                    FlowRow(spacing: 8) {
+                        ForEach(message.visibleAttachments) { attachment in
+                            attachmentChip(attachment)
+                        }
                     }
                 }
             }
@@ -593,9 +604,15 @@ struct MailMessageCard: View {
                 .font(.system(size: 16))
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 1) {
-                Text(attachment.name).font(.system(size: 12)).lineLimit(1)
+                Text(attachment.name)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                    // The middle goes, so the extension stays in sight.
+                    .truncationMode(.middle)
+                    .help(attachment.name)
                 Text(MailPresentation.byteCount(attachment.size)).font(.system(size: 10)).foregroundStyle(.secondary)
             }
+            if stacksAttachments { Spacer(minLength: 0) }
             if attachment.isItemAttachment {
                 Button { model.openInOWA(message) } label: { Image(systemName: "arrow.up.forward.square") }
                     .buttonStyle(.mailIcon)
@@ -617,6 +634,7 @@ struct MailMessageCard: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
+        .frame(maxWidth: stacksAttachments ? .infinity : nil, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.06)))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.secondary.opacity(0.2), lineWidth: 1))
     }

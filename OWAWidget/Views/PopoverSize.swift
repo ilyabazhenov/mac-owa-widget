@@ -63,11 +63,10 @@ enum PopoverSizePresetStore {
     }
 }
 
-/// Whether the inbox panel shows beside the popover. Off by default.
+/// Whether the inbox panel shows beside the popover. Off by default. The panel is as wide and
+/// as tall as the popover, so the two read as a symmetric pair.
 enum PopoverInboxPanelStore {
     static let key = "popoverInboxPanelShown"
-    /// Width of the panel; its height follows the popover's.
-    static let width: Double = 340
 
     static func isShown(in defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: key) }
     static func setShown(_ shown: Bool, in defaults: UserDefaults = .standard) { defaults.set(shown, forKey: key) }

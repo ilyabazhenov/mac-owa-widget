@@ -1096,15 +1096,24 @@ struct MailConversationRow: View {
     }
 }
 
-/// Lays children out left to right, wrapping to new lines (macOS 13 `Layout`).
+/// Lays children out left to right, wrapping to new lines (macOS 13 `Layout`). A child wider
+/// than the row is given the row's width, so a long label truncates instead of running past
+/// the edge.
 struct FlowRow: Layout {
     var spacing: CGFloat = 6
+
+    private func size(of view: LayoutSubview, within width: CGFloat) -> CGSize {
+        let ideal = view.sizeThatFits(.unspecified)
+        guard ideal.width > width, width.isFinite else { return ideal }
+        let fitted = view.sizeThatFits(ProposedViewSize(width: width, height: nil))
+        return CGSize(width: min(fitted.width, width), height: fitted.height)
+    }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
         var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0, maxX: CGFloat = 0
         for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
+            let size = size(of: view, within: width)
             if x > 0, x + size.width > width {
                 x = 0
                 y += lineHeight + spacing
@@ -1120,7 +1129,7 @@ struct FlowRow: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var x = bounds.minX, y = bounds.minY, lineHeight: CGFloat = 0
         for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
+            let size = size(of: view, within: bounds.width)
             if x > bounds.minX, x + size.width > bounds.maxX {
                 x = bounds.minX
                 y += lineHeight + spacing

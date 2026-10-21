@@ -136,7 +136,7 @@ struct PopoverMailReaderView: View {
     private var content: some View {
         if let thread = model.thread {
             ForEach(thread.messages) { message in
-                MailMessageCard(model: model, service: mail, message: message)
+                MailMessageCard(model: model, service: mail, message: message, stacksAttachments: true)
             }
             if thread.totalMessageCount > thread.messages.count {
                 Label(localization.tr("mail.thread.more", thread.totalMessageCount - thread.messages.count), systemImage: "ellipsis.bubble")
