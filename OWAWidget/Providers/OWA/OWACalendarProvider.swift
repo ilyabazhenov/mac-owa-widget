@@ -60,7 +60,7 @@ actor OWACalendarProvider: CalendarProvider {
 
     func createMeeting(
         title: String,
-        agenda: String,
+        agenda: RichText,
         location: String,
         start: Date,
         end: Date,
@@ -265,3 +265,51 @@ private func appendCalendarMappingDebugLog(_ line: String) {
     DebugLogLocation.append(line, to: "calendar-mapping.log")
 }
 #endif
+
+// MARK: - Mail
+
+/// Mail rides the calendar's `OWAClient`: one NTLM session and one CANARY per account.
+extension OWACalendarProvider: MailProvider {
+    func mailFolders() async throws -> [MailFolder] { try await client.mailFolders() }
+
+    func mailFolderCounts(_ folders: [MailFolderRef]) async throws -> [MailFolder] {
+        try await client.mailFolderCounts(folders)
+    }
+
+    func mailConversations(in folder: MailFolderRef, cursor: MailListCursor, filter: MailListFilter) async throws -> MailConversationPage {
+        try await client.mailConversations(in: folder, cursor: cursor, filter: filter)
+    }
+
+    func mailItems(in folder: MailFolderRef, cursor: MailListCursor, filter: MailListFilter, count: Int) async throws -> MailItemPage {
+        try await client.mailItems(in: folder, cursor: cursor, filter: filter, count: count)
+    }
+
+    func mailThread(conversationID: String, ignoringFolders: [String]) async throws -> MailThread {
+        try await client.mailThread(conversationID: conversationID, ignoringFolders: ignoringFolders)
+    }
+
+    func mailMessage(_ ref: MailItemRef) async throws -> MailMessage { try await client.mailMessage(ref) }
+
+    func mailAttachment(id: String, maxBytes: Int) async throws -> Data {
+        try await client.mailAttachment(id: id, maxBytes: maxBytes)
+    }
+
+    func mailUpdate(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [MailItemRef] {
+        try await client.mailUpdate(targets, update)
+    }
+
+    func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef] {
+        try await client.mailMove(refs, to: folder)
+    }
+
+    func mailSearch(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage {
+        try await client.mailSearch(query, offset: offset, count: count)
+    }
+
+    func mailEndSearch() async { await client.mailEndSearch() }
+
+    func mailSend(_ outgoing: MailOutgoing) async throws -> MailItemRef? { try await client.mailSend(outgoing) }
+    func mailDraftForReview(_ ref: MailItemRef) async throws -> MailMessage { try await client.mailDraftForReview(ref) }
+    func mailSendDraft(_ ref: MailItemRef) async throws { try await client.mailSendDraft(ref) }
+    func mailDeleteDraft(_ ref: MailItemRef) async throws { try await client.mailDeleteDraft(ref) }
+}

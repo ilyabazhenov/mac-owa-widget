@@ -232,18 +232,28 @@ private final class OWASessionDelegate: NSObject, URLSessionDelegate, URLSession
 }
 
 actor OWAClient {
-    private let baseURL: URL
+    let baseURL: URL
     private let username: String
     private let password: String
 
-    private var canaryToken: String?
+    var canaryToken: String?
+    /// The sign-in in progress: requests that hit an expired session at the same moment wait for
+    /// it instead of each starting their own (each would be one more NTLM attempt against AD, and
+    /// they would clear each other's cookies).
+    private var authenticationInFlight: Task<Void, Error>?
+    /// The last definitive rejection of this client's password. A new password makes a new
+    /// client, so repeating the same one within the cooldown can only count toward an AD lockout.
+    private var lastAuthRejection: (error: Error, at: Date)?
+    static let authRejectionCooldown: TimeInterval = 60
     private var defaultCalendarFolderIdentifier: OWAFolderIdentifier?
     private var forceDistinguishedCalendarFolder = false
     private var requestSequence = 0
     private var cachedOrganizerSMTPEmail: String?
+    /// The mail search session `ExecuteSearch` pages through (see `OWAClient+Mail`).
+    var mailSearchSession: OWAMailSearchSession?
     private let sessionDelegate: OWASessionDelegate
     private let session: URLSession
-    private let log = Logger(subsystem: "com.owawidget", category: "OWAClient")
+    let log = Logger(subsystem: "com.owawidget", category: "OWAClient")
     #if DEBUG
     private let getCalendarViewDebugFlagKey = "debugDumpGetCalendarViewResponse"
     #endif
@@ -287,7 +297,7 @@ actor OWAClient {
     /// Single chokepoint for network requests. Converts a TLS trust rejection
     /// (recorded by the session delegate) into a typed `untrustedCertificate` error so
     /// the UI / background sync can prompt the user to trust the server.
-    private func fetchData(_ request: URLRequest) async throws -> (Data, URLResponse) {
+    func fetchData(_ request: URLRequest) async throws -> (Data, URLResponse) {
         do {
             return try await session.data(for: request)
         } catch {
@@ -334,7 +344,28 @@ actor OWAClient {
         }
     }
 
+    /// Signs in, joining a sign-in already in progress, and refusing to retry a password the
+    /// server definitively rejected less than a minute ago.
     func authenticate() async throws {
+        if let rejection = lastAuthRejection, Date().timeIntervalSince(rejection.at) < Self.authRejectionCooldown {
+            throw rejection.error
+        }
+        if let running = authenticationInFlight {
+            return try await running.value
+        }
+        let task = Task { try await self.performAuthentication() }
+        authenticationInFlight = task
+        defer { authenticationInFlight = nil }
+        do {
+            try await task.value
+            lastAuthRejection = nil
+        } catch {
+            if OWAError.isDefinitiveAuthRejection(error) { lastAuthRejection = (error, Date()) }
+            throw error
+        }
+    }
+
+    private func performAuthentication() async throws {
         let syncID = SyncDiagnostics.syncIDText
         log.info("OWA auth started sync=\(syncID, privacy: .public)")
         sessionDelegate.reset()
@@ -707,7 +738,9 @@ actor OWAClient {
         } catch {
             // Startup retries only run when this invocation authenticated first. If we reused an
             // existing CANARY from a prior sync, a transient Exchange 500 "abstract class" fault
-            // used to surface immediately — one forced reauth restores the retry path.
+            // used to surface immediately — one forced reauth restores the retry path. Most of
+            // these faults were the request's own key order (see `executeCalendarViewRequest`);
+            // this stays for the ones the server produces by itself.
             if OWAError.isAbstractClassHTTPError(error), hasCanary {
                 log.warning(
                     "Calendar view abstract-class fault with existing session sync=\(syncID, privacy: .public); reauthenticating once"
@@ -808,8 +841,10 @@ actor OWAClient {
             folderIdentifier: folderIdentifier
         )
 
-        let jsonData = try JSONSerialization.data(withJSONObject: requestDict)
-        guard let jsonString = String(data: jsonData, encoding: .utf8) else { throw OWAError.encodingFailed }
+        // `__type` first in every object: `BaseFolderId` is abstract on the server, and
+        // `JSONSerialization` follows the dictionary's order, which differs from one instance to the
+        // next. Half the requests used to fail with "Cannot create an abstract class".
+        let jsonString = Self.serializeJSONTypeFirst(requestDict)
 
         requestSequence += 1
         let requestID = requestSequence
@@ -988,7 +1023,7 @@ actor OWAClient {
     }
 
     /// Retries a few times on stale HTTP keep-alive (`URLError.networkConnectionLost`).
-    private func sessionDataAllowingStaleReconnect(for request: URLRequest) async throws -> (Data, URLResponse) {
+    func sessionDataAllowingStaleReconnect(for request: URLRequest) async throws -> (Data, URLResponse) {
         let maxStaleRetries = 3
         var attempt = 0
         while true {
@@ -1152,7 +1187,7 @@ actor OWAClient {
     /// Serialize JSON with `__type` always FIRST. .NET DataContractJsonSerializer needs the discriminator
     /// before any other property when the destination is an abstract base — otherwise it throws
     /// `MemberAccessException: "Cannot create an abstract class."` mid-parse.
-    private static func serializeJSONTypeFirst(_ obj: Any) -> String {
+    static func serializeJSONTypeFirst(_ obj: Any) -> String {
         if let dict = obj as? [String: Any] {
             var keys = Array(dict.keys)
             keys.sort { a, b in
@@ -1208,13 +1243,13 @@ actor OWAClient {
         return out
     }
 
-    private static func makeCorrelationId() -> String {
+    static func makeCorrelationId() -> String {
         let hex = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let suffix = String(Int64.random(in: 100_000_000_000_000...999_999_999_999_999))
         return "\(hex)_\(suffix)"
     }
 
-    private static func iso8601Millis(_ date: Date) -> String {
+    static func iso8601Millis(_ date: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = TimeZone(identifier: "UTC")
@@ -1249,8 +1284,7 @@ actor OWAClient {
     private func getUserAvailabilityInternal(emails: [String], from start: Date, to end: Date, attempt: Int) async throws -> [AttendeeAvailability] {
         let canary = try await ensureCanary()
         let payload = OWAUserAvailabilityPayload.make(emails: emails, start: start, end: end, serverTimeZone: .current)
-        let jsonData = try JSONSerialization.data(withJSONObject: payload)
-        let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+        let jsonString = Self.serializeJSONTypeFirst(payload)
 
         var req = try serviceRequest(action: "GetUserAvailabilityInternal", canary: canary)
         req.setValue(jsonString.formEncoded, forHTTPHeaderField: "X-OWA-UrlPostData")
@@ -1299,7 +1333,7 @@ actor OWAClient {
 
     func createCalendarEvent(
         title: String,
-        agenda: String,
+        agenda: RichText,
         location: String = "",
         start: Date,
         end: Date,
@@ -1322,7 +1356,7 @@ actor OWAClient {
 
     private func createCalendarEvent(
         title: String,
-        agenda: String,
+        agenda: RichText,
         location: String,
         start: Date,
         end: Date,
@@ -1443,7 +1477,7 @@ actor OWAClient {
 
     // MARK: - Auth helper
 
-    private func ensureCanary() async throws -> String {
+    func ensureCanary() async throws -> String {
         if let token = canaryToken { return token }
         try await authenticate()
         guard let token = canaryToken else { throw OWAError.notAuthenticated }
@@ -1592,7 +1626,7 @@ actor OWAClient {
 
     // MARK: - Helpers
 
-    private func url(_ path: String) throws -> URL {
+    func url(_ path: String) throws -> URL {
         guard let url = URL(string: baseURL.absoluteString + path) else {
             throw OWAError.invalidURL(path)
         }
@@ -1625,7 +1659,7 @@ actor OWAClient {
         return request
     }
 
-    private func addCommonHeaders(_ request: inout URLRequest) {
+    func addCommonHeaders(_ request: inout URLRequest) {
         request.setValue(
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
             forHTTPHeaderField: "User-Agent"
@@ -1658,7 +1692,7 @@ actor OWAClient {
         return nil
     }
 
-    private func windowsTimezoneID() -> String {
+    func windowsTimezoneID() -> String {
         OWAServerTimeZone.current.windowsID
     }
 

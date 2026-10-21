@@ -34,10 +34,30 @@ enum DiagnosticLog {
         pb.clearContents()
         pb.setString(Store.shared.report(), forType: .string)
     }
+
+    /// Where the log is written. Under tests, a per-process temporary folder: `swift test` used to
+    /// rotate the running app's `diagnostic.log` away and fill it with test accounts' lines.
+    static var directory: URL? { Store.shared.directory }
 }
 
 private final class Store: @unchecked Sendable {
-    static let shared = Store()
+    static let shared = Store(directory: SecureStore.isRunningTests ? testDirectory() : applicationSupportDirectory())
+
+    private static func applicationSupportDirectory() -> URL? {
+        let support = try? FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        return support?.appendingPathComponent("OWAWidget", isDirectory: true)
+    }
+
+    private static func testDirectory() -> URL {
+        URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("owawidget-tests-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
+            .appendingPathComponent("diagnostics", isDirectory: true)
+    }
 
     private let queue = DispatchQueue(label: "com.owawidget.diagnostic")
     private let log = Logger(subsystem: "com.owawidget", category: "Diag")
@@ -52,14 +72,10 @@ private final class Store: @unchecked Sendable {
     private let previousURL: URL?
     private let header: String
 
-    init() {
-        let support = try? FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        let dir = support?.appendingPathComponent("OWAWidget", isDirectory: true)
+    let directory: URL?
+
+    init(directory dir: URL?) {
+        directory = dir
         if let dir {
             try? FileManager.default.createDirectory(
                 at: dir,

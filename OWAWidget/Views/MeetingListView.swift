@@ -33,6 +33,8 @@ struct MeetingListView: View {
     var contentHorizontalPadding: CGFloat = 12
     var selectedEventID: String? = nil
     var onSelect: (CalendarEvent) -> Void = { _ in }
+    /// The day's name above its hours; off where a date bar right above already says it.
+    var showsDayLabel = true
     @EnvironmentObject private var localization: LocalizationService
     /// Bumped by every autoscroll request, so a stale retry from an earlier one stands down.
     @State private var autoScrollGeneration = 0
@@ -51,7 +53,9 @@ struct MeetingListView: View {
                             hourlySection(section: section)
                         } header: {
                             VStack(alignment: .leading, spacing: 0) {
-                                sectionHeader(section.label)
+                                if showsDayLabel {
+                                    sectionHeader(section.label)
+                                }
                                 AllDayEventsHeaderView(
                                     events: section.allDayEvents,
                                     contentHorizontalPadding: contentHorizontalPadding,

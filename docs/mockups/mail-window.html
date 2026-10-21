@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Mail: window sketch</title>
+<link rel="stylesheet" href="mock.css"><link rel="stylesheet" href="mail.css">
+<style>body{width:1240px;height:800px}.stage{width:100%;height:100%}</style>
+</head><body><div class="stage" id="s"></div>
+<script src="mock.js"></script><script src="mail-mock.js"></script>
+<script>
+document.getElementById('s').innerHTML = mailWindow({ list: inboxList() });
+</script>
+</body></html>

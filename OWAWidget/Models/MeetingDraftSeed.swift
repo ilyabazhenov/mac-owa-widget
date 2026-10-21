@@ -69,7 +69,7 @@ struct MeetingDraftSeed: Sendable, Equatable {
     func makeDraft() -> MeetingDraft {
         var draft = MeetingDraft()
         draft.title = title
-        draft.agenda = agenda
+        draft.agenda = RichText(plain: agenda)
         draft.location = location
         draft.requiredAttendees = required
         draft.optionalAttendees = optional.filter { !required.contains($0) }

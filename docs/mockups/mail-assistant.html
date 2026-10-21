@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Mail: AI assistant sketch</title>
+<link rel="stylesheet" href="mock.css"><link rel="stylesheet" href="mail.css">
+<style>
+body{width:1140px;height:700px}.stage{width:100%;height:100%;display:block}
+.chat{position:absolute;left:24px;top:30px;width:620px;height:630px}
+.chat-body{flex:1;padding:22px 64px 22px 24px;display:flex;flex-direction:column;gap:16px;overflow:hidden}
+.me{align-self:flex-end;max-width:440px;background:var(--accent);color:#fff;font-size:13.5px;line-height:1.45;padding:10px 14px;border-radius:16px 16px 4px 16px}
+.bot{display:flex;gap:10px;max-width:520px}
+.bot .av{width:28px;height:28px;border-radius:50%;flex:none;display:grid;place-items:center;background:color-mix(in srgb,var(--fg) 10%,transparent)}
+.bot .msg2{display:flex;flex-direction:column;gap:8px;font-size:13.5px;line-height:1.45}
+.tool{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--fg2);padding:5px 9px;border-radius:7px;
+  background:color-mix(in srgb,var(--fg) 6%,transparent);font-family:ui-monospace,"SF Mono",Menlo,monospace;align-self:flex-start}
+.tool b{color:var(--fg);font-weight:500}
+.composer{margin:0 18px 18px;padding:10px 12px;border-radius:12px;background:var(--ctl);box-shadow:inset 0 0 0 .5px var(--sep);font-size:13px;color:var(--fg3)}
+</style>
+</head><body><div class="stage" id="s"></div>
+<script src="mock.js"></script><script src="mail-mock.js"></script>
+<script>
+const o = MAIL.olga;
+const chat = `<div class="window chat">
+  <div class="titlebar"><div class="traffic"><i></i><i></i><i></i></div></div><div class="divider"></div>
+  <div class="chat-body">
+    <div class="me">${L('Что важного пришло с утра? И ответь Ольге по чек-листу релиза, что по мониторингу всё готово', 'Anything important since this morning? And tell Grace that monitoring is ready for the release checklist')}</div>
+    <div class="bot"><span class="av">${icon('sparkles', 14, 'var(--fg2)')}</span><div class="msg2">
+      <span class="tool">${icon('tray', 12, 'var(--fg2)')}list_mail · <b>${L('3 непрочитанных треда', '3 unread threads')}</b></span>
+      <span>${L(`Три непрочитанных треда:<br>• <b>${o.n}</b> — финальный чек-лист релиза 1.3, просит подтверждения до 15:00.<br>• <b>${PEOPLE.dmitry}</b> — итоги ревью платежей: выбрали очередь на стороне шлюза.<br>• <b>Jira</b> — MOB-1824 ушёл на ревью.`,
+        `Three unread threads:<br>• <b>${o.n}</b> — final checklist for release 1.3, needs sign-off by 3 pm.<br>• <b>${PEOPLE.dmitry}</b> — payments review outcome: gateway-side queue.<br>• <b>Jira</b> — MOB-1824 moved to review.`)}</span>
+      <span class="tool">${icon('envOpen', 12, 'var(--fg2)')}get_mail_thread · <b>${L('3 письма', '3 messages')}</b></span>
+      <span class="tool">${icon('reply', 12, C.accent)}prepare_mail · <b>${L('ждёт подтверждения', 'waiting for you')}</b></span>
+      <span>${L('Подготовил ответ Ольге — подтвердите отправку в окне OWA Widget.', 'I drafted a reply to Grace — confirm sending in the OWA Widget window.')}</span>
+    </div></div>
+  </div>
+  <div class="composer">${L('Спросите про почту или расписание…', 'Ask about your mail or schedule…')}</div>
+</div>`;
+
+// Mirrors MCPMeetingConfirmationView: who asks, what goes out (in full), to whom, countdown, explicit buttons.
+const confirm = `<div class="cpanel" style="left:610px;top:70px">
+  <div class="cp-in">
+    <div class="cp-head">${icon('send', 14, C.accent)}<span class="spacer">${L('Claude просит отправить письмо', 'Claude wants to send an email')}</span>
+      <span style="font-size:11px;font-weight:400" class="tnum">${L('Осталось 33 с', '33 s left')}</span></div>
+    <div class="col" style="gap:3px"><span class="cp-title">RE: ${THREADS[0].s}</span>
+      <span class="sec" style="font-size:12px">${L(`Ответ на письмо ${o.n} · сегодня, 10:42`, `Reply to ${o.n} · today, 10:42`)}</span></div>
+    <div class="col" style="gap:5px"><span class="cp-lbl">${L('Получатели', 'Recipients')}</span>
+      <span class="cp-person">${avatar(o.n, 18, o.c)}${o.n}<i>${o.e}</i></span></div>
+    <div class="col" style="gap:5px"><span class="cp-lbl">${L('Текст целиком — его получат все адресаты', 'Full text — every recipient gets it')}</span>
+      <div class="cp-box">${L('Ольга, привет! По мониторингу всё готово: алерты на новый шлюз заведены и проверены на стейдже, дашборд обновлён. Отметил пункт 3 в чек-листе.<br><br>Андрей',
+        'Hi Grace! Monitoring is ready: alerts for the new gateway are set up and tested on staging, the dashboard is updated. I’ve ticked item 3 in the checklist.<br><br>Alex')}</div></div>
+    <div class="row sec" style="gap:6px;font-size:11px">${icon('info', 11, 'var(--fg2)')}${L('Внешних адресатов и вложений нет. Цитата исходного письма добавится автоматически.', 'No external recipients or attachments. The original message is quoted automatically.')}</div>
+  </div>
+  <div class="cp-bar"><i></i></div>
+  <div class="cp-foot"><span class="btn">${L('Открыть как черновик', 'Open as Draft')}</span><span class="spacer"></span>
+    <span class="btn">${L('Отменить', 'Cancel')}</span><span class="btn primary">${L('Отправить', 'Send')}</span></div>
+</div>`;
+
+// Same panel when the assistant adds an address that was not in the thread and it is external: the risky case.
+const risky = `<div class="cpanel" style="left:640px;top:440px;width:440px">
+  <div class="cp-in" style="gap:9px">
+    <div class="cp-head">${icon('forward', 14, C.orange)}<span class="spacer">${L('Claude просит переслать письмо', 'Claude wants to forward an email')}</span></div>
+    <div class="cp-warn">${icon('warn', 14, C.orange)}<span>${L('<b>x.lee@mailbox.example</b> — внешний адрес, его не было в треде. Его добавил ассистент. С письмом уйдут 2 вложения: <b>чек-лист-релиза-1.3.xlsx</b>, <b>план-отката.pdf</b>.',
+      '<b>x.lee@mailbox.example</b> is external and was not in the thread — the assistant added it. 2 attachments go with it: <b>release-1.3-checklist.xlsx</b>, <b>rollback-plan.pdf</b>.')}</span></div>
+  </div>
+  <div class="cp-foot" style="padding-top:0"><span class="spacer"></span><span class="btn">${L('Отменить', 'Cancel')}</span><span class="btn primary" style="background:${C.orange}">${L('Всё равно переслать', 'Forward Anyway')}</span></div>
+</div>`;
+
+document.getElementById('s').innerHTML = chat + confirm + risky;
+</script>
+</body></html>

@@ -32,7 +32,7 @@ enum MeetingURLOpener {
     }
 
     /// Opens the URL if it resolves to a safe `https` URL. Returns `true` on success.
-    /// Callers should gate side effects (engagement tracking, dismiss UI) on the result.
+    /// Callers should gate side effects (dismiss UI) on the result.
     @discardableResult
     static func open(_ url: URL) -> Bool {
         guard let safe = safeURL(from: url) else {

@@ -217,7 +217,8 @@ final class LocalizationService: ObservableObject {
         return formatter.string(from: date)
     }
 
-    private func relativeSyncPhrase(since date: Date, now: Date) -> String {
+    /// "just now", "3 min ago", "2 h ago": shared by the sync footer and the mail panel's.
+    func relativeSyncPhrase(since date: Date, now: Date) -> String {
         let elapsed = max(0, now.timeIntervalSince(date))
         if elapsed < 60 {
             return tr("sync.elapsed.justnow")

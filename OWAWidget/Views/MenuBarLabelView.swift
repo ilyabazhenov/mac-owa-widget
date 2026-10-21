@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MenuBarLabelView: View {
     @EnvironmentObject var service: CalendarService
+    @EnvironmentObject private var mail: MailService
     @EnvironmentObject private var localization: LocalizationService
     @Environment(\.openWindow) private var openWindow
     @State private var pulseOpacity: Double = 1.0
@@ -15,6 +16,7 @@ struct MenuBarLabelView: View {
         // from it, so recomputing per accessor would run the formatter several times each tick.
         let smart = self.smart
         let pendingInvitations = service.menuBarInvitationCount
+        let unreadMail = mail.menuBarUnreadCount
 
         HStack(spacing: 4) {
             Image(systemName: iconName(smart))
@@ -22,7 +24,7 @@ struct MenuBarLabelView: View {
 
             // The invitation count rides inside the one Text: a status item renders a single image
             // and a single text, and silently drops any further view put in the label.
-            if let label = Self.composedLabel(label(for: smart), pendingInvitations: pendingInvitations) {
+            if let label = Self.composedLabel(label(for: smart), pendingInvitations: pendingInvitations, unreadMail: unreadMail) {
                 Text(label)
                     .font(.system(size: 12, weight: .medium))
                     .monospacedDigit()
@@ -41,7 +43,19 @@ struct MenuBarLabelView: View {
                 withAnimation { pulseOpacity = 1.0 }
             }
         }
-        .help(helpText(for: smart, pendingInvitations: pendingInvitations))
+        .help(helpText(for: smart, pendingInvitations: pendingInvitations, unreadMail: unreadMail))
+        // Compose and "show this conversation" can be asked for from anywhere (the popover, an MCP
+        // panel); the label is always on screen, so it is the one place that opens the windows.
+        .onChange(of: mail.composeRequest?.id) { id in
+            guard id != nil else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "mail-compose")
+        }
+        .onChange(of: mail.openRequest) { request in
+            guard request != nil else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "mail")
+        }
         .onAppear {
             logAppearance()
             KeyboardShortcuts.onKeyUp(for: .createMeeting) {
@@ -165,17 +179,23 @@ struct MenuBarLabelView: View {
 
     /// Appends "✉︎N" for new invitations awaiting an answer. The variation selector keeps the
     /// envelope a monochrome text glyph, so it takes the menu bar's tint like the rest of the label.
-    static func composedLabel(_ label: String?, pendingInvitations: Int) -> String? {
-        guard pendingInvitations > 0 else { return label }
-        let badge = "\u{2709}\u{FE0E}\(pendingInvitations)"
+    ///
+    /// Unread mail rides along as "@N": the envelope already means invitations here.
+    static func composedLabel(_ label: String?, pendingInvitations: Int, unreadMail: Int = 0) -> String? {
+        var badges: [String] = []
+        if pendingInvitations > 0 { badges.append("\u{2709}\u{FE0E}\(pendingInvitations)") }
+        if unreadMail > 0 { badges.append("@\(unreadMail)") }
+        guard !badges.isEmpty else { return label }
+        let badge = badges.joined(separator: " ")
         guard let label, !label.isEmpty else { return badge }
         return "\(label) \(badge)"
     }
 
-    private func helpText(for smart: MenuBarSmartStatusFormatter.Presentation?, pendingInvitations: Int) -> String {
-        let base = helpText(for: smart)
-        guard pendingInvitations > 0 else { return base }
-        return "\(base)\n\(localization.tr("menubar.invitations.pending", pendingInvitations))"
+    private func helpText(for smart: MenuBarSmartStatusFormatter.Presentation?, pendingInvitations: Int, unreadMail: Int) -> String {
+        var lines = [helpText(for: smart)]
+        if pendingInvitations > 0 { lines.append(localization.tr("menubar.invitations.pending", pendingInvitations)) }
+        if unreadMail > 0 { lines.append(localization.tr("menubar.mail.unread", unreadMail)) }
+        return lines.joined(separator: "\n")
     }
 
     private func helpText(for smart: MenuBarSmartStatusFormatter.Presentation?) -> String {

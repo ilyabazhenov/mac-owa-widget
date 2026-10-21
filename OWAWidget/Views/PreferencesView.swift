@@ -5,6 +5,7 @@ struct PreferencesView: View {
     @EnvironmentObject private var localization: LocalizationService
     @EnvironmentObject private var updateCheck: UpdateCheckService
     @EnvironmentObject private var appearance: AppearanceService
+    @EnvironmentObject private var mail: MailService
 
     private let syncOptions: [(minutes: Int, value: TimeInterval)] = [
         (1, 60),
@@ -224,20 +225,7 @@ struct PreferencesView: View {
                 }
             }
 
-            Section(localization.tr("preferences.engagement.section")) {
-                Picker(localization.tr("preferences.engagement.scope"), selection: $vm.meetingEngagementScope) {
-                    Text(localization.tr("preferences.engagement.scope.joinableOnly")).tag(MeetingEngagementScope.joinableOnly)
-                    Text(localization.tr("preferences.engagement.scope.allEvents")).tag(MeetingEngagementScope.allEvents)
-                }
-                .pickerStyle(.menu)
-
-                Picker(localization.tr("preferences.engagement.period"), selection: $vm.meetingEngagementDefaultPeriod) {
-                    Text(localization.tr("preferences.engagement.period.today")).tag(MeetingEngagementPeriod.today)
-                    Text(localization.tr("preferences.engagement.period.7days")).tag(MeetingEngagementPeriod.sevenDays)
-                    Text(localization.tr("preferences.engagement.period.30days")).tag(MeetingEngagementPeriod.thirtyDays)
-                }
-                .pickerStyle(.menu)
-            }
+            MailSettingsSections(mail: mail)
 
             Section(localization.tr("preferences.updates.section")) {
                 Toggle(

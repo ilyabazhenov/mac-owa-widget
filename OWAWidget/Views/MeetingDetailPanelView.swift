@@ -197,6 +197,10 @@ struct MeetingDetailContentView: View {
                 }
 
                 MeetingAttendeesView(event: event, state: detailsState)
+
+                if let mail = MailService.current, mail.isAvailable {
+                    MeetingRelatedMailView(mail: mail, event: event, attendees: loadedAttendees)
+                }
             }
 
             if let bodyAttributed, bodyAttributed.length > 0 {
@@ -233,6 +237,11 @@ struct MeetingDetailContentView: View {
                 detailsState = .failed
             }
         }
+    }
+
+    private var loadedAttendees: [EventAttendee] {
+        if case .loaded(let details) = detailsState { return details.attendees }
+        return event.detailedAttendees ?? []
     }
 
     private func detailRow(systemImage: String, text: String) -> some View {
@@ -503,7 +512,7 @@ private struct MeetingDetailActionsView: View {
             if let url = event.joinURLForActions {
                 HStack(spacing: 10) {
                     Button {
-                        calendarService.openJoinURL(for: event, source: .detailPanel)
+                        calendarService.openJoinURL(for: event)
                         onJoinCompleted()
                         PostJoinDismissController.shared.dismissAfterJoin(context: .detailPanel)
                     } label: {

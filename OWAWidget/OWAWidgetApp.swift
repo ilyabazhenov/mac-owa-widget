@@ -16,6 +16,7 @@ struct OWAWidgetApp: App {
     @StateObject private var updateCheckService = UpdateCheckService()
     @StateObject private var appearanceService = AppearanceService()
     @StateObject private var colleaguePresenceService = ColleaguePresenceService()
+    @StateObject private var mailService = MailService()
 
     // Static: one delegate instance survives across App struct re-evaluations.
     private static let notificationDelegate = AppNotificationDelegate()
@@ -30,6 +31,7 @@ struct OWAWidgetApp: App {
         MenuBarExtra {
             PopoverView()
                 .environmentObject(calendarService)
+                .environmentObject(mailService)
                 .environmentObject(localizationService)
                 .environmentObject(updateCheckService)
                 .environmentObject(appearanceService)
@@ -39,6 +41,8 @@ struct OWAWidgetApp: App {
                     setupNotificationDelegate()
                     syncLocalization()
                     colleaguePresenceService.attach(calendarService)
+                    mailService.attach(calendarService)
+                    mailService.localization = localizationService
                 }
                 .onChange(of: localizationService.selectedLanguage) { _ in
                     syncLocalization()
@@ -46,6 +50,7 @@ struct OWAWidgetApp: App {
         } label: {
             MenuBarLabelView()
                 .environmentObject(calendarService)
+                .environmentObject(mailService)
                 .environmentObject(localizationService)
                 .environment(\.locale, localizationService.locale)
                 .onAppear {
@@ -56,9 +61,50 @@ struct OWAWidgetApp: App {
                     // The menu-bar label renders at launch, ahead of the popover: wiring here
                     // means the colleagues section is ready the first time the popover opens.
                     colleaguePresenceService.attach(calendarService)
+                    mailService.attach(calendarService)
+                    mailService.localization = localizationService
                 }
         }
         .menuBarExtraStyle(.window)
+
+        Window(localizationService.tr("mail.window.title"), id: "mail") {
+            MailWindowView(service: mailService)
+                .environmentObject(localizationService)
+                .environmentObject(calendarService)
+                .environmentObject(appearanceService)
+                .environment(\.locale, localizationService.locale)
+                .onAppear {
+                    DiagnosticLog.event("Window mail appeared")
+                    AppDelegate.mailWindowVisible = true
+                    AppDelegate.updateActivationPolicy()
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+                .onDisappear {
+                    AppDelegate.mailWindowVisible = false
+                    AppDelegate.updateActivationPolicy()
+                }
+        }
+        .defaultSize(width: 1180, height: 760)
+        .defaultPosition(.center)
+
+        Window(localizationService.tr("mail.compose.window.title"), id: "mail-compose") {
+            MailComposeWindowContent(service: mailService)
+                .environmentObject(localizationService)
+                .environmentObject(appearanceService)
+                .environment(\.locale, localizationService.locale)
+                .onAppear {
+                    DiagnosticLog.event("Window mail-compose appeared")
+                    AppDelegate.mailComposeWindowVisible = true
+                    AppDelegate.updateActivationPolicy()
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+                .onDisappear {
+                    AppDelegate.mailComposeWindowVisible = false
+                    AppDelegate.updateActivationPolicy()
+                }
+        }
+        .defaultSize(width: 640, height: 560)
+        .defaultPosition(.center)
 
         Window(localizationService.tr("window.create.meeting.title"), id: "create-meeting") {
             CreateMeetingWindowContent(calendarService: calendarService)
@@ -83,6 +129,7 @@ struct OWAWidgetApp: App {
         Window(localizationService.tr("window.settings.title"), id: "settings") {
             SettingsView(calendarService: calendarService)
                 .environmentObject(localizationService)
+                .environmentObject(mailService)
                 .environmentObject(updateCheckService)
                 .environmentObject(appearanceService)
                 .environment(\.locale, localizationService.locale)
@@ -112,8 +159,13 @@ struct OWAWidgetApp: App {
     /// Called from onAppear so it runs after @StateObject is fully initialised.
     private func setupNotificationDelegate() {
         Self.notificationDelegate.onJoinFromNotification = { [calendarService] item in
-            calendarService.openJoinURL(for: item, source: .reminderNotification)
+            calendarService.openJoinURL(for: item)
             PostJoinDismissController.shared.dismissAfterJoin(context: .notificationAction)
+        }
+        Self.notificationDelegate.onOpenMail = { [mailService] conversationID in
+            NSApp.activate(ignoringOtherApps: true)
+            // The label opens the window on `openRequest`; without an id, open the inbox.
+            mailService.open(conversationID: conversationID ?? "")
         }
         Self.notificationDelegate.resolveReminderItems = { [calendarService] ids in
             let byID = Dictionary(calendarService.events.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -130,7 +182,7 @@ struct OWAWidgetApp: App {
         GlobalHotkeyJoinService.shared.start(calendarService: calendarService)
         // Same launch-time hook: the label renders at launch, so MCP clients can connect before
         // the popover has ever been opened.
-        MCPServerService.shared.start(calendarService: calendarService)
+        MCPServerService.shared.start(calendarService: calendarService, mailService: mailService)
     }
 
     private func configureAppIcon() {
@@ -165,13 +217,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Same single-thread (main) access contract as `createMeetingWindowVisible`.
     nonisolated(unsafe) static var settingsWindowVisible = false
 
+    /// The mail window and the compose window; same single-thread contract as above.
+    nonisolated(unsafe) static var mailWindowVisible = false
+    nonisolated(unsafe) static var mailComposeWindowVisible = false
+
     /// Shows the app in the Dock (`.regular`) while any normal window is on screen,
     /// and hides it back to a pure menu-bar agent (`.accessory`) once they all close.
     /// Computed from the union of window-visibility flags so closing one window while
     /// another stays open doesn't prematurely drop the Dock icon.
+    @MainActor
     static func updateActivationPolicy() {
-        let shouldShowInDock = createMeetingWindowVisible || settingsWindowVisible
+        let shouldShowInDock = createMeetingWindowVisible || settingsWindowVisible || mailWindowVisible || mailComposeWindowVisible
+        let becomesRegular = shouldShowInDock && NSApp.activationPolicy() != .regular
         NSApp.setActivationPolicy(shouldShowInDock ? .regular : .accessory)
+        if becomesRegular, NSApp.isActive { reactivateAsRegular() }
+    }
+
+    /// The window was opened from the menu bar, so the app was activated while still an agent;
+    /// activating it again now that it is regular changes nothing. ⌘Tab orders apps by their
+    /// last activation and puts one that has none at the end. Handing activation to the Dock
+    /// (never in ⌘Tab) and taking it back gives it a real one: first in the list, as any app
+    /// that just opened a window.
+    @MainActor
+    private static func reactivateAsRegular() {
+        guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return }
+        // After the window's own `NSApp.activate` in `onAppear`, which would otherwise undo this.
+        DispatchQueue.main.async {
+            dock.activate(options: [])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -233,6 +309,8 @@ enum NotificationJoinAction: Equatable {
 
 final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
     var onJoinFromNotification: ((MeetingReminderItem) -> Void)?
+    /// Opens the mail window, at a conversation when the notification names one.
+    var onOpenMail: ((String?) -> Void)?
     /// Turns the event identifiers carried in `userInfo` back into reminder items, reading from
     /// the encrypted event cache. Always invoked on the main queue.
     var resolveReminderItems: (([String]) -> [MeetingReminderItem])?
@@ -246,6 +324,12 @@ final class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,
         defer { completionHandler() }
         // "New MCP client" carries no meeting; there is nothing to join.
         guard !response.notification.request.identifier.hasPrefix(MCPServerService.notificationIdentifierPrefix) else { return }
+        // A new-mail notification opens its conversation in the mail window.
+        if response.notification.request.identifier.hasPrefix(MailService.notificationIdentifierPrefix) {
+            let conversationID = response.notification.request.content.userInfo["conversationID"] as? String
+            DispatchQueue.main.async { self.onOpenMail?(conversationID) }
+            return
+        }
         let handled = removeDeliveredForJoinAction(
             actionIdentifier: response.actionIdentifier,
             requestIdentifier: response.notification.request.identifier,

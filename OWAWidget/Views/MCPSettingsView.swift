@@ -38,6 +38,26 @@ struct MCPSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section(localization.tr("mcp.mail.section")) {
+                Toggle(localization.tr("mcp.mail.read"), isOn: $server.canReadMail)
+                    .disabled(!server.isEnabled)
+                Text(localization.tr("mcp.mail.read.description"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Toggle(localization.tr("mcp.mail.send"), isOn: $server.canSendMail)
+                    .disabled(!server.isEnabled || !server.canReadMail)
+                Text(localization.tr("mcp.mail.send.description"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                if server.canReadMail {
+                    Label {
+                        Text(localization.tr("mcp.mail.warning")).font(.system(size: 11))
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                    }
+                }
+            }
+
             Section(localization.tr("mcp.connect.section")) {
                 if server.isBridgeInstalled {
                     ForEach(Snippet.allCases) { snippet in
@@ -133,6 +153,9 @@ struct MCPSettingsView: View {
                     Text(client.name)
                         .font(.system(size: 12, weight: .medium))
                     accessBadge(client.access)
+                    if server.canReadMail, let mailAccess = client.mailAccess {
+                        mailBadge(mailAccess)
+                    }
                     if let note = kindNote(client.lastKind) {
                         Text(note)
                             .font(.system(size: 10))
@@ -183,6 +206,24 @@ struct MCPSettingsView: View {
     }
 
     @ViewBuilder
+    private func mailBadge(_ access: MCPClientAccess) -> some View {
+        switch access {
+        case .allowed:
+            Label(localization.tr("mcp.clients.mail.allowed"), systemImage: "envelope")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+        case .denied:
+            Label(localization.tr("mcp.clients.mail.denied"), systemImage: "envelope.badge.shield.half.filled")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.red)
+        case .pending:
+            Label(localization.tr("mcp.clients.mail.pending"), systemImage: "envelope")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.orange)
+        }
+    }
+
+    @ViewBuilder
     private func accessButtons(_ client: MCPKnownClient) -> some View {
         // Each button with its own style: in a form row, buttons without one can all fire on a
         // single click, and Deny would also remove the client.
@@ -194,6 +235,18 @@ struct MCPSettingsView: View {
             if client.access != .denied {
                 Button(localization.tr("mcp.approve.deny")) { server.setAccess(.denied, forKey: client.key) }
                     .buttonStyle(.bordered)
+            }
+            if server.canReadMail, client.access == .allowed {
+                Menu {
+                    Button(localization.tr("mcp.clients.mail.allow")) { server.setMailAccess(.allowed, forKey: client.key) }
+                    Button(localization.tr("mcp.clients.mail.deny")) { server.setMailAccess(.denied, forKey: client.key) }
+                    Button(localization.tr("mcp.clients.mail.reset")) { server.setMailAccess(nil, forKey: client.key) }
+                } label: {
+                    Image(systemName: "envelope")
+                }
+                .menuStyle(.borderedButton)
+                .fixedSize()
+                .help(localization.tr("mcp.clients.mail.menu"))
             }
         }
         .controlSize(.small)

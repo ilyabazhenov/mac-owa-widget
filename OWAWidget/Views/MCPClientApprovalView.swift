@@ -23,7 +23,7 @@ struct MCPClientApprovalView: View {
             VStack(alignment: .leading, spacing: 12) {
                 header
                 client
-                Text(localization.tr(request.canCreateMeetings ? "mcp.approve.scopeWithMeetings" : "mcp.approve.scope"))
+                Text(localization.tr(scopeKey))
                     .font(.system(size: 12))
                     .fixedSize(horizontal: false, vertical: true)
                 Text(localization.tr("mcp.approve.hint"))
@@ -83,7 +83,7 @@ struct MCPClientApprovalView: View {
 
     private var clientDetails: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(localization.tr("mcp.approve.title", request.name))
+            Text(localization.tr(request.forMail ? "mcp.approve.mail.title" : "mcp.approve.title", request.name))
                 .font(.system(size: 14, weight: .semibold))
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -108,6 +108,11 @@ struct MCPClientApprovalView: View {
                     .padding(.top, 2)
             }
         }
+    }
+
+    private var scopeKey: String {
+        if request.forMail { return request.canSendMail ? "mcp.approve.mail.scopeWithSend" : "mcp.approve.mail.scope" }
+        return request.canCreateMeetings ? "mcp.approve.scopeWithMeetings" : "mcp.approve.scope"
     }
 
     private var kindNote: String? {

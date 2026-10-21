@@ -33,7 +33,14 @@ final class CalendarService: ObservableObject {
     /// failed sync, and a model answering from them has to know how fresh they are.
     @Published private(set) var eventCoverage: EventCoverage?
     @Published private(set) var syncStatus: SyncStatus = .idle
+    /// The last sync failed for want of a connection (no VPN, no network) rather than with an
+    /// answer from the server; a full successful sync clears it. Mail makes no background
+    /// requests meanwhile: each would only wait out the same timeout.
+    @Published private(set) var lastSyncFailedOnConnection = false
     @Published private(set) var accounts: [CalendarAccount] = []
+    /// Bumped whenever the providers are rebuilt (credentials changed, account added): the mail
+    /// service drops what it read through the old ones.
+    @Published private(set) var providerGeneration = 0
 
     /// `true` when the account store holds something this build could not read — most often a
     /// Keychain the user has not authorised yet after an update changed the app's code signature.
@@ -42,8 +49,6 @@ final class CalendarService: ObservableObject {
     /// tells the user to add an account, and doing that writes a fresh list over the container
     /// that is still on disk. See ``SecureCodableStore/LoadOutcome``.
     @Published private(set) var accountStoreUnreadable = false
-    @Published private(set) var engagementSnapshot: MeetingEngagementSnapshot = .empty
-    @Published private(set) var engagementPeriod: MeetingEngagementPeriod = .today
 
     /// A meeting the popover should show as soon as it is on screen — set by "Open" on the
     /// invitation panel, consumed (and cleared) by `PopoverView`.
@@ -77,7 +82,6 @@ final class CalendarService: ObservableObject {
     let invitationAlerts: any MeetingInvitationAlertPresenting
     private var invitationLocalization: MeetingInvitationLocalization = .english
     private let log = Logger(subsystem: "com.owawidget", category: "CalendarService")
-    private let meetingEngagementStats = MeetingEngagementStatsService()
     private var notificationLocalization: NotificationLocalization
     private var nextSyncID = 0
     private var activeSyncIDs = Set<Int>()
@@ -377,10 +381,9 @@ final class CalendarService: ObservableObject {
         self.invitationAlerts = invitationAlerts ?? MeetingInvitationAlertController(clock: clock)
         self.clock = clock
         self.notificationLocalization = initialNotificationLocalization
-        self.engagementPeriod = meetingEngagementStats.defaultPeriod
         if let reminderController = customMeetingReminders as? CustomMeetingReminderController {
             reminderController.onJoin = { [weak self] item in
-                self?.openJoinURL(for: item, source: .inAppReminder)
+                self?.openJoinURL(for: item)
                 PostJoinDismissController.shared.dismissAfterJoin(context: .inAppReminder)
             }
         }
@@ -409,7 +412,6 @@ final class CalendarService: ObservableObject {
             loadAccounts()
         }
         loadCachedEvents()
-        recalculateEngagementSnapshot()
 
         guard startBackgroundTasks else { return }
 
@@ -678,27 +680,11 @@ final class CalendarService: ObservableObject {
 
     func replaceEventsForTests(_ events: [CalendarEvent]) {
         self.events = events
-        recalculateEngagementSnapshot()
     }
 
     /// Sets the account list without touching the Keychain or the encrypted store.
     func replaceAccountsForTests(_ accounts: [CalendarAccount]) {
         self.accounts = accounts
-    }
-
-    var meetingEngagementScope: MeetingEngagementScope {
-        meetingEngagementStats.scope
-    }
-
-    func setMeetingEngagementScope(_ scope: MeetingEngagementScope) {
-        meetingEngagementStats.setScope(scope)
-        recalculateEngagementSnapshot()
-    }
-
-    func setMeetingEngagementPeriod(_ period: MeetingEngagementPeriod) {
-        engagementPeriod = period
-        meetingEngagementStats.setDefaultPeriod(period)
-        recalculateEngagementSnapshot()
     }
 
     // MARK: - Meeting creation
@@ -833,7 +819,7 @@ final class CalendarService: ObservableObject {
 
     func createMeeting(
         title: String,
-        agenda: String,
+        agenda: RichText,
         location: String = "",
         slot: FreeSlot,
         requiredAttendees: [ResolvedAttendee],
@@ -906,6 +892,22 @@ final class CalendarService: ObservableObject {
         }
     }
 
+    /// Accounts that have a provider now, in provider order: those whose calendar can be read.
+    var readableAccounts: [CalendarAccount] {
+        providers.map(\.account)
+    }
+
+    /// One account's meetings in a period, straight from its provider, for the MCP server's
+    /// reads outside the sync window. Nothing is kept: `events`, the disk cache and
+    /// `eventCoverage` stay as the last sync left them, and so do the invitation tracker and
+    /// reminders, which must only ever see the sync window.
+    func fetchEventsOutsideSync(accountID: UUID, from start: Date, to end: Date) async throws -> [CalendarEvent] {
+        guard let provider = providers.first(where: { $0.account.id == accountID }) else {
+            throw CalendarProviderError.notSupported
+        }
+        return try await provider.fetchEvents(from: start, to: end)
+    }
+
     /// Lazily loads attendees and the full agenda for a meeting (one `GetCalendarEvent` request)
     /// and caches both back onto the event in `events`. Returns the cached payload immediately if
     /// already loaded, so re-opening the same meeting performs no network request until the next
@@ -945,6 +947,16 @@ final class CalendarService: ObservableObject {
         applyBlockingError(error, context: context)
     }
 
+    /// Exchange accounts whose mailbox the app can read, in account order.
+    var mailAccounts: [CalendarAccount] {
+        accounts.filter { $0.accountType.supportsMail }
+    }
+
+    /// The mail side of an account's provider: the same actor and network session as its calendar.
+    func mailProvider(accountID: UUID) -> (any MailProvider)? {
+        providers.first { $0.account.id == accountID } as? any MailProvider
+    }
+
     /// Account type behind an event's `accountID`, from the account list or, failing that, the
     /// provider that produced it.
     func accountType(for accountID: UUID) -> AccountType? {
@@ -978,19 +990,14 @@ final class CalendarService: ObservableObject {
         }
     }
 
-    func openJoinURL(for event: CalendarEvent, source: MeetingJoinSource) {
+    func openJoinURL(for event: CalendarEvent) {
         guard let url = event.joinURLForActions else { return }
-        // Only record the join if the URL was actually safe to open.
-        guard MeetingURLOpener.open(url) else { return }
-        meetingEngagementStats.trackJoin(for: event, source: source)
-        recalculateEngagementSnapshot()
+        MeetingURLOpener.open(url)
     }
 
-    func openJoinURL(for reminderItem: MeetingReminderItem, source: MeetingJoinSource) {
+    func openJoinURL(for reminderItem: MeetingReminderItem) {
         guard let url = reminderItem.joinURL else { return }
-        guard MeetingURLOpener.open(url) else { return }
-        meetingEngagementStats.trackJoin(eventID: reminderItem.eventID, startDate: reminderItem.startDate, source: source)
-        recalculateEngagementSnapshot()
+        MeetingURLOpener.open(url)
     }
 
     #if DEBUG
@@ -1100,6 +1107,7 @@ final class CalendarService: ObservableObject {
             }
         }
         providers = built
+        providerGeneration += 1
         updateEventStoreObservation()
         DiagnosticLog.event(
             "CalendarService providers rebuilt count=\(built.count) accounts=\(accounts.count)"
@@ -1346,6 +1354,7 @@ final class CalendarService: ObservableObject {
 
             if accountTypes == nil {
                 syncStatus = .lastSynced(Date())
+                lastSyncFailedOnConnection = false
                 consecutiveAuthFailures = 0
                 lastAuthProbeAt = nil
                 syncRequestGate.recordSyncSucceeded()
@@ -1358,13 +1367,14 @@ final class CalendarService: ObservableObject {
                 syncStatus = statusBeforeSync
             } else {
                 syncStatus = .lastSynced(Date())
+                lastSyncFailedOnConnection = false
             }
             log.info("Sync \(syncID, privacy: .public) complete events=\(self.events.count, privacy: .public)")
-            recalculateEngagementSnapshot()
 
             await rescheduleMeetingRemindersForCurrentEvents()
 
         } catch {
+            lastSyncFailedOnConnection = MailConnectivity.isConnectionError(error)
             if let certInfo = OWAError.untrustedCertificateInfo(from: error) {
                 // Untrusted server certificate — suspend sync and surface an actionable
                 // status so the user can re-trust the server (do NOT fail silently).
@@ -1502,10 +1512,6 @@ final class CalendarService: ObservableObject {
         guard let snapshot = eventCacheStore.load() else { return }
         events = snapshot.events.sorted { $0.startDate < $1.startDate }
         eventCoverage = EventCoverage(snapshot: snapshot)
-    }
-
-    private func recalculateEngagementSnapshot(now: Date = Date()) {
-        engagementSnapshot = meetingEngagementStats.snapshot(events: events, period: engagementPeriod, now: now)
     }
 
     @discardableResult

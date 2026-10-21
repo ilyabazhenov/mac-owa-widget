@@ -13,7 +13,7 @@ protocol CalendarProvider: Actor {
     func getUserAvailability(emails: [String], from start: Date, to end: Date) async throws -> [AttendeeAvailability]
     func createMeeting(
         title: String,
-        agenda: String,
+        agenda: RichText,
         location: String,
         start: Date,
         end: Date,
@@ -45,7 +45,7 @@ extension CalendarProvider {
 
     func createMeeting(
         title: String,
-        agenda: String,
+        agenda: RichText,
         location: String,
         start: Date,
         end: Date,

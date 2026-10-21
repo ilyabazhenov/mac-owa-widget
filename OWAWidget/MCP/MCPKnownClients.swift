@@ -22,11 +22,13 @@ struct MCPKnownClient: Codable, Equatable, Identifiable, Sendable {
     let firstSeen: Date
     var lastSeen: Date
     var access: MCPClientAccess
+    /// Mail is asked about separately: `nil` until the client first calls a mail tool.
+    var mailAccess: MCPClientAccess? = nil
 }
 
 extension MCPKnownClient {
     private enum CodingKeys: String, CodingKey {
-        case key, name, executablePath, script, declaredName, lastKind, firstSeen, lastSeen, access
+        case key, name, executablePath, script, declaredName, lastKind, firstSeen, lastSeen, access, mailAccess
     }
 
     /// Entries saved before the question existed have no `access`: the user already saw them in
@@ -42,6 +44,7 @@ extension MCPKnownClient {
         firstSeen = try container.decode(Date.self, forKey: .firstSeen)
         lastSeen = try container.decode(Date.self, forKey: .lastSeen)
         access = try container.decodeIfPresent(MCPClientAccess.self, forKey: .access) ?? .allowed
+        mailAccess = try container.decodeIfPresent(MCPClientAccess.self, forKey: .mailAccess)
     }
 }
 
@@ -128,6 +131,13 @@ enum MCPKnownClientList {
         guard let index = list.firstIndex(where: { $0.key == key }), list[index].declaredName != name else { return list }
         var list = list
         list[index].declaredName = name
+        return list
+    }
+
+    static func setMailAccess(_ access: MCPClientAccess?, forKey key: String, in list: [MCPKnownClient]) -> [MCPKnownClient] {
+        guard let index = list.firstIndex(where: { $0.key == key }), list[index].mailAccess != access else { return list }
+        var list = list
+        list[index].mailAccess = access
         return list
     }
 

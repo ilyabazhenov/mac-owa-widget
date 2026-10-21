@@ -222,28 +222,12 @@ enum OWAUserAvailabilityPayload {
 // MARK: - CreateCalendarEvent
 
 enum OWACreateCalendarEventPayload {
-    /// HTML for calendar item body; plain-text lines become `<br/>`-separated escaped text.
-    static func calendarBodyHTML(plainAgenda: String) -> String {
-        let sanitized = plainAgenda.replacingOccurrences(of: "]]>", with: "]] >")
-        let trimmed = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return emptyHTMLBody() }
-        let inner = trimmed.split(separator: "\n", omittingEmptySubsequences: false)
-            .map { escapePlainForHTMLFragment(String($0)) }
-            .joined(separator: "<br/>")
+    /// HTML for calendar item body (`RichTextHTML`), without the blank lines at its ends.
+    static func calendarBodyHTML(_ agenda: RichText) -> String {
+        let trimmed = agenda.trimmed()
+        let inner = trimmed.isBlank ? "<div><br></div>" : RichTextHTML.fragment(trimmed)
         return "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">" +
-            "</head><body dir=\"ltr\"><div>\(inner)</div></body></html>"
-    }
-
-    private static func escapePlainForHTMLFragment(_ s: String) -> String {
-        s.replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-    }
-
-    private static func emptyHTMLBody() -> String {
-        "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">" +
-        "</head><body dir=\"ltr\"><div><br></div></body></html>"
+            "</head><body dir=\"ltr\">\(inner)</body></html>"
     }
 
     /// Стандартный EWS-форматтер для дат в UTC: `yyyy-MM-dd'T'HH:mm:ss'Z'`.
@@ -269,7 +253,7 @@ enum OWACreateCalendarEventPayload {
     /// тестами экранирование XML, порядок Required → Optional и защиту CDATA.
     static func createItemSOAP(
         title: String,
-        agenda: String,
+        agenda: RichText,
         location: String,
         start: Date,
         end: Date,
@@ -301,12 +285,12 @@ enum OWACreateCalendarEventPayload {
             ? "SendToNone"
             : "SendToAllAndSaveCopy"
 
-        let agendaTrimmed = agenda.trimmingCharacters(in: .whitespacesAndNewlines)
         let bodyXML: String
-        if agendaTrimmed.isEmpty {
+        if agenda.isBlank {
             bodyXML = ""
         } else {
-            let html = calendarBodyHTML(plainAgenda: agenda)
+            // Text is escaped, so `]]>` cannot come from it; kept off CDATA all the same.
+            let html = calendarBodyHTML(agenda).replacingOccurrences(of: "]]>", with: "]] >")
             bodyXML = "<t:Body BodyType=\"HTML\"><![CDATA[\(html)]]></t:Body>"
         }
 
