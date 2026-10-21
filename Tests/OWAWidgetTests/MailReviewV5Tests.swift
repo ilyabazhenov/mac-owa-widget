@@ -358,6 +358,67 @@ final class MailInboxPanelTests: XCTestCase {
         XCTAssertEqual(service.panelList.map(\.id), ["c1"])
     }
 
+    func testOfflineMakesNoBackgroundRequestsButRetryGoesOut() async throws {
+        let defaults = UserDefaults(suiteName: "panel-offline-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let provider = FakeMailProvider(account: MailFixtures.account)
+        await provider.setConversations([MailFixtures.conversation("c1")])
+        let backend = FakeMailBackend(provider: provider)  // the service holds it weakly
+        let service = MailService(backend: backend, defaults: defaults)
+
+        service.connectivityChanged(offline: true)
+        await service.refreshPanelList()
+        await service.checkInbox()
+        let skipped = await provider.calls
+        XCTAssertTrue(skipped.isEmpty, "each would only wait out the timeout: \(skipped)")
+        XCTAssertFalse(service.isLoadingPanelList)
+
+        await service.refreshPanelList(minInterval: 0, evenOffline: true)
+        XCTAssertEqual(service.panelList.map(\.id), ["c1"])
+        XCTAssertFalse(service.isOffline, "the server answered: the connection is back")
+    }
+
+    func testConnectionBackReloadsAPanelThatSkippedItsLoad() async throws {
+        let defaults = UserDefaults(suiteName: "panel-back-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let provider = FakeMailProvider(account: MailFixtures.account)
+        await provider.setConversations([MailFixtures.conversation("c1")])
+        let backend = FakeMailBackend(provider: provider)  // the service holds it weakly
+        let service = MailService(backend: backend, defaults: defaults)
+
+        service.connectivityChanged(offline: true)
+        await service.refreshPanelList()
+        XCTAssertFalse(service.panelListAnswered)
+
+        service.connectivityChanged(offline: false)
+        for _ in 0..<50 where service.panelList.isEmpty { await Task.yield() }
+        XCTAssertEqual(service.panelList.map(\.id), ["c1"])
+    }
+
+    func testPanelFailureTellsTheConnectionFromTheServer() async throws {
+        let defaults = UserDefaults(suiteName: "panel-fail-kind-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let provider = FakeMailProvider(account: MailFixtures.account)
+        let backend = FakeMailBackend(provider: provider)  // the service holds it weakly
+        let service = MailService(backend: backend, defaults: defaults)
+
+        await provider.setFailure(URLError(.timedOut))
+        await service.refreshPanelList(minInterval: 0)
+        XCTAssertTrue(service.panelListFailed)
+        XCTAssertTrue(service.panelListFailedOnConnection)
+
+        await provider.setFailure(OWAError.httpError(500, "boom"))
+        await service.refreshPanelList(minInterval: 0)
+        XCTAssertTrue(service.panelListFailed)
+        XCTAssertFalse(service.panelListFailedOnConnection)
+    }
+
     func testPanelFolderStorageRoundTrip() {
         for ref in [MailFolderRef.distinguished(.sentitems), .id("AAMkAD=")] {
             XCTAssertEqual(MailService.folderRef(storageValue: MailService.storageValue(ref)), ref)

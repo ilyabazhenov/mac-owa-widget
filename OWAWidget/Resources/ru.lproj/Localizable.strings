@@ -754,6 +754,8 @@
 "popover.inbox.compose" = "Написать письмо";
 "popover.inbox.openWindow" = "Открыть в окне почты";
 "popover.inbox.loadFailed" = "Не удалось загрузить папку";
+"popover.inbox.offline" = "Нет связи с сервером. Почта загрузится, когда сеть или VPN вернутся.";
+"popover.inbox.offlineShort" = "Нет связи с сервером почты";
 "popover.inbox.markAllRead" = "Отметить всё прочитанным (%d)";
 "popover.inbox.markingRead" = "Отмечаем прочитанным";
 "popover.inbox.markReadFailed" = "Не удалось отметить всё прочитанным — попробуйте ещё раз";

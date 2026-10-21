@@ -79,6 +79,10 @@ struct PopoverInboxColumn: View {
                 case .blocked:
                     Image(systemName: "exclamationmark.lock").foregroundStyle(.orange)
                     Text(localization.tr("popover.inbox.blocked")).lineLimit(1)
+                case _ where mail.isOffline:
+                    // No check goes out meanwhile, so the line says why rather than "failed".
+                    Image(systemName: "wifi.slash").foregroundStyle(.orange)
+                    Text(localization.tr("popover.inbox.offlineShort")).lineLimit(1)
                 case .failed:
                     Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
                     Text(localization.tr("mail.popover.failed")).lineLimit(1)
@@ -105,13 +109,28 @@ struct PopoverInboxColumn: View {
         if list.isEmpty {
             // Empty means empty only once a request has come back: while one is on its way (a
             // folder switch, the first look) it says so, as the mail window's list does. While
-            // sync is suspended nothing is requested at all, so it says that instead.
+            // sync is suspended nothing is requested at all, so it says that instead. A failure
+            // (or no connection) stays on screen while "Retry" runs: the header spinner says a
+            // new attempt is on its way, which without VPN takes the whole timeout.
             if mail.isBlocked {
                 Text(localization.tr("popover.inbox.blocked"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
+            } else if mail.panelListFailed || mail.isOffline {
+                VStack(spacing: 6) {
+                    Text(localization.tr(mail.isOffline || mail.panelListFailedOnConnection ? "popover.inbox.offline" : "popover.inbox.loadFailed"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button(localization.tr("mail.retry")) { Task { await mail.refreshPanelList(minInterval: 0, evenOffline: true) } }
+                        .controlSize(.small)
+                        .disabled(mail.isLoadingPanelList)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, 24)
             } else if mail.isLoadingPanelList || !mail.panelListAnswered {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
@@ -119,16 +138,6 @@ struct PopoverInboxColumn: View {
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
-            } else if mail.panelListFailed {
-                VStack(spacing: 6) {
-                    Text(localization.tr("popover.inbox.loadFailed"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    Button(localization.tr("mail.retry")) { Task { await mail.refreshPanelList(minInterval: 0) } }
-                        .controlSize(.small)
-                }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
             } else {
@@ -358,8 +367,10 @@ struct PopoverInboxColumn: View {
         guard !isRefreshing else { return }
         isRefreshing = true
         Task {
-            await mail.checkInbox()
+            await mail.checkInbox(evenOffline: true)
             // The check reloads the list itself when the unread count moved: not twice then.
+            // A check that got through also clears "offline"; one that did not leaves it, and the
+            // list then waits no second timeout.
             await mail.refreshPanelList(minInterval: 3)
             await mail.refreshFolderCounts(minInterval: 0)
             isRefreshing = false

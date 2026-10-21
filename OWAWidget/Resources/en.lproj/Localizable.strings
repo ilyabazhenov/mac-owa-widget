@@ -754,6 +754,8 @@
 "popover.inbox.compose" = "New message";
 "popover.inbox.openWindow" = "Open in the mail window";
 "popover.inbox.loadFailed" = "Couldn't load the folder";
+"popover.inbox.offline" = "Can't reach the server. Mail will load once the network or VPN is back.";
+"popover.inbox.offlineShort" = "Can't reach the mail server";
 "popover.inbox.markAllRead" = "Mark All %d as Read";
 "popover.inbox.markingRead" = "Marking as read";
 "popover.inbox.markReadFailed" = "Could not mark everything as read — try again";

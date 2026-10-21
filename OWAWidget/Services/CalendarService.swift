@@ -33,6 +33,10 @@ final class CalendarService: ObservableObject {
     /// failed sync, and a model answering from them has to know how fresh they are.
     @Published private(set) var eventCoverage: EventCoverage?
     @Published private(set) var syncStatus: SyncStatus = .idle
+    /// The last sync failed for want of a connection (no VPN, no network) rather than with an
+    /// answer from the server; a full successful sync clears it. Mail makes no background
+    /// requests meanwhile: each would only wait out the same timeout.
+    @Published private(set) var lastSyncFailedOnConnection = false
     @Published private(set) var accounts: [CalendarAccount] = []
     /// Bumped whenever the providers are rebuilt (credentials changed, account added): the mail
     /// service drops what it read through the old ones.
@@ -1334,6 +1338,7 @@ final class CalendarService: ObservableObject {
 
             if accountTypes == nil {
                 syncStatus = .lastSynced(Date())
+                lastSyncFailedOnConnection = false
                 consecutiveAuthFailures = 0
                 lastAuthProbeAt = nil
                 syncRequestGate.recordSyncSucceeded()
@@ -1346,12 +1351,14 @@ final class CalendarService: ObservableObject {
                 syncStatus = statusBeforeSync
             } else {
                 syncStatus = .lastSynced(Date())
+                lastSyncFailedOnConnection = false
             }
             log.info("Sync \(syncID, privacy: .public) complete events=\(self.events.count, privacy: .public)")
 
             await rescheduleMeetingRemindersForCurrentEvents()
 
         } catch {
+            lastSyncFailedOnConnection = MailConnectivity.isConnectionError(error)
             if let certInfo = OWAError.untrustedCertificateInfo(from: error) {
                 // Untrusted server certificate — suspend sync and surface an actionable
                 // status so the user can re-trust the server (do NOT fail silently).

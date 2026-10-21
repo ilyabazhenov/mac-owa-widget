@@ -239,6 +239,8 @@ final class MailService: ObservableObject {
     }
     /// The last request for the panel's folder failed: an empty list is not an empty folder.
     @Published private(set) var panelListFailed = false
+    /// That failure was the connection (no VPN, no network), not the server's answer.
+    @Published private(set) var panelListFailedOnConnection = false
     /// A request for the panel's folder has come back (fine or not): until then an empty list
     /// means "loading", not "empty folder".
     var panelListAnswered: Bool { panelListLoaded != nil || panelListFailed }
@@ -299,6 +301,14 @@ final class MailService: ObservableObject {
                 Task { @MainActor in self?.providersChanged() }
             }
             .store(in: &cancellables)
+        isOffline = calendarService.lastSyncFailedOnConnection
+        calendarService.$lastSyncFailedOnConnection
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] offline in
+                Task { @MainActor in self?.connectivityChanged(offline: offline) }
+            }
+            .store(in: &cancellables)
         restartPolling()
     }
 
@@ -351,6 +361,26 @@ final class MailService: ObservableObject {
 
     var isBlocked: Bool { backend?.isMailBlocked ?? false }
 
+    /// The calendar's last sync could not reach the server (no VPN, no network), and no mail
+    /// request has got through since: background checks and the panel's own loads make no
+    /// requests meanwhile, since each would only wait out the timeout. What the user asks for by
+    /// hand (refresh, "Retry") still goes out.
+    @Published private(set) var isOffline = false
+
+    /// The calendar lost or regained the server. Once it is back, the inbox is checked at once
+    /// and a panel left with a failed load reloads, instead of waiting for the next poll.
+    func connectivityChanged(offline: Bool) {
+        guard offline != isOffline else { return }
+        isOffline = offline
+        guard !offline, isAvailable else { return }
+        Task {
+            await checkInbox()
+            // Also a panel that skipped its load while offline: it would say "loading" with
+            // nothing on its way.
+            if panelWanted, panelListFailed || panelListLoaded == nil { await refreshPanelList(minInterval: 0) }
+        }
+    }
+
     // MARK: - Unread check
 
     private func restartPolling() {
@@ -373,12 +403,13 @@ final class MailService: ObservableObject {
 
     /// One `GetFolder` for the inbox count, plus the first unread page when the count changed
     /// and the popover shows the list.
-    func checkInbox() async {
+    func checkInbox(evenOffline: Bool = false) async {
         guard isAvailable, !isChecking, let account, let provider = backend?.mailProvider(accountID: account.id) else { return }
         guard !isBlocked else {
             checkState = .blocked
             return
         }
+        guard evenOffline || !isOffline else { return }
         isChecking = true
         defer { isChecking = false }
         do {
@@ -389,6 +420,7 @@ final class MailService: ObservableObject {
             inboxUnreadCount = unread
             lastChecked = Date()
             checkState = .idle
+            isOffline = false
             if ownAddress == nil { Task { await resolveOwnAddress() } }
             let needsList = settings.popoverSectionEnabled || settings.menuBarBadgeEnabled || settings.notifyMode != .off
             if needsList, changed || (unread > 0 && latestUnread.isEmpty) || seenUnreadIDs == nil {
@@ -418,7 +450,10 @@ final class MailService: ObservableObject {
         guard let account, let provider = backend?.mailProvider(accountID: account.id) else { throw MailError.notSupported }
         guard !isBlocked else { throw MailError.blocked(Self.blockedMessage) }
         do {
-            return try await operation(provider)
+            let result = try await operation(provider)
+            // The server answered: whatever the calendar last saw, the connection is back.
+            isOffline = false
+            return result
         } catch {
             report(error, context: context)
             throw error
@@ -493,7 +528,7 @@ final class MailService: ObservableObject {
     /// names or tree): the sidebar follows reading and the mail rules file into subfolders.
     /// Calls closer than `minInterval` apart are skipped.
     func refreshFolderCounts(minInterval: TimeInterval = 10) async {
-        guard !folders.isEmpty else { return }
+        guard !folders.isEmpty, !isOffline else { return }
         if let last = lastCountsRefresh, Date().timeIntervalSince(last) < minInterval { return }
         lastCountsRefresh = Date()
         let refs = folders.filter { $0.distinguished != .msgfolderroot }.map { MailFolderRef.id($0.id) }
@@ -518,9 +553,10 @@ final class MailService: ObservableObject {
     }
 
     /// The first page of the panel's folder; calls closer than `minInterval` apart are skipped.
-    func refreshPanelList(minInterval: TimeInterval = 30) async {
+    /// While offline only a request the user asked for (`evenOffline`) goes out.
+    func refreshPanelList(minInterval: TimeInterval = 30, evenOffline: Bool = false) async {
         panelWanted = true
-        guard isAvailable, !isBlocked else { return }
+        guard isAvailable, !isBlocked, evenOffline || !isOffline else { return }
         if let loaded = panelListLoaded, Date().timeIntervalSince(loaded) < minInterval { return }
         // One at a time unless asked for a fresh one (a folder switch, the refresh button).
         if panelLoadsInFlight > 0, minInterval > 0 { return }
@@ -543,17 +579,19 @@ final class MailService: ObservableObject {
             if boundary == nil || tail.isEmpty { panelNextCursor = page.nextCursor }
             panelList = page.conversations + tail
             panelListFailed = false
+            panelListFailedOnConnection = false
             panelListLoaded = Date()
         } catch {
             // `perform` reported it; the list keeps what it had, and an empty one says why.
             guard generation == panelListGeneration, folder == panelFolder, !MailCancellation.isCancellation(error) else { return }
             panelListFailed = true
+            panelListFailedOnConnection = MailConnectivity.isConnectionError(error)
         }
     }
 
     /// The panel's next page, when the list is scrolled to its end.
     func loadMorePanelList() async {
-        guard let cursor = panelNextCursor, !isLoadingMorePanelList, panelLoadsInFlight == 0, isAvailable, !isBlocked else { return }
+        guard let cursor = panelNextCursor, !isLoadingMorePanelList, panelLoadsInFlight == 0, isAvailable, !isBlocked, !isOffline else { return }
         let folder = panelFolder
         let generation = panelListGeneration
         isLoadingMorePanelList = true
@@ -582,6 +620,7 @@ final class MailService: ObservableObject {
         panelNextCursor = nil
         panelListLoaded = nil
         panelListFailed = false
+        panelListFailedOnConnection = false
         await refreshPanelList(minInterval: 0)
     }
 
@@ -593,6 +632,7 @@ final class MailService: ObservableObject {
         panelNextCursor = nil
         panelListLoaded = nil
         panelListFailed = false
+        panelListFailedOnConnection = false
     }
 
     /// The folder tree for the panel, when the mail window has not loaded it yet.
@@ -1068,6 +1108,7 @@ final class MailService: ObservableObject {
         panelNextCursor = nil
         panelListLoaded = nil
         panelListFailed = false
+        panelListFailedOnConnection = false
         panelWanted = false
         lastChecked = nil
         inboxFolderID = nil

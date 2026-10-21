@@ -132,6 +132,23 @@ final class CalendarServicePartialSyncTests: XCTestCase {
         XCTAssertTrue(service.syncStatus.isOfflineCached)
     }
 
+    /// Mail stops its background requests only for a connection failure (no VPN), not for an
+    /// account whose server answered with an error.
+    func testConnectionFailureIsToldApartForMail() async {
+        let exchange = account("Exchange", type: .owa)
+        let unreachable = makeService(providers: [StubProvider(account: exchange, error: URLError(.timedOut))])
+        await unreachable.performSyncForTests()
+        XCTAssertTrue(unreachable.lastSyncFailedOnConnection)
+
+        let rejecting = makeService(providers: [StubProvider(account: exchange, error: OWAError.httpError(500, "boom"))])
+        await rejecting.performSyncForTests()
+        XCTAssertFalse(rejecting.lastSyncFailedOnConnection)
+
+        let healthy = makeService(providers: [StubProvider(account: exchange)])
+        await healthy.performSyncForTests()
+        XCTAssertFalse(healthy.lastSyncFailedOnConnection)
+    }
+
     /// A failure that persists must not freeze the cache: what the healthy account returned has to
     /// survive a restart, or the next launch restores meetings from before the problem started.
     func testCachesFreshEventsEvenWhenAnotherProviderFailed() async {
