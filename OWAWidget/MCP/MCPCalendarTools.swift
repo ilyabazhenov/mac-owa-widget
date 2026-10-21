@@ -20,6 +20,7 @@ final class MCPCalendarTools {
     /// A repeated identical `create_meeting` within this window is answered from the first one.
     /// Models retry after a timeout, and a duplicate meeting sends a second set of invitations.
     static let duplicateWindow: TimeInterval = 10 * 60
+    static let onDemandDeadline: TimeInterval = 35
     static let maxAttendees = 100
     /// How long `create_meeting` waits for the user's own address before showing the panel
     /// anyway: the panel's 45 seconds and this must fit in the client's 60.
@@ -39,6 +40,9 @@ final class MCPCalendarTools {
     private let accessGuard: MCPAccessGuard
     private let detailsCache: MCPEventDetailsCache
     private let archive: MCPCalendarArchive
+    /// How long a call waits for meetings outside the sync window: clients give up after 60
+    /// seconds, and find_events_with_person still loads attendee lists after this.
+    private let onDemandDeadline: TimeInterval
     private let clock: () -> Date
     private let isEnabled: () -> Bool
     private let canCreateMeetings: () -> Bool
@@ -61,6 +65,7 @@ final class MCPCalendarTools {
         accessGuard: MCPAccessGuard? = nil,
         detailsCache: MCPEventDetailsCache = MCPEventDetailsCache(),
         archive: MCPCalendarArchive = MCPCalendarArchive(),
+        onDemandDeadline: TimeInterval = MCPCalendarTools.onDemandDeadline,
         confirmer: MCPMeetingConfirming? = nil,
         handOff: @escaping (MeetingDraftSeed) -> Void = { MeetingDraftInbox.shared.deliver($0) },
         confirmationTimeout: TimeInterval = MCPCalendarTools.confirmationTimeout,
@@ -73,6 +78,7 @@ final class MCPCalendarTools {
         self.accessGuard = accessGuard ?? MCPAccessGuard(calendarService: calendarService, clock: clock)
         self.detailsCache = detailsCache
         self.archive = archive
+        self.onDemandDeadline = onDemandDeadline
         self.confirmer = confirmer ?? MCPMeetingConfirmationController()
         self.handOff = handOff
         self.confirmationTimeout = confirmationTimeout
@@ -1107,6 +1113,14 @@ final class MCPCalendarTools {
         }
         let resolved = try clip(around, onDemand: true, context)
         let lookup = try await calendarEvents(for: resolved, accountID: accountID, context)
+        // Outside the sync window with no calendar read there, "no candidates" would be a guess.
+        let coverage = try requireCoverage()
+        if !(start < coverage.end && end >= coverage.start), !lookup.attempted.isEmpty,
+           lookup.unavailable.count == lookup.attempted.count {
+            return .failure(
+                "Could not load the calendar around \(context.coder.string(start)): \(lookup.unavailable.map(\.reason).joined(separator: "; ")) Nothing can be matched there; do not guess."
+            )
+        }
 
         let events = lookup.events.filter { accountID == nil || $0.accountID == accountID }
         let byTime = MeetingMatchScorer.candidates(events, start: start, end: end)
@@ -1322,7 +1336,7 @@ final class MCPCalendarTools {
         var fields: [String: JSONValue] = [
             "from": .string(context.coder.string(resolved.range.start)),
             "to": .string(context.coder.string(resolved.range.end)),
-            "clipped_to_coverage": .bool(resolved.clipped),
+            "clipped": .bool(resolved.clipped),
         ]
         if !resolved.outside.isEmpty { fields["outside_sync_window"] = true }
         if let note = resolved.note { fields["note"] = .string(note) }
@@ -1444,6 +1458,8 @@ final class MCPCalendarTools {
 
     private struct CalendarLookup {
         let events: [CalendarEvent]
+        /// Accounts whose meetings outside the sync window were asked for.
+        var attempted: [UUID] = []
         /// Accounts whose meetings outside the sync window could not be loaded, with the reason.
         var unavailable: [(accountID: UUID, reason: String)] = []
 
@@ -1463,16 +1479,52 @@ final class MCPCalendarTools {
         let key: MCPCalendarArchive.Key?
     }
 
-    /// Shared by the parallel loads of one call: the first failure of an account stops its
-    /// remaining loads, since every Exchange request re-submits the credentials.
+    /// The loads of one call. They outlive it when it stops waiting — at the deadline or when the
+    /// client cancels — so that a request already paid for still lands in the archive, but none
+    /// still queued is started after that.
     @MainActor
     private final class LoadProgress {
+        /// The first failure of an account stops its remaining loads: every Exchange request
+        /// re-submits the credentials.
         var failedAccounts: Set<UUID> = []
+        private(set) var stopped = false
+        private(set) var outcomes: [Int: Result<[CalendarEvent], Error>?] = [:]
+        private var pending: Int
+        private var waiter: CheckedContinuation<Void, Never>?
+        private var timer: Task<Void, Never>?
+
+        init(jobs: Int) { pending = jobs }
+
+        func finish(_ index: Int, _ outcome: Result<[CalendarEvent], Error>?) {
+            outcomes[index] = outcome
+            pending -= 1
+            if pending == 0 { stop() }
+        }
+
+        /// Until every load is done, `deadline` passes or `stop()` is called.
+        func wait(deadline: TimeInterval) async {
+            guard pending > 0, !stopped else { return }
+            await withCheckedContinuation { continuation in
+                waiter = continuation
+                timer = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(deadline))
+                    self?.stop()
+                }
+            }
+        }
+
+        func stop() {
+            stopped = true
+            timer?.cancel()
+            timer = nil
+            waiter?.resume()
+            waiter = nil
+        }
     }
 
     /// The synced meetings plus, when `resolved` reaches beyond the sync window, those of the
     /// parts outside it: cached blocks first, the rest loaded from the calendars (Exchange through
-    /// `accessGuard`, its whole cost taken up front).
+    /// `accessGuard`, its whole cost taken up front), within `onDemandDeadline`.
     private func calendarEvents(for resolved: ResolvedRange, accountID: UUID?, _ context: CallContext) async throws -> CalendarLookup {
         let synced = calendarService.events
         guard !resolved.outside.isEmpty, let coverage = calendarService.eventCoverage?.interval else {
@@ -1504,26 +1556,35 @@ final class MCPCalendarTools {
             throw ArgumentError(denial.message)
         }
 
-        let progress = LoadProgress()
         // Started together, run at most two at a time (`accessGuard`'s slots).
-        let tasks = jobs.map { job in Task { @MainActor in (job, await self.load(job, progress)) } }
-        var outcomes: [(OnDemandJob, Result<[CalendarEvent], Error>?)] = []
-        for task in tasks { outcomes.append(await task.value) }
+        let progress = LoadProgress(jobs: jobs.count)
+        for (index, job) in jobs.enumerated() {
+            Task { @MainActor in progress.finish(index, await self.load(job, progress)) }
+        }
+        await withTaskCancellationHandler {
+            await progress.wait(deadline: onDemandDeadline)
+        } onCancel: {
+            Task { @MainActor in progress.stop() }
+        }
+        try Task.checkCancellation()
 
         var unavailable: [UUID: String] = [:]
-        for (job, outcome) in outcomes {
-            switch outcome {
-            case .success(let events):
-                if let key = job.key { archive.store(events, for: key, now: context.now) }
+        var interrupted = false
+        for (index, job) in jobs.enumerated() {
+            switch progress.outcomes[index] {
+            case .some(.success(let events)):
                 loaded += events
-            case .failure(let error):
+            case .some(.failure(let error)):
                 unavailable[job.account.id] = unavailable[job.account.id] ?? Self.loadFailureReason(error)
-            case nil:
-                break // skipped after the account's first failure, or because sync got blocked
+            case .some(.none):
+                interrupted = interrupted || job.key != nil // skipped: the account failed, or sync got blocked
+            case .none:
+                // Still loading at the deadline: it lands in the archive for the next call.
+                unavailable[job.account.id] = unavailable[job.account.id]
+                    ?? "The calendar did not answer within \(Int(onDemandDeadline)) seconds. Call again: the periods loaded meanwhile are kept for a few minutes."
             }
         }
-        if outcomes.contains(where: { $0.0.key != nil && (try? $0.1?.get()) == nil }),
-           let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
+        if interrupted || !unavailable.isEmpty, let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
             throw ArgumentError(reason)
         }
 
@@ -1533,27 +1594,35 @@ final class MCPCalendarTools {
         let extra = loaded.filter { !Self.overlaps($0, coverage) && seen.insert($0.id).inserted }
         return CalendarLookup(
             events: synced + extra,
+            attempted: accounts.map(\.id),
             unavailable: accounts.compactMap { account in unavailable[account.id].map { (account.id, $0) } }
         )
     }
 
+    /// One block or local period. An Exchange block waits for a slot, is skipped once the call
+    /// stopped waiting, its account failed or sync got blocked, and is archived as soon as it
+    /// arrives.
     private func load(_ job: OnDemandJob, _ progress: LoadProgress) async -> Result<[CalendarEvent], Error>? {
         let accountID = job.account.id
-        guard job.key != nil else {
-            do {
-                return .success(try await calendarService.fetchEventsOutsideSync(accountID: accountID, from: job.interval.start, to: job.interval.end))
-            } catch {
-                return .failure(error)
-            }
+        if let key = job.key {
+            await accessGuard.acquireSlot()
+            defer { accessGuard.releaseSlot() }
+            guard !progress.stopped, !progress.failedAccounts.contains(accountID), !accessGuard.isBlocked else { return nil }
+            return await fetch(job, progress, archiveAs: key)
         }
-        await accessGuard.acquireSlot()
-        defer { accessGuard.releaseSlot() }
-        guard !progress.failedAccounts.contains(accountID), !accessGuard.isBlocked else { return nil }
+        return await fetch(job, progress, archiveAs: nil)
+    }
+
+    private func fetch(_ job: OnDemandJob, _ progress: LoadProgress, archiveAs key: MCPCalendarArchive.Key?) async -> Result<[CalendarEvent], Error> {
         do {
-            return .success(try await calendarService.fetchEventsOutsideSync(accountID: accountID, from: job.interval.start, to: job.interval.end))
+            let events = try await calendarService.fetchEventsOutsideSync(accountID: job.account.id, from: job.interval.start, to: job.interval.end)
+            if let key { archive.store(events, for: key, now: clock()) }
+            return .success(events)
         } catch {
-            progress.failedAccounts.insert(accountID)
-            accessGuard.report(error, context: "mcp.calendarView")
+            if key != nil {
+                progress.failedAccounts.insert(job.account.id)
+                accessGuard.report(error, context: "mcp.calendarView")
+            }
             MCPDebugLog.log("on-demand calendar load failed: \(error.localizedDescription)")
             return .failure(error)
         }

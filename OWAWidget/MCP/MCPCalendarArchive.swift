@@ -19,7 +19,8 @@ final class MCPCalendarArchive {
     nonisolated static let maxSpan: TimeInterval = 184 * 86_400
     /// Past meetings rarely change, but upcoming ones do, and a block covers both kinds alike.
     nonisolated static let lifetime: TimeInterval = 10 * 60
-    /// About two years of one account's blocks: enough for any sequence of questions in a chat.
+    /// Blocks per account, about two years: the whole reach, so one call (up to 7 blocks per
+    /// account) never evicts its own blocks, whatever the number of accounts.
     nonisolated static let capacity = 24
 
     struct Key: Hashable {
@@ -57,8 +58,10 @@ final class MCPCalendarArchive {
         order.removeAll { $0 == key }
         order.append(key)
         entries[key] = Entry(events: events, loadedAt: now)
-        while order.count > Self.capacity {
-            entries.removeValue(forKey: order.removeFirst())
+        let accountKeys = order.filter { $0.accountID == key.accountID }
+        for oldest in accountKeys.prefix(max(0, accountKeys.count - Self.capacity)) {
+            order.removeAll { $0 == oldest }
+            entries.removeValue(forKey: oldest)
         }
     }
 
