@@ -8,6 +8,8 @@ struct PopoverView: View {
     @EnvironmentObject private var updateCheck: UpdateCheckService
     @EnvironmentObject private var colleagues: ColleaguePresenceService
     @StateObject private var colleaguesSection = ColleaguesSectionModel()
+    /// The message the inbox panel shows in place of its list.
+    @StateObject private var inboxReader = InboxPanelReader()
     @Environment(\.openWindow) private var openWindow
     private var popoverSize: PopoverSize { service.popoverSize }
     private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -134,6 +136,9 @@ struct PopoverView: View {
                 onShow: {
                     guard mail.isAvailable else { return }
                     mail.popoverDidAppear()
+                    // A message read in the panel needs the reader's network block in place
+                    // before its body loads; compiling it takes a moment, so it starts now.
+                    MailContentBlocker.prepare()
                     Task {
                         await mail.refreshPanelList()
                         await mail.refreshFolderCounts()
@@ -146,6 +151,14 @@ struct PopoverView: View {
         .animation(.easeInOut(duration: 0.16), value: colleaguesSection.isExpanded)
         .animation(.easeInOut(duration: 0.18), value: selectedEvent?.id)
         .onEscapeKey(perform: handleEscape)
+        .background(MailKeyboardMonitor(handle: handleReaderKey))
+        .onChange(of: showsInboxPanel) { shown in
+            if !shown { inboxReader.close(forget: true) }
+        }
+        // No room beside the popover: the panel hides, and its message must not keep Esc and ↑/↓.
+        .onChange(of: inboxPanelPlaced) { placed in
+            if !placed { inboxReader.close(forget: true) }
+        }
         .onHorizontalPagingSwipe(
             isEnabled: { isDayPagingBySwipeEnabled },
             perform: handlePagingSwipe
@@ -161,6 +174,8 @@ struct PopoverView: View {
         }
         .onDisappear {
             resetMeetingDetailState()
+            // The panel opens on its list again next time.
+            inboxReader.close(forget: true)
             searchQuery = ""
             isSearchBarPresented = false
         }
@@ -349,7 +364,9 @@ struct PopoverView: View {
                     horizontalPadding: contentHorizontalPadding,
                     onSelectEvent: focus(on:),
                     onOpenMail: openMail,
-                    onCompose: openMailCompose
+                    onCompose: openMailCompose,
+                    onShowCompose: showComposeWindow,
+                    reader: inboxReader
                 )
             }
             // The panel never becomes key (that would close the popover), and AppKit draws the
@@ -551,8 +568,13 @@ struct PopoverView: View {
     }
 
     private func openMailCompose() {
-        NSApp.activate(ignoringOtherApps: true)
         mail.compose(MailComposeRequest(kind: .new, original: nil, to: [], cc: [], subject: "", body: ""))
+        showComposeWindow()
+    }
+
+    /// The compose window on whatever request the service holds (new mail, a reply from the panel).
+    private func showComposeWindow() {
+        NSApp.activate(ignoringOtherApps: true)
         openWindow(id: "mail-compose")
         PostJoinDismissController.shared.dismissPopover()
     }
@@ -675,14 +697,42 @@ struct PopoverView: View {
         let popoverWindow = PostJoinDismissController.shared.registeredPopoverWindow
         guard event.window == nil || event.window === popoverWindow else { return false }
 
+        // Typing in a field of the popover: Esc is for that field first, the panel's message after.
+        let isTyping = popoverWindow?.firstResponder is NSText
         if selectedEvent != nil {
             closeMeetingDetail()
+        } else if inboxReader.isOpen, !isTyping {
+            inboxReader.close()
         } else if colleaguesSection.handleEscape() {
             // Handled inside the section: the card or the search box first, the panel after.
         } else if isSearchBarPresented {
             closeSearch()
+        } else if inboxReader.isOpen {
+            inboxReader.close()
         } else {
             PostJoinDismissController.shared.dismissPopover()
+        }
+        return true
+    }
+
+    /// The C key (`kVK_ANSI_C`), wherever the layout puts its letter.
+    private static let cKeyCode: UInt16 = 8
+
+    /// ↑/↓ walk the inbox panel's list while it shows a message. The panel never takes focus, so
+    /// its keys arrive at the popover; typing in a field here is left alone by the monitor.
+    private func handleReaderKey(_ event: NSEvent) -> Bool {
+        guard inboxReader.isOpen, mail.isAvailable else { return false }
+        // ⌘C copies what is selected in the message; the monitor leaves ⌘C in a text field alone.
+        // By the key, not its character: in the Russian layout ⌘C arrives as "с" (Cyrillic).
+        if event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command,
+           event.keyCode == Self.cKeyCode {
+            return MailReaderWebView.copyInboxPanelSelection()
+        }
+        guard event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else { return false }
+        switch event.keyCode {
+        case 126: inboxReader.step(-1, service: mail)
+        case 125: inboxReader.step(1, service: mail)
+        default: return false
         }
         return true
     }

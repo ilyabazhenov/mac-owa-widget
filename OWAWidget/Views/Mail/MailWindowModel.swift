@@ -395,6 +395,12 @@ final class MailWindowModel: ObservableObject {
         await reloadList()
     }
 
+    /// Takes the folder tree the service already holds instead of asking the server again (the
+    /// inbox panel's reader): read and unread then move the right folder's count.
+    func adopt(folders: [MailFolder]) {
+        self.folders = folders
+    }
+
     func loadFolders() async {
         do {
             try await service.loadFolders()

@@ -762,6 +762,9 @@
 "popover.inbox.hide" = "Скрыть входящие";
 "popover.inbox.compose" = "Написать письмо";
 "popover.inbox.openWindow" = "Открыть в окне почты";
+"popover.inbox.back" = "Назад к списку (Esc)";
+"popover.inbox.previous" = "Письмо выше (↑)";
+"popover.inbox.next" = "Письмо ниже (↓)";
 "popover.inbox.loadFailed" = "Не удалось загрузить папку";
 "popover.inbox.offline" = "Нет связи с сервером. Почта загрузится, когда сеть или VPN вернутся.";
 "popover.inbox.offlineShort" = "Нет связи с сервером почты";

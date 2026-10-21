@@ -273,6 +273,7 @@ final class MailService: ObservableObject {
     private var isResolvingOwnAddress = false
     private var lastCountsRefresh: Date?
     private(set) var isWindowOpen = false
+    private(set) var isPanelReaderOpen = false
     /// The inbox's id, learned from the unread check or the folder list.
     private var inboxFolderID: String?
     /// Unread conversations already seen, so only new ones notify. `nil` until the first check,
@@ -770,6 +771,15 @@ final class MailService: ObservableObject {
         }
     }
 
+    /// Whether a message sits in the folder the panel shows. A message with no folder on record
+    /// counts as in it; so does any message while the panel folder's id is not known yet.
+    private func isInPanelFolder(_ message: MailMessage) -> Bool {
+        guard let parentFolderID = message.parentFolderID else { return true }
+        let panelFolderID = panelFolderInfo?.id ?? (panelFolder == .distinguished(.inbox) ? inboxFolderID : nil)
+        guard let panelFolderID else { return true }
+        return parentFolderID == panelFolderID
+    }
+
     /// The panel folder's entry in the tree (for its name and unread count).
     var panelFolderInfo: MailFolder? {
         switch panelFolder {
@@ -860,6 +870,13 @@ final class MailService: ObservableObject {
         let newRef = try await perform("mail.setRead") { try await $0.mailUpdate([target], .isRead(isRead)) }.first ?? ref
         let updated = message.with(ref: newRef, isRead: isRead)
         replaceInCache(updated)
+        // The panel's row follows a message read in the panel or the window. `message` is the
+        // message as the server held it before this change. The row counts only its folder's
+        // messages: a copy a rule moved elsewhere, or a reply in Sent Items, leaves it alone.
+        if message.isRead != isRead, let conversationID = message.conversationID, isInPanelFolder(message),
+           let row = panelList.first(where: { $0.id == conversationID }) {
+            replacePanelRow(row.with(unreadCount: max(0, row.unreadCount + (isRead ? -1 : 1))))
+        }
         if message.parentFolderID == nil || message.parentFolderID == inboxFolderID {
             if let count = inboxUnreadCount { inboxUnreadCount = max(0, count + (isRead ? -1 : 1)) }
             if isRead, let conversationID = message.conversationID { dropFromUnreadLists([conversationID]) }
@@ -1187,10 +1204,28 @@ final class MailService: ObservableObject {
     func windowDidDisappear() {
         isWindowOpen = false
         endSearch()
+        scheduleCacheClear()
+    }
+
+    /// The inbox panel shows a message: the threads it reads stay in memory as long as the
+    /// window's do, and go the same time after the panel goes back to its list.
+    func panelReaderDidAppear() {
+        isPanelReaderOpen = true
         cacheClearTask?.cancel()
+        cacheClearTask = nil
+    }
+
+    func panelReaderDidDisappear() {
+        isPanelReaderOpen = false
+        scheduleCacheClear()
+    }
+
+    private func scheduleCacheClear() {
+        cacheClearTask?.cancel()
+        guard !isWindowOpen, !isPanelReaderOpen else { return }
         cacheClearTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(Self.cacheLingerAfterClose))
-            guard !Task.isCancelled, let self, !self.isWindowOpen else { return }
+            guard !Task.isCancelled, let self, !self.isWindowOpen, !self.isPanelReaderOpen else { return }
             self.threadCache = [:]
             self.threadOrder = []
         }

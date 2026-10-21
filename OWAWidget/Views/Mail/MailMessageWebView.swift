@@ -236,12 +236,38 @@ final class MailReaderWebView: WKWebView {
     var copyTitle = "Copy"
     private var lastWidth: CGFloat = 0
 
+    /// The reader the user last pressed the mouse in, while it is on screen: the inbox panel
+    /// never becomes key, so ⌘C reaches the popover beside it and is handed on to this view.
+    private static weak var lastPressed: MailReaderWebView?
+
+    /// In the inbox panel (never key) the first press must reach WebKit, or a drag selects
+    /// nothing. The mail window keeps the usual first click that only brings it forward.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        window is InboxPanel || super.acceptsFirstMouse(for: event)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        Self.lastPressed = self
+        super.mouseDown(with: event)
+    }
+
+    /// Copies the selection of the inbox panel's reader last pressed in, if it is still on
+    /// screen. Returns whether there was one to ask.
+    @discardableResult
+    static func copyInboxPanelSelection() -> Bool {
+        guard let view = lastPressed, let window = view.window, window is InboxPanel, window.isVisible else { return false }
+        return NSApp.sendAction(#selector(NSText.copy(_:)), to: view, from: nil)
+    }
+
     /// WebKit's own items can download an image or a linked file, open one in a new window or
     /// preview it through Look Up — outside the reader's CSP, content blocker and link dialog.
     /// Their identifiers are not public API, so instead of filtering them the menu keeps Copy.
+    /// It targets this view: with no target the item would look for `copy:` from the key
+    /// window, which for the inbox panel is the popover beside it, and stay disabled.
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         menu.removeAllItems()
-        menu.addItem(withTitle: copyTitle, action: #selector(NSText.copy(_:)), keyEquivalent: "")
+        let item = menu.addItem(withTitle: copyTitle, action: #selector(NSText.copy(_:)), keyEquivalent: "")
+        item.target = self
         super.willOpenMenu(menu, with: event)
     }
 

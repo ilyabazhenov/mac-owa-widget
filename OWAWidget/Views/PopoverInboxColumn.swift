@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// The inbox panel beside the popover: invitations to answer, then the inbox itself, newest
 /// first, exactly as the folder holds it — no guessing about what is important.
@@ -10,6 +11,10 @@ struct PopoverInboxColumn: View {
     let onSelectEvent: (CalendarEvent) -> Void
     let onOpenMail: (String?) -> Void
     let onCompose: () -> Void
+    /// Opens the compose window on a request already handed to the service (a reply).
+    let onShowCompose: () -> Void
+    /// The message shown in place of the list; the popover owns it (Esc, closing).
+    @ObservedObject var reader: InboxPanelReader
 
     private var invitations: [MeetingInvitationGroup] { calendar.popoverInvitationGroups }
 
@@ -37,10 +42,66 @@ struct PopoverInboxColumn: View {
     }
 
 
+    private var isReading: Bool { reader.isOpen && showsMail }
+
+    /// Deleted Items deletes nothing further, by swipe or from the message.
+    private var folderAllowsDelete: Bool {
+        mail.panelFolder != .distinguished(.deleteditems) && mail.panelFolderInfo?.distinguished != .deleteditems
+    }
+
+    /// The open message is deleted as its row would be (only the folder's messages, with Undo);
+    /// a row a refresh already took away has nothing left to delete that way.
+    private var openRowDeletable: Bool {
+        folderAllowsDelete && mail.panelList.contains { $0.id == reader.conversationID }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            header
+            if isReading { readerHeader } else { header }
             Divider()
+            // The list stays under the message, hidden: going back finds it where it was.
+            ZStack {
+                listScroll
+                    .opacity(isReading ? 0 : 1)
+                    .allowsHitTesting(!isReading)
+                    .accessibilityHidden(isReading)
+                if isReading, let model = reader.model {
+                    PopoverMailReaderView(
+                        model: model,
+                        mail: mail,
+                        summary: mail.panelList.first { $0.id == reader.conversationID },
+                        horizontalPadding: horizontalPadding,
+                        canDelete: openRowDeletable,
+                        onDelete: deleteOpenConversation,
+                        onShowCompose: onShowCompose,
+                        onOpenInWindow: { onOpenMail(reader.conversationID) }
+                    )
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .transition(.move(edge: .trailing))
+                }
+            }
+            .frame(maxHeight: .infinity)
+            .clipped()
+            .overlay(alignment: .bottom) {
+                if let notice = mail.panelNotice {
+                    MailListNoticeView(
+                        notice: notice,
+                        onUndo: { Task { await mail.undoPanelDelete() } },
+                        onClose: { mail.dismissPanelNotice() }
+                    )
+                }
+            }
+            .animation(.easeInOut(duration: 0.18), value: mail.panelNotice)
+            .animation(.easeInOut(duration: 0.18), value: isReading)
+            Divider()
+            footer
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .mailSwipeList(swipes, isEnabled: showsMail && mail.settings.swipeActionsEnabled && !mail.isBlocked && !isReading)
+    }
+
+    private var listScroll: some View {
+        ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if showsFolders {
@@ -67,22 +128,62 @@ struct PopoverInboxColumn: View {
                 // A row a swipe deleted (or Undo put back) closes the gap instead of jumping.
                 .animation(.easeInOut(duration: 0.18), value: mail.panelList.map(\.id))
             }
-            .frame(maxHeight: .infinity)
-            .overlay(alignment: .bottom) {
-                if let notice = mail.panelNotice {
-                    MailListNoticeView(
-                        notice: notice,
-                        onUndo: { Task { await mail.undoPanelDelete() } },
-                        onClose: { mail.dismissPanelNotice() }
-                    )
-                }
+            // ↑/↓ in the reader may have walked off the rows that were on screen.
+            .onChange(of: reader.conversationID) { id in
+                guard id == nil, let last = reader.lastOpenedID else { return }
+                proxy.scrollTo(last)
             }
-            .animation(.easeInOut(duration: 0.18), value: mail.panelNotice)
-            Divider()
-            footer
         }
-        .background(Color(nsColor: .windowBackgroundColor))
-        .mailSwipeList(swipes, isEnabled: showsMail && mail.settings.swipeActionsEnabled && !mail.isBlocked)
+    }
+
+    /// A click reads the message here; ⌘-click opens it in the mail window, as before.
+    private func openConversation(_ conversation: MailConversationSummary) {
+        if NSEvent.modifierFlags.contains(.command) {
+            onOpenMail(conversation.id)
+            return
+        }
+        reader.open(conversation.id, in: mail.panelFolder, service: mail)
+    }
+
+    /// Deletes the open conversation as a swipe would (with Undo) and goes back to the list.
+    private func deleteOpenConversation() {
+        guard folderAllowsDelete, let id = reader.conversationID,
+              let summary = mail.panelList.first(where: { $0.id == id }) else { return }
+        reader.close()
+        Task { await mail.deletePanelConversation(summary) }
+    }
+
+    /// Back to the list, the next and previous message, and the mail window — in the place and
+    /// type of the list's header, so the line under it does not move.
+    private var readerHeader: some View {
+        HStack(spacing: 6) {
+            Button { reader.close() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                    Text(folderTitle)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                }
+                .frame(height: 16)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(MailIconButtonStyle(horizontalPadding: 3, verticalPadding: 3))
+            .padding(-3)
+            .help(localization.tr("popover.inbox.back"))
+            .accessibilityLabel(localization.tr("popover.inbox.back"))
+            Spacer(minLength: 4)
+            HStack {
+                headerButton("chevron.up", "popover.inbox.previous") { reader.step(-1, service: mail) }
+                    .disabled(!reader.canStep(-1, in: mail.panelList))
+                headerButton("chevron.down", "popover.inbox.next") { reader.step(1, service: mail) }
+                    .disabled(!reader.canStep(1, in: mail.panelList))
+                headerButton("arrow.up.forward.square", "popover.inbox.openWindow") { onOpenMail(reader.conversationID) }
+            }
+        }
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, 11)
     }
 
     /// Same type, padding and height as the popover's sync line, so the two bottom lines meet.
@@ -167,10 +268,10 @@ struct PopoverInboxColumn: View {
                 if let bucket = starts[index] {
                     sectionTitle(MailPresentation.sectionTitle(bucket, sample: conversation.lastDelivery, localization: localization), count: nil)
                 }
-                Button { onOpenMail(conversation.id) } label: {
+                Button { openConversation(conversation) } label: {
                     MailConversationRow(
                         conversation: conversation,
-                        isSelected: false,
+                        isSelected: conversation.id == reader.lastOpenedID,
                         isSentFolder: mail.panelFolder.isSentItems,
                         terms: [],
                         folderName: nil,
@@ -189,7 +290,7 @@ struct PopoverInboxColumn: View {
                 .mailSwipeActions(
                     swipes,
                     isUnread: conversation.isUnread,
-                    canDelete: mail.panelFolder != .distinguished(.deleteditems) && mail.panelFolderInfo?.distinguished != .deleteditems,
+                    canDelete: folderAllowsDelete,
                     onDelete: { Task { await mail.deletePanelConversation(conversation) } },
                     onToggleRead: { Task { await mail.togglePanelRead(conversation) } }
                 )

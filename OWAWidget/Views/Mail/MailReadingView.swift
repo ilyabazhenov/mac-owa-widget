@@ -56,18 +56,13 @@ struct MailReadingView: View {
             isPresented: Binding(get: { model.pendingLink != nil }, set: { if !$0 { model.pendingLink = nil } }),
             presenting: model.pendingLink
         ) { link in
-            Button(localization.tr("mail.link.open")) { open(link.url) }
-            Button(localization.tr("mail.link.copy")) {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(link.url.absoluteString, forType: .string)
+            Button(localization.tr("mail.link.open")) {
+                link.open(service: service) { openWindow(id: "mail-compose") }
             }
+            Button(localization.tr("mail.link.copy")) { link.copy() }
             Button(localization.tr("mail.cancel"), role: .cancel) {}
         } message: { link in
-            if let shown = link.text.flatMap({ MailHTMLDocument.mismatchedLinkHost(text: $0, url: link.url) }) {
-                Text(localization.tr("mail.link.mismatch", shown, link.url.absoluteString))
-            } else {
-                Text(link.url.absoluteString)
-            }
+            Text(link.explanation(localization))
         }
     }
 
@@ -102,19 +97,6 @@ struct MailReadingView: View {
         // The action bar's height stays free, so the subject does not jump when it appears.
         .padding(.top, MailColumnWidths.headerHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private func open(_ url: URL) {
-        switch url.scheme?.lowercased() {
-        case "http", "https":
-            NSWorkspace.shared.open(url)
-        case "mailto":
-            guard let request = MailComposeRequest.mailto(url) else { return }
-            service.compose(request)
-            openWindow(id: "mail-compose")
-        default:
-            break
-        }
     }
 
     private var newest: MailMessage? { model.thread?.messages.first }
@@ -558,22 +540,31 @@ struct MailMessageCard: View {
     private var rsvpButtons: some View {
         let current = model.meetingResponse(for: message)
         let isSending = model.isPending(.meetingResponse(message.id))
-        HStack(spacing: 6) {
-            rsvp(.accept, "checkmark.circle", "mail.meeting.accept", isCurrent: current == .accepted, tint: .green)
-            rsvp(.tentative, "questionmark.circle", "mail.meeting.tentative", isCurrent: current == .tentative, tint: .orange)
-            rsvp(.decline, "xmark.circle", "mail.meeting.decline", isCurrent: current == .declined, tint: .red)
-            if isSending { ProgressView().controlSize(.small) }
+        // Icons only where the labels do not fit (the inbox panel beside the popover).
+        ViewThatFits(in: .horizontal) {
+            rsvpRow(current: current, isSending: isSending, labelled: true)
+            rsvpRow(current: current, isSending: isSending, labelled: false)
         }
         .controlSize(.small)
         .disabled(isSending)
     }
 
-    private func rsvp(_ action: MeetingResponseAction, _ icon: String, _ key: String, isCurrent: Bool, tint: Color) -> some View {
+    private func rsvpRow(current: MeetingResponseType?, isSending: Bool, labelled: Bool) -> some View {
+        HStack(spacing: 6) {
+            rsvp(.accept, "checkmark.circle", "mail.meeting.accept", isCurrent: current == .accepted, tint: .green, labelled: labelled)
+            rsvp(.tentative, "questionmark.circle", "mail.meeting.tentative", isCurrent: current == .tentative, tint: .orange, labelled: labelled)
+            rsvp(.decline, "xmark.circle", "mail.meeting.decline", isCurrent: current == .declined, tint: .red, labelled: labelled)
+            if isSending { ProgressView().controlSize(.small) }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func rsvp(_ action: MeetingResponseAction, _ icon: String, _ key: String, isCurrent: Bool, tint: Color, labelled: Bool) -> some View {
         Button {
             Task { await model.respond(to: message, action) }
         } label: {
             Label(localization.tr(key), systemImage: isCurrent ? icon + ".fill" : icon)
-                .labelStyle(.titleAndIcon)
+                .labelStyle(RSVPLabelStyle(labelled: labelled))
                 .font(.system(size: 11, weight: isCurrent ? .semibold : .regular))
                 .lineLimit(1)
                 .fixedSize()
@@ -628,6 +619,58 @@ struct MailMessageCard: View {
         .padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.06)))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.secondary.opacity(0.2), lineWidth: 1))
+    }
+}
+
+/// What both readers (the mail window and the inbox panel) do with a link the user clicked.
+extension MailLinkActivation {
+    /// The host the link's text names when the link goes elsewhere; `nil` when they agree.
+    var mismatchedHost: String? {
+        text.flatMap { MailHTMLDocument.mismatchedLinkHost(text: $0, url: url) }
+    }
+
+    /// The address, or the warning that the text and the address disagree.
+    @MainActor
+    func explanation(_ localization: LocalizationService) -> String {
+        mismatchedHost.map { localization.tr("mail.link.mismatch", $0, url.absoluteString) } ?? url.absoluteString
+    }
+
+    /// A web link opens in the browser; a `mailto:` link becomes a new message, and
+    /// `showCompose` opens the compose window on it. Any other scheme goes nowhere.
+    @MainActor
+    func open(service: MailService, showCompose: () -> Void) {
+        switch url.scheme?.lowercased() {
+        case "http", "https":
+            NSWorkspace.shared.open(url)
+        case "mailto":
+            guard let request = MailComposeRequest.mailto(url) else { return }
+            service.compose(request)
+            showCompose()
+        default:
+            break
+        }
+    }
+
+    @MainActor
+    func copy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+    }
+}
+
+/// Title and icon, or the icon alone (its title still read out by VoiceOver).
+private struct RSVPLabelStyle: LabelStyle {
+    let labelled: Bool
+
+    @ViewBuilder
+    func makeBody(configuration: Configuration) -> some View {
+        if labelled {
+            Label(configuration)
+                .labelStyle(.titleAndIcon)
+        } else {
+            Label(configuration)
+                .labelStyle(.iconOnly)
+        }
     }
 }
 
