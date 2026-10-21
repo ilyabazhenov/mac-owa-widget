@@ -1,3 +1,33 @@
+## v1.0.60 - 2026-10-21
+
+### RU
+
+#### Что изменилось
+
+- **Календарь и занятость коллег загружаются стабильно.** Примерно половина запросов к Exchange падала с ошибкой «Cannot create an abstract class»: встречи обновлялись через раз, а поиск свободного времени иногда ничего не находил. Теперь запросы собираются так, как ждёт сервер.
+- **AI-ассистент видит календарь дальше окна синхронизации** (MCP): `list_events`, `get_schedule_stats`, `find_events_with_person` и `match_event` читают встречи до года назад и на год вперёд, подгружая нужный период из Exchange. Само окно синхронизации приложения (неделя назад, месяц вперёд) не меняется.
+- **Окно подтверждения встречи от AI-ассистента** (`create_meeting`) строже к скрытому тексту: невидимые символы, которые не рисуются на экране, но уходят получателю, теперь отклоняются, а не только помечаются предупреждением. Пробелы, неотличимые от обычного, заменяются на обычный, пробелы в конце строк убираются.
+
+#### Установка
+
+1. Скачайте `.zip`, распакуйте и перенесите `OWAWidget.app` в `/Applications`.
+2. Запустите приложение — дополнительных шагов не нужно.
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- **Calendar and colleagues' availability load reliably.** About half of the requests to Exchange failed with "Cannot create an abstract class": meetings refreshed every other time, and the free-time search sometimes found nothing. Requests are now built the way the server expects.
+- **AI assistants see the calendar beyond the sync window** (MCP): `list_events`, `get_schedule_stats`, `find_events_with_person` and `match_event` read meetings up to a year back and a year ahead, loading the period from Exchange on demand. The app's own sync window (a week back, a month ahead) is unchanged.
+- **The meeting confirmation window for AI assistants** (`create_meeting`) is stricter about hidden text: invisible characters that draw nothing on screen but reach the recipient are now rejected instead of only flagged. Spaces that look like a plain space become one, and trailing spaces are removed.
+
+#### Installation
+
+1. Download the `.zip`, unzip it and move `OWAWidget.app` to `/Applications`.
+2. Launch the app — no extra steps needed.
+3. All subsequent updates install automatically via the "Install" button inside the app.
+
 ## v1.0.59 - 2026-10-16
 
 ### RU
