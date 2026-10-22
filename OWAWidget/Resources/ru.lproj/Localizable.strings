@@ -712,7 +712,6 @@
 "mail.popover.titlePeople" = "Почта от людей";
 "mail.popover.noPeople" = "От людей ничего нового — только письма систем";
 "mail.reading.multiple" = "Выбрано переписок: %d. Действия — на панели над списком.";
-"mail.reading.shortcuts" = "↑↓ переход · R ответить · ⇧R всем · F переслать · U прочитано · ⌫ удалить · ⌘-клик — выбрать несколько";
 "mail.reading.loading" = "Загружается…";
 "mail.related.show" = "Переписка по встрече";
 "mail.related.loading" = "Ищу письма…";
@@ -851,3 +850,21 @@
 "settings.info.more" = "Подробнее";
 "mail.filter.unreadOnly" = "Только новые";
 "mail.window.subtitle.unreadOnly" = "только новые";
+
+/* Mail window: mailbox overview when nothing is open */
+"mail.digest.tile.inbox" = "новых во «Входящих»";
+"mail.digest.tile.people" = "от людей";
+"mail.digest.tile.invitations" = "приглашения без ответа";
+"mail.digest.tile.flagged" = "с флажком";
+"mail.digest.invitations" = "Ждут ответа";
+"mail.digest.important" = "Важное и с флажком";
+"mail.digest.keys" = "Клавиши";
+"mail.digest.otherAnswers" = "Другие ответы";
+"mail.key.navigate" = "переход";
+"mail.key.reply" = "ответить";
+"mail.key.replyAll" = "ответить всем";
+"mail.key.forward" = "переслать";
+"mail.key.read" = "прочитано";
+"mail.key.delete" = "удалить";
+"mail.key.multiSelect" = "клик — выбрать несколько";
+"mail.key.window" = "окно почты";
