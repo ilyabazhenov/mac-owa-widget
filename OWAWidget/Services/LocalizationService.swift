@@ -171,6 +171,18 @@ final class LocalizationService: ObservableObject {
         }
     }
 
+    /// The status in a line that already offers its fix: "Invalid password" next to a Settings
+    /// button rather than "Invalid password — update in Settings", which the button repeats and
+    /// which did not fit beside it. Other statuses read as in `syncStatusText`.
+    func compactSyncStatusText(_ status: SyncStatus, relativeTo now: Date = Date()) -> String {
+        switch status {
+        case .authenticationRequired: tr("sync.status.auth.required.short")
+        case .certificateTrustRequired: tr("sync.status.certificate.untrusted.short")
+        case .loginHostApprovalRequired: tr("sync.status.login.host.approval.short")
+        default: syncStatusText(status, relativeTo: now)
+        }
+    }
+
     func daySectionLabel(for date: Date, calendar: Calendar = AppTimeZone.calendar, relativeTo referenceNow: Date = Date()) -> String {
         if calendar.isDate(date, inSameDayAs: referenceNow) {
             return "\(tr("date.today")), \(dayAndMonthLabel(for: date, calendar: calendar))"

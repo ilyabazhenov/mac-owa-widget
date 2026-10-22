@@ -325,4 +325,17 @@ final class LocalizationServiceTests: XCTestCase {
         XCTAssertEqual(russian.tr("create.meeting.tooltip.status.oof"), "вне офиса")
         XCTAssertEqual(english.tr("create.meeting.attendee.you"), "You")
     }
+
+    func testCompactSyncStatusShortensOnlyTheBlockingStatuses() {
+        let suite = "OWAWidgetTests.CompactStatus.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let ru = LocalizationService(userDefaults: defaults, selectedLanguage: .russian)
+        XCTAssertEqual(ru.compactSyncStatusText(.authenticationRequired), "Неверный пароль")
+        XCTAssertEqual(ru.compactSyncStatusText(.certificateTrustRequired(host: "h", fingerprint: "f")), "Сертификат не подтверждён")
+        XCTAssertEqual(ru.compactSyncStatusText(.loginHostApprovalRequired(configuredHost: "a", loginHost: "b")), "Вход перенаправлен")
+        XCTAssertEqual(ru.compactSyncStatusText(.syncing), ru.syncStatusText(.syncing))
+        let en = LocalizationService(userDefaults: defaults, selectedLanguage: .english)
+        XCTAssertEqual(en.compactSyncStatusText(.authenticationRequired), "Invalid password")
+    }
 }

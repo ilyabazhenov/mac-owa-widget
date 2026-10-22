@@ -75,12 +75,12 @@ enum PerfProbe {
         }
         CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
         self.observer = observer
-        #if DEBUG || PERF_HARNESS
+        #if PERF_HARNESS
         startHarness()
         #endif
     }
 
-    #if DEBUG || PERF_HARNESS
+    #if PERF_HARNESS
     /// The distributed notification a measuring script posts, with `open` or `close` as its object.
     static let harnessNotification = Notification.Name("com.owawidget.perf.popover")
     /// Posted in the app for `next` and `prev`, with the day step as its object; the popover pages.
@@ -89,8 +89,10 @@ enum PerfProbe {
 
     /// Opens and closes the popover on request from outside, so two builds can be compared by
     /// their `Perf slow main turn` lines over the same sequence of opens. Any process may post a
-    /// distributed notification, which is why this exists only in debug builds and in builds made
-    /// with `-Xswiftc -DPERF_HARNESS` for measuring; never in a release.
+    /// distributed notification — and with it click buttons in the popover (an RSVP is a real
+    /// reply in Exchange) — so this exists only in builds made with `-Xswiftc -DPERF_HARNESS` for
+    /// measuring. Not in debug builds: `make run` and `make bundle` build debug, and that is the
+    /// copy used day to day.
     @MainActor
     private static func startHarness() {
         guard harnessObserver == nil else { return }

@@ -12,13 +12,12 @@ enum MenuBarPopoverOpener {
             popover.makeKey()
             return
         }
-        for window in NSApp.windows where window.className.contains("NSStatusBarWindow") {
-            guard let button = statusButton(in: window.contentView) else { continue }
-            NSApp.activate(ignoringOtherApps: true)
-            button.performClick(nil)
+        guard let button = statusButton() else {
+            DiagnosticLog.event("MenuBarPopoverOpener: status item button not found")
             return
         }
-        DiagnosticLog.event("MenuBarPopoverOpener: status item button not found")
+        NSApp.activate(ignoringOtherApps: true)
+        button.performClick(nil)
     }
 
     /// The status item's own button, or `nil` before the item is on screen.

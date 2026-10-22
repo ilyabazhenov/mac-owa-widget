@@ -643,13 +643,27 @@ final class CalendarService: ObservableObject {
         Task { await rescheduleMeetingRemindersForCurrentEvents() }
     }
 
-    /// Call after saving preferences from Settings (style, lead time, etc.).
+    /// How long invitation alerts must stay off before the tracker forgets what it compared with.
+    /// Shortened by tests.
+    var invitationTrackerResetDelay: Duration = .seconds(10)
+
+    /// Call after a change in Settings (style, lead time, etc.); Settings apply each change at once.
     func applySavedPreferences() {
         objectWillChange.send()
         if !invitationAlertsEnabled {
-            invitationTracker.reset()
             invitationAlerts.dismissAll()
             unhandledInvitationIDs = []
+            // Forgotten only once the switch has stayed off. Settings apply every change at once,
+            // so a switch flipped off and straight back on would otherwise wipe the comparison
+            // state, and the next sync would record the calendar silently as a first one —
+            // swallowing the invitations that arrived meanwhile. Before, the same flip was undone
+            // by not pressing Save.
+            let delay = invitationTrackerResetDelay
+            Task { [weak self] in
+                try? await Task.sleep(for: delay)
+                guard let self, !self.invitationAlertsEnabled else { return }
+                self.invitationTracker.reset()
+            }
         }
         Task { await rescheduleMeetingRemindersForCurrentEvents() }
     }

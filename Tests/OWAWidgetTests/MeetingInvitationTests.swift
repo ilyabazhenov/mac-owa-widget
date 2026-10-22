@@ -658,7 +658,8 @@ final class CalendarServiceInvitationTests: XCTestCase {
             state.unhandledEventIDs = MeetingInvitationPolicy.stillUnhandled(state.unhandledEventIDs, in: events, now: now)
         }
         func dismiss(eventIDs: [String]) { state.unhandledEventIDs.subtract(eventIDs) }
-        func reset() { state = .empty }
+        private(set) var resetCount = 0
+        func reset() { state = .empty; resetCount += 1 }
     }
 
     private final class RecordingPresenter: MeetingInvitationAlertPresenting {
@@ -837,6 +838,36 @@ final class CalendarServiceInvitationTests: XCTestCase {
 
         XCTAssertTrue(presenter.presented.isEmpty)
         XCTAssertTrue(service.pendingInvitationGroups.isEmpty)
+    }
+
+    /// Settings apply each change at once: a switch flipped off and back on must not wipe the
+    /// comparison state, or the invitations that came meanwhile would be recorded silently.
+    func testTurningFeatureOffForgetsTheTrackerOnlyIfItStaysOff() async throws {
+        let account = CalendarAccount(displayName: "Exchange", serverURL: "", email: "", accountType: .owa)
+        let tracker = InMemoryTracker()
+        let service = CalendarService(
+            providers: [MutableProvider(account: account)],
+            eventCacheStore: NullCache(),
+            notificationService: SilentNotificationService(),
+            customMeetingReminders: SilentMeetingReminderController(),
+            invitationTracker: tracker,
+            invitationAlerts: RecordingPresenter(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+        service.invitationTrackerResetDelay = .milliseconds(50)
+
+        UserDefaults.standard.set(false, forKey: enabledKey)
+        service.applySavedPreferences()
+        UserDefaults.standard.set(true, forKey: enabledKey)
+        service.applySavedPreferences()
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(tracker.resetCount, 0, "flipped back on within the delay: state kept")
+
+        UserDefaults.standard.set(false, forKey: enabledKey)
+        service.applySavedPreferences()
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(tracker.resetCount, 1, "stayed off: state forgotten")
     }
 
     func testTurningFeatureOffClosesThePanel() {

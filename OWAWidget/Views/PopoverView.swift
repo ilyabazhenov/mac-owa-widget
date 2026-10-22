@@ -180,13 +180,13 @@ struct PopoverView: View {
         .onChange(of: service.eventFocusRequest) { _ in
             applyEventFocusRequest()
         }
-        #if DEBUG || PERF_HARNESS
+        #if PERF_HARNESS
         // Lets a measuring or screenshot script page the day (see `PerfProbe`).
         .onReceive(NotificationCenter.default.publisher(for: PerfProbe.harnessStepDay)) { note in
             if let delta = note.object as? Int { goToDay(offsetBy: delta) }
         }
         #endif
-        #if DEBUG
+        #if DEBUG && PERF_HARNESS
         .onReceive(NotificationCenter.default.publisher(for: PerfProbe.harnessForceAuthBlock)) { note in
             if note.object as? String == "clearevents" {
                 service.replaceEventsForTests([])
@@ -465,8 +465,8 @@ struct PopoverView: View {
                 onSelect: selectEvent,
                 // The date bar right above already names the day.
                 showsDayLabel: false,
-                emptyMessage: localization.tr(isAwaitingFirstSync ? "popover.day.loading" : "popover.day.empty"),
-                isLoading: isAwaitingFirstSync
+                emptyMessage: emptyDayMessage,
+                isLoading: emptyDayNote == .loading
             )
         }
     }
@@ -550,8 +550,11 @@ struct PopoverView: View {
     private var footer: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             HStack(spacing: 8) {
-                Text(localization.syncStatusText(service.syncStatus, relativeTo: context.date))
+                // Next to its Retry and Settings buttons a blocking status is shortened; the whole
+                // sentence stays in the tooltip.
+                Text(localization.compactSyncStatusText(service.syncStatus, relativeTo: context.date))
                     .lineLimit(1)
+                    .help(localization.syncStatusText(service.syncStatus, relativeTo: context.date))
 
                 if service.syncStatus.isOfflineCached {
                     Image(systemName: "wifi.slash")
@@ -938,13 +941,20 @@ struct PopoverView: View {
             to: AppTimeZone.calendar.startOfDay(for: Date()))!
     }
 
-    /// Nothing has arrived from the calendar yet and a sync is on its way: an empty day then
-    /// means "loading", not "free".
-    private var isAwaitingFirstSync: Bool {
-        guard service.events.isEmpty else { return false }
-        switch service.syncStatus {
-        case .idle, .syncing: return true
-        default: return false
+    private var emptyDayNote: SyncPresentationPolicy.EmptyDayNote? {
+        SyncPresentationPolicy.emptyDayNote(
+            eventsAreEmpty: service.events.isEmpty,
+            coverage: service.eventCoverage,
+            syncStatus: service.syncStatus,
+            dayStart: AppTimeZone.calendar.startOfDay(for: selectedDate)
+        )
+    }
+
+    private var emptyDayMessage: String? {
+        switch emptyDayNote {
+        case .loading: localization.tr("popover.day.loading")
+        case .free: localization.tr("popover.day.empty")
+        case nil: nil
         }
     }
 
