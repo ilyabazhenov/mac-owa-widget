@@ -592,7 +592,7 @@ struct PopoverView: View {
 
                 // What blocks sync (a password, a certificate, a login host) is fixed in Settings.
                 if service.syncStatus.blocksSync {
-                    Button(localization.tr("popover.settings")) { openSettings() }
+                    Button(localization.tr("popover.settings")) { openSettings(.accounts) }
                         .buttonStyle(.plain)
                         .font(.app(.footnote, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
@@ -642,7 +642,10 @@ struct PopoverView: View {
         PostJoinDismissController.shared.dismissPopover()
     }
 
-    private func openSettings() {
+    /// Opens Settings, on `pane` when the reason for going there is known (a password to fix, an
+    /// account to add); otherwise on the section the user left it at.
+    private func openSettings(_ pane: SettingsPane? = nil) {
+        if let pane { UserDefaults.standard.set(pane.rawValue, forKey: SettingsPane.storageKey) }
         NSApp.activate(ignoringOtherApps: true)
         openWindow(id: "settings")
         // The popover floats above ordinary windows: left open, it covers Settings.
@@ -882,7 +885,7 @@ struct PopoverView: View {
                 welcomePoint("person.2", "popover.welcome.point.accounts")
             }
             .padding(.vertical, 4)
-            Button { openSettings() } label: {
+            Button { openSettings(.accounts) } label: {
                 Text(localization.tr("popover.welcome.action"))
                     .font(.app(.body, weight: .semibold))
                     .padding(.horizontal, 16)
@@ -932,7 +935,7 @@ struct PopoverView: View {
                 // A password, a certificate or a login host is fixed in Settings: the way there
                 // sits next to the message instead of being left for the user to find.
                 if service.syncStatus.blocksSync {
-                    Button(localization.tr("popover.open.settings")) { openSettings() }
+                    Button(localization.tr("popover.open.settings")) { openSettings(.accounts) }
                 }
             }
             .font(.app(.body))

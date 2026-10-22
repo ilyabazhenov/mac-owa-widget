@@ -149,7 +149,8 @@ struct OWAWidgetApp: App {
                 .environmentObject(updateCheckService)
                 .environmentObject(appearanceService)
                 .environment(\.locale, localizationService.locale)
-                .frame(minWidth: 600, minHeight: 360)
+                // The sidebar needs the room: a window remembered at the old 600 pt grows to fit.
+                .frame(minWidth: 680, minHeight: 600)
                 .onAppear {
                     DiagnosticLog.event("Window settings appeared")
                     syncLocalization()

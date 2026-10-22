@@ -1,13 +1,11 @@
 "app.name" = "OWA Widget";
 "window.settings.title" = "Настройки";
 
-"language.section.title" = "Язык";
 "language.picker.title" = "Язык приложения";
 "language.option.system" = "Системный";
 "language.option.english" = "English";
 "language.option.russian" = "Русский";
 
-"appearance.section.title" = "Оформление";
 "appearance.picker.title" = "Тема приложения";
 "appearance.option.system" = "Системная";
 "appearance.option.light" = "Светлая";
@@ -66,7 +64,6 @@
 "preferences.shortcuts.section" = "Горячие клавиши";
 "preferences.shortcuts.createMeeting" = "Новая встреча";
 "preferences.shortcuts.joinMeeting" = "Подключиться к встрече";
-"preferences.shortcuts.joinMeeting.hint" = "Хоткей: %@";
 
 "preferences.startup.section" = "Запуск";
 "preferences.startup.launchAtLogin" = "Запускать при входе в систему";
@@ -75,7 +72,7 @@
 
 "preferences.timezone.section" = "Часовой пояс";
 "preferences.timezone.picker" = "Пояс отображения";
-"preferences.timezone.hint" = "Время встреч, дни и countdown показываются в этом поясе.";
+"preferences.timezone.hint" = "Время встреч, дни и отсчёт показываются в этом поясе.";
 "timezone.option.system" = "Системный";
 "timezone.city.kaliningrad" = "Калининград";
 "timezone.city.moscow" = "Москва";
@@ -92,9 +89,9 @@
 "preferences.sync.section" = "Синхронизация";
 "preferences.sync.interval" = "Интервал синхронизации";
 "preferences.menubar.section" = "Строка меню";
-"preferences.menubar.display" = "Отображение в строке меню";
-"preferences.menubar.display.countdown" = "Как сейчас: countdown";
-"preferences.menubar.display.status" = "Status: Next / Now / Free";
+"preferences.menubar.display" = "Что показывать";
+"preferences.menubar.display.countdown" = "Обратный отсчёт";
+"preferences.menubar.display.status" = "Статус";
 "preferences.menubar.display.smart" = "Умный";
 "menubar.smart.tip.in.meeting" = "осталось %@";
 "menubar.smart.tip.overlap" = "%@ одновременно";
@@ -105,15 +102,13 @@
 "menubar.smart.tip.later" = "через %@";
 "menubar.smart.tip.no.link" = "ссылки на звонок нет";
 
-"preferences.popover.section" = "Окно";
-"preferences.popover.size" = "Размер окна";
+"preferences.popover.section" = "Поповер";
+"preferences.popover.size" = "Размер";
 "popover.size.compact" = "Компактный";
 "popover.size.medium" = "Средний";
 "popover.size.large" = "Большой";
 
-"preferences.timeline.section" = "Таймлайн";
 "preferences.timeline.dimPastMeetings" = "Приглушать прошедшие встречи на сегодня";
-"preferences.notifications.section" = "Уведомления";
 "preferences.notifications.style" = "Тип напоминания";
 "preferences.notifications.style.system" = "Системные уведомления";
 "preferences.notifications.style.inApp" = "Баннер в приложении";
@@ -646,14 +641,14 @@
 "mail.settings.enabled.hint" = "Окно почты и счётчик непрочитанных. Письма не сохраняются на диск; чтение идёт тем же подключением, что и календарь.";
 "mail.settings.noAccount" = "Для почты нужен аккаунт Exchange (Настройки → Аккаунты).";
 "mail.settings.account" = "Аккаунт";
-"mail.settings.section.popover" = "Почта: поповер и строка меню";
+"mail.settings.section.popover" = "В поповере и строке меню";
 "mail.settings.popoverSection" = "Показывать почту в поповере";
 "mail.settings.popoverSection.hint" = "Полоса «Почта» и панель «Входящие». Выключите, чтобы почта открывалась только отдельным окном: кнопкой-конвертом в поповере, из меню по правому клику на иконке или сочетанием %@.";
 "mail.settings.menuBarBadge" = "Показывать число непрочитанных (@N) в строке меню";
 "mail.settings.poll" = "Проверять новые письма";
 "mail.settings.poll.minutes" = "Каждые %d мин";
 "mail.settings.poll.hint" = "Один лёгкий запрос счётчика «Входящих». Пока синхронизация остановлена (например, нужен пароль), почта тоже не проверяется.";
-"mail.settings.section.reading" = "Почта: чтение";
+"mail.settings.section.reading" = "Чтение";
 "mail.settings.markRead" = "Отмечать прочитанным";
 "mail.settings.markRead.onOpen" = "Сразу при открытии";
 "mail.settings.markRead.afterDelay" = "Через 3 секунды";
@@ -829,3 +824,28 @@
 "mail.compose.original.hide" = "Свернуть письмо";
 "mail.reading.lightBackground" = "Светлый фон";
 "mail.reading.darkBackground" = "Тёмный фон";
+
+/* Settings window: sidebar sections and search */
+"settings.pane.general" = "Основные";
+"settings.pane.menuBar" = "Строка меню и поповер";
+"settings.pane.reminders" = "Напоминания";
+"settings.pane.invitations" = "Приглашения";
+"settings.group.languageTheme" = "Язык и тема";
+"settings.search.prompt" = "Поиск";
+"settings.search.empty" = "Ничего не найдено";
+"settings.search.keywords.general" = "запуск автозапуск вход язык тема темная светлая оформление часовой пояс время горячие клавиши сочетания хоткей клавиатура обновления sparkle версия";
+"settings.search.keywords.accounts" = "аккаунт учетная запись exchange owa google icloud календарь пароль сервер сертификат вход синхронизация интервал";
+"settings.search.keywords.menuBar" = "строка меню отсчет обратный статус умный значок поповер окно размер таймлайн прошедшие приглушать счетчик";
+"settings.search.keywords.reminders" = "напоминания уведомления оповещения баннер звук экран позиция перед встречей";
+"settings.search.keywords.invitations" = "приглашения уведомления переносы отмены панель rsvp ответ счетчик конверт";
+"settings.search.keywords.mail" = "почта письма входящие уведомления счетчик непрочитанные рассылки беседы свайпы прочитанным проверка";
+"settings.search.keywords.colleagues" = "коллеги занятость свободен занят комната кэш строки";
+"settings.search.keywords.mcp" = "ai ии mcp claude cursor codex vs code ассистент клиенты журнал запросы подключение";
+"settings.search.keywords.about" = "версия сборка автор github диагностика лог поддержка";
+"preferences.shortcuts.openMail" = "Открыть почту";
+"preferences.shortcuts.always.hint" = "Эти два сочетания работают всегда.";
+"preferences.menubar.counters.hint" = "Счётчики ✉︎ и @ настраиваются в разделах «Приглашения» и «Почта».";
+"preferences.reminders.group.before" = "Перед встречей";
+"preferences.reminders.group.banner" = "Баннер";
+"mcp.access.section" = "Доступ";
+"mcp.mail.needsMail" = "Сначала включите почту в разделе «Почта».";

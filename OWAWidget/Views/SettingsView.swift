@@ -4,38 +4,88 @@ struct SettingsView: View {
     @StateObject private var vm: SettingsViewModel
     @EnvironmentObject private var localization: LocalizationService
     @State private var accountPendingDeletion: CalendarAccount?
+    @AppStorage(SettingsPane.storageKey) private var storedPane: String = SettingsPane.general.rawValue
+    @State private var searchText = ""
 
     init(calendarService: CalendarService) {
         _vm = StateObject(wrappedValue: SettingsViewModel(calendarService: calendarService))
     }
 
+    /// Sections a search leaves; all of them with no search.
+    private var visiblePanes: [SettingsPane] {
+        SettingsSearch.panes(matching: searchText, translate: { localization.tr($0) })
+    }
+
+    private var selection: Binding<SettingsPane?> {
+        Binding(
+            get: { SettingsPane(rawValue: storedPane) ?? .general },
+            set: { if let pane = $0 { storedPane = pane.rawValue } }
+        )
+    }
+
     var body: some View {
-        TabView {
-            accountsTab
-                .tabItem { Label(localization.tr("settings.tab.accounts"), systemImage: "person.2") }
-                .onAppear { DiagnosticLog.event("SettingsView accounts tab appeared") }
-
-            PreferencesView(vm: vm)
-                .tabItem { Label(localization.tr("settings.tab.preferences"), systemImage: "slider.horizontal.3") }
-                .onAppear { DiagnosticLog.event("SettingsView preferences tab appeared") }
-
-            MCPSettingsView()
-                .tabItem { Label(localization.tr("settings.tab.mcp"), systemImage: "sparkles") }
-                .onAppear { DiagnosticLog.event("SettingsView mcp tab appeared") }
-
-            AboutView()
-                .tabItem { Label(localization.tr("settings.tab.about"), systemImage: "info.circle") }
-                .onAppear { DiagnosticLog.event("SettingsView about tab appeared") }
+        // A sidebar rather than tabs: nine sections fit, and there is room for search. The tab bar
+        // it replaced folded into a ">>" menu at the fifth tab.
+        NavigationSplitView {
+            List(visiblePanes, selection: selection) { pane in
+                Label(localization.tr(pane.titleKey), systemImage: pane.systemImage)
+                    .tag(pane)
+            }
+            // Wide enough for the longest title ("Menu bar and popover") without truncation.
+            .navigationSplitViewColumnWidth(min: 220, ideal: 220, max: 260)
+            .overlay {
+                if visiblePanes.isEmpty {
+                    Text(localization.tr("settings.search.empty"))
+                        .font(.app(.footnote))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } detail: {
+            detail(for: selection.wrappedValue ?? .general)
+                .navigationTitle(localization.tr((selection.wrappedValue ?? .general).titleKey))
         }
-        // Four tabs: at 480 pt macOS folds the whole tab bar into a ">>" overflow menu.
-        .frame(width: 600)
-        .onAppear { DiagnosticLog.event("SettingsView TabView appeared") }
+        .searchable(text: $searchText, placement: .sidebar, prompt: localization.tr("settings.search.prompt"))
+        // A search that hides the open section moves to the first one it leaves.
+        .onChange(of: searchText) { _ in
+            let visible = visiblePanes
+            if let current = selection.wrappedValue, !visible.contains(current), let first = visible.first {
+                storedPane = first.rawValue
+            }
+        }
+        // Room for the account sheet (580 pt) inside the window.
+        .frame(minWidth: 680, minHeight: 600)
+        .onAppear { DiagnosticLog.event("SettingsView sidebar appeared pane=\(storedPane)") }
         .sheet(item: $vm.editingAccount) { _ in
             accountSheet
         }
     }
 
-    // MARK: - Accounts tab
+    @ViewBuilder
+    private func detail(for pane: SettingsPane) -> some View {
+        switch pane {
+        case .general: GeneralSettingsPane(vm: vm)
+        case .accounts: accountsPane
+        case .menuBar: MenuBarSettingsPane(vm: vm)
+        case .reminders: RemindersSettingsPane(vm: vm)
+        case .invitations: InvitationsSettingsPane(vm: vm)
+        case .mail: MailSettingsPane()
+        case .colleagues: ColleaguesSettingsPane(vm: vm)
+        case .mcp: MCPSettingsView()
+        case .about: AboutView()
+        }
+    }
+
+    /// The accounts list with sync under it: the interval is how often these accounts are read.
+    private var accountsPane: some View {
+        VStack(spacing: 0) {
+            accountsTab
+            Divider()
+            SyncSettingsSection(vm: vm)
+                .frame(height: 96)
+        }
+    }
+
+    // MARK: - Accounts
 
     private var accountsTab: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -188,7 +238,9 @@ struct SettingsView: View {
             }
             .padding()
         }
-        .frame(width: 420, height: 380)
+        // Tall enough for every section of the form down to "Test connection", adding a new
+        // account included (it has the account type on top); at 380 pt the button was cut off.
+        .frame(width: 460, height: 580)
         // One alert, not two. Stacking `.alert` modifiers on the same view means SwiftUI
         // presents whichever one it picks and silently drops the other — and the one it drops
         // here would be the only way to approve a login host, leaving sync latched with no way

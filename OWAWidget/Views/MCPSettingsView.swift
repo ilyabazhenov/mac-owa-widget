@@ -6,6 +6,7 @@ import SwiftUI
 struct MCPSettingsView: View {
     @ObservedObject private var server = MCPServerService.shared
     @EnvironmentObject private var localization: LocalizationService
+    @EnvironmentObject private var mail: MailService
     @State private var copiedSnippet: Snippet?
 
     enum Snippet: String, CaseIterable, Identifiable {
@@ -15,7 +16,8 @@ struct MCPSettingsView: View {
 
     var body: some View {
         Form {
-            Section {
+            // Access: the switch, what it shares, the status, and what an assistant may change.
+            Section(localization.tr("mcp.access.section")) {
                 Toggle(localization.tr("mcp.enabled"), isOn: $server.isEnabled)
                 Text(localization.tr("mcp.description"))
                     .font(.app(.footnote))
@@ -28,32 +30,42 @@ struct MCPSettingsView: View {
                         .foregroundStyle(.orange)
                 }
                 LabeledContent(localization.tr("mcp.status"), value: statusText)
-            }
-
-            Section {
-                Toggle(localization.tr("mcp.createMeetings"), isOn: $server.canCreateMeetings)
-                    .disabled(!server.isEnabled)
-                Text(localization.tr("mcp.createMeetings.description"))
-                    .font(.app(.footnote))
-                    .foregroundStyle(.secondary)
-                Toggle(localization.tr("mcp.cancelMeetings"), isOn: $server.canCancelMeetings)
-                    .disabled(!server.isEnabled)
-                Text(localization.tr("mcp.cancelMeetings.description"))
-                    .font(.app(.footnote))
-                    .foregroundStyle(.secondary)
+                SettingsToggle(
+                    title: localization.tr("mcp.createMeetings"),
+                    info: localization.tr("mcp.createMeetings.description"),
+                    isOn: $server.canCreateMeetings
+                )
+                .disabled(!server.isEnabled)
+                .padding(.leading, 16)
+                SettingsToggle(
+                    title: localization.tr("mcp.cancelMeetings"),
+                    info: localization.tr("mcp.cancelMeetings.description"),
+                    isOn: $server.canCancelMeetings
+                )
+                .disabled(!server.isEnabled)
+                .padding(.leading, 16)
             }
 
             Section(localization.tr("mcp.mail.section")) {
-                Toggle(localization.tr("mcp.mail.read"), isOn: $server.canReadMail)
-                    .disabled(!server.isEnabled)
-                Text(localization.tr("mcp.mail.read.description"))
-                    .font(.app(.footnote))
-                    .foregroundStyle(.secondary)
-                Toggle(localization.tr("mcp.mail.send"), isOn: $server.canSendMail)
-                    .disabled(!server.isEnabled || !server.canReadMail)
-                Text(localization.tr("mcp.mail.send.description"))
-                    .font(.app(.footnote))
-                    .foregroundStyle(.secondary)
+                // Assistants read mail through the app, so it has to be on there first.
+                if !mail.settings.enabled {
+                    Label(localization.tr("mcp.mail.needsMail"), systemImage: "info.circle")
+                        .font(.app(.footnote))
+                        .foregroundStyle(.secondary)
+                }
+                SettingsToggle(
+                    title: localization.tr("mcp.mail.read"),
+                    info: localization.tr("mcp.mail.read.description"),
+                    isOn: $server.canReadMail
+                )
+                .disabled(!server.isEnabled)
+                SettingsToggle(
+                    title: localization.tr("mcp.mail.send"),
+                    info: localization.tr("mcp.mail.send.description"),
+                    isOn: $server.canSendMail
+                )
+                .disabled(!server.isEnabled || !server.canReadMail)
+                .padding(.leading, 16)
                 if server.canReadMail {
                     Label {
                         Text(localization.tr("mcp.mail.warning")).font(.app(.footnote))

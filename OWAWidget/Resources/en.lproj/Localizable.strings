@@ -1,13 +1,11 @@
 "app.name" = "OWA Widget";
 "window.settings.title" = "Settings";
 
-"language.section.title" = "Language";
 "language.picker.title" = "App language";
 "language.option.system" = "System";
 "language.option.english" = "English";
 "language.option.russian" = "Russian";
 
-"appearance.section.title" = "Appearance";
 "appearance.picker.title" = "App theme";
 "appearance.option.system" = "System";
 "appearance.option.light" = "Light";
@@ -66,7 +64,6 @@
 "preferences.shortcuts.section" = "Shortcuts";
 "preferences.shortcuts.createMeeting" = "New Meeting";
 "preferences.shortcuts.joinMeeting" = "Join meeting";
-"preferences.shortcuts.joinMeeting.hint" = "Hotkey: %@";
 
 "preferences.startup.section" = "Startup";
 "preferences.startup.launchAtLogin" = "Launch at login";
@@ -92,9 +89,9 @@
 "preferences.sync.section" = "Sync";
 "preferences.sync.interval" = "Sync interval";
 "preferences.menubar.section" = "Menu Bar";
-"preferences.menubar.display" = "Menu bar display";
-"preferences.menubar.display.countdown" = "Countdown (current)";
-"preferences.menubar.display.status" = "Status: Next / Now / Free";
+"preferences.menubar.display" = "Show";
+"preferences.menubar.display.countdown" = "Countdown";
+"preferences.menubar.display.status" = "Status";
 "preferences.menubar.display.smart" = "Smart";
 "menubar.smart.tip.in.meeting" = "%@ left";
 "menubar.smart.tip.overlap" = "%@ at once";
@@ -105,15 +102,13 @@
 "menubar.smart.tip.later" = "In %@";
 "menubar.smart.tip.no.link" = "no join link";
 
-"preferences.popover.section" = "Window";
-"preferences.popover.size" = "Window size";
+"preferences.popover.section" = "Popover";
+"preferences.popover.size" = "Size";
 "popover.size.compact" = "Compact";
 "popover.size.medium" = "Medium";
 "popover.size.large" = "Large";
 
-"preferences.timeline.section" = "Timeline";
 "preferences.timeline.dimPastMeetings" = "Dim past meetings on today's timeline";
-"preferences.notifications.section" = "Notifications";
 "preferences.notifications.style" = "Reminder style";
 "preferences.notifications.style.system" = "System notifications";
 "preferences.notifications.style.inApp" = "In-app banner";
@@ -646,14 +641,14 @@
 "mail.settings.enabled.hint" = "The mail window and the unread count. Messages are never stored on disk; reading happens over the same connection as the calendar.";
 "mail.settings.noAccount" = "Mail needs an Exchange account (Settings → Accounts).";
 "mail.settings.account" = "Account";
-"mail.settings.section.popover" = "Mail: Popover and Menu Bar";
+"mail.settings.section.popover" = "In the popover and menu bar";
 "mail.settings.popoverSection" = "Show mail in the popover";
 "mail.settings.popoverSection.hint" = "The “Mail” strip and the Inbox panel. Turn off to keep mail in its own window: open it with the envelope in the popover, from the menu bar icon’s right-click menu, or with %@.";
 "mail.settings.menuBarBadge" = "Show the unread count (@N) in the menu bar";
 "mail.settings.poll" = "Check for new mail";
 "mail.settings.poll.minutes" = "Every %d min";
 "mail.settings.poll.hint" = "One lightweight request for the Inbox count. While sync is paused (for example, the password is needed), mail is not checked either.";
-"mail.settings.section.reading" = "Mail: Reading";
+"mail.settings.section.reading" = "Reading";
 "mail.settings.markRead" = "Mark as read";
 "mail.settings.markRead.onOpen" = "When opened";
 "mail.settings.markRead.afterDelay" = "After 3 seconds";
@@ -829,3 +824,28 @@
 "mail.compose.original.hide" = "Hide the message";
 "mail.reading.lightBackground" = "Light background";
 "mail.reading.darkBackground" = "Dark background";
+
+/* Settings window: sidebar sections and search */
+"settings.pane.general" = "General";
+"settings.pane.menuBar" = "Menu bar and popover";
+"settings.pane.reminders" = "Reminders";
+"settings.pane.invitations" = "Invitations";
+"settings.group.languageTheme" = "Language and theme";
+"settings.search.prompt" = "Search";
+"settings.search.empty" = "No matching settings";
+"settings.search.keywords.general" = "startup login launch language theme dark light appearance time zone shortcuts hotkey keyboard updates sparkle version";
+"settings.search.keywords.accounts" = "account exchange owa google icloud calendar password server certificate login sync interval";
+"settings.search.keywords.menuBar" = "menu bar countdown status smart icon popover window size timeline past dim counter badge";
+"settings.search.keywords.reminders" = "reminders notifications alerts banner sound screen position before meeting";
+"settings.search.keywords.invitations" = "invitations notifications rescheduled cancelled panel rsvp counter badge envelope";
+"settings.search.keywords.mail" = "mail email inbox notifications counter badge unread newsletters conversations swipe read check";
+"settings.search.keywords.colleagues" = "colleagues availability free busy room cache rows";
+"settings.search.keywords.mcp" = "ai mcp claude cursor codex vs code assistant clients journal requests connect";
+"settings.search.keywords.about" = "version build author github diagnostics log support";
+"preferences.shortcuts.openMail" = "Open Mail";
+"preferences.shortcuts.always.hint" = "These two shortcuts are always on.";
+"preferences.menubar.counters.hint" = "The ✉︎ and @ counters are set in Invitations and Mail.";
+"preferences.reminders.group.before" = "Before a meeting";
+"preferences.reminders.group.banner" = "Banner";
+"mcp.access.section" = "Access";
+"mcp.mail.needsMail" = "Turn on mail in the Mail section first.";

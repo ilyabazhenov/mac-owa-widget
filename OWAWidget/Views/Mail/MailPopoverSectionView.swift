@@ -137,8 +137,7 @@ struct MailPopoverSectionView: View {
     }
 }
 
-/// The mail sections of the Preferences tab. Changes apply at once, like the language and theme
-/// pickers there: they do not wait for "Save Preferences".
+/// The Mail section of Settings. Changes apply at once, like every other setting.
 struct MailSettingsSections: View {
     @ObservedObject var mail: MailService
     @EnvironmentObject private var localization: LocalizationService
@@ -150,11 +149,11 @@ struct MailSettingsSections: View {
     var body: some View {
         Group {
             Section(localization.tr("settings.tab.mail")) {
-                Toggle(localization.tr("mail.settings.enabled"), isOn: binding(\.enabled))
-                Text(localization.tr("mail.settings.enabled.hint"))
-                    .font(.app(.footnote))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                SettingsToggle(
+                    title: localization.tr("mail.settings.enabled"),
+                    info: localization.tr("mail.settings.enabled.hint"),
+                    isOn: binding(\.enabled)
+                )
                 if mail.mailAccounts.isEmpty {
                     Label(localization.tr("mail.settings.noAccount"), systemImage: "info.circle")
                         .font(.app(.footnote))
@@ -173,36 +172,37 @@ struct MailSettingsSections: View {
             }
 
             Section(localization.tr("mail.settings.section.popover")) {
-                Toggle(localization.tr("mail.settings.popoverSection"), isOn: binding(\.popoverSectionEnabled))
-                    .disabled(!mail.settings.enabled)
-                Text(localization.tr("mail.settings.popoverSection.hint", "Ctrl+Option+M"))
-                    .font(.app(.footnote))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                SettingsToggle(
+                    title: localization.tr("mail.settings.popoverSection"),
+                    info: localization.tr("mail.settings.popoverSection.hint", "⌃⌥M"),
+                    isOn: binding(\.popoverSectionEnabled)
+                )
+                .disabled(!mail.settings.enabled)
                 Toggle(localization.tr("mail.settings.menuBarBadge"), isOn: binding(\.menuBarBadgeEnabled))
                     .disabled(!mail.settings.enabled)
-                Toggle(localization.tr("mail.settings.peopleOnly"), isOn: binding(\.peopleOnly))
-                    .disabled(!mail.settings.enabled)
-                Text(localization.tr("mail.settings.peopleOnly.hint"))
-                    .font(.app(.footnote))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                SettingsToggle(
+                    title: localization.tr("mail.settings.peopleOnly"),
+                    info: localization.tr("mail.settings.peopleOnly.hint"),
+                    isOn: binding(\.peopleOnly)
+                )
+                .disabled(!mail.settings.enabled)
                 Picker(localization.tr("mail.settings.notify"), selection: binding(\.notifyMode)) {
                     ForEach(MailNotifyMode.allCases) { mode in
                         Text(localization.tr(mode.localizationKey)).tag(mode)
                     }
                 }
                 .disabled(!mail.settings.enabled)
-                Picker(localization.tr("mail.settings.poll"), selection: binding(\.pollMinutes)) {
+                Picker(selection: binding(\.pollMinutes)) {
                     ForEach(MailSettings.pollOptions, id: \.self) { minutes in
                         Text(localization.tr("mail.settings.poll.minutes", minutes)).tag(minutes)
                     }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(localization.tr("mail.settings.poll"))
+                        SettingsInfoButton(text: localization.tr("mail.settings.poll.hint"))
+                    }
                 }
                 .disabled(!mail.settings.enabled)
-                Text(localization.tr("mail.settings.poll.hint"))
-                    .font(.app(.footnote))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section(localization.tr("mail.settings.section.reading")) {
@@ -210,12 +210,12 @@ struct MailSettingsSections: View {
                     .disabled(!mail.settings.enabled)
                 Toggle(localization.tr("mail.list.groupByConversation"), isOn: binding(\.groupByConversation))
                     .disabled(!mail.settings.enabled)
-                Toggle(localization.tr("mail.settings.swipeActions"), isOn: binding(\.swipeActionsEnabled))
-                    .disabled(!mail.settings.enabled)
-                Text(localization.tr("mail.settings.swipeActions.hint"))
-                    .font(.app(.footnote))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                SettingsToggle(
+                    title: localization.tr("mail.settings.swipeActions"),
+                    info: localization.tr("mail.settings.swipeActions.hint"),
+                    isOn: binding(\.swipeActionsEnabled)
+                )
+                .disabled(!mail.settings.enabled)
                 Picker(localization.tr("mail.settings.markRead"), selection: binding(\.markReadPolicy)) {
                     ForEach(MailMarkReadPolicy.allCases) { policy in
                         Text(localization.tr(policy.localizationKey)).tag(policy)

@@ -66,6 +66,12 @@ struct AboutView: View {
             .font(.app(.footnote))
             .foregroundStyle(.secondary)
             .padding(.top, 4)
+
+            // Also in the menu bar icon's menu; here it is where someone looking for support goes.
+            Button(localization.tr("menu.copy.diagnostics")) {
+                DiagnosticLog.copyReportToClipboard()
+            }
+            .padding(.top, 8)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
