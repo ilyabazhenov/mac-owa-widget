@@ -271,6 +271,55 @@ final class OWAMailParsersTests: XCTestCase {
         XCTAssertEqual(page.nextCursor, .after(instanceKey: "K1"))
     }
 
+    func testItemPageRowCarriesWhatAConversationRowShows() throws {
+        let json = """
+        {"Body":{"ResponseMessages":{"Items":[{"ResponseCode":"NoError","RootFolder":{"IncludesLastItemInRange":true,
+         "TotalItemsInView":2,"Items":[
+          {"ItemId":{"Id":"I1","ChangeKey":"C1"},"ConversationId":{"Id":"CV1"},"ParentFolderId":{"Id":"INBOX"},"Subject":"Release",
+           "ItemClass":"IPM.Note","From":{"Mailbox":{"Name":"Grace Miller","EmailAddress":"g.miller@example.com"}},
+           "DisplayTo":"Alex Morgan; Sam Lee","DateTimeReceived":"2026-10-16T10:00:00+03:00","IsRead":false,
+           "Categories":["Red"],"Flag":{"FlagStatus":"Flagged"},"Importance":"High",
+           "Preview":"[EXTERNAL] Ship it","InstanceKey":"K1"},
+          {"ItemId":{"Id":"I2"},"ConversationId":{"Id":"CV1"},"Subject":"RE: Release","IsRead":true,"InstanceKey":"K2"}]}}]}}}
+        """
+        let page = try OWAMailParsers.itemPage(data(json))
+        XCTAssertNil(page.nextCursor, "the last item in range ends the folder")
+        let rows = page.items.map(\.asListRow)
+        XCTAssertEqual(rows.map(\.id), ["I1", "I2"], "two messages of one conversation are two rows")
+        let row = rows[0]
+        XCTAssertTrue(row.isSingleMessage)
+        XCTAssertEqual(row.conversationKey, "CV1")
+        XCTAssertEqual(row.itemRefs, [MailItemRef(id: "I1", changeKey: "C1")])
+        XCTAssertEqual(row.topic, "Release")
+        XCTAssertEqual(row.senders, ["Grace Miller"])
+        XCTAssertEqual(row.senderEmail, "g.miller@example.com")
+        XCTAssertEqual(row.recipients, ["Alex Morgan", "Sam Lee"])
+        XCTAssertEqual(row.unreadCount, 1)
+        XCTAssertEqual(row.messageCount, 1)
+        XCTAssertEqual(row.categories, ["Red"])
+        XCTAssertTrue(row.isFlagged)
+        XCTAssertEqual(row.importance, .high)
+        XCTAssertEqual(row.parentFolderID, "INBOX")
+        XCTAssertEqual(row.preview, "Ship it")
+        XCTAssertTrue(row.hasExternalBanner)
+        XCTAssertEqual(row.uniformItemKind, .note)
+        XCTAssertFalse(rows[1].isUnread)
+        XCTAssertTrue(row.with(unreadCount: 0).isSingleMessage, "a changed row stays a message")
+    }
+
+    func testSearchForMessagesListsEachMessage() throws {
+        let json = """
+        {"Body":{"ResponseCode":"NoError","SearchResults":{"Conversations":null,"Items":[
+          {"ItemId":{"Id":"I1"},"ConversationId":{"Id":"CV1"},"ParentFolderId":{"Id":"F1"},"Subject":"Release","IsRead":false},
+          {"ItemId":{"Id":"I2"},"ConversationId":{"Id":"CV1"},"ParentFolderId":{"Id":"F1"},"Subject":"RE: Release","IsRead":true}],
+         "MoreResultsAvailable":false,"SearchRefiners":[],"SearchTerms":["release"]}}}
+        """
+        let page = try OWAMailParsers.searchPage(data(json), offset: 0)
+        XCTAssertEqual(page.conversations.map(\.id), ["I1", "I2"])
+        XCTAssertTrue(page.conversations.allSatisfy(\.isSingleMessage))
+        XCTAssertEqual(page.conversations.first?.parentFolderID, "F1")
+    }
+
     // MARK: - Search
 
     func testEmptySearchIsNullNotArray() throws {

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import Quartz
 import SwiftUI
@@ -250,6 +251,7 @@ final class MailWindowModel: ObservableObject {
     private struct ListKey: Hashable {
         let folder: MailFolderRef
         let filter: MailListFilter
+        let byConversation: Bool
     }
     private struct ListSnapshot {
         let conversations: [MailConversationSummary]
@@ -262,7 +264,17 @@ final class MailWindowModel: ObservableObject {
     /// leftovers of a search being cleared: only then do its changes go into the snapshot.
     private var listShowsFolderPage = false
     private static let snapshotLimit = 20
-    private var currentListKey: ListKey? { ListKey(folder: selectedFolder, filter: mode.serverFilter) }
+    /// The snapshot the rows on screen belong to: by the grouping they were loaded with, not the
+    /// setting, which can change while they are still on screen.
+    private var currentListKey: ListKey? { listKey(byConversation: listByConversation ?? byConversation) }
+    private func listKey(byConversation: Bool) -> ListKey {
+        ListKey(folder: selectedFolder, filter: mode.serverFilter, byConversation: byConversation)
+    }
+    /// The list shows conversations (the default), or every message as a row of its own.
+    private var byConversation: Bool { service.settings.groupByConversation }
+    /// The grouping the rows on screen were loaded with; `nil` before the first load.
+    private var listByConversation: Bool?
+    private var settingsObserver: AnyCancellable?
     @Published private(set) var nextCursor: MailListCursor?
     @Published private(set) var isLoadingList = false
     @Published private(set) var listError: String?
@@ -281,6 +293,8 @@ final class MailWindowModel: ObservableObject {
 
     /// The conversation shown in the reader.
     @Published private(set) var selectedConversationID: String?
+    /// The open row is one message of a list of messages, not a conversation.
+    private var selectedIsMessage = false
     /// Conversations picked with ⌘/⇧-click for a list action.
     @Published private(set) var selectedIDs: Set<String> = []
     @Published private(set) var thread: MailThread?
@@ -334,6 +348,26 @@ final class MailWindowModel: ObservableObject {
         self.service = service
         self.defaults = defaults
         expandedFolderIDs = Set(defaults.stringArray(forKey: Self.expandedFoldersKey) ?? [])
+        settingsObserver = service.$settings
+            .map(\.groupByConversation)
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.groupingChanged() }
+            }
+    }
+
+    /// Conversations became messages or back: nothing open or picked means the same row any
+    /// more, so the selection goes and the list loads again (from the start, search included).
+    private func groupingChanged() {
+        // A model that never loaded a list (the inbox panel's reader) has nothing to reload.
+        guard listGeneration > 0 else { return }
+        clearSelection()
+        expandedBundles = []
+        listShowsFolderPage = false
+        staleList = nil
+        activeSearch?.asMessages = !byConversation
+        Task { await reloadList() }
     }
 
     var isSearching: Bool { activeSearch != nil }
@@ -435,6 +469,7 @@ final class MailWindowModel: ObservableObject {
     func clearSelection() {
         markReadTask?.cancel()
         selectedConversationID = nil
+        selectedIsMessage = false
         selectedIDs = []
         thread = nil
         threadError = nil
@@ -449,18 +484,20 @@ final class MailWindowModel: ObservableObject {
         isLoadingList = true
         listError = nil
         defer { if generation == listGeneration { isLoadingList = false } }
+        let byConversation = byConversation
         do {
             if let activeSearch {
                 let page = try await service.search(activeSearch, offset: 0)
                 guard generation == listGeneration else { return }
+                listByConversation = byConversation
                 apply(searchPage: page, appending: false)
             } else {
-                let page = try await service.conversations(in: selectedFolder, cursor: .first, filter: mode.serverFilter)
+                let page = try await service.conversations(in: selectedFolder, cursor: .first, filter: mode.serverFilter, byConversation: byConversation)
                 guard generation == listGeneration else { return }
-                if let key = currentListKey {
-                    if listSnapshots[key] == nil, listSnapshots.count >= Self.snapshotLimit { listSnapshots.removeAll() }
-                    listSnapshots[key] = ListSnapshot(conversations: page.conversations, nextCursor: page.nextCursor, totalInView: page.totalInView, loadedAt: Date())
-                }
+                let key = listKey(byConversation: byConversation)
+                if listSnapshots[key] == nil, listSnapshots.count >= Self.snapshotLimit { listSnapshots.removeAll() }
+                listSnapshots[key] = ListSnapshot(conversations: page.conversations, nextCursor: page.nextCursor, totalInView: page.totalInView, loadedAt: Date())
+                listByConversation = byConversation
                 nextCursor = page.nextCursor
                 totalInView = page.totalInView
                 listShowsFolderPage = true
@@ -470,8 +507,9 @@ final class MailWindowModel: ObservableObject {
             selectedIDs = selectedIDs.intersection(conversations.map(\.id))
         } catch {
             guard generation == listGeneration, !MailCancellation.isCancellation(error) else { return }
-            if activeSearch == nil, let key = currentListKey, let snapshot = listSnapshots[key] {
+            if activeSearch == nil, let snapshot = listSnapshots[listKey(byConversation: byConversation)] {
                 // Keep what was loaded before and say how old it is, instead of an empty list.
+                listByConversation = byConversation
                 nextCursor = snapshot.nextCursor
                 totalInView = snapshot.totalInView
                 listShowsFolderPage = true
@@ -481,6 +519,7 @@ final class MailWindowModel: ObservableObject {
             }
             staleList = nil
             listShowsFolderPage = false
+            listByConversation = byConversation
             conversations = []
             nextCursor = nil
             listError = error.localizedDescription
@@ -502,8 +541,8 @@ final class MailWindowModel: ObservableObject {
                 let page = try await service.search(activeSearch, offset: conversations.count, count: count)
                 guard generation == listGeneration else { return }
                 apply(searchPage: page, appending: true)
-            } else if let cursor = nextCursor {
-                let page = try await service.conversations(in: selectedFolder, cursor: cursor, filter: mode.serverFilter)
+            } else if let cursor = nextCursor, let byConversation = listByConversation {
+                let page = try await service.conversations(in: selectedFolder, cursor: cursor, filter: mode.serverFilter, byConversation: byConversation)
                 guard generation == listGeneration else { return }
                 let known = Set(conversations.map(\.id))
                 // The cursor first: the list change writes the snapshot, and it must carry this
@@ -762,10 +801,21 @@ final class MailWindowModel: ObservableObject {
 
     // MARK: - Thread
 
+    /// Whether `id` is a row of one message in a list on screen (this one or the inbox panel's):
+    /// such a row opens alone. Any other id (a notification, the meeting card) is a conversation.
+    private func isMessageRow(_ id: String) -> Bool {
+        if let row = conversations.first(where: { $0.id == id }) ?? service.panelList.first(where: { $0.id == id }) {
+            return row.isSingleMessage
+        }
+        return id == selectedConversationID && selectedIsMessage
+    }
+
     func openConversation(_ id: String, reload: Bool = false) async {
         markReadTask?.cancel()
+        let asMessage = isMessageRow(id)
         if selectedConversationID != id {
             selectedConversationID = id
+            selectedIsMessage = asMessage
             thread = nil
             expandedMessageIDs = []
             readerDocuments = [:]
@@ -775,7 +825,9 @@ final class MailWindowModel: ObservableObject {
         isLoadingThread = true
         defer { isLoadingThread = false }
         do {
-            let loaded = try await service.thread(id, useCache: !reload, includingDeleted: selectedFolder == .distinguished(.deleteditems))
+            let loaded = asMessage
+                ? try await service.messageThread(MailItemRef(id: id, changeKey: nil), useCache: !reload)
+                : try await service.thread(id, useCache: !reload, includingDeleted: selectedFolder == .distinguished(.deleteditems))
             guard selectedConversationID == id else { return }
             thread = loaded
             var expanded = Set(loaded.messages.filter { !$0.isRead }.map(\.id))
@@ -858,8 +910,8 @@ final class MailWindowModel: ObservableObject {
         if let folderID = folderID(of: message.parentFolderID) {
             applyUnreadDeltas([folderID: isRead ? -1 : 1])
         }
-        if let conversationID = message.conversationID ?? selectedConversationID,
-           let index = conversations.firstIndex(where: { $0.id == conversationID }) {
+        let openRow = message.conversationID == nil ? selectedConversationID.flatMap { id in conversations.firstIndex { $0.id == id } } : nil
+        if let index = conversations.firstIndex(where: { $0.holds(message) }) ?? openRow {
             let old = conversations[index]
             conversations[index] = old.with(unreadCount: max(0, old.unreadCount + (isRead ? -1 : 1)))
         }
@@ -1102,7 +1154,8 @@ final class MailWindowModel: ObservableObject {
     // MARK: - Search
 
     func submitSearch() async {
-        let query = searchFilters.query(currentFolder: selectedFolder)
+        var query = searchFilters.query(currentFolder: selectedFolder)
+        query.asMessages = !byConversation
         guard !query.isEmpty else {
             clearSearch()
             await reloadList()

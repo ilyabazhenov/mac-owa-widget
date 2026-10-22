@@ -53,57 +53,32 @@ protocol MCPMailConfirmationPresenting: AnyObject {
     func close()
 }
 
-/// Same contract as `MCPMeetingConfirmationController`: exactly one answer per request — a button,
-/// the timeout or the client's cancellation — and a click on a replaced panel answers nothing.
+/// The prepare_mail question, over ``MCPConfirmationWaiter``: exactly one answer per request — a
+/// button, the timeout or the client's cancellation — and a click on a replaced panel answers nothing.
 @MainActor
 final class MCPMailConfirmationController: MCPMailConfirming {
     private let presenter: MCPMailConfirmationPresenting
-    private var pending: CheckedContinuation<MCPConfirmationOutcome, Never>?
-    private var timeoutTask: Task<Void, Never>?
-    private var generation = 0
+    private let waiter = MCPConfirmationWaiter(logName: "prepare_mail")
 
     init(presenter: MCPMailConfirmationPresenting? = nil) {
         self.presenter = presenter ?? MCPMailConfirmationPanel()
     }
 
     func confirm(_ proposal: MCPMailProposal, timeout: TimeInterval) async -> MCPConfirmationOutcome {
-        finish(.cancelled)
-        generation += 1
-        let current = generation
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                if Task.isCancelled {
-                    continuation.resume(returning: .cancelled)
-                    return
-                }
-                pending = continuation
+        let presenter = presenter
+        return await waiter.wait(
+            timeout: timeout,
+            show: { deadline, answer in
                 presenter.show(
                     proposal,
-                    deadline: Date().addingTimeInterval(timeout),
-                    onConfirm: { [weak self] in self?.finish(.confirmed, generation: current) },
-                    onReject: { [weak self] in self?.finish(.rejected, generation: current) },
-                    onEdit: { [weak self] in self?.finish(.handedOff, generation: current) }
+                    deadline: deadline,
+                    onConfirm: { answer(.confirmed) },
+                    onReject: { answer(.rejected) },
+                    onEdit: { answer(.handedOff) }
                 )
-                timeoutTask = Task { [weak self] in
-                    try? await Task.sleep(for: .seconds(timeout))
-                    guard !Task.isCancelled else { return }
-                    self?.finish(.timedOut, generation: current)
-                }
-            }
-        } onCancel: {
-            Task { @MainActor [weak self] in self?.finish(.cancelled, generation: current) }
-        }
-    }
-
-    private func finish(_ outcome: MCPConfirmationOutcome, generation answered: Int? = nil) {
-        if let answered, answered != generation { return }
-        guard let continuation = pending else { return }
-        pending = nil
-        timeoutTask?.cancel()
-        timeoutTask = nil
-        presenter.close()
-        continuation.resume(returning: outcome)
-        MCPDebugLog.log("prepare_mail confirmation: \(outcome)")
+            },
+            close: { presenter.close() }
+        )
     }
 }
 

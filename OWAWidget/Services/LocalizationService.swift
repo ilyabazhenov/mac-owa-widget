@@ -208,11 +208,21 @@ final class LocalizationService: ObservableObject {
         return formatter.string(from: date)
     }
 
+    /// Cached like `formatDate`: a mail list asks for it on every row it draws, and a fresh
+    /// `DateFormatter` per call was most of what a row cost.
     func shortTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        formatter.dateStyle = .none
-        formatter.locale = locale
+        let locale = locale
+        let key = "\(locale.identifier)|shortTime"
+        let formatter: DateFormatter
+        if let cached = dateFormatterCache[key] {
+            formatter = cached
+        } else {
+            formatter = DateFormatter()
+            formatter.timeStyle = .short
+            formatter.dateStyle = .none
+            formatter.locale = locale
+            dateFormatterCache[key] = formatter
+        }
         formatter.timeZone = AppTimeZone.zone
         return formatter.string(from: date)
     }

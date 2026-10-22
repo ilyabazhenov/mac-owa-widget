@@ -112,7 +112,12 @@ struct MCPClientApprovalView: View {
 
     private var scopeKey: String {
         if request.forMail { return request.canSendMail ? "mcp.approve.mail.scopeWithSend" : "mcp.approve.mail.scope" }
-        return request.canCreateMeetings ? "mcp.approve.scopeWithMeetings" : "mcp.approve.scope"
+        switch (request.canCreateMeetings, request.canCancelMeetings) {
+        case (true, true): return "mcp.approve.scopeWithMeetingsAndCancel"
+        case (true, false): return "mcp.approve.scopeWithMeetings"
+        case (false, true): return "mcp.approve.scopeWithCancel"
+        case (false, false): return "mcp.approve.scope"
+        }
     }
 
     private var kindNote: String? {

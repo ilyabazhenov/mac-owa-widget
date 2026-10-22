@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class PopoverViewLayoutTests: XCTestCase {
     func testContentHorizontalPaddingMatchesTimelinePadding() {
-        let popover = PopoverView()
+        let popover = PopoverView(mail: MailService())
         let list = MeetingListView(sections: [])
 
         XCTAssertEqual(popover.contentHorizontalPadding, list.contentHorizontalPadding)

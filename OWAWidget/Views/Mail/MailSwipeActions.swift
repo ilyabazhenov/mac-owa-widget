@@ -136,7 +136,7 @@ final class MailSwipeController: ObservableObject {
     func install() {
         guard monitors.isEmpty else { return }
         let scroll = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard let self, self.handleScroll(event) else { return event }
+            guard let self, PerfProbe.interval("swipe.scroll", { self.handleScroll(event) }) else { return event }
             return nil
         }
         // A click anywhere but on the open row closes it, and still does what it was for.
@@ -237,7 +237,7 @@ final class MailSwipeController: ObservableObject {
                 active = nil
                 return false
             case .horizontal:
-                break
+                PerfProbe.mark("swipe.begin")
             }
         }
 
@@ -248,6 +248,7 @@ final class MailSwipeController: ObservableObject {
             canToggleRead: row.canToggleRead
         )
         let armed = MailSwipePolicy.armed(offset: offset, width: row.width)
+        PerfProbe.mark("swipe.move")
         if armed != row.armed {
             // The tick a phone's swipe gives when letting go would act: a swipe leaves no button
             // to light up, so the trackpad says it. Silent without a Force Touch trackpad.
@@ -260,6 +261,7 @@ final class MailSwipeController: ObservableObject {
 
     private func finish(_ row: MailSwipeRowState, cancelled: Bool) {
         let outcome = cancelled ? .close : MailSwipePolicy.outcome(offset: row.offset, width: row.width)
+        PerfProbe.mark("swipe.\(outcome)")
         switch outcome {
         case .delete:
             delete(row)

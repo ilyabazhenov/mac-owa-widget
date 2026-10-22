@@ -641,6 +641,9 @@ final class CalendarServiceInvitationTests: XCTestCase {
         func set(_ events: [CalendarEvent]) { self.events = events }
         func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] { events }
         func validateCredentials() async throws {}
+        func removeMeeting(_ event: CalendarEvent, mode: MeetingRemovalMode, message: String) async throws {
+            events.removeAll { $0.id == event.id }
+        }
     }
 
     private final class InMemoryTracker: MeetingInvitationTracking {
@@ -756,6 +759,25 @@ final class CalendarServiceInvitationTests: XCTestCase {
 
         service.dismissInvitations(eventIDs: ["b"])
         XCTAssertTrue(service.pendingInvitationGroups.isEmpty)
+    }
+
+    /// An invitation declined through the MCP server leaves the panel list and the ✉︎N count at
+    /// once, not after a sync that may fail.
+    func testRemovedInvitationLeavesTheListAtOnce() async throws {
+        UserDefaults.standard.set(true, forKey: enabledKey)
+        let account = CalendarAccount(displayName: "Exchange", serverURL: "", email: "", accountType: .owa)
+        let provider = MutableProvider(account: account)
+        let service = makeService(provider: provider, presenter: RecordingPresenter())
+        await provider.set([invite("a", accountID: account.id)])
+        await service.performSyncForTests()
+        await provider.set([invite("a", accountID: account.id), invite("b", accountID: account.id)])
+        await service.performSyncForTests()
+        let invitation = try XCTUnwrap(service.events.first { $0.id == "b" })
+
+        try await service.removeMeeting(invitation, mode: .decline)
+
+        XCTAssertTrue(service.pendingInvitationGroups.isEmpty)
+        XCTAssertFalse(service.events.contains { $0.id == "b" })
     }
 
     func testMenuBarBadgeCanBeTurnedOffWithoutLosingTheList() async {

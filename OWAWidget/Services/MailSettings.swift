@@ -52,6 +52,9 @@ struct MailSettings: Equatable, Sendable {
     /// Fold conversations from systems (CI, trackers) into one row per sender in the list. Off by
     /// default: the user asked for the plain list first.
     var bundleAutomated = false
+    /// Lists (the mail window and the inbox panel) show conversations; off, every message is a
+    /// row of its own and opens alone, as Outlook's "Show as messages".
+    var groupByConversation = true
     /// The popover list and the menu bar count show mail from people only.
     var peopleOnly = true
     var notifyMode: MailNotifyMode = .off
@@ -72,6 +75,7 @@ struct MailSettings: Equatable, Sendable {
         static let accountID = "mailAccountID"
         // A new key: v3 saved the old default (on) for everyone who touched a mail setting.
         static let bundleAutomated = "mailBundleBySender"
+        static let groupByConversation = "mailGroupByConversation"
         static let peopleOnly = "mailPeopleOnly"
         static let notifyMode = "mailNotifyMode"
         static let swipeActions = "mailSwipeActionsEnabled"
@@ -92,6 +96,9 @@ struct MailSettings: Equatable, Sendable {
         settings.pinnedFolderIDs = defaults.stringArray(forKey: Key.pinned) ?? []
         settings.accountID = defaults.string(forKey: Key.accountID).flatMap(UUID.init(uuidString:))
         if defaults.object(forKey: Key.bundleAutomated) != nil { settings.bundleAutomated = defaults.bool(forKey: Key.bundleAutomated) }
+        if defaults.object(forKey: Key.groupByConversation) != nil {
+            settings.groupByConversation = defaults.bool(forKey: Key.groupByConversation)
+        }
         if defaults.object(forKey: Key.peopleOnly) != nil { settings.peopleOnly = defaults.bool(forKey: Key.peopleOnly) }
         if let raw = defaults.string(forKey: Key.notifyMode), let mode = MailNotifyMode(rawValue: raw) { settings.notifyMode = mode }
         if defaults.object(forKey: Key.swipeActions) != nil { settings.swipeActionsEnabled = defaults.bool(forKey: Key.swipeActions) }
@@ -107,6 +114,7 @@ struct MailSettings: Equatable, Sendable {
         defaults.set(pinnedFolderIDs, forKey: Key.pinned)
         defaults.set(accountID?.uuidString, forKey: Key.accountID)
         defaults.set(bundleAutomated, forKey: Key.bundleAutomated)
+        defaults.set(groupByConversation, forKey: Key.groupByConversation)
         defaults.set(peopleOnly, forKey: Key.peopleOnly)
         defaults.set(notifyMode.rawValue, forKey: Key.notifyMode)
         defaults.set(swipeActionsEnabled, forKey: Key.swipeActions)

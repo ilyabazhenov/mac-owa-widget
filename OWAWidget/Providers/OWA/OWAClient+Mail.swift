@@ -372,7 +372,8 @@ extension OWAClient {
     /// - Parameter mayRepeat: whether a request dropped by the connection may be sent again.
     ///   Only for requests whose repetition is harmless; a 401/440 is always retried once, as the
     ///   server answered it without acting on it.
-    private func ewsCall(action: String, soap: String, mayRepeat: Bool, note: String, attempt: Int = 0) async throws -> String {
+    /// - Parameter area: what the call is for in the logs ("Mail", "Meeting").
+    func ewsCall(action: String, soap: String, mayRepeat: Bool, note: String, area: String = "Mail", attempt: Int = 0) async throws -> String {
         // Pictures make a request megabytes long: time to upload them at a slow ~50 KB/s.
         var request = URLRequest(url: try url("/EWS/Exchange.asmx"), timeoutInterval: max(30, Double(soap.utf8.count) / 50_000))
         request.httpMethod = "POST"
@@ -380,33 +381,33 @@ extension OWAClient {
         request.setValue("\"http://schemas.microsoft.com/exchange/services/2006/messages/\(action)\"", forHTTPHeaderField: "SOAPAction")
         addCommonHeaders(&request)
         request.httpBody = Data(soap.utf8)
-        log.info("EWS mail \(action, privacy: .public) \(note, privacy: .public) bytes=\(soap.utf8.count, privacy: .public)")
+        log.info("EWS \(area, privacy: .public) \(action, privacy: .public) \(note, privacy: .public) bytes=\(soap.utf8.count, privacy: .public)")
 
         let (data, response): (Data, URLResponse)
         do {
             (data, response) = mayRepeat ? try await sessionDataAllowingStaleReconnect(for: request) : try await fetchData(request)
         } catch let urlErr as URLError where mayRepeat && urlErr.code == .networkConnectionLost && attempt < 1 {
-            DiagnosticLog.event("Mail \(action) URLError \(urlErr.code.rawValue), re-authenticating")
+            DiagnosticLog.event("\(area) \(action) URLError \(urlErr.code.rawValue), re-authenticating")
             try await authenticate()
-            return try await ewsCall(action: action, soap: soap, mayRepeat: mayRepeat, note: note, attempt: attempt + 1)
+            return try await ewsCall(action: action, soap: soap, mayRepeat: mayRepeat, note: note, area: area, attempt: attempt + 1)
         } catch let urlErr as URLError where !mayRepeat && Self.mayHaveReachedServer(urlErr) {
-            DiagnosticLog.event("Mail \(action) URLError \(urlErr.code.rawValue): outcome unknown, not repeated")
+            DiagnosticLog.event("\(area) \(action) URLError \(urlErr.code.rawValue): outcome unknown, not repeated")
             throw MailError.sendUncertain
         }
         guard let http = response as? HTTPURLResponse else { throw OWAError.invalidResponse }
         if OWAError.isSessionStaleStatus(http.statusCode) {
-            guard attempt < 1 else { throw OWAError.httpError(http.statusCode, "EWS mail \(action) auth retry exhausted") }
+            guard attempt < 1 else { throw OWAError.httpError(http.statusCode, "EWS \(area) \(action) auth retry exhausted") }
             try await authenticate()
-            return try await ewsCall(action: action, soap: soap, mayRepeat: mayRepeat, note: note, attempt: attempt + 1)
+            return try await ewsCall(action: action, soap: soap, mayRepeat: mayRepeat, note: note, area: area, attempt: attempt + 1)
         }
         let body = String(data: data, encoding: .utf8) ?? ""
         guard (200..<300).contains(http.statusCode) else {
-            log.error("EWS mail \(action, privacy: .public) HTTP \(http.statusCode, privacy: .public)")
+            log.error("EWS \(area, privacy: .public) \(action, privacy: .public) HTTP \(http.statusCode, privacy: .public)")
             throw OWAError.httpError(http.statusCode, String(body.prefix(600)))
         }
         let code = Self.extractEWSResponseCode(from: body)
-        log.info("EWS mail \(action, privacy: .public) responseCode=\(code ?? "nil", privacy: .public)")
-        DiagnosticLog.event("Mail \(action) code=\(code ?? "nil")")
+        log.info("EWS \(area, privacy: .public) \(action, privacy: .public) responseCode=\(code ?? "nil", privacy: .public)")
+        DiagnosticLog.event("\(area) \(action) code=\(code ?? "nil")")
         guard code == "NoError" else { throw OWAError.ewsError(code ?? "UnknownError") }
         return body
     }

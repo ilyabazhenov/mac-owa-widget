@@ -519,7 +519,8 @@ struct FittingSegmentedControl<Value: Hashable>: NSViewRepresentable {
 
 // MARK: - Window toolbar
 
-/// List options that are not filters: bundling system mail and marking the folder read.
+/// List options that are not filters: conversations or messages, bundling system mail and
+/// marking the folder read.
 struct MailListOptionsMenu: View {
     @ObservedObject var model: MailWindowModel
     @ObservedObject var service: MailService
@@ -530,6 +531,10 @@ struct MailListOptionsMenu: View {
             Toggle(localization.tr("mail.list.bundle"), isOn: Binding(
                 get: { service.settings.bundleAutomated },
                 set: { value in service.updateSettings { $0.bundleAutomated = value } }
+            ))
+            Toggle(localization.tr("mail.list.groupByConversation"), isOn: Binding(
+                get: { service.settings.groupByConversation },
+                set: { value in service.updateSettings { $0.groupByConversation = value } }
             ))
             Divider()
             Button(localization.tr("mail.list.markAllRead")) { model.confirmsMarkAllRead = true }
@@ -552,6 +557,7 @@ struct MailConversationListView: View {
     @StateObject private var swipes = MailSwipeController()
 
     var body: some View {
+        let _ = PerfProbe.body("MailConversationListView")
         VStack(spacing: 0) {
             header
             if model.isSearching { searchFilters; Divider() }
@@ -1023,6 +1029,7 @@ struct MailConversationRow: View {
     }
 
     var body: some View {
+        let _ = PerfProbe.body("MailConversationRow")
         HStack(alignment: .top, spacing: 6) {
             Circle()
                 .fill(conversation.isUnread ? Color.accentColor : .clear)

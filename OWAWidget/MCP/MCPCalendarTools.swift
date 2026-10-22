@@ -2,7 +2,7 @@ import Foundation
 
 /// The MCP tools, implemented over `CalendarService`: those that read the calendar (including
 /// `match_event`, which tells which meeting a time was), `find_people`, `find_free_slots` and
-/// `create_meeting`.
+/// `create_meeting` and `cancel_meeting`.
 ///
 /// The calendar tools read the in-memory calendar: no network, no load on Exchange, except for
 /// meeting details and periods beyond the sync window (start of day -7 days ... now +30 days),
@@ -22,6 +22,13 @@ final class MCPCalendarTools {
     static let duplicateWindow: TimeInterval = 10 * 60
     static let onDemandDeadline: TimeInterval = 35
     static let maxAttendees = 100
+    /// A cancellation note or a decline comment, not a letter.
+    static let maxRemovalMessageCharacters = 2_000
+    /// Everything `cancel_meeting` waits for before Exchange — the attendee list, the user's own
+    /// address and the panel — must fit in the client's 60 seconds, like create_meeting's 5 + 45.
+    static let removalCallBudget: TimeInterval = 50
+    /// Less than this left for the panel is too little to read and decide: the call gives up.
+    static let minimumRemovalPanelTime: TimeInterval = 20
     /// How long `create_meeting` waits for the user's own address before showing the panel
     /// anyway: the panel's 45 seconds and this must fit in the client's 60.
     static let ownDomainWaitForCreate: TimeInterval = 5
@@ -46,19 +53,26 @@ final class MCPCalendarTools {
     private let clock: () -> Date
     private let isEnabled: () -> Bool
     private let canCreateMeetings: () -> Bool
+    private let canRemoveMeetings: () -> Bool
     private let confirmer: MCPMeetingConfirming
+    private let removalConfirmer: MCPMeetingRemovalConfirming
     /// Sends a meeting the user chose to edit to the New Meeting window.
     private let handOff: (MeetingDraftSeed) -> Void
     private let confirmationTimeout: TimeInterval
     private let timeZoneProvider: () -> TimeZone
+    /// Seconds on a clock that only moves forward, for the time a call has already spent.
+    private let uptime: () -> TimeInterval
     /// Names seen next to addresses in `find_people` answers, for the confirmation panel.
     private var namesByEmail: [String: String] = [:]
     private var recentCreations: [String: (date: Date, result: [String: JSONValue])] = [:]
+    /// By short event id: after a removal the meeting is gone, and a retry would only find nothing.
+    private var recentRemovals: [String: (date: Date, result: [String: JSONValue])] = [:]
     /// The user's own address per Exchange account, from Exchange: a DOMAIN\login sign-in does
     /// not tell it. A `nil` address is a failed lookup, not repeated before `retryAfter`.
     private var ownAddresses: [UUID: (email: String?, retryAfter: Date)] = [:]
     private var ownAddressLookups: [UUID: Task<String?, Never>] = [:]
     private var isCreatingMeeting = false
+    private var isRemovingMeeting = false
 
     init(
         calendarService: CalendarService,
@@ -67,12 +81,15 @@ final class MCPCalendarTools {
         archive: MCPCalendarArchive = MCPCalendarArchive(),
         onDemandDeadline: TimeInterval = MCPCalendarTools.onDemandDeadline,
         confirmer: MCPMeetingConfirming? = nil,
+        removalConfirmer: MCPMeetingRemovalConfirming? = nil,
         handOff: @escaping (MeetingDraftSeed) -> Void = { MeetingDraftInbox.shared.deliver($0) },
         confirmationTimeout: TimeInterval = MCPCalendarTools.confirmationTimeout,
         clock: @escaping () -> Date = { Date() },
         timeZone: @escaping () -> TimeZone = { AppTimeZone.zone },
+        uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         isEnabled: @escaping () -> Bool = { true },
-        canCreateMeetings: @escaping () -> Bool = { false }
+        canCreateMeetings: @escaping () -> Bool = { false },
+        canRemoveMeetings: @escaping () -> Bool = { false }
     ) {
         self.calendarService = calendarService
         self.accessGuard = accessGuard ?? MCPAccessGuard(calendarService: calendarService, clock: clock)
@@ -80,12 +97,15 @@ final class MCPCalendarTools {
         self.archive = archive
         self.onDemandDeadline = onDemandDeadline
         self.confirmer = confirmer ?? MCPMeetingConfirmationController()
+        self.removalConfirmer = removalConfirmer ?? MCPMeetingRemovalConfirmationController()
         self.handOff = handOff
         self.confirmationTimeout = confirmationTimeout
         self.clock = clock
         self.timeZoneProvider = timeZone
+        self.uptime = uptime
         self.isEnabled = isEnabled
         self.canCreateMeetings = canCreateMeetings
+        self.canRemoveMeetings = canRemoveMeetings
     }
 
     func call(name: String, arguments: [String: JSONValue], client: String? = nil) async -> MCPToolResult {
@@ -105,6 +125,7 @@ final class MCPCalendarTools {
             case "find_free_slots": return try await findFreeSlots(arguments, context)
             case "match_event": return try await matchEvent(arguments, context)
             case "create_meeting": return try await createMeeting(arguments, context, client: client)
+            case "cancel_meeting": return try await cancelMeeting(arguments, context, client: client)
             default: return .failure("Unknown tool: \(name)")
             }
         } catch let error as ArgumentError {
@@ -827,7 +848,7 @@ final class MCPCalendarTools {
             result["note"] = "This exact meeting was already created a few minutes ago; nothing new was sent."
             return .success(result)
         }
-        guard !isCreatingMeeting else {
+        guard !isCreatingMeeting, !isRemovingMeeting else {
             return .failure("Another meeting is waiting for the user's answer in OWA Widget. Wait for that call to finish before asking again.")
         }
         if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
@@ -917,6 +938,218 @@ final class MCPCalendarTools {
         result["note"] = "Created in Exchange. It appears in list_events after the next sync, within a few minutes."
         recentCreations[key] = (context.now, result)
         return .success(result)
+    }
+
+    // MARK: - cancel_meeting
+
+    /// What happens follows from the user's role, never from the client: the organizer's meeting
+    /// is cancelled for everyone (or just deleted without attendees), an invitation is declined
+    /// (or deleted without a word with `notify_organizer: false`), a meeting the organizer has
+    /// already cancelled is deleted. Only an occurrence's own id is touched, never the series.
+    private func cancelMeeting(_ arguments: [String: JSONValue], _ context: CallContext, client: String?) async throws -> MCPToolResult {
+        guard canRemoveMeetings() else {
+            return .failure(
+                "Cancelling meetings is turned off in OWA Widget (Settings → MCP → \"Allow cancelling meetings\"). Nothing was changed. Ask the user to turn it on."
+            )
+        }
+        guard let handle = arguments["event_id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !handle.isEmpty else {
+            throw ArgumentError("`event_id` is required (take it from list_events)")
+        }
+        let message = MCPMeetingTextPolicy.normalizedAgenda(arguments["message"]?.stringValue ?? "")
+        guard message.count <= Self.maxRemovalMessageCharacters else {
+            throw ArgumentError("`message` is limited to \(Self.maxRemovalMessageCharacters) characters")
+        }
+        if MCPMeetingTextPolicy.containsBidiControls(message) {
+            throw ArgumentError(
+                "`message` contains bidirectional control characters (U+202A–U+202E, U+2066–U+2069), "
+                    + "which make text display differently from what is sent. Remove them."
+            )
+        }
+        if MCPMeetingTextPolicy.containsHiddenCharacters(message) {
+            throw ArgumentError(
+                "`message` contains invisible characters (zero-width spaces, Unicode tags, variation selectors, "
+                    + "control characters), which the user cannot see in the confirmation. Remove them."
+            )
+        }
+        let notifyOrganizer = try optionalBool(arguments, "notify_organizer") ?? true
+
+        recentRemovals = recentRemovals.filter { context.now.timeIntervalSince($0.value.date) < Self.duplicateWindow }
+        if let earlier = recentRemovals[handle.lowercased()] ?? recentRemovals[MCPEventID.short(handle)] {
+            var result = earlier.result
+            result["duplicate"] = true
+            result["note"] = "This meeting was already removed a few minutes ago; nothing new was sent."
+            return .success(result)
+        }
+        guard let event = MCPEventID.resolve(handle, in: calendarService.events)
+            ?? MCPEventID.resolve(handle, in: archive.allEvents) else {
+            return .failure("Event \(handle) not found. It may have been removed, or the calendar was refreshed — call list_events again.")
+        }
+        guard calendarService.accountType(for: event.accountID) == .owa, event.changeKey != nil,
+              let account = calendarService.accounts.first(where: { $0.id == event.accountID }) else {
+            return .failure("Only Exchange meetings can be cancelled here. This one comes from a calendar synced to macOS: the user can remove it in the Calendar app.")
+        }
+        guard event.endDate > context.now else {
+            return .failure("This meeting is already over. Only upcoming or ongoing meetings can be cancelled. Nothing was changed.")
+        }
+        guard !isCreatingMeeting, !isRemovingMeeting else {
+            return .failure("Another meeting is waiting for the user's answer in OWA Widget. Wait for that call to finish before asking again.")
+        }
+        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
+            return .failure(reason)
+        }
+        isRemovingMeeting = true
+        defer { isRemovingMeeting = false }
+
+        let startedAt = uptime()
+        let mode: MeetingRemovalMode
+        var recipients: [MCPMeetingProposal.Attendee] = []
+        var unaddressed: [String] = []
+        var ownDomain: String?
+        if event.isOrganizer {
+            // The organizer's own title may well start with "Cancelled:": only Exchange's flag says
+            // the meeting is really cancelled and the attendees already know.
+            if event.isCancelled {
+                mode = .deleteSilently
+            } else {
+                // Attendees decide between a cancellation and a plain delete, and the panel has to
+                // say who gets the cancellation: without the list nothing is asked.
+                switch await loadAttendeesAndBody(event) {
+                case .available(let attendees, _, _):
+                    // The lookup also fills the cache `knownOwnAddress` reads, so it goes first.
+                    ownDomain = await ownMailDomain(account, wait: Self.ownDomainWaitForCreate)
+                    (recipients, unaddressed) = Self.cancellationRecipients(
+                        attendees, ownAddress: knownOwnAddress(event.accountID), ownDomain: ownDomain
+                    )
+                case .unavailable(let reason, _):
+                    return .failure("Could not load the attendee list, so OWA Widget cannot show who would get the cancellation: \(reason) Nothing was changed.")
+                }
+                mode = recipients.isEmpty && unaddressed.isEmpty ? .deleteSilently : .cancelForAttendees
+            }
+        } else if event.isEffectivelyCancelled || event.responseType == .declined {
+            // The organizer already knows: a second decline would only be another email.
+            mode = .deleteSilently
+        } else {
+            mode = notifyOrganizer ? .decline : .deleteSilently
+        }
+        if mode == .deleteSilently, !message.isEmpty {
+            throw ArgumentError("`message` goes out only with a cancellation or a decline, and this removal tells nobody. Leave it out.")
+        }
+        let panelTimeout = min(confirmationTimeout, Self.removalCallBudget - (uptime() - startedAt))
+        guard panelTimeout >= Self.minimumRemovalPanelTime else {
+            return .failure("Exchange answered too slowly to leave the user time to decide before the request times out. Nothing was changed; try again.")
+        }
+
+        let proposal = MCPMeetingRemovalProposal(
+            mode: mode,
+            title: event.title,
+            start: event.startDate,
+            end: event.endDate,
+            location: event.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            organizer: event.organizer,
+            attendees: recipients,
+            unaddressedAttendees: unaddressed,
+            message: message,
+            isOccurrence: event.isRecurring,
+            isAlreadyCancelled: event.isOrganizer ? event.isCancelled : event.isEffectivelyCancelled,
+            isAlreadyDeclined: !event.isOrganizer && event.responseType == .declined,
+            client: client ?? "",
+            externalCheckAvailable: mode != .cancelForAttendees || ownDomain != nil
+        )
+        switch await removalConfirmer.confirm(proposal, timeout: panelTimeout) {
+        case .confirmed:
+            break
+        case .rejected, .handedOff:
+            return .failure("The user declined in OWA Widget. Nothing was changed; do not retry unless the user asks.")
+        case .timedOut:
+            return .failure("The user did not answer in OWA Widget within \(Int(panelTimeout)) seconds. Nothing was changed; ask the user whether to try again.")
+        case .cancelled:
+            return .failure("The request was cancelled. Nothing was changed.")
+        }
+
+        // Past the button the request must finish even if the client cancels now, as with
+        // create_meeting: a half-sent cancellation would leave the user unsure who was told.
+        let service = calendarService
+        let removal = Task { @MainActor in
+            try await service.removeMeeting(event, mode: mode, message: message)
+        }
+        do {
+            try await removal.value
+        } catch {
+            MCPDebugLog.log("cancel_meeting failed: \(error.localizedDescription)")
+            if case OWAError.ewsError(let code) = error {
+                if OWARespondToMeetingPayload.isStaleChangeKeyCode(code) {
+                    return .failure("The meeting changed in Exchange after the last sync, so nothing was changed. Call list_events after the next sync and ask the user again.")
+                }
+                if code == "ErrorItemNotFound" {
+                    return .failure("Exchange no longer has this meeting: it may already have been cancelled or deleted. Check list_events after the next sync.")
+                }
+            }
+            return .failure(
+                "Exchange did not confirm: \(error.localizedDescription). It may still have happened: check list_events after the next sync before trying again."
+            )
+        }
+
+        var result = commonFields(context)
+        result["removed"] = true
+        result["action"] = .string(Self.removalActionName(mode))
+        result["event_id"] = .string(MCPEventID.short(event.id))
+        result["title"] = .string(event.title)
+        result["start"] = .string(context.coder.string(event.startDate))
+        result["end"] = .string(context.coder.string(event.endDate))
+        result["account_id"] = .string(account.id.uuidString)
+        if mode == .cancelForAttendees {
+            // Attendees without an address get it too: Exchange knows them by their entry.
+            result["cancellation_sent_to"] = .array(recipients.map { .string($0.email) } + unaddressed.map(JSONValue.string))
+        }
+        if event.isRecurring {
+            result["occurrence_only"] = true
+        }
+        result["note"] = .string(Self.removalNote(mode, occurrence: event.isRecurring))
+        recentRemovals[MCPEventID.short(event.id)] = (context.now, result)
+        return .success(result)
+    }
+
+    /// Who gets the organizer's cancellation: everyone on the meeting except the user, whether
+    /// they come with an address or only a name (a distribution list, a mailbox Exchange returned
+    /// without SMTP). Dropping the nameless ones would turn a meeting with attendees into a silent
+    /// delete that leaves it in their calendars.
+    static func cancellationRecipients(
+        _ attendees: [EventAttendee], ownAddress: String?, ownDomain: String?
+    ) -> (addressed: [MCPMeetingProposal.Attendee], unaddressed: [String]) {
+        let own = ownAddress?.lowercased()
+        var seen = Set<String>()
+        var addressed: [MCPMeetingProposal.Attendee] = []
+        var unaddressed: [String] = []
+        for attendee in attendees where attendee.response != .organizer {
+            if let email = attendee.email?.lowercased(), !email.isEmpty {
+                guard email != own, seen.insert(email).inserted else { continue }
+                addressed.append(.init(email: email, name: attendee.name.isEmpty ? nil : attendee.name, isExternal: isExternal(email, ownDomain: ownDomain)))
+            } else if !attendee.name.isEmpty, seen.insert("name:" + attendee.name).inserted {
+                unaddressed.append(attendee.name)
+            }
+        }
+        return (addressed, unaddressed)
+    }
+
+    static func removalActionName(_ mode: MeetingRemovalMode) -> String {
+        switch mode {
+        case .cancelForAttendees: "cancelled"
+        case .decline: "declined"
+        case .deleteSilently: "deleted"
+        }
+    }
+
+    private static func removalNote(_ mode: MeetingRemovalMode, occurrence: Bool) -> String {
+        let what: String
+        switch mode {
+        case .cancelForAttendees:
+            what = "Cancelled in Exchange: the attendees got a cancellation, and the meeting moved to Deleted Items."
+        case .decline:
+            what = "Declined in Exchange: the organizer got the decline, and Exchange removes the meeting from the calendar."
+        case .deleteSilently:
+            what = "Moved to Deleted Items in Exchange; nobody was notified."
+        }
+        return what + (occurrence ? " Only this occurrence; the rest of the series stays." : "")
     }
 
     /// Only Exchange creates meetings and searches the address book. With one Exchange account

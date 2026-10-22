@@ -2,6 +2,17 @@ import SwiftUI
 import UserNotifications
 import AppKit
 
+/// Keeps an object alive for the life of a view or app, like `@StateObject`, without redrawing
+/// it when the object changes.
+@MainActor
+final class UnobservedObject<Value: AnyObject>: ObservableObject {
+    let value: Value
+
+    init(_ value: Value) {
+        self.value = value
+    }
+}
+
 @main
 struct OWAWidgetApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -16,20 +27,25 @@ struct OWAWidgetApp: App {
     @StateObject private var updateCheckService = UpdateCheckService()
     @StateObject private var appearanceService = AppearanceService()
     @StateObject private var colleaguePresenceService = ColleaguePresenceService()
-    @StateObject private var mailService = MailService()
+    /// Held, not observed: nothing in `body` reads mail, and observing it re-ran `body` for every
+    /// change in the service, which rebuilt the popover and the menu bar label each time (twice
+    /// per swipe in the inbox panel). The views that show mail observe the service themselves.
+    @StateObject private var mailHolder = UnobservedObject(MailService())
+    private var mailService: MailService { mailHolder.value }
 
     // Static: one delegate instance survives across App struct re-evaluations.
     private static let notificationDelegate = AppNotificationDelegate()
 
     init() {
         DiagnosticLog.event("App init")
+        PerfProbe.startWatchingMainRunLoop()
         UNUserNotificationCenter.current().delegate = Self.notificationDelegate
         configureAppIcon()
     }
 
     var body: some Scene {
         MenuBarExtra {
-            PopoverView()
+            PopoverView(mail: mailService)
                 .environmentObject(calendarService)
                 .environmentObject(mailService)
                 .environmentObject(localizationService)

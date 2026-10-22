@@ -11,6 +11,7 @@ struct MailPopoverSectionView: View {
     @AppStorage("mailPopoverSectionExpanded") private var isExpanded = false
 
     var body: some View {
+        let _ = PerfProbe.body("MailPopoverSectionView")
         VStack(alignment: .leading, spacing: 0) {
             Button {
                 withAnimation(.easeInOut(duration: 0.16)) { isExpanded.toggle() }
@@ -173,6 +174,10 @@ struct MailSettingsSections: View {
             Section(localization.tr("mail.settings.section.popover")) {
                 Toggle(localization.tr("mail.settings.popoverSection"), isOn: binding(\.popoverSectionEnabled))
                     .disabled(!mail.settings.enabled)
+                Text(localization.tr("mail.settings.popoverSection.hint", "Ctrl+Option+M"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Toggle(localization.tr("mail.settings.menuBarBadge"), isOn: binding(\.menuBarBadgeEnabled))
                     .disabled(!mail.settings.enabled)
                 Toggle(localization.tr("mail.settings.peopleOnly"), isOn: binding(\.peopleOnly))
@@ -201,6 +206,8 @@ struct MailSettingsSections: View {
 
             Section(localization.tr("mail.settings.section.reading")) {
                 Toggle(localization.tr("mail.list.bundle"), isOn: binding(\.bundleAutomated))
+                    .disabled(!mail.settings.enabled)
+                Toggle(localization.tr("mail.list.groupByConversation"), isOn: binding(\.groupByConversation))
                     .disabled(!mail.settings.enabled)
                 Toggle(localization.tr("mail.settings.swipeActions"), isOn: binding(\.swipeActionsEnabled))
                     .disabled(!mail.settings.enabled)

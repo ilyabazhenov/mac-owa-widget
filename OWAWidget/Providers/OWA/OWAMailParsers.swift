@@ -256,26 +256,38 @@ enum OWAMailParsers {
     static func itemPage(_ data: Data) throws -> MailItemPage {
         let parsed = try json(data)
         let root = responseItems(parsed).first?["RootFolder"] as? [String: Any] ?? [:]
-        let items = (root["Items"] as? [[String: Any]] ?? []).compactMap { dict -> MailListItem? in
-            guard let ref = itemRef(dict["ItemId"]) else { return nil }
-            return MailListItem(
-                ref: ref,
-                conversationID: idValue(dict["ConversationId"]),
-                subject: (dict["Subject"] as? String) ?? "",
-                from: address(dict["From"]) ?? address(dict["Sender"]),
-                displayTo: (dict["DisplayTo"] as? String) ?? "",
-                received: date(dict["DateTimeReceived"]),
-                isRead: bool(dict["IsRead"]),
-                hasAttachments: bool(dict["HasAttachments"]),
-                importance: MailImportance(owaValue: dict["Importance"] as? String),
-                preview: MailExternalBanner.strip(previewText(dict["Preview"])).text,
-                instanceKey: string(dict["InstanceKey"]),
-                kind: MailItemKind(itemClass: dict["ItemClass"] as? String)
-            )
-        }
+        let items = (root["Items"] as? [[String: Any]] ?? []).compactMap(listItem(from:))
         let isLast = bool(root["IncludesLastItemInRange"])
         let next = isLast ? nil : items.last?.instanceKey.map { MailListCursor.after(instanceKey: $0) }
         return MailItemPage(items: items, totalInView: int(root["TotalItemsInView"]), nextCursor: next)
+    }
+
+    /// One message of a folder list (`FindItem`) or of a search for messages (`ExecuteSearch`).
+    static func listItem(from dict: [String: Any]) -> MailListItem? {
+        guard let ref = itemRef(dict["ItemId"]) else { return nil }
+        let preview = MailExternalBanner.strip(previewText(dict["Preview"]))
+        let itemClass = dict["ItemClass"] as? String
+        var item = MailListItem(
+            ref: ref,
+            conversationID: idValue(dict["ConversationId"]),
+            subject: (dict["Subject"] as? String) ?? "",
+            from: address(dict["From"]) ?? address(dict["Sender"]),
+            displayTo: (dict["DisplayTo"] as? String) ?? "",
+            received: date(dict["DateTimeReceived"]) ?? date(dict["ReceivedOrRenewTime"]),
+            isRead: bool(dict["IsRead"]),
+            hasAttachments: bool(dict["HasAttachments"]),
+            importance: MailImportance(owaValue: dict["Importance"] as? String),
+            preview: preview.text,
+            instanceKey: string(dict["InstanceKey"]),
+            kind: MailItemKind(itemClass: itemClass)
+        )
+        item.itemClass = itemClass
+        item.categories = categories(dict["Categories"])
+        item.isFlagged = isFlagged(dict["Flag"]) || isFlagged(dict["FlagStatus"])
+        item.isProtected = bool(dict["HasIrm"])
+        item.parentFolderID = idValue(dict["ParentFolderId"])
+        item.hasExternalBanner = preview.found
+        return item
     }
 
     // MARK: - Messages
@@ -396,8 +408,10 @@ enum OWAMailParsers {
 
     static func searchPage(_ data: Data, offset: Int) throws -> MailSearchPage {
         let results = body(try json(data))["SearchResults"] as? [String: Any] ?? [:]
-        // No results arrive as `null`, not as an empty array.
+        // No results arrive as `null`, not as an empty array. A search for messages
+        // (`ItemTypes: MailItems`) answers with `Items`, each a message as a folder list has it.
         let conversations = (results["Conversations"] as? [[String: Any]] ?? []).compactMap(conversation(from:))
+            + (results["Items"] as? [[String: Any]] ?? []).compactMap { listItem(from: $0)?.asListRow }
         let refiners = (results["SearchRefiners"] as? [[String: Any]] ?? []).compactMap { dict -> MailSearchRefiner? in
             let type = dict["__type"] as? String ?? ""
             let count = int(dict["ResultCount"]) ?? 0

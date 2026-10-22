@@ -67,8 +67,22 @@ actor FakeMailProvider: MailProvider {
     var unreadItems: [MailListItem] = []
     func setUnreadItems(_ value: [MailListItem]) { unreadItems = value }
 
+    /// Pages of this size for `mailItems`, the cursor being the offset; `nil` always answers the
+    /// first `count` (what marking everything read relies on).
+    var itemPageSize: Int?
+    func setItemPageSize(_ value: Int?) { itemPageSize = value }
+    /// The cursors `mailItems` was asked with, in order.
+    private(set) var itemCursors: [MailListCursor] = []
+
     func mailItems(in folder: MailFolderRef, cursor: MailListCursor, filter: MailListFilter, count: Int) async throws -> MailItemPage {
         try record("items")
+        itemCursors.append(cursor)
+        if let size = itemPageSize {
+            let start = if case .after(let key) = cursor { Int(key) ?? 0 } else { 0 }
+            let page = Array(unreadItems.dropFirst(start).prefix(size))
+            let next: MailListCursor? = start + size < unreadItems.count ? .after(instanceKey: String(start + size)) : nil
+            return MailItemPage(items: page, totalInView: unreadItems.count, nextCursor: next)
+        }
         let page = Array(unreadItems.prefix(count))
         return MailItemPage(items: page, totalInView: unreadItems.count, nextCursor: unreadItems.count > count ? .after(instanceKey: "next") : nil)
     }

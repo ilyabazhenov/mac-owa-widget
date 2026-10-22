@@ -77,6 +77,13 @@ final class MCPServerService: ObservableObject {
             MCPDebugLog.log("createMeetings=\(canCreateMeetings)")
         }
     }
+    @Published var canCancelMeetings: Bool {
+        didSet {
+            guard canCancelMeetings != oldValue else { return }
+            settingsChanged()
+            MCPDebugLog.log("cancelMeetings=\(canCancelMeetings)")
+        }
+    }
     /// Mail tools in `tools/list` at all; each client is still asked separately.
     @Published var canReadMail: Bool {
         didSet {
@@ -116,6 +123,7 @@ final class MCPServerService: ObservableObject {
         isEnabled = settings.serverEnabled
         askNewClients = settings.askNewClients
         canCreateMeetings = settings.createMeetings
+        canCancelMeetings = settings.cancelMeetings
         canReadMail = settings.mailRead
         canSendMail = settings.mailRead && settings.mailSend
         settingsSnapshot = MCPSettingsSnapshot(settings)
@@ -127,7 +135,8 @@ final class MCPServerService: ObservableObject {
             createMeetings: canCreateMeetings,
             askNewClients: askNewClients,
             mailRead: canReadMail,
-            mailSend: canReadMail && canSendMail
+            mailSend: canReadMail && canSendMail,
+            cancelMeetings: canCancelMeetings
         )
         settingsSnapshot.update(settings)
         _ = MCPSettingsStore.shared.save(settings)
@@ -145,7 +154,8 @@ final class MCPServerService: ObservableObject {
             calendarService: calendarService,
             accessGuard: accessGuard,
             isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled },
-            canCreateMeetings: { [settingsSnapshot] in settingsSnapshot.current.createMeetings }
+            canCreateMeetings: { [settingsSnapshot] in settingsSnapshot.current.createMeetings },
+            canRemoveMeetings: { [settingsSnapshot] in settingsSnapshot.current.cancelMeetings }
         )
         let mailTools = MCPMailTools(
             calendarService: calendarService,
@@ -454,7 +464,8 @@ final class MCPServerService: ObservableObject {
             script: identity.script,
             kind: identity.kind,
             declaredName: client.declaredName,
-            canCreateMeetings: canCreateMeetings
+            canCreateMeetings: canCreateMeetings,
+            canCancelMeetings: canCancelMeetings
         )
     }
 

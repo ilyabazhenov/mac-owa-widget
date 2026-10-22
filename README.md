@@ -23,7 +23,7 @@ Free and open source. The first launch needs one Terminal command — see [Insta
 - **Overlaps side by side** — parallel meetings never stack; the current half hour is highlighted and the past fades out.
 - **All-day, out of the way** — on-call shifts, vacations and trips live in their own strip above the timeline.
 - **New invitations** — everything waiting for your answer, right at the top.
-- **Mail** — unread mail in the popover, a window with folders, search and replies; turned on in Settings, messages are never stored on disk.
+- **Mail** — unread mail in the popover, a window with folders, search and replies; turned on in Settings, messages are never stored on disk. Mail can stay out of the popover and open only in its window (the envelope, the menu bar icon’s right-click menu or **Ctrl+Option+M**).
 - **A week back, a month ahead** — the arrows or a two-finger swipe on the trackpad.
 - **Your way** — three window sizes, light or dark theme, your own display time zone.
 
@@ -229,6 +229,14 @@ On every launch OWA Widget writes a short lifecycle log: launch, menu bar icon, 
   ```
 
 Attach it to a [GitHub issue](https://github.com/ilyabazhenov/mac-owa-widget/issues); it is usually enough to see where launch or sync went wrong.
+
+**The app stutters or freezes.** The log already notes every moment the app was busy for more than 50 ms, with the parts of the window that redrew. For a closer look, lower the bar to one frame, quit and relaunch OWA Widget, repeat what stutters, and copy the diagnostics:
+
+```bash
+defaults write com.owawidget.MacOwaWidget perfSlowTurnMs 16
+```
+
+Turn it back off afterwards with `defaults delete com.owawidget.MacOwaWidget perfSlowTurnMs`.
 
 ## Development
 

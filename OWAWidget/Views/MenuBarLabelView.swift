@@ -12,6 +12,7 @@ struct MenuBarLabelView: View {
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
+        let _ = PerfProbe.body("MenuBarLabelView")
         // Compute the smart-mode presentation once per render; icon/label/pulse/tooltip all derive
         // from it, so recomputing per accessor would run the formatter several times each tick.
         let smart = self.smart
@@ -61,6 +62,9 @@ struct MenuBarLabelView: View {
             KeyboardShortcuts.onKeyUp(for: .createMeeting) {
                 NotificationCenter.default.post(name: .openCreateMeetingShortcut, object: nil)
             }
+            KeyboardShortcuts.onKeyUp(for: .openMail) {
+                NotificationCenter.default.post(name: .openMailShortcut, object: nil)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openCreateMeetingShortcut)) { _ in
             // The shortcut stays registered regardless: it is a global hotkey, and unregistering
@@ -69,6 +73,16 @@ struct MenuBarLabelView: View {
             NSApp.activate(ignoringOtherApps: true)
             openWindow(id: "create-meeting")
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openMailShortcut)) { _ in
+            // Registered regardless too: with mail off the key just does nothing.
+            guard mail.isAvailable else { return }
+            openMailWindow()
+        }
+    }
+
+    private func openMailWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow(id: "mail")
     }
 
     private func buildContextMenu() -> NSMenu {
@@ -78,6 +92,20 @@ struct MenuBarLabelView: View {
             menu.addItem(ClosureMenuItem(title: localization.tr("menu.new.meeting")) {
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: "create-meeting")
+            })
+
+            menu.addItem(.separator())
+        }
+
+        // The way to mail for those who keep it out of the popover.
+        if mail.isAvailable {
+            menu.addItem(ClosureMenuItem(title: localization.tr("mail.popover.open")) {
+                openMailWindow()
+            })
+            menu.addItem(ClosureMenuItem(title: localization.tr("mail.compose.title.new")) {
+                mail.compose(MailComposeRequest(kind: .new, original: nil, to: [], cc: [], subject: "", body: ""))
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "mail-compose")
             })
 
             menu.addItem(.separator())

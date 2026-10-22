@@ -12,6 +12,8 @@ struct MCPClientApprovalRequest: Equatable, Sendable {
     let declaredName: String?
     /// Creating meetings is switched on: the panel says so, since that is what the client gets too.
     let canCreateMeetings: Bool
+    /// Cancelling meetings is switched on: the panel says so for the same reason.
+    var canCancelMeetings = false
     /// The question is about mail, for a client the calendar is already allowed to.
     var forMail = false
     /// With `forMail`: the client may also prepare emails (sent only after confirmation).

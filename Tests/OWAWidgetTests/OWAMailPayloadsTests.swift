@@ -124,6 +124,11 @@ final class OWAMailPayloadsTests: XCTestCase {
         XCTAssertEqual(next["RetrieveRefiners"] as? Bool, false)
         XCTAssertTrue(next["SearchRefiners"] is NSNull)
         XCTAssertTrue(next["SearchRestrictions"] is NSNull)
+        XCTAssertEqual(next["ItemTypes"] as? String, "MailConversations")
+        var messages = MailSearchQuery(text: "x")
+        messages.asMessages = true
+        let asMessages = try body(OWAMailPayloads.executeSearch(sessionID: "S", query: messages, offset: 0, count: 25, calendar: .current, timeZoneID: zone))
+        XCTAssertEqual(asMessages["ItemTypes"] as? String, "MailItems", "grouping off: the search answers with messages")
     }
 
     // MARK: - EWS

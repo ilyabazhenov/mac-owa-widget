@@ -191,6 +191,20 @@ enum MailLoadState: Equatable {
     case blocked
 }
 
+/// What the popover's own view shows of mail: the envelope and whether the inbox panel and the mail
+/// strip are there. It changes only when one of these does, so the popover (the whole calendar) is
+/// not redrawn for every change in the service: each swipe in the inbox panel used to redraw it
+/// four times. The panel, the strip and the envelope's badge observe the service themselves.
+@MainActor
+final class MailPopoverChrome: ObservableObject {
+    struct Value: Equatable {
+        var isAvailable = false
+        var showsPopoverSection = false
+    }
+
+    @Published fileprivate(set) var value = Value()
+}
+
 /// The app's mail: settings, the periodic unread check, a small in-memory cache of threads and
 /// every request the mail window makes. Nothing is written to disk.
 @MainActor
@@ -220,6 +234,10 @@ final class MailService: ObservableObject {
     /// That folder's newest conversations, as the folder lists them. Loaded only once the panel
     /// has been shown (`refreshPanelList`).
     @Published private(set) var panelList: [MailConversationSummary] = []
+    /// Moves when a row leaves the panel by a swipe or comes back by Undo, and only then: the
+    /// panel animates those, while a refresh or the next page lands at once. Animating every
+    /// change made SwiftUI diff and animate the whole list under a scroll in flight.
+    private(set) var panelRowsRevision = 0
     /// Where the panel's next page starts; `nil` when the folder has nothing more.
     @Published private(set) var panelNextCursor: MailListCursor?
     /// The next page is on its way (scrolling to the bottom asked for it).
@@ -269,6 +287,8 @@ final class MailService: ObservableObject {
     private var threadOrder: [String] = []
     private var cacheClearTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
+    let popoverChrome = MailPopoverChrome()
+    private var popoverChromeRefreshPending = false
     private var isChecking = false
     private var isResolvingOwnAddress = false
     private var lastCountsRefresh: Date?
@@ -290,6 +310,36 @@ final class MailService: ObservableObject {
         self.defaults = defaults
         self.settings = MailSettings.load(from: defaults)
         self.panelFolder = Self.folderRef(storageValue: defaults.string(forKey: Self.panelFolderKey)) ?? .distinguished(.inbox)
+        // `objectWillChange` comes before the change: the popover's part is read once it is made,
+        // on the next turn, which also folds a burst of changes into one look.
+        objectWillChange
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.schedulePopoverChromeRefresh() }
+            }
+            .store(in: &cancellables)
+        // Each change redraws every view observing the service: a slow turn's log line counts them.
+        // Here and not in `attach`, which runs each time the popover opens.
+        objectWillChange
+            .sink { _ in
+                MainActor.assumeIsolated { PerfProbe.mark("mail.change") }
+            }
+            .store(in: &cancellables)
+        refreshPopoverChrome()
+    }
+
+    private func schedulePopoverChromeRefresh() {
+        guard !popoverChromeRefreshPending else { return }
+        popoverChromeRefreshPending = true
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { self?.refreshPopoverChrome() }
+        }
+    }
+
+    /// Brings `popoverChrome` up to date; publishes only when something it holds changed.
+    private func refreshPopoverChrome() {
+        popoverChromeRefreshPending = false
+        let value = MailPopoverChrome.Value(isAvailable: isAvailable, showsPopoverSection: showsPopoverSection)
+        if popoverChrome.value != value { popoverChrome.value = value }
     }
 
     /// The app's instance, for views outside the mail window's environment (the meeting card).
@@ -298,6 +348,8 @@ final class MailService: ObservableObject {
     /// Wires the service to the calendar's accounts and providers. Called once at launch.
     func attach(_ calendarService: CalendarService) {
         Self.current = self
+        // Whether mail is available depends on the backend's accounts: read once it is set.
+        defer { refreshPopoverChrome() }
         guard backend == nil else { return }
         backend = calendarService
         calendarService.$providerGeneration
@@ -326,11 +378,25 @@ final class MailService: ObservableObject {
         let wasEnabled = settings.enabled
         let oldInterval = settings.pollMinutes
         let oldAccount = settings.accountID
+        let oldGrouping = settings.groupByConversation
         settings = updated
         updated.save(to: defaults)
         if oldAccount != updated.accountID { providersChanged() }
         if wasEnabled != updated.enabled || oldInterval != updated.pollMinutes { restartPolling() }
         if !updated.enabled { clearState() }
+        if oldGrouping != updated.groupByConversation, updated.enabled { groupingChanged() }
+    }
+
+    /// The panel's rows are of the other kind now: they go, and the folder is read again.
+    private func groupingChanged() {
+        panelListGeneration += 1
+        panelList = []
+        panelNextCursor = nil
+        panelListLoaded = nil
+        panelListFailed = false
+        panelListFailedOnConnection = false
+        dismissPanelNotice()
+        if panelWanted { Task { await refreshPanelList(minInterval: 0) } }
     }
 
     var mailAccounts: [CalendarAccount] { backend?.mailAccounts ?? [] }
@@ -437,7 +503,9 @@ final class MailService: ObservableObject {
                 }
             }
             // New mail (or mail read elsewhere): the inbox panel, once it has been shown, follows.
-            if changed, panelWanted, PopoverInboxPanelStore.isShown(in: defaults), panelFolder == .distinguished(.inbox) {
+            // With mail kept out of the popover the panel cannot open, so it is not kept fresh.
+            if changed, panelWanted, settings.popoverSectionEnabled, PopoverInboxPanelStore.isShown(in: defaults),
+               panelFolder == .distinguished(.inbox) {
                 await refreshPanelList(minInterval: 0)
             }
         } catch {
@@ -571,10 +639,11 @@ final class MailService: ObservableObject {
         panelLoadsInFlight += 1
         defer { panelLoadsInFlight -= 1 }
         do {
+            let byConversation = settings.groupByConversation
             let page = try await perform("mail.panelList") {
-                try await $0.mailConversations(in: folder, cursor: .first, filter: .all)
+                try await Self.listPage($0, in: folder, cursor: .first, filter: .all, byConversation: byConversation)
             }
-            guard generation == panelListGeneration, folder == panelFolder else { return }
+            guard generation == panelListGeneration, folder == panelFolder, byConversation == settings.groupByConversation else { return }
             // Pages scrolled to stay: the rows after the fresh first page's last one are kept
             // (less what moved up into it), and so is the cursor after them. When the first page
             // no longer reaches the old rows (much new mail), there would be a gap: start over.
@@ -602,11 +671,13 @@ final class MailService: ObservableObject {
         isLoadingMorePanelList = true
         defer { isLoadingMorePanelList = false }
         do {
+            let byConversation = settings.groupByConversation
             let page = try await perform("mail.panelList") {
-                try await $0.mailConversations(in: folder, cursor: cursor, filter: .all)
+                try await Self.listPage($0, in: folder, cursor: cursor, filter: .all, byConversation: byConversation)
             }
-            // A refresh or a folder switch in the meantime has the list now.
-            guard generation == panelListGeneration, folder == panelFolder, cursor == panelNextCursor else { return }
+            // A refresh, a folder switch or the other grouping in the meantime has the list now.
+            guard generation == panelListGeneration, folder == panelFolder, cursor == panelNextCursor,
+                  byConversation == settings.groupByConversation else { return }
             let known = Set(panelList.map(\.id))
             panelNextCursor = page.nextCursor
             panelList += page.conversations.filter { !known.contains($0.id) }
@@ -681,6 +752,7 @@ final class MailService: ObservableObject {
         let folder = panelFolder
         let folderID = panelFolderInfo?.id
         panelList.remove(at: index)
+        panelRowsRevision += 1
         let unreadDelta = -conversation.unreadCount
         adjustPanelUnread(folder: folder, folderID: folderID, delta: unreadDelta)
         do {
@@ -690,6 +762,7 @@ final class MailService: ObservableObject {
         } catch {
             if folder == panelFolder, !panelList.contains(where: { $0.id == conversation.id }) {
                 panelList.insert(conversation, at: min(index, panelList.count))
+                panelRowsRevision += 1
             }
             adjustPanelUnread(folder: folder, folderID: folderID, delta: -unreadDelta)
             if !MailCancellation.isCancellation(error) { showPanelNotice(.failed) }
@@ -706,12 +779,16 @@ final class MailService: ObservableObject {
             for conversation in restored.sorted(by: { (positions[$0.id] ?? 0) < (positions[$1.id] ?? 0) }) {
                 panelList.insert(conversation, at: min(positions[conversation.id] ?? 0, panelList.count))
             }
+            panelRowsRevision += 1
         }
         do {
             try await restore(deletion)
         } catch {
             let ids = Set(restored.map(\.id))
-            if folder == panelFolder { panelList.removeAll { ids.contains($0.id) } }
+            if folder == panelFolder {
+                panelList.removeAll { ids.contains($0.id) }
+                panelRowsRevision += 1
+            }
             if !MailCancellation.isCancellation(error) { showPanelNotice(.undoFailed) }
             return
         }
@@ -815,8 +892,23 @@ final class MailService: ObservableObject {
         }
     }
 
-    func conversations(in folder: MailFolderRef, cursor: MailListCursor, filter: MailListFilter) async throws -> MailConversationPage {
-        try await perform("mail.list") { try await $0.mailConversations(in: folder, cursor: cursor, filter: filter) }
+    /// A page of a folder as the mail window lists it: conversations, or messages when the user
+    /// turned grouping off (`byConversation`).
+    func conversations(in folder: MailFolderRef, cursor: MailListCursor, filter: MailListFilter, byConversation: Bool = true) async throws -> MailConversationPage {
+        try await perform("mail.list") { try await Self.listPage($0, in: folder, cursor: cursor, filter: filter, byConversation: byConversation) }
+    }
+
+    /// Conversations (`FindConversation`), or each message as a row of its own (`FindItem`).
+    nonisolated static func listPage(
+        _ provider: any MailProvider,
+        in folder: MailFolderRef,
+        cursor: MailListCursor,
+        filter: MailListFilter,
+        byConversation: Bool
+    ) async throws -> MailConversationPage {
+        if byConversation { return try await provider.mailConversations(in: folder, cursor: cursor, filter: filter) }
+        let page = try await provider.mailItems(in: folder, cursor: cursor, filter: filter, count: OWAMailPayloads.pageSize)
+        return MailConversationPage(conversations: page.items.map(\.asListRow), totalInView: page.totalInView, nextCursor: page.nextCursor)
     }
 
     /// A thread, from the cache when `useCache` and it is there.
@@ -834,6 +926,19 @@ final class MailService: ObservableObject {
             try await $0.mailThread(conversationID: conversationID, ignoringFolders: ignored)
         }
         if !includingDeleted { store(loaded) }
+        return loaded
+    }
+
+    /// One message opened alone from a list of messages: a thread of that message, cached under
+    /// its id. It comes whole (`GetItem`), with the quoted history, as Outlook shows a message.
+    func messageThread(_ ref: MailItemRef, useCache: Bool = true) async throws -> MailThread {
+        if useCache, let cached = threadCache[ref.id] {
+            touch(ref.id)
+            return cached
+        }
+        let message = try await fullMessage(MailItemRef(id: ref.id, changeKey: nil))
+        let loaded = MailThread(id: ref.id, messages: [message], totalMessageCount: 1)
+        store(loaded)
         return loaded
     }
 
@@ -873,13 +978,13 @@ final class MailService: ObservableObject {
         // The panel's row follows a message read in the panel or the window. `message` is the
         // message as the server held it before this change. The row counts only its folder's
         // messages: a copy a rule moved elsewhere, or a reply in Sent Items, leaves it alone.
-        if message.isRead != isRead, let conversationID = message.conversationID, isInPanelFolder(message),
-           let row = panelList.first(where: { $0.id == conversationID }) {
+        if message.isRead != isRead, isInPanelFolder(message), let row = panelList.first(where: { $0.holds(message) }) {
             replacePanelRow(row.with(unreadCount: max(0, row.unreadCount + (isRead ? -1 : 1))))
         }
         if message.parentFolderID == nil || message.parentFolderID == inboxFolderID {
             if let count = inboxUnreadCount { inboxUnreadCount = max(0, count + (isRead ? -1 : 1)) }
-            if isRead, let conversationID = message.conversationID { dropFromUnreadLists([conversationID]) }
+            // One message less: the conversation stays while others in it are unread.
+            if isRead, !message.isRead, let conversationID = message.conversationID { reduceUnreadLists([conversationID: 1]) }
         }
         changeGeneration += 1
         return updated
@@ -913,6 +1018,7 @@ final class MailService: ObservableObject {
         _ = try await perform("mail.move") { try await $0.mailMove(refs, to: folder) }
         let conversations = Set(messages.compactMap(\.conversationID))
         for conversationID in conversations { evict(conversationID) }
+        for message in messages { evict(message.ref.id) }
         dropFromUnreadLists(conversations)
         changeGeneration += 1
     }
@@ -931,8 +1037,8 @@ final class MailService: ObservableObject {
         for chunk in refs.chunked(Self.bulkPageSize) {
             _ = try await perform("mail.setRead") { try await $0.mailUpdate(chunk, .isRead(isRead)) }
         }
-        for conversation in conversations { evict(conversation.id) }
-        if isRead { dropFromUnreadLists(Set(conversations.map(\.id))) }
+        evict(rows: conversations)
+        if isRead { reduceUnreadLists(unreadLeaving(conversations)) }
         let inboxDelta = conversations.filter { $0.parentFolderID == nil || $0.parentFolderID == inboxFolderID }
             .reduce(0) { $0 + (isRead ? -$1.unreadCount : (($1.unreadCount == 0) ? 1 : 0)) }
         if let count = inboxUnreadCount { inboxUnreadCount = max(0, count + inboxDelta) }
@@ -947,7 +1053,7 @@ final class MailService: ObservableObject {
         let refs = newest
         guard !refs.isEmpty else { return }
         _ = try await perform("mail.flag") { try await $0.mailUpdate(refs, .flag(flagged ? .flagged : .notFlagged)) }
-        for conversation in conversations { evict(conversation.id) }
+        evict(rows: conversations)
         changeGeneration += 1
     }
 
@@ -975,9 +1081,8 @@ final class MailService: ObservableObject {
         for chunk in refs.chunked(Self.bulkPageSize) {
             _ = try await perform("mail.move") { try await $0.mailMove(chunk, to: folder) }
         }
-        let ids = Set(conversations.map(\.id))
-        for id in ids { evict(id) }
-        dropFromUnreadLists(ids)
+        evict(rows: conversations)
+        reduceUnreadLists(unreadLeaving(conversations))
         changeGeneration += 1
     }
 
@@ -1000,9 +1105,8 @@ final class MailService: ObservableObject {
                 complete = false
             }
         }
-        let ids = Set(conversations.map(\.id))
-        for id in ids { evict(id) }
-        dropFromUnreadLists(ids)
+        evict(rows: conversations)
+        reduceUnreadLists(unreadLeaving(conversations))
         changeGeneration += 1
         return MailDeletion(conversations: conversations, restore: complete ? restore : [:])
     }
@@ -1014,7 +1118,7 @@ final class MailService: ObservableObject {
                 _ = try await perform("mail.move") { try await $0.mailMove(chunk, to: folder) }
             }
         }
-        for conversation in deletion.conversations { evict(conversation.id) }
+        evict(rows: deletion.conversations)
         changeGeneration += 1
     }
 
@@ -1046,6 +1150,35 @@ final class MailService: ObservableObject {
     private func dropFromUnreadLists(_ conversationIDs: Set<String>) {
         latestUnread.removeAll { conversationIDs.contains($0.id) }
         peopleUnread.removeAll { conversationIDs.contains($0.id) }
+    }
+
+    /// Takes unread messages off conversations in the unread lists, by conversation id; one with
+    /// none left goes. A conversation dropped while it still has unread mail would stay out: the
+    /// next check reads the list again only when the inbox count differs, and it already agrees.
+    private func reduceUnreadLists(_ counts: [String: Int]) {
+        func reduced(_ list: [MailConversationSummary]) -> [MailConversationSummary] {
+            list.compactMap { conversation in
+                guard let count = counts[conversation.id] else { return conversation }
+                let left = conversation.unreadCount - count
+                return left > 0 ? conversation.with(unreadCount: left) : nil
+            }
+        }
+        latestUnread = reduced(latestUnread)
+        peopleUnread = reduced(peopleUnread)
+    }
+
+    /// The unread messages list rows take out of their conversations when they are read, moved or
+    /// deleted: a conversation row takes all of it, a message row only itself (when unread).
+    private func unreadLeaving(_ rows: [MailConversationSummary]) -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for row in rows {
+            if row.isSingleMessage {
+                if row.isUnread { counts[row.conversationKey, default: 0] += row.unreadCount }
+            } else {
+                counts[row.id] = Int.max
+            }
+        }
+        return counts
     }
 
     // MARK: - Meetings
@@ -1252,11 +1385,27 @@ final class MailService: ObservableObject {
         threadOrder.removeAll { $0 == id }
     }
 
+    /// What the cache holds for list rows: a row of one message is cached under its own id, and
+    /// the conversation it belongs to changed with it; a conversation row changed each of its
+    /// messages.
+    private func evict(rows: [MailConversationSummary]) {
+        for row in rows {
+            evict(row.id)
+            if row.isSingleMessage, let conversationID = row.messageConversationID { evict(conversationID) }
+            // Its messages, as opened alone from a list of messages (before grouping was switched).
+            if !row.isSingleMessage { for ref in row.itemRefs { evict(ref.id) } }
+        }
+    }
+
+    /// Puts a changed message into the cached thread of its conversation and into its own (the
+    /// message opened alone from a list of messages).
     private func replaceInCache(_ message: MailMessage) {
-        guard let conversationID = message.conversationID ?? threadCache.first(where: { $0.value.messages.contains { $0.ref.id == message.ref.id } })?.key,
-              let thread = threadCache[conversationID] else { return }
-        let messages = thread.messages.map { $0.ref.id == message.ref.id ? message : $0 }
-        threadCache[conversationID] = MailThread(id: thread.id, messages: messages, totalMessageCount: thread.totalMessageCount)
+        let conversationKey = message.conversationID ?? threadCache.first(where: { $0.key != message.ref.id && $0.value.messages.contains { $0.ref.id == message.ref.id } })?.key
+        for key in [conversationKey, message.ref.id].compactMap({ $0 }) {
+            guard let thread = threadCache[key] else { continue }
+            let messages = thread.messages.map { $0.ref.id == message.ref.id ? message : $0 }
+            threadCache[key] = MailThread(id: thread.id, messages: messages, totalMessageCount: thread.totalMessageCount)
+        }
     }
 
     var cachedThreadCount: Int { threadCache.count }

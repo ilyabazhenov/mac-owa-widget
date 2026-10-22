@@ -420,7 +420,7 @@ enum OWAMailPayloads {
                 // Only the first page: the server computes them over the whole result set.
                 "RetrieveRefiners": offset == 0,
                 "MaxRefinersCountPerRefinerType": 5,
-                "ItemTypes": "MailConversations",
+                "ItemTypes": query.asMessages ? "MailItems" : "MailConversations",
                 "ResultRowOffset": offset,
                 "ResultRowCount": count,
                 "MaxResultsCountHint": searchResultsCap,

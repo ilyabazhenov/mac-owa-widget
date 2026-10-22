@@ -126,6 +126,54 @@ final class MailSwipeActionsTests: XCTestCase {
         XCTAssertEqual(moves.last?.ids, ["I-c2-moved"])
     }
 
+    func testPanelAnimatesOnlyRowsASwipeTookOrUndoPutBack() async throws {
+        let (service, _, backend, _) = try await makeService(conversations: [
+            MailFixtures.conversation("c1"), MailFixtures.conversation("c2"), MailFixtures.conversation("c3"),
+        ])
+        _ = backend
+        await service.refreshPanelList(minInterval: 0)
+        await service.refreshPanelList(minInterval: 0)
+        XCTAssertEqual(service.panelRowsRevision, 0, "a refresh lands without animating the list")
+        await service.deletePanelConversation(service.panelList[1])
+        XCTAssertEqual(service.panelRowsRevision, 1)
+        await service.undoPanelDelete()
+        XCTAssertEqual(service.panelRowsRevision, 2)
+    }
+
+    /// The popover (the whole calendar) redraws for mail only when what it shows of mail changes.
+    func testPopoverChromeIgnoresPanelAndCountChangesAndFollowsSettings() async throws {
+        let (service, provider, backend, _) = try await makeService(conversations: [
+            MailFixtures.conversation("c1"), MailFixtures.conversation("c2"),
+        ])
+        _ = backend
+        await drainMainQueue()
+        var publishes = 0
+        let subscription = service.popoverChrome.objectWillChange.sink { publishes += 1 }
+        defer { subscription.cancel() }
+
+        // Rows coming and leaving, the Undo line, the unread count (the envelope's badge follows
+        // it on its own): none of it redraws the popover.
+        await service.refreshPanelList(minInterval: 0)
+        await service.togglePanelRead(service.panelList[1])
+        await service.deletePanelConversation(service.panelList[0])
+        await provider.setConversations([MailFixtures.conversation("c2")])
+        await service.checkInbox()
+        await drainMainQueue()
+        XCTAssertEqual(publishes, 0)
+
+        service.updateSettings { $0.popoverSectionEnabled = false }
+        await drainMainQueue()
+        XCTAssertEqual(publishes, 1)
+        XCTAssertFalse(service.popoverChrome.value.showsPopoverSection)
+        XCTAssertTrue(service.popoverChrome.value.isAvailable)
+    }
+
+    private func drainMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+    }
+
     func testRefusedPanelDeletePutsTheRowBack() async throws {
         let (service, provider, backend, _) = try await makeService(conversations: [
             MailFixtures.conversation("c1"), MailFixtures.conversation("c2"),

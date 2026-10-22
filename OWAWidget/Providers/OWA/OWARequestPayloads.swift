@@ -614,3 +614,78 @@ enum OWARespondToMeetingPayload {
         code == "ErrorIrresolvableConflict" || code == "ErrorStaleObject"
     }
 }
+
+// MARK: - Meeting removal
+
+/// SOAP envelopes that take a meeting out of the calendar, one per ``MeetingRemovalMode``.
+///
+/// Pure functions, like ``OWARespondToMeetingPayload``: the ids are server-authored and the
+/// message comes from an MCP client, so the escaping is what needs testing. Nothing is ever
+/// hard-deleted: `DeleteItem` and the response objects move the item to Deleted Items, where the
+/// user can still get it back.
+enum OWAMeetingRemovalPayload {
+
+    /// The EWS operation each mode posts, for the `SOAPAction` header.
+    static func action(for mode: MeetingRemovalMode) -> String {
+        switch mode {
+        case .cancelForAttendees, .decline: "CreateItem"
+        case .deleteSilently: "DeleteItem"
+        }
+    }
+
+    /// - Parameter message: plain text for the attendees (`cancelForAttendees`) or the organizer
+    ///   (`decline`); ignored by `deleteSilently`, which tells nobody. Empty means none.
+    static func soap(itemId: String, changeKey: String?, mode: MeetingRemovalMode, message: String) -> String {
+        let escape = OWACreateCalendarEventPayload.escapeXML
+        let changeKeyAttribute = changeKey.map { #" ChangeKey="\#(escape($0))""# } ?? ""
+        let reference = #"<t:ReferenceItemId Id="\#(escape(itemId))"\#(changeKeyAttribute)/>"#
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let body: String
+        switch mode {
+        case .cancelForAttendees:
+            // SmartResponseType: NewBodyContent follows ReferenceItemId.
+            let content = text.isEmpty ? "" : #"<t:NewBodyContent BodyType="Text">\#(escape(text))</t:NewBodyContent>"#
+            body = """
+            <m:CreateItem MessageDisposition="SendAndSaveCopy">
+              <m:Items>
+                <t:CancelCalendarItem>\(reference)\(content)</t:CancelCalendarItem>
+              </m:Items>
+            </m:CreateItem>
+            """
+        case .decline:
+            // ResponseObjectType: the item's own Body precedes ReferenceItemId.
+            let content = text.isEmpty ? "" : #"<t:Body BodyType="Text">\#(escape(text))</t:Body>"#
+            body = """
+            <m:CreateItem MessageDisposition="SendAndSaveCopy">
+              <m:Items>
+                <t:DeclineItem>\(content)\(reference)</t:DeclineItem>
+              </m:Items>
+            </m:CreateItem>
+            """
+        case .deleteSilently:
+            // `AffectedTaskOccurrences` is required by the schema for every DeleteItem and only
+            // matters for tasks. An occurrence id deletes that occurrence alone.
+            let itemID = #"<t:ItemId Id="\#(escape(itemId))"\#(changeKeyAttribute)/>"#
+            body = """
+            <m:DeleteItem DeleteType="MoveToDeletedItems" SendMeetingCancellations="SendToNone" AffectedTaskOccurrences="AllOccurrences">
+              <m:ItemIds>\(itemID)</m:ItemIds>
+            </m:DeleteItem>
+            """
+        }
+
+        return """
+        <?xml version="1.0" encoding="utf-8"?>
+        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" \
+        xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" \
+        xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">
+          <soap:Header>
+            <t:RequestServerVersion Version="Exchange2013_SP1"/>
+          </soap:Header>
+          <soap:Body>
+        \(body)
+          </soap:Body>
+        </soap:Envelope>
+        """
+    }
+}

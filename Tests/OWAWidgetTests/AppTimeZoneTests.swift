@@ -28,6 +28,17 @@ final class AppTimeZoneTests: XCTestCase {
         XCTAssertEqual(AppTimeZone.zone.secondsFromGMT(), 5 * 3600)
     }
 
+    @MainActor
+    func testCachedShortTimeFollowsTheDisplayZone() {
+        let localization = LocalizationService(selectedLanguage: .russian)
+        let nineUTC = Date(timeIntervalSince1970: 1_760_000_400) // 2025-10-09 09:00 UTC
+        UserDefaults.standard.set("Europe/Moscow", forKey: AppTimeZone.storageKey)
+        XCTAssertEqual(localization.shortTime(nineUTC), "12:00")
+        // The formatter is kept between calls; the zone is not.
+        UserDefaults.standard.set("Asia/Yekaterinburg", forKey: AppTimeZone.storageKey)
+        XCTAssertEqual(localization.shortTime(nineUTC), "14:00")
+    }
+
     func testInvalidStoredZoneFallsBackToMoscow() {
         UserDefaults.standard.set("Not/AZone", forKey: AppTimeZone.storageKey)
         XCTAssertEqual(AppTimeZone.zone.identifier, "Europe/Moscow")

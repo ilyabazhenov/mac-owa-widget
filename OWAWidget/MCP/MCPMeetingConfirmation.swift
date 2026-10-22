@@ -62,23 +62,33 @@ protocol MCPConfirmationPresenting: AnyObject {
     func close()
 }
 
-/// Waits for exactly one answer per request: a button, the timeout or the client's cancellation,
+/// Waits for exactly one answer per question: a button, the timeout or the client's cancellation,
 /// whichever comes first. One question at a time; a new one replaces the old, which counts as
-/// cancelled (`MCPCalendarTools` refuses a second request before it gets here anyway).
+/// cancelled. Shared by every MCP confirmation panel (create_meeting, cancel_meeting,
+/// prepare_mail), which differ only in what they show.
 @MainActor
-final class MCPMeetingConfirmationController: MCPMeetingConfirming {
-    private let presenter: MCPConfirmationPresenting
+final class MCPConfirmationWaiter {
+    private let logName: String
     private var pending: CheckedContinuation<MCPConfirmationOutcome, Never>?
+    private var closePanel: (() -> Void)?
     private var timeoutTask: Task<Void, Never>?
     /// Which question the buttons belong to: a click that lands on a panel already answered or
     /// replaced must not answer the next one.
     private var generation = 0
 
-    init(presenter: MCPConfirmationPresenting? = nil) {
-        self.presenter = presenter ?? MCPConfirmationPanel()
+    init(logName: String) {
+        self.logName = logName
     }
 
-    func confirm(_ proposal: MCPMeetingProposal, timeout: TimeInterval) async -> MCPConfirmationOutcome {
+    /// - Parameters:
+    ///   - show: puts the question on screen with its deadline; the panel calls `answer` from
+    ///     its buttons.
+    ///   - close: takes the panel away once any answer has come.
+    func wait(
+        timeout: TimeInterval,
+        show: @escaping (_ deadline: Date, _ answer: @escaping (MCPConfirmationOutcome) -> Void) -> Void,
+        close: @escaping () -> Void
+    ) async -> MCPConfirmationOutcome {
         finish(.cancelled)
         generation += 1
         let current = generation
@@ -89,13 +99,10 @@ final class MCPMeetingConfirmationController: MCPMeetingConfirming {
                     return
                 }
                 pending = continuation
-                presenter.show(
-                    proposal,
-                    deadline: Date().addingTimeInterval(timeout),
-                    onConfirm: { [weak self] in self?.finish(.confirmed, generation: current) },
-                    onReject: { [weak self] in self?.finish(.rejected, generation: current) },
-                    onEdit: { [weak self] in self?.finish(.handedOff, generation: current) }
-                )
+                closePanel = close
+                show(Date().addingTimeInterval(timeout)) { [weak self] outcome in
+                    self?.finish(outcome, generation: current)
+                }
                 timeoutTask = Task { [weak self] in
                     try? await Task.sleep(for: .seconds(timeout))
                     guard !Task.isCancelled else { return }
@@ -113,9 +120,38 @@ final class MCPMeetingConfirmationController: MCPMeetingConfirming {
         pending = nil
         timeoutTask?.cancel()
         timeoutTask = nil
-        presenter.close()
+        closePanel?()
+        closePanel = nil
         continuation.resume(returning: outcome)
-        MCPDebugLog.log("create_meeting confirmation: \(outcome)")
+        MCPDebugLog.log("\(logName) confirmation: \(outcome)")
+    }
+}
+
+/// The create_meeting question, over ``MCPConfirmationWaiter``.
+@MainActor
+final class MCPMeetingConfirmationController: MCPMeetingConfirming {
+    private let presenter: MCPConfirmationPresenting
+    private let waiter = MCPConfirmationWaiter(logName: "create_meeting")
+
+    init(presenter: MCPConfirmationPresenting? = nil) {
+        self.presenter = presenter ?? MCPConfirmationPanel()
+    }
+
+    func confirm(_ proposal: MCPMeetingProposal, timeout: TimeInterval) async -> MCPConfirmationOutcome {
+        let presenter = presenter
+        return await waiter.wait(
+            timeout: timeout,
+            show: { deadline, answer in
+                presenter.show(
+                    proposal,
+                    deadline: deadline,
+                    onConfirm: { answer(.confirmed) },
+                    onReject: { answer(.rejected) },
+                    onEdit: { answer(.handedOff) }
+                )
+            },
+            close: { presenter.close() }
+        )
     }
 }
 

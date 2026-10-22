@@ -85,6 +85,16 @@ actor OWACalendarProvider: CalendarProvider {
         }
     }
 
+    func removeMeeting(_ event: CalendarEvent, mode: MeetingRemovalMode, message: String) async throws {
+        guard event.changeKey != nil else { throw OWAError.invalidResponse }
+        do {
+            try await client.removeMeeting(itemId: event.id, changeKey: event.changeKey, mode: mode, message: message)
+        } catch {
+            log.error("removeMeeting failed: \(error, privacy: .private)")
+            throw error
+        }
+    }
+
     // MARK: - Mapping
 
     private func mapItem(_ item: OWACalendarItem) -> CalendarEvent? {

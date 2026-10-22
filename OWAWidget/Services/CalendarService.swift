@@ -851,6 +851,35 @@ final class CalendarService: ObservableObject {
         syncNow()
     }
 
+    /// Cancels, declines or deletes one meeting in Exchange, then drops it from `events` at once
+    /// so the popover does not keep showing it until the sync that follows.
+    func removeMeeting(_ event: CalendarEvent, mode: MeetingRemovalMode, message: String = "") async throws {
+        guard let provider = providers.first(where: { $0.account.id == event.accountID }) else {
+            throw CalendarProviderError.notSupported
+        }
+        // Same gate as creating a meeting: a rejected password (AD lockout risk) or an untrusted
+        // server certificate stops every request.
+        if syncStatus.blocksSync {
+            throw OWAError.httpError(401, "Authentication or certificate trust required")
+        }
+        do {
+            try await provider.removeMeeting(event, mode: mode, message: message)
+        } catch {
+            applyBlockingError(error, context: "removeMeeting")
+            throw error
+        }
+        log.info("removeMeeting succeeded mode=\(mode.rawValue, privacy: .public)")
+        events.removeAll { $0.id == event.id }
+        // Same as an answer from the detail card: a declined invitation leaves the panel and the
+        // ✉︎N count now, not after a sync that may fail.
+        invitationAlerts.reconcile(with: events)
+        if invitationAlertsEnabled {
+            invitationTracker.refreshUnhandled(events: events, now: clock())
+            unhandledInvitationIDs = invitationTracker.unhandledEventIDs
+        }
+        syncNow()
+    }
+
     // MARK: - Meeting response
 
     func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {

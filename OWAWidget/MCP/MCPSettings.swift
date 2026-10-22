@@ -1,6 +1,7 @@
 import Foundation
 
-/// The three MCP switches: the server itself, creating meetings, and asking about new clients.
+/// The MCP switches: the server itself, creating and cancelling meetings, asking about new
+/// clients, and mail.
 ///
 /// They live in ``SecureStore``, not in `UserDefaults`. The preferences plist is writable by any
 /// process of the user (`defaults write`), and these switches decide whether a program may read
@@ -18,11 +19,13 @@ struct MCPSettings: Codable, Equatable, Sendable {
     var mailRead = false
     /// Off by default: an email goes out only after the user confirms it in the app's panel.
     var mailSend = false
+    /// Off by default and separate from `createMeetings`: cancelling tells every attendee.
+    var cancelMeetings = false
 }
 
 extension MCPSettings {
     private enum CodingKeys: String, CodingKey {
-        case serverEnabled, createMeetings, askNewClients, mailRead, mailSend
+        case serverEnabled, createMeetings, askNewClients, mailRead, mailSend, cancelMeetings
     }
 
     /// Settings saved before a switch existed lack its key: it takes its default (off).
@@ -33,6 +36,7 @@ extension MCPSettings {
         askNewClients = try container.decodeIfPresent(Bool.self, forKey: .askNewClients) ?? true
         mailRead = try container.decodeIfPresent(Bool.self, forKey: .mailRead) ?? false
         mailSend = try container.decodeIfPresent(Bool.self, forKey: .mailSend) ?? false
+        cancelMeetings = try container.decodeIfPresent(Bool.self, forKey: .cancelMeetings) ?? false
     }
 }
 

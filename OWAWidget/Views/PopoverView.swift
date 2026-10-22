@@ -3,7 +3,12 @@ import AppKit
 
 struct PopoverView: View {
     @EnvironmentObject var service: CalendarService
-    @EnvironmentObject private var mail: MailService
+    /// Read, not observed: the popover is the whole calendar, and observing the service redrew it
+    /// for every change there (each row a swipe takes out, each count, each page). It redraws for
+    /// mail when `mailChrome` — the part of mail it shows itself — changes; the inbox panel and
+    /// the mail strip observe the service on their own.
+    private let mail: MailService
+    @ObservedObject private var mailChrome: MailPopoverChrome
     @EnvironmentObject private var localization: LocalizationService
     @EnvironmentObject private var updateCheck: UpdateCheckService
     @EnvironmentObject private var colleagues: ColleaguePresenceService
@@ -53,7 +58,13 @@ struct PopoverView: View {
         }
     }
 
+    init(mail: MailService) {
+        self.mail = mail
+        _mailChrome = ObservedObject(wrappedValue: mail.popoverChrome)
+    }
+
     var body: some View {
+        let _ = PerfProbe.body("PopoverView")
         // The meeting card floats over the entire popover — colleagues section and footer
         // included — rather than only over the timeline. Expanding the colleagues block then
         // costs the card no height at all: it always opens against the full window.
@@ -226,28 +237,26 @@ struct PopoverView: View {
 
             if mail.isAvailable {
                 // Shows or hides the inbox panel; the mail window opens from the panel itself.
+                // With mail kept out of the popover there is no panel, and the envelope opens the
+                // mail window straight away.
                 Button {
-                    inboxPanelShown.toggle()
+                    if mail.showsPopoverSection {
+                        inboxPanelShown.toggle()
+                    } else {
+                        openMail(nil)
+                    }
                 } label: {
-                    Image(systemName: inboxPanelShown ? "envelope.fill" : "envelope")
+                    Image(systemName: showsInboxPanel ? "envelope.fill" : "envelope")
                         .font(.system(size: 13))
-                        .foregroundStyle(inboxPanelShown ? Color.accentColor : .primary)
+                        .foregroundStyle(showsInboxPanel ? Color.accentColor : .primary)
                         .overlay(alignment: .topTrailing) {
-                            if !inboxPanelShown, let unread = mail.inboxUnreadCount, unread > 0 {
-                                Text(unread > 99 ? "99+" : "\(unread)")
-                                    .font(.system(size: 8, weight: .bold))
-                                    .monospacedDigit()
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 3)
-                                    .frame(minWidth: 12, minHeight: 12)
-                                    .background(Capsule().fill(Color.accentColor))
-                                    .offset(x: 7, y: -6)
-                            }
+                            // Not there while the panel is open, so nothing then follows the count.
+                            if !showsInboxPanel { PopoverMailUnreadBadge(mail: mail) }
                         }
                 }
                 .buttonStyle(.plain)
-                .help(localization.tr(inboxPanelShown ? "popover.inbox.hide" : "popover.inbox.show"))
-                .accessibilityLabel(localization.tr(inboxPanelShown ? "popover.inbox.hide" : "popover.inbox.show"))
+                .help(localization.tr(envelopeHelpKey))
+                .accessibilityLabel(localization.tr(envelopeHelpKey))
             }
 
             if service.supportsMeetingCreation {
@@ -352,8 +361,15 @@ struct PopoverView: View {
         }
     }
 
-    /// The panel needs mail: without it the envelope that toggles it is not there either.
-    private var showsInboxPanel: Bool { inboxPanelShown && mail.isAvailable }
+    /// The panel needs mail: without it the envelope that toggles it is not there either. With
+    /// mail kept out of the popover the panel stays closed, and `inboxPanelShown` is left as it
+    /// was, so turning mail back on brings the panel back as the user left it.
+    private var showsInboxPanel: Bool { inboxPanelShown && mail.showsPopoverSection }
+
+    private var envelopeHelpKey: String {
+        guard mail.showsPopoverSection else { return "mail.popover.open" }
+        return inboxPanelShown ? "popover.inbox.hide" : "popover.inbox.show"
+    }
 
     private var inboxPanelContent: AnyView {
         AnyView(
@@ -965,5 +981,24 @@ private struct InboxPanelRoot<Content: View>: View {
         content()
             .environmentObject(localization)
             .environment(\.locale, localization.locale)
+    }
+}
+
+/// The inbox count on the popover's envelope. It observes the service itself, so a change in the
+/// count redraws this badge rather than the popover around it.
+private struct PopoverMailUnreadBadge: View {
+    @ObservedObject var mail: MailService
+
+    var body: some View {
+        if let unread = mail.inboxUnreadCount, unread > 0 {
+            Text(unread > 99 ? "99+" : "\(unread)")
+                .font(.system(size: 8, weight: .bold))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .padding(.horizontal, 3)
+                .frame(minWidth: 12, minHeight: 12)
+                .background(Capsule().fill(Color.accentColor))
+                .offset(x: 7, y: -6)
+        }
     }
 }

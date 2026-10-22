@@ -156,6 +156,19 @@ struct MailConversationSummary: Identifiable, Hashable, Sendable {
     var itemClasses: [String] = []
     /// The preview opened with the organization's "external sender" warning (stripped from it).
     var hasExternalBanner = false
+    /// The row is one message (the list shows messages, not conversations): `id` is the
+    /// message's id, and `messageConversationID` its conversation.
+    var isSingleMessage = false
+    var messageConversationID: String?
+
+    /// The conversation the row belongs to: what the unread check and the thread cache know it by.
+    var conversationKey: String { isSingleMessage ? (messageConversationID ?? id) : id }
+
+    /// Whether the row stands for `message`: its own row in a list of messages, its
+    /// conversation's row in a list of conversations.
+    func holds(_ message: MailMessage) -> Bool {
+        isSingleMessage ? id == message.ref.id : id == message.conversationID
+    }
 
     var isMeetingRequest: Bool { itemClasses.contains { $0.hasPrefix("IPM.Schedule.Meeting.Request") } }
     var isMeetingCancellation: Bool { itemClasses.contains { $0.hasPrefix("IPM.Schedule.Meeting.Canceled") } }
@@ -198,6 +211,8 @@ struct MailConversationSummary: Identifiable, Hashable, Sendable {
         copy.senderEmail = senderEmail
         copy.itemClasses = itemClasses
         copy.hasExternalBanner = hasExternalBanner
+        copy.isSingleMessage = isSingleMessage
+        copy.messageConversationID = messageConversationID
         return copy
     }
 }
@@ -380,6 +395,43 @@ struct MailListItem: Identifiable, Hashable, Sendable {
     let preview: String
     let instanceKey: String?
     var kind: MailItemKind = .note
+    var itemClass: String?
+    var categories: [String] = []
+    var isFlagged = false
+    var isProtected = false
+    var parentFolderID: String?
+    /// The preview opened with the organization's "external sender" warning (stripped from it).
+    var hasExternalBanner = false
+
+    /// The message as a row of a list that shows messages, not conversations: a conversation of
+    /// one, under the message's own id.
+    var asListRow: MailConversationSummary {
+        var row = MailConversationSummary(
+            id: ref.id,
+            topic: subject,
+            senders: from.map { [$0.displayName] } ?? [],
+            recipients: displayTo.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
+            lastDelivery: received,
+            messageCount: 1,
+            globalMessageCount: 1,
+            unreadCount: isRead ? 0 : 1,
+            hasAttachments: hasAttachments,
+            importance: importance,
+            preview: preview,
+            itemRefs: [ref],
+            categories: categories,
+            isFlagged: isFlagged,
+            isProtected: isProtected,
+            instanceKey: instanceKey,
+            parentFolderID: parentFolderID
+        )
+        row.senderEmail = from?.email
+        row.itemClasses = itemClass.map { [$0] } ?? []
+        row.hasExternalBanner = hasExternalBanner
+        row.messageConversationID = conversationID
+        row.isSingleMessage = true
+        return row
+    }
 }
 
 /// A batch of conversations the window lists or acts on together.
@@ -419,6 +471,8 @@ struct MailSearchQuery: Hashable, Sendable {
     var receivedTo: Date?
     /// A server folder refiner (`FolderRefinerId`) taken from an earlier answer.
     var folderRefinerID: String?
+    /// Results as messages, not conversations (the user turned grouping off).
+    var asMessages = false
 
     var isEmpty: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && from.isEmpty && hasAttachments == nil

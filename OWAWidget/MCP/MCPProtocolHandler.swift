@@ -6,8 +6,11 @@ struct MCPToolDefinition: Sendable {
     let title: String
     let description: String
     let inputSchema: JSONValue
-    /// `false` only for `create_meeting`: it sends invitations to other people.
+    /// `false` for the tools that change something: `create_meeting`, `cancel_meeting`,
+    /// `prepare_mail`.
     var isReadOnly = true
+    /// Removes something: `cancel_meeting`.
+    var isDestructive = false
 
     var json: JSONValue {
         var annotations: [String: JSONValue] = [
@@ -16,7 +19,7 @@ struct MCPToolDefinition: Sendable {
             "openWorldHint": .bool(!isReadOnly),
         ]
         if !isReadOnly {
-            annotations["destructiveHint"] = false
+            annotations["destructiveHint"] = .bool(isDestructive)
             annotations["idempotentHint"] = false
         }
         return [

@@ -56,6 +56,7 @@ struct PopoverInboxColumn: View {
     }
 
     var body: some View {
+        let _ = PerfProbe.body("PopoverInboxColumn")
         VStack(spacing: 0) {
             if isReading { readerHeader } else { header }
             Divider()
@@ -126,7 +127,7 @@ struct PopoverInboxColumn: View {
                 }
                 .padding(.bottom, 10)
                 // A row a swipe deleted (or Undo put back) closes the gap instead of jumping.
-                .animation(.easeInOut(duration: 0.18), value: mail.panelList.map(\.id))
+                .animation(.easeInOut(duration: 0.18), value: mail.panelRowsRevision)
             }
             // ↑/↓ in the reader may have walked off the rows that were on screen.
             .onChange(of: reader.conversationID) { id in

@@ -20,9 +20,14 @@ protocol CalendarProvider: Actor {
         requiredAttendees: [ResolvedAttendee],
         optionalAttendees: [ResolvedAttendee]
     ) async throws
+    func removeMeeting(_ event: CalendarEvent, mode: MeetingRemovalMode, message: String) async throws
 }
 
 extension CalendarProvider {
+    func removeMeeting(_ event: CalendarEvent, mode: MeetingRemovalMode, message: String) async throws {
+        throw CalendarProviderError.notSupported
+    }
+
     func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {
         throw CalendarProviderError.notSupported
     }

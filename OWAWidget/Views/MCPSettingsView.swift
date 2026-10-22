@@ -36,6 +36,11 @@ struct MCPSettingsView: View {
                 Text(localization.tr("mcp.createMeetings.description"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                Toggle(localization.tr("mcp.cancelMeetings"), isOn: $server.canCancelMeetings)
+                    .disabled(!server.isEnabled)
+                Text(localization.tr("mcp.cancelMeetings.description"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
 
             Section(localization.tr("mcp.mail.section")) {

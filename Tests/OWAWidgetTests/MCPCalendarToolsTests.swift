@@ -26,6 +26,8 @@ final class MCPCalendarToolsTests: XCTestCase {
         private let fetchDelay: Duration?
         private(set) var fetchCalls: [DateInterval] = []
         private(set) var created: [(title: String, start: Date, required: [String], optional: [String])] = []
+        private(set) var removed: [(id: String, mode: MeetingRemovalMode, message: String)] = []
+        private let removeError: Error?
 
         init(
             account: CalendarAccount,
@@ -39,9 +41,11 @@ final class MCPCalendarToolsTests: XCTestCase {
             failingSearches: Set<String> = [],
             archive: [CalendarEvent] = [],
             fetchError: Error? = nil,
-            fetchDelay: Duration? = nil
+            fetchDelay: Duration? = nil,
+            removeError: Error? = nil
         ) {
             self.account = account
+            self.removeError = removeError
             self.attendeesByID = attendeesByID
             self.uidByID = uidByID
             self.error = error
@@ -88,6 +92,11 @@ final class MCPCalendarToolsTests: XCTestCase {
             created.append((title, start, requiredAttendees.map(\.email), optionalAttendees.map(\.email)))
         }
 
+        func removeMeeting(_ event: CalendarEvent, mode: MeetingRemovalMode, message: String) async throws {
+            if let removeError { throw removeError }
+            removed.append((event.id, mode, message))
+        }
+
         func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] {
             fetchCalls.append(DateInterval(start: start, end: end))
             if let fetchDelay { try await Task.sleep(for: fetchDelay) }
@@ -118,6 +127,21 @@ final class MCPCalendarToolsTests: XCTestCase {
         }
     }
 
+    private final class FakeRemovalConfirmer: MCPMeetingRemovalConfirming {
+        var outcome: MCPConfirmationOutcome
+        private(set) var proposals: [MCPMeetingRemovalProposal] = []
+
+        init(_ outcome: MCPConfirmationOutcome) { self.outcome = outcome }
+
+        private(set) var timeouts: [TimeInterval] = []
+
+        func confirm(_ proposal: MCPMeetingRemovalProposal, timeout: TimeInterval) async -> MCPConfirmationOutcome {
+            proposals.append(proposal)
+            timeouts.append(timeout)
+            return outcome
+        }
+    }
+
     private let zone = TimeZone(identifier: "Europe/Moscow")!
     private let exchange = CalendarAccount(displayName: "Work", serverURL: "", email: "", accountType: .owa)
     private let local = CalendarAccount(displayName: "iCloud", serverURL: "", email: "", accountType: .eventKit)
@@ -142,6 +166,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         response: MeetingResponseType = .accepted,
         cancelled: Bool = false,
         organizer: String? = nil,
+        isOrganizer: Bool = false,
         attendees: [EventAttendee]? = nil,
         joinURL: URL? = nil,
         series: String? = nil,
@@ -151,7 +176,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         return CalendarEvent(
             id: id, title: id, startDate: start, endDate: start.addingTimeInterval(TimeInterval(minutes * 60)),
             location: nil, bodyPreview: "preview \(id)", joinURL: joinURL, platform: joinURL == nil ? .generic : .teams,
-            isAllDay: false, organizer: organizer, accountID: (account ?? exchange).id, isCancelled: cancelled, responseType: response,
+            isAllDay: false, organizer: organizer, accountID: (account ?? exchange).id, isCancelled: cancelled, isOrganizer: isOrganizer, responseType: response,
             changeKey: "ck-\(id)", icalUID: series, seriesID: series, detailedAttendees: attendees
         )
     }
@@ -162,9 +187,12 @@ final class MCPCalendarToolsTests: XCTestCase {
         localProvider: DetailsProvider? = nil,
         enabled: Bool = true,
         confirmer: FakeConfirmer = FakeConfirmer(.rejected),
+        removalConfirmer: FakeRemovalConfirmer = FakeRemovalConfirmer(.rejected),
         canCreateMeetings: Bool = true,
+        canRemoveMeetings: Bool = true,
         onDemandDeadline: TimeInterval = MCPCalendarTools.onDemandDeadline,
-        handOff: @escaping (MeetingDraftSeed) -> Void = { _ in }
+        handOff: @escaping (MeetingDraftSeed) -> Void = { _ in },
+        uptime: @escaping () -> TimeInterval = { 0 }
     ) -> (MCPCalendarTools, CalendarService) {
         let providers: [any CalendarProvider] = [provider ?? DetailsProvider(account: exchange), localProvider ?? DetailsProvider(account: local)]
         let service = CalendarService(
@@ -187,11 +215,14 @@ final class MCPCalendarToolsTests: XCTestCase {
             calendarService: service,
             onDemandDeadline: onDemandDeadline,
             confirmer: confirmer,
+            removalConfirmer: removalConfirmer,
             handOff: handOff,
             clock: { [now] in now },
             timeZone: { [zone] in zone },
+            uptime: uptime,
             isEnabled: { enabled },
-            canCreateMeetings: { canCreateMeetings }
+            canCreateMeetings: { canCreateMeetings },
+            canRemoveMeetings: { canRemoveMeetings }
         )
         return (tools, service)
     }
@@ -918,6 +949,290 @@ final class MCPCalendarToolsTests: XCTestCase {
             "required": ["ivanov@corp.ru", "IVANOV@corp.ru"],
             "optional": ["ivanov@partner.com"],
         ]
+    }
+
+    // MARK: - cancel_meeting
+
+    private let colleague = EventAttendee(name: "Иванов Иван", email: "Ivanov@corp.ru", kind: .required, response: .accepted)
+    private let myself = EventAttendee(name: "Баженов Илья", email: "me@corp.ru", kind: .required, response: .accepted)
+    private let guest = EventAttendee(name: "Partner", email: "guest@partner.com", kind: .optional, response: .notResponded)
+
+    func testCancelMeetingIsOffUntilTheUserAllowsIt() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeRemovalConfirmer(.confirmed)
+        let (tools, _) = makeTools(
+            events: [event("sync", day: 6, hour: 10, isOrganizer: true, attendees: [colleague])],
+            provider: provider, removalConfirmer: confirmer, canRemoveMeetings: false
+        )
+
+        let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "sync"])
+
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(confirmer.proposals.isEmpty)
+        let removed = await provider.removed
+        XCTAssertTrue(removed.isEmpty)
+    }
+
+    func testOrganizerCancelsForEveryAttendeeButThemselves() async {
+        let provider = DetailsProvider(account: exchange, ownEmail: "me@corp.ru")
+        let confirmer = FakeRemovalConfirmer(.confirmed)
+        let (tools, service) = makeTools(
+            events: [event("sync", day: 6, hour: 10, isOrganizer: true, attendees: [myself, colleague, guest], series: "uid")],
+            provider: provider, removalConfirmer: confirmer
+        )
+
+        let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "sync", "message": "Переносим"], client: "Claude Code")
+
+        XCTAssertFalse(result.isError, result.errorMessage ?? "")
+        XCTAssertEqual(result.structured?["removed"], true)
+        XCTAssertEqual(result.structured?["action"], "cancelled")
+        XCTAssertEqual(result.structured?["cancellation_sent_to"], ["ivanov@corp.ru", "guest@partner.com"])
+        XCTAssertEqual(result.structured?["occurrence_only"], true)
+        let proposal = confirmer.proposals.first
+        XCTAssertEqual(proposal?.mode, .cancelForAttendees)
+        XCTAssertEqual(proposal?.client, "Claude Code")
+        XCTAssertEqual(proposal?.attendees.map(\.email), ["ivanov@corp.ru", "guest@partner.com"])
+        XCTAssertEqual(proposal?.attendees.map(\.isExternal), [false, true])
+        XCTAssertEqual(proposal?.isOccurrence, true)
+        let removed = await provider.removed
+        XCTAssertEqual(removed.map(\.id), ["sync"])
+        XCTAssertEqual(removed.first?.mode, .cancelForAttendees)
+        XCTAssertEqual(removed.first?.message, "Переносим")
+        // Gone from the popover before the next sync.
+        XCTAssertFalse(service.events.contains { $0.id == "sync" })
+    }
+
+    func testRepeatedCancelReturnsTheFirstResult() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeRemovalConfirmer(.confirmed)
+        let (tools, _) = makeTools(
+            events: [event("sync", day: 6, hour: 10, isOrganizer: true, attendees: [colleague])],
+            provider: provider, removalConfirmer: confirmer
+        )
+
+        _ = await tools.call(name: "cancel_meeting", arguments: ["event_id": "sync"])
+        let second = await tools.call(name: "cancel_meeting", arguments: ["event_id": .string(MCPEventID.short("sync"))])
+
+        XCTAssertEqual(second.structured?["duplicate"], true)
+        XCTAssertEqual(confirmer.proposals.count, 1)
+        let removed = await provider.removed
+        XCTAssertEqual(removed.count, 1)
+    }
+
+    func testOrganizerWithoutAttendeesOnlyDeletes() async {
+        let provider = DetailsProvider(account: exchange, ownEmail: "me@corp.ru")
+        let confirmer = FakeRemovalConfirmer(.confirmed)
+        let (tools, _) = makeTools(
+            events: [event("focus", day: 6, hour: 10, isOrganizer: true, attendees: [myself])],
+            provider: provider, removalConfirmer: confirmer
+        )
+
+        let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "focus"])
+
+        XCTAssertEqual(result.structured?["action"], "deleted")
+        XCTAssertEqual(confirmer.proposals.first?.mode, .deleteSilently)
+        let removed = await provider.removed
+        XCTAssertEqual(removed.first?.mode, .deleteSilently)
+    }
+
+    func testOrganizerWithoutAttendeeListIsNotAsked() async {
+        let provider = DetailsProvider(account: exchange, error: URLError(.timedOut))
+        let confirmer = FakeRemovalConfirmer(.confirmed)
+        let (tools, _) = makeTools(events: [event("sync", day: 6, hour: 10, isOrganizer: true)], provider: provider, removalConfirmer: confirmer)
+
+        let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "sync"])
+
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(result.errorMessage?.contains("Nothing was changed") == true)
+        XCTAssertTrue(confirmer.proposals.isEmpty)
+    }
+
+    func testInvitationIsDeclinedOrDeletedSilently() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeRemovalConfirmer(.confirmed)
+        let (tools, _) = makeTools(events: [
+            event("invite", day: 6, hour: 10, organizer: "Петров Пётр"),
+            event("other", day: 6, hour: 12, organizer: "Петров Пётр"),
+        ], provider: provider, removalConfirmer: confirmer)
+
+        let declined = await tools.call(name: "cancel_meeting", arguments: ["event_id": "invite", "message": "Не смогу"])
+        let deleted = await tools.call(name: "cancel_meeting", arguments: ["event_id": "other", "notify_organizer": false])
+
+        XCTAssertEqual(declined.structured?["action"], "declined")
+        XCTAssertEqual(deleted.structured?["action"], "deleted")
+        XCTAssertEqual(confirmer.proposals.map(\.mode), [.decline, .deleteSilently])
+        XCTAssertEqual(confirmer.proposals.first?.organizer, "Петров Пётр")
+        let removed = await provider.removed
+        XCTAssertEqual(removed.map(\.mode), [.decline, .deleteSilently])
+        XCTAssertEqual(removed.first?.message, "Не смогу")
+    }
+
+    func testMessageIsRefusedWhenNobodyIsTold() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeRemovalConfirmer(.confirmed)
+        let (tools, _) = makeTools(events: [event("gone", day: 6, hour: 10, cancelled: true)], provider: provider, removalConfirmer: confirmer)
+
+        let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "gone", "message": "Пока"])
+
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(confirmer.proposals.isEmpty)
+    }
+
+    func testMeetingAlreadyCancelledByTheOrganizerIsDeleted() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeRemovalConfirmer(.confirmed)
+        let (tools, _) = makeTools(events: [event("gone", day: 6, hour: 10, cancelled: true)], provider: provider, removalConfirmer: confirmer)
+
+        _ = await tools.call(name: "cancel_meeting", arguments: ["event_id": "gone"])
+
+        XCTAssertEqual(confirmer.proposals.first?.mode, .deleteSilently)
+        XCTAssertEqual(confirmer.proposals.first?.isAlreadyCancelled, true)
+    }
+
+    func testPastAndLocalMeetingsAreRefused() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeRemovalConfirmer(.confirmed)
+        let (tools, _) = makeTools(events: [
+            event("past", day: 5, hour: 9),
+            event("local", day: 6, hour: 10, account: local),
+        ], provider: provider, removalConfirmer: confirmer)
+
+        for id in ["past", "local", "missing"] {
+            let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": .string(id)])
+            XCTAssertTrue(result.isError, id)
+        }
+        XCTAssertTrue(confirmer.proposals.isEmpty)
+    }
+
+    func testDeclinedOrUnansweredConfirmationChangesNothing() async {
+        for outcome in [MCPConfirmationOutcome.rejected, .timedOut, .cancelled] {
+            let provider = DetailsProvider(account: exchange)
+            let (tools, service) = makeTools(
+                events: [event("invite", day: 6, hour: 10)],
+                provider: provider, removalConfirmer: FakeRemovalConfirmer(outcome)
+            )
+
+            let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "invite"])
+
+            XCTAssertTrue(result.isError, "\(outcome)")
+            XCTAssertTrue(result.errorMessage?.contains("Nothing was changed") == true, "\(outcome)")
+            let removed = await provider.removed
+            XCTAssertTrue(removed.isEmpty, "\(outcome)")
+            XCTAssertTrue(service.events.contains { $0.id == "invite" }, "\(outcome)")
+        }
+    }
+
+    func testStaleMeetingIsReportedAndKept() async {
+        let provider = DetailsProvider(account: exchange, removeError: OWAError.ewsError("ErrorIrresolvableConflict"))
+        let (tools, service) = makeTools(
+            events: [event("invite", day: 6, hour: 10)],
+            provider: provider, removalConfirmer: FakeRemovalConfirmer(.confirmed)
+        )
+
+        let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "invite"])
+
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(result.errorMessage?.contains("changed in Exchange") == true)
+        XCTAssertTrue(service.events.contains { $0.id == "invite" })
+    }
+
+    func testNameOnlyAttendeesStillGetTheCancellation() async {
+        let list = EventAttendee(name: "Команда релиза", email: nil, kind: .required, response: .notResponded)
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeRemovalConfirmer(.confirmed)
+        let (tools, _) = makeTools(
+            events: [event("sync", day: 6, hour: 10, isOrganizer: true, attendees: [list])],
+            provider: provider, removalConfirmer: confirmer
+        )
+
+        let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "sync"])
+
+        XCTAssertEqual(result.structured?["action"], "cancelled")
+        XCTAssertEqual(result.structured?["cancellation_sent_to"], ["Команда релиза"])
+        XCTAssertEqual(confirmer.proposals.first?.mode, .cancelForAttendees)
+        XCTAssertEqual(confirmer.proposals.first?.unaddressedAttendees, ["Команда релиза"])
+        let removed = await provider.removed
+        XCTAssertEqual(removed.first?.mode, .cancelForAttendees)
+    }
+
+    func testOrganizersOwnCancelledLookingTitleIsCancelledForEveryone() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeRemovalConfirmer(.confirmed)
+        let meeting = CalendarEvent(
+            id: "cancelled-title", title: "Cancelled: разбор Q3", startDate: date(6, 10), endDate: date(6, 11),
+            location: nil, bodyPreview: nil, joinURL: nil, platform: .generic, isAllDay: false, organizer: nil,
+            accountID: exchange.id, isCancelled: false, isOrganizer: true, changeKey: "ck", detailedAttendees: [colleague]
+        )
+        let (tools, _) = makeTools(events: [meeting], provider: provider, removalConfirmer: confirmer)
+
+        _ = await tools.call(name: "cancel_meeting", arguments: ["event_id": "cancelled-title"])
+
+        XCTAssertEqual(confirmer.proposals.first?.mode, .cancelForAttendees)
+        XCTAssertEqual(confirmer.proposals.first?.isAlreadyCancelled, false)
+    }
+
+    func testOrganizerEntryIsNotACancellationRecipient() {
+        let organizerEntry = EventAttendee(name: "Баженов Илья", email: "me@corp.ru", kind: .required, response: .organizer)
+        let nameless = EventAttendee(name: "Рассылка", email: nil, kind: .optional, response: .notResponded)
+
+        // Own address unknown: the organizer is still recognised by the response Exchange gives it.
+        let (addressed, unaddressed) = MCPCalendarTools.cancellationRecipients(
+            [organizerEntry, colleague, colleague, nameless, nameless], ownAddress: nil, ownDomain: "corp.ru"
+        )
+
+        XCTAssertEqual(addressed.map(\.email), ["ivanov@corp.ru"])
+        XCTAssertEqual(unaddressed, ["Рассылка"])
+        let own = MCPCalendarTools.cancellationRecipients([myself], ownAddress: "ME@corp.ru", ownDomain: nil)
+        XCTAssertTrue(own.addressed.isEmpty && own.unaddressed.isEmpty)
+    }
+
+    func testAlreadyDeclinedInvitationIsDeletedWithoutASecondDecline() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeRemovalConfirmer(.confirmed)
+        let (tools, _) = makeTools(
+            events: [event("invite", day: 6, hour: 10, response: .declined, organizer: "Петров Пётр")],
+            provider: provider, removalConfirmer: confirmer
+        )
+
+        let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "invite"])
+
+        XCTAssertEqual(result.structured?["action"], "deleted")
+        XCTAssertEqual(confirmer.proposals.first?.mode, .deleteSilently)
+        XCTAssertEqual(confirmer.proposals.first?.isAlreadyDeclined, true)
+    }
+
+    func testPanelTimeLeavesRoomForTheClientsDeadline() async {
+        // The attendee list took 12 seconds: the panel gets what is left of the 50-second budget.
+        var ticks: [TimeInterval] = [0, 12]
+        let confirmer = FakeRemovalConfirmer(.rejected)
+        let (tools, _) = makeTools(
+            events: [event("sync", day: 6, hour: 10, isOrganizer: true, attendees: [colleague])],
+            removalConfirmer: confirmer,
+            uptime: { ticks.isEmpty ? 12 : ticks.removeFirst() }
+        )
+
+        _ = await tools.call(name: "cancel_meeting", arguments: ["event_id": "sync"])
+
+        XCTAssertEqual(confirmer.timeouts, [38])
+    }
+
+    func testTooSlowExchangeLeavesNoPanel() async {
+        var ticks: [TimeInterval] = [0, 35]
+        let confirmer = FakeRemovalConfirmer(.confirmed)
+        let provider = DetailsProvider(account: exchange)
+        let (tools, _) = makeTools(
+            events: [event("sync", day: 6, hour: 10, isOrganizer: true, attendees: [colleague])],
+            provider: provider, removalConfirmer: confirmer,
+            uptime: { ticks.isEmpty ? 35 : ticks.removeFirst() }
+        )
+
+        let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "sync"])
+
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(result.errorMessage?.contains("Nothing was changed") == true)
+        XCTAssertTrue(confirmer.proposals.isEmpty)
+        let removed = await provider.removed
+        XCTAssertTrue(removed.isEmpty)
     }
 
     // MARK: - find_people with several names
