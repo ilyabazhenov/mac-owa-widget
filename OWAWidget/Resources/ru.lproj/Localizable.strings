@@ -854,11 +854,10 @@
 /* Mail window: mailbox overview when nothing is open */
 "mail.digest.tile.inbox" = "новых во «Входящих»";
 "mail.digest.tile.people" = "от людей";
-"mail.digest.tile.invitations" = "приглашения без ответа";
+"mail.digest.tile.invitations" = "ждут вашего ответа";
 "mail.digest.tile.flagged" = "с флажком";
 "mail.digest.invitations" = "Ждут ответа";
 "mail.digest.important" = "Важное и с флажком";
-"mail.digest.keys" = "Клавиши";
 "mail.digest.otherAnswers" = "Другие ответы";
 "mail.key.navigate" = "переход";
 "mail.key.reply" = "ответить";
@@ -871,3 +870,7 @@
 "mail.overview" = "Обзор";
 "mail.overview.help" = "Обзор ящика (Esc)";
 "mail.key.overview" = "обзор ящика";
+"mail.digest.today" = "сегодня";
+"mail.digest.inProgress" = "идёт";
+"mail.digest.inTime" = "через %@";
+"mail.digest.openMail" = "Открыть письмо-приглашение";

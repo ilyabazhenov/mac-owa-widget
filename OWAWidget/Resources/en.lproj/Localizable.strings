@@ -854,11 +854,10 @@
 /* Mail window: mailbox overview when nothing is open */
 "mail.digest.tile.inbox" = "new in Inbox";
 "mail.digest.tile.people" = "from people";
-"mail.digest.tile.invitations" = "invitations to answer";
+"mail.digest.tile.invitations" = "waiting for your answer";
 "mail.digest.tile.flagged" = "flagged";
 "mail.digest.invitations" = "Waiting for your answer";
 "mail.digest.important" = "Important and flagged";
-"mail.digest.keys" = "Keys";
 "mail.digest.otherAnswers" = "Other answers";
 "mail.key.navigate" = "move";
 "mail.key.reply" = "reply";
@@ -871,3 +870,7 @@
 "mail.overview" = "Overview";
 "mail.overview.help" = "Mailbox overview (Esc)";
 "mail.key.overview" = "mailbox overview";
+"mail.digest.today" = "today";
+"mail.digest.inProgress" = "now";
+"mail.digest.inTime" = "in %@";
+"mail.digest.openMail" = "Open the invitation email";

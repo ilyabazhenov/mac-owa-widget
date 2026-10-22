@@ -25,6 +25,20 @@ struct MailDigest: Equatable {
 
     static let limit = 6
 
+    /// How close a meeting is, for the badge on today's invitations.
+    enum Soon: Equatable {
+        case inProgress
+        case inMinutes(Int)
+    }
+
+    /// `nil` unless the meeting is today and not over: a date further off is said by the day
+    /// badge alone.
+    static func soon(_ event: CalendarEvent, now: Date, calendar: Calendar = AppTimeZone.calendar) -> Soon? {
+        guard calendar.isDate(event.startDate, inSameDayAs: now), event.endDate > now else { return nil }
+        if event.startDate <= now { return .inProgress }
+        return .inMinutes(Int((event.startDate.timeIntervalSince(now) / 60).rounded(.up)))
+    }
+
     /// Invitations come from invitation emails at hand, matched to the meeting they create — not
     /// from every meeting without an answer: many calendars carry dozens of unanswered recurring
     /// and forwarded meetings, and a list of those would never be empty. Only meetings the user
@@ -78,8 +92,12 @@ struct MailDigest: Equatable {
 }
 
 /// The reader when nothing is open: an overview of the mailbox instead of an empty page —
-/// counts on top, then what waits for an answer, mail from people, what is flagged and the
-/// folders with unread mail, and the keys at the bottom.
+/// a title, counts on top, then what waits for an answer, what is important and the folders with
+/// unread mail, and the keys at the bottom.
+///
+/// Colour carries meaning only: orange for what needs the user (invitations, today's meeting),
+/// green for the answer most give (Accept), red and orange for importance and flags, the accent
+/// for counts. Everything else stays grey.
 struct MailDigestView: View {
     @ObservedObject var model: MailWindowModel
     @ObservedObject var service: MailService
@@ -104,24 +122,25 @@ struct MailDigestView: View {
         let digest = digest
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 20) {
+                    header
                     tiles(digest, proxy: proxy)
                     if digest.isEmpty {
                         VStack(spacing: 8) {
-                            Image(systemName: "checkmark.circle").font(.app(.symbol)).foregroundStyle(.tertiary)
+                            Image(systemName: "checkmark.circle").font(.app(.symbol)).foregroundStyle(.green)
                             Text(localization.tr("mail.digest.allClear")).font(.app(.headline)).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 24)
+                        .padding(.vertical, 16)
                     }
                     if !digest.invitations.isEmpty {
-                        section(localization.tr("mail.digest.invitations"), count: digest.invitations.count, icon: "calendar.badge.exclamationmark") {
+                        section(localization.tr("mail.digest.invitations"), count: digest.invitations.count, icon: "calendar.badge.exclamationmark", tint: .orange, countIsUrgent: true) {
                             ForEach(digest.invitations) { invitationRow($0) }
                         }
                         .id(Anchor.invitations)
                     }
                     if !digest.unreadFromPeople.isEmpty {
-                        section(localization.tr("mail.digest.unread"), count: service.peopleUnread.count, icon: "envelope.badge") {
+                        section(localization.tr("mail.digest.unread"), count: service.peopleUnread.count, icon: "person.2", tint: .teal) {
                             ForEach(digest.unreadFromPeople) { conversationRow($0) }
                         }
                         .id(Anchor.people)
@@ -132,19 +151,41 @@ struct MailDigestView: View {
                             importantSection(digest).frame(minWidth: 240, maxWidth: .infinity, alignment: .topLeading)
                             foldersSection(digest).frame(minWidth: 240, maxWidth: .infinity, alignment: .topLeading)
                         }
-                        VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 20) {
                             importantSection(digest)
                             foldersSection(digest)
                         }
                     }
                     keys
                 }
-                .frame(maxWidth: 680, alignment: .leading)
+                .frame(maxWidth: 720, alignment: .leading)
                 .padding(.horizontal, 28)
-                .padding(.vertical, 24)
+                .padding(.vertical, 22)
                 .frame(maxWidth: .infinity)
             }
         }
+    }
+
+    // MARK: Title
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(localization.tr("mail.overview"))
+                .font(.app(.largeTitle, weight: .semibold))
+            Text(subtitle)
+                .font(.app(.footnote))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    private var subtitle: String {
+        let day = localization.formatDate(Date(), format: "EEEE, d MMMM")
+        var parts = [day.prefix(1).uppercased() + day.dropFirst()]
+        if let checked = service.lastChecked {
+            parts.append(localization.tr("mail.window.subtitle.updated", localization.shortTime(checked)))
+        }
+        return parts.joined(separator: " · ")
     }
 
     // MARK: Counts
@@ -152,53 +193,65 @@ struct MailDigestView: View {
     /// Four equal tiles across the whole width; two by two when the reader is too narrow for
     /// four labels side by side.
     private func tiles(_ digest: MailDigest, proxy: ScrollViewProxy) -> some View {
-        let items: [(Int, String, () -> Void)] = [
-            (digest.inboxUnread ?? 0, "mail.digest.tile.inbox", {
+        let items: [(Int, String, String, Color, Bool, () -> Void)] = [
+            (digest.inboxUnread ?? 0, "mail.digest.tile.inbox", "tray", .accentColor, false, {
                 // The inbox, new mail only: what the number counts.
                 if let inbox = model.folders.first(where: { $0.distinguished == .inbox }) { model.select(folder: inbox) }
                 model.mode = .unread
             }),
-            (digest.peopleUnreadCount, "mail.digest.tile.people", { scroll(proxy, to: .people) }),
-            (digest.invitations.count, "mail.digest.tile.invitations", { scroll(proxy, to: .invitations) }),
-            (digest.flaggedCount, "mail.digest.tile.flagged", { scroll(proxy, to: .important) }),
+            (digest.peopleUnreadCount, "mail.digest.tile.people", "person.2", .teal, false, { scroll(proxy, to: .people) }),
+            // The one tile that asks for something: it stands out while it is not zero.
+            (digest.invitations.count, "mail.digest.tile.invitations", "calendar.badge.exclamationmark", .orange, true, { scroll(proxy, to: .invitations) }),
+            (digest.flaggedCount, "mail.digest.tile.flagged", "flag", .orange, false, { scroll(proxy, to: .important) }),
         ]
         let columns = { (count: Int) in Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top), count: count) }
         return ViewThatFits(in: .horizontal) {
             LazyVGrid(columns: columns(4), spacing: 8) {
-                ForEach(items.indices, id: \.self) { index in tile(items[index].0, items[index].1, action: items[index].2) }
+                ForEach(items.indices, id: \.self) { index in
+                    let item = items[index]
+                    tile(item.0, item.1, icon: item.2, tint: item.3, asksForAction: item.4, action: item.5)
+                }
             }
             .frame(minWidth: 4 * 120 + 3 * 8)
             LazyVGrid(columns: columns(2), spacing: 8) {
-                ForEach(items.indices, id: \.self) { index in tile(items[index].0, items[index].1, action: items[index].2) }
+                ForEach(items.indices, id: \.self) { index in
+                    let item = items[index]
+                    tile(item.0, item.1, icon: item.2, tint: item.3, asksForAction: item.4, action: item.5)
+                }
             }
         }
     }
 
-    private func tile(_ value: Int, _ key: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    private func tile(_ value: Int, _ key: String, icon: String, tint: Color, asksForAction: Bool, action: @escaping () -> Void) -> some View {
+        let isZero = value == 0
+        let highlighted = asksForAction && !isZero
+        return Button(action: action) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(value)")
-                    .font(.app(.title, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(value > 0 ? .primary : .tertiary)
-                // Two lines kept for every label, so a one-line tile is as tall as its neighbours
-                // and the numbers sit on one line across the row.
+                HStack(alignment: .firstTextBaseline) {
+                    Text("\(value)")
+                        .font(.app(.symbol, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(isZero ? AnyShapeStyle(.tertiary) : highlighted ? AnyShapeStyle(tint) : AnyShapeStyle(.primary))
+                    Spacer(minLength: 4)
+                    Image(systemName: icon)
+                        .font(.app(.headline))
+                        .foregroundStyle(isZero ? AnyShapeStyle(.tertiary) : AnyShapeStyle(tint))
+                }
+                // Two lines kept for every label, so a one-line tile is as tall as its neighbours.
                 Text(localization.tr(key))
                     .font(.app(.footnote))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(highlighted ? AnyShapeStyle(tint) : AnyShapeStyle(.secondary))
                     .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.leading)
             }
-            // One height for every tile: a reserved second line is not exactly as tall as a
-            // wrapped one, and the row showed it.
-            .frame(maxWidth: .infinity, minHeight: 52, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 58, alignment: .topLeading)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.07)))
+            .background(RoundedRectangle(cornerRadius: 10).fill(highlighted ? tint.opacity(0.14) : Color.secondary.opacity(0.07)))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.mailRow(cornerRadius: 8))
-        .disabled(value == 0)
+        .buttonStyle(.mailRow(cornerRadius: 10))
+        .disabled(isZero)
         .accessibilityElement(children: .combine)
     }
 
@@ -208,12 +261,23 @@ struct MailDigestView: View {
 
     // MARK: Sections
 
-    private func section<Content: View>(_ title: String, count: Int?, icon: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: icon).font(.app(.footnote)).foregroundStyle(.secondary)
-                Text(title).font(.app(.body, weight: .semibold)).foregroundStyle(.secondary)
-                if let count { Text("\(count)").font(.app(.footnote)).monospacedDigit().foregroundStyle(.tertiary) }
+    private func section<Content: View>(
+        _ title: String, count: Int?, icon: String, tint: Color, countIsUrgent: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Image(systemName: icon).font(.app(.headline)).foregroundStyle(tint)
+                Text(title).font(.app(.headline, weight: .semibold))
+                if let count {
+                    Text("\(count)")
+                        .font(.app(.caption, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(countIsUrgent ? AnyShapeStyle(tint) : AnyShapeStyle(.secondary))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(countIsUrgent ? tint.opacity(0.16) : Color.secondary.opacity(0.12)))
+                }
             }
             content()
         }
@@ -222,18 +286,24 @@ struct MailDigestView: View {
     @ViewBuilder
     private func importantSection(_ digest: MailDigest) -> some View {
         if !digest.important.isEmpty {
-            section(localization.tr("mail.digest.important"), count: nil, icon: "flag") {
+            section(localization.tr("mail.digest.important"), count: nil, icon: "exclamationmark.circle", tint: .red) {
                 ForEach(digest.important) { conversation in
                     Button { model.click(conversation, modifiers: []) } label: {
-                        HStack(spacing: 6) {
-                            if conversation.isFlagged {
-                                Image(systemName: "flag.fill").font(.app(.caption)).foregroundStyle(.orange)
-                            } else {
-                                Text("!").font(.app(.body, weight: .bold)).foregroundStyle(.red)
-                            }
-                            Text(conversation.topic.isEmpty ? localization.tr("mail.noSubject") : conversation.topic)
+                        HStack(spacing: 8) {
+                            // A flag is the user's own mark, high importance the sender's: two signs.
+                            Image(systemName: conversation.isFlagged ? "flag.fill" : "exclamationmark.circle.fill")
                                 .font(.app(.body))
-                                .lineLimit(1)
+                                .foregroundStyle(conversation.isFlagged ? Color.orange : Color.red)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(conversation.topic.isEmpty ? localization.tr("mail.noSubject") : conversation.topic)
+                                    .font(.app(.body))
+                                    .lineLimit(1)
+                                Text([conversation.primarySender, MailPresentation.listTime(conversation.lastDelivery, localization: localization)]
+                                    .filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(.app(.footnote))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
                             Spacer(minLength: 0)
                         }
                         .padding(.horizontal, 10)
@@ -253,7 +323,7 @@ struct MailDigestView: View {
     private func foldersSection(_ digest: MailDigest) -> some View {
         if !digest.busyFolders.isEmpty {
             let largest = max(1, digest.busyFolders.map(\.unreadCount).max() ?? 1)
-            section(localization.tr("mail.digest.folders"), count: nil, icon: "folder") {
+            section(localization.tr("mail.digest.folders"), count: nil, icon: "folder", tint: .accentColor) {
                 ForEach(digest.busyFolders) { folder in
                     Button { model.select(folder: folder) } label: {
                         HStack(spacing: 8) {
@@ -287,14 +357,36 @@ struct MailDigestView: View {
 
     // MARK: Rows
 
+    /// The day on the left says when at a glance; today's is orange and shows the time.
+    private func dayBadge(_ event: CalendarEvent) -> some View {
+        let isToday = AppTimeZone.calendar.isDateInToday(event.startDate)
+        return VStack(spacing: 0) {
+            Text(isToday ? localization.tr("mail.digest.today") : localization.formatDate(event.startDate, format: "EE"))
+                .font(.app(.micro, weight: .medium))
+                .textCase(.uppercase)
+            Text(isToday ? localization.shortTime(event.startDate) : localization.formatDate(event.startDate, format: "d"))
+                .font(.app(isToday ? .footnote : .title, weight: .semibold))
+                .monospacedDigit()
+        }
+        .foregroundStyle(isToday ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.primary))
+        .frame(width: 46, height: 36)
+        .background(RoundedRectangle(cornerRadius: 7).fill(isToday ? Color.orange.opacity(0.14) : Color.secondary.opacity(0.08)))
+        .accessibilityHidden(true)
+    }
+
     private func invitationRow(_ invitation: MailDigest.Invitation) -> some View {
         let event = invitation.event
         let isResponding = responding.contains(event.id)
         let day = localization.formatDate(event.startDate, format: "EE, d MMM")
-        return HStack(spacing: 8) {
+        let time = "\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))"
+        return HStack(spacing: 12) {
+            dayBadge(event)
             VStack(alignment: .leading, spacing: 1) {
-                Text(event.title).font(.app(.body, weight: .semibold)).lineLimit(1)
-                Text([event.organizer, "\(day), \(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))"]
+                HStack(spacing: 6) {
+                    Text(event.title).font(.app(.body, weight: .semibold)).lineLimit(1)
+                    if let soon = MailDigest.soon(event, now: Date()) { soonBadge(soon) }
+                }
+                Text([event.organizer, AppTimeZone.calendar.isDateInToday(event.startDate) ? time : "\(day), \(time)"]
                     .compactMap { $0 }.joined(separator: " · "))
                     .font(.app(.footnote))
                     .foregroundStyle(.secondary)
@@ -307,26 +399,53 @@ struct MailDigestView: View {
             if isResponding {
                 ProgressView().controlSize(.small)
             } else {
-                // Accept is the usual answer; the other two are one click further, in the menu.
-                Button(localization.tr("meeting.rsvp.accept")) { respond(event, .accept) }
-                    .controlSize(.small)
+                // Accept is the answer most give: the one coloured button. The other answers and
+                // opening the invitation email are a click further, as icons.
+                Button { respond(event, .accept) } label: {
+                    Text(localization.tr("meeting.rsvp.accept"))
+                        .font(.app(.footnote, weight: .semibold))
+                        .foregroundStyle(.green)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(0.15)))
+                }
+                .buttonStyle(.plain)
                 Menu {
                     Button(localization.tr("meeting.rsvp.tentative")) { respond(event, .tentative) }
                     Button(localization.tr("meeting.rsvp.decline"), role: .destructive) { respond(event, .decline) }
                 } label: {
-                    Image(systemName: "ellipsis")
+                    Image(systemName: "ellipsis.circle")
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                .help(localization.tr("mail.digest.otherAnswers"))
                 .accessibilityLabel(localization.tr("mail.digest.otherAnswers"))
-                Button(localization.tr("invitations.action.open")) { open(invitation) }
-                    .controlSize(.small)
+                Button { open(invitation) } label: {
+                    Image(systemName: "arrow.up.right.square").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(localization.tr("mail.digest.openMail"))
+                .accessibilityLabel(localization.tr("mail.digest.openMail"))
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 7).fill(Color.secondary.opacity(0.07)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.07)))
+    }
+
+    private func soonBadge(_ soon: MailDigest.Soon) -> some View {
+        let text: String = switch soon {
+        case .inProgress: localization.tr("mail.digest.inProgress")
+        // Whole hours past the first: "in 14 h", not "in 14 h 28 min" — a badge, not a clock.
+        case .inMinutes(let minutes): localization.tr("mail.digest.inTime", localization.compactDuration(minutes: minutes >= 60 ? minutes / 60 * 60 : minutes))
+        }
+        return Text(text)
+            .font(.app(.micro, weight: .semibold))
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(Color.orange.opacity(0.16)))
     }
 
     /// A real reply in Exchange, through the same path as the meeting card's buttons. The row
@@ -384,34 +503,32 @@ struct MailDigestView: View {
 
     // MARK: Keys
 
-    private static let keyItems: [(keys: [String], labelKey: String)] = [
-        (["↑", "↓"], "mail.key.navigate"), (["R"], "mail.key.reply"),
-        (["⇧R"], "mail.key.replyAll"), (["F"], "mail.key.forward"),
-        (["U"], "mail.key.read"), (["⌫"], "mail.key.delete"),
-        (["⌘"], "mail.key.multiSelect"), (["Esc"], "mail.key.overview"),
-        (["⌃⌥M"], "mail.key.window"),
+    private static let keyItems: [(keys: String, labelKey: String)] = [
+        ("↑↓", "mail.key.navigate"), ("R", "mail.key.reply"), ("⇧R", "mail.key.replyAll"),
+        ("F", "mail.key.forward"), ("U", "mail.key.read"), ("⌫", "mail.key.delete"),
+        ("⌘", "mail.key.multiSelect"), ("Esc", "mail.key.overview"), ("⌃⌥M", "mail.key.window"),
     ]
 
+    /// Reference, not content: small and quiet, under a rule at the bottom.
     private var keys: some View {
-        section(localization.tr("mail.digest.keys"), count: nil, icon: "keyboard") {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), alignment: .leading)], alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider().padding(.bottom, 10)
+            FlowRow(spacing: 14) {
                 ForEach(Self.keyItems, id: \.labelKey) { item in
                     HStack(spacing: 4) {
-                        ForEach(item.keys, id: \.self) { key in
-                            Text(key)
-                                .font(.app(.footnote, design: .monospaced))
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.secondary.opacity(0.4)))
-                        }
-                        Text(localization.tr(item.labelKey))
-                            .font(.app(.footnote))
+                        Text(item.keys)
+                            .font(.app(.caption, design: .monospaced))
                             .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.secondary.opacity(0.35)))
+                        Text(localization.tr(item.labelKey))
+                            .font(.app(.caption))
+                            .foregroundStyle(.tertiary)
                     }
                     .accessibilityElement(children: .combine)
                 }
             }
         }
-        .padding(.top, 6)
+        .padding(.top, 4)
     }
 }

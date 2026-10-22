@@ -97,4 +97,21 @@ final class MailDigestTests: XCTestCase {
         XCTAssertEqual(MailDigest.build(peopleUnread: [], folders: folders).inboxUnread, 12)
         XCTAssertNil(MailDigest.build(peopleUnread: [], folders: []).inboxUnread)
     }
+
+    func testSoonBadgeOnlyForTodaysMeetingsNotOver() {
+        let calendar = AppTimeZone.calendar
+        let morning = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: now)!
+        func at(hour: Int, minute: Int = 0) -> CalendarEvent {
+            let start = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: now)!
+            return CalendarEvent(id: "x", title: "x", startDate: start, endDate: start.addingTimeInterval(1800), location: nil,
+                                 bodyPreview: nil, joinURL: nil, platform: .generic, isAllDay: false, organizer: nil, accountID: account)
+        }
+        XCTAssertEqual(MailDigest.soon(at(hour: 10, minute: 30), now: morning, calendar: calendar), .inMinutes(90))
+        XCTAssertEqual(MailDigest.soon(at(hour: 8, minute: 45), now: morning, calendar: calendar), .inProgress)
+        XCTAssertNil(MailDigest.soon(at(hour: 7), now: morning, calendar: calendar), "over")
+        let tomorrow = at(hour: 10)
+        let nextDay = CalendarEvent(id: "y", title: "y", startDate: tomorrow.startDate.addingTimeInterval(86_400), endDate: tomorrow.endDate.addingTimeInterval(86_400),
+                                    location: nil, bodyPreview: nil, joinURL: nil, platform: .generic, isAllDay: false, organizer: nil, accountID: account)
+        XCTAssertNil(MailDigest.soon(nextDay, now: morning, calendar: calendar), "another day: the day badge says it")
+    }
 }
