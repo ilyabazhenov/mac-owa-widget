@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import os
 
@@ -102,12 +103,66 @@ enum PerfProbe {
                 switch action {
                 case "open": MenuBarPopoverOpener.open()
                 case "close": PostJoinDismissController.shared.dismissPopover()
+                case let command where command.hasPrefix("click:") || command.hasPrefix("rclick:") || command.hasPrefix("rdown:") || command.hasPrefix("kclick:") || command.hasPrefix("kdown:"):
+                    sendMouse(command)
+                case let command where command.hasPrefix("key:"):
+                    sendKey(command)
+                case "authblock":
+                    NotificationCenter.default.post(name: harnessForceAuthBlock, object: nil)
+                case "frontmost":
+                    DiagnosticLog.event("Harness frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil")")
                 case "next", "prev":
                     NotificationCenter.default.post(name: harnessStepDay, object: action == "next" ? 1 : -1)
                 default: break
                 }
             }
         }
+    }
+
+    /// Posted in the app for `authblock`; a debug build latches the auth breaker (see PopoverView).
+    static let harnessForceAuthBlock = Notification.Name("com.owawidget.perf.authBlock")
+
+    /// `click:x,y` / `rclick:x,y` / `rdown:x,y` (press only, leaves a menu open): a mouse click at a
+    /// point of the popover, from its top-left corner; `kclick:x,y` clicks the key window instead.
+    @MainActor
+    private static func sendMouse(_ command: String) {
+        let target = command.hasPrefix("kclick:") || command.hasPrefix("kdown:") ? NSApp.keyWindow : PostJoinDismissController.shared.registeredPopoverWindow
+        guard let window = target, window.isVisible else { return }
+        let parts = command.split(separator: ":")[1].split(separator: ",").compactMap { Double($0) }
+        guard parts.count == 2 else { return }
+        let point = NSPoint(x: parts[0], y: window.frame.height - parts[1])
+        let types: [NSEvent.EventType] = switch command.split(separator: ":")[0] {
+        case "rclick": [.rightMouseDown, .rightMouseUp]
+        case "rdown": [.rightMouseDown]
+        case "kdown": [.leftMouseDown]
+        default: [.leftMouseDown, .leftMouseUp]
+        }
+        for type in types {
+            if let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                              windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                NSApp.postEvent(event, atStart: false)
+            }
+        }
+    }
+
+    /// `key:cmdq` or `key:esc`: a key press sent to the popover the way the keyboard would.
+    @MainActor
+    private static func sendKey(_ command: String) {
+        let window = PostJoinDismissController.shared.registeredPopoverWindow
+        let (keyCode, characters, flags): (UInt16, String, NSEvent.ModifierFlags) = switch command {
+        case "key:cmdq": (12, "q", .command)
+        case "key:esc": (53, "\u{1b}", [])
+        case "key:down": (125, "\u{F701}", [])
+        case "key:up": (126, "\u{F700}", [])
+        case "key:return": (36, "\r", [])
+        default: (0, "", [])
+        }
+        guard !characters.isEmpty, let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window?.windowNumber ?? 0, context: nil, characters: characters,
+            charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
+        ) else { return }
+        NSApp.postEvent(event, atStart: false)
     }
     #endif
 

@@ -186,6 +186,11 @@ struct PopoverView: View {
             if let delta = note.object as? Int { goToDay(offsetBy: delta) }
         }
         #endif
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: PerfProbe.harnessForceAuthBlock)) { _ in
+            service.debugForceAuthBlock()
+        }
+        #endif
         .onDisappear {
             resetMeetingDetailState()
             // The panel opens on its list again next time.

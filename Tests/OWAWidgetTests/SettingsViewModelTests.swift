@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import OWAWidget
 
@@ -32,6 +33,36 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertTrue(vm.hasUnsavedChanges)
         vm.savePreferences()
 
+        XCTAssertFalse(service.dimPastMeetingsOnTimeline)
+        XCTAssertFalse(vm.hasUnsavedChanges)
+    }
+
+    /// Settings have no Save button: the form itself applies a change the moment it is made.
+    /// Hosts the real view in a window so its change handler is live, as in the app.
+    func testPreferencesViewAppliesAChangeWithoutSaving() {
+        let (service, vm, _) = makeSUT()
+        let suite = "OWAWidgetTests.PreferencesView.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let view = PreferencesView(vm: vm)
+            .environmentObject(LocalizationService(userDefaults: defaults, selectedLanguage: .english))
+            .environmentObject(UpdateCheckService(defaults: defaults, appVersionOverride: "1.0.0", createUpdater: false))
+            .environmentObject(AppearanceService())
+            .environmentObject(MailService(backend: nil, defaults: defaults))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: view)
+        defer { window.contentView = nil; window.close() }
+        window.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertTrue(service.dimPastMeetingsOnTimeline)
+
+        vm.dimPastMeetingsOnTimeline = false
+
+        let deadline = Date().addingTimeInterval(2)
+        while service.dimPastMeetingsOnTimeline, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
         XCTAssertFalse(service.dimPastMeetingsOnTimeline)
         XCTAssertFalse(vm.hasUnsavedChanges)
     }
