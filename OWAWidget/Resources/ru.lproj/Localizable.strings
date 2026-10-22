@@ -1,4 +1,4 @@
-"app.name" = "Mac Owa Widget";
+"app.name" = "OWA Widget";
 "window.settings.title" = "Настройки";
 
 "language.section.title" = "Язык";
@@ -56,12 +56,12 @@
 "settings.account.type" = "Тип";
 "settings.account.calendars.section" = "Календари";
 "settings.account.calendars.request" = "Разрешить доступ…";
-"settings.account.calendars.request.hint" = "Mac Owa Widget нужно разрешение на чтение календарей, которые этот Mac уже синхронизирует.";
-"settings.account.calendars.denied" = "Доступ к календарям для Mac Owa Widget выключен. Включите его в Системных настройках, чтобы выбрать календари.";
-"settings.account.calendars.writeonly" = "Mac Owa Widget получил доступ к календарям только на запись — читать встречи так нельзя. Выдайте полный доступ в Системных настройках.";
+"settings.account.calendars.request.hint" = "OWA Widget нужно разрешение на чтение календарей, которые этот Mac уже синхронизирует.";
+"settings.account.calendars.denied" = "Доступ к календарям для OWA Widget выключен. Включите его в Системных настройках, чтобы выбрать календари.";
+"settings.account.calendars.writeonly" = "OWA Widget получил доступ к календарям только на запись — читать встречи так нельзя. Выдайте полный доступ в Системных настройках.";
 "settings.account.calendars.open.settings" = "Открыть Системные настройки";
 "settings.account.calendars.empty" = "Календари не найдены";
-"settings.account.calendars.hint" = "Добавьте аккаунт Google или iCloud в Системных настройках › Учётные записи Интернета. Mac Owa Widget покажет то, что macOS уже синхронизирует.";
+"settings.account.calendars.hint" = "Добавьте аккаунт Google или iCloud в Системных настройках › Учётные записи Интернета. OWA Widget покажет то, что macOS уже синхронизирует.";
 
 "preferences.shortcuts.section" = "Горячие клавиши";
 "preferences.shortcuts.createMeeting" = "Новая встреча";
@@ -138,7 +138,6 @@
 "preferences.notifications.sound.tink" = "Tink — лёгкий и короткий";
 "preferences.notifications.sound.ping" = "Ping — чёткий сигнал";
 "preferences.notifications.sound.silent" = "Без звука";
-"preferences.save" = "Сохранить настройки";
 
 "preferences.updates.section" = "Обновления";
 "preferences.updates.toggle" = "Проверять обновления автоматически";
@@ -157,13 +156,19 @@
 "popover.sync.now" = "Синхронизировать";
 "popover.settings" = "Настройки";
 "popover.quit" = "Выйти";
-"popover.no.accounts.title" = "Аккаунты не настроены";
-"popover.no.accounts.subtitle" = "Откройте настройки, чтобы добавить Exchange-аккаунт.";
 "popover.accounts.unreadable.title" = "Не удалось прочитать аккаунты";
 "popover.accounts.unreadable.subtitle" = "Данные на месте, но приложение не получило доступ к связке ключей. Разрешите доступ и нажмите «Повторить». Не добавляйте аккаунт заново — это перезапишет сохранённые.";
 "popover.open.settings" = "Открыть настройки";
 "popover.retry" = "Повторить";
 "popover.retry.help" = "Повторить синхронизацию без повторного ввода пароля";
+"popover.welcome.title" = "Добро пожаловать в OWA Widget";
+"popover.welcome.subtitle" = "Подключите календарь — и ближайшая встреча всегда будет в строке меню.";
+"popover.welcome.point.join" = "Подключение к звонку в один клик";
+"popover.welcome.point.remind" = "Напоминание перед каждой встречей";
+"popover.welcome.point.accounts" = "Календари Exchange, Google и iCloud вместе";
+"popover.welcome.action" = "Добавить аккаунт";
+"popover.day.empty" = "Встреч нет";
+"popover.day.loading" = "Загружаем встречи…";
 "popover.resize.help" = "Потяните, чтобы изменить размер";
 "popover.nav.today" = "Сегодня";
 

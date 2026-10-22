@@ -1,4 +1,4 @@
-"app.name" = "Mac Owa Widget";
+"app.name" = "OWA Widget";
 "window.settings.title" = "Settings";
 
 "language.section.title" = "Language";
@@ -56,12 +56,12 @@
 "settings.account.type" = "Type";
 "settings.account.calendars.section" = "Calendars";
 "settings.account.calendars.request" = "Allow Access…";
-"settings.account.calendars.request.hint" = "Mac Owa Widget needs permission to read the calendars this Mac already syncs.";
-"settings.account.calendars.denied" = "Calendar access is turned off for Mac Owa Widget. Turn it on in System Settings to choose calendars.";
-"settings.account.calendars.writeonly" = "Mac Owa Widget was granted write-only calendar access, which cannot show meetings. Grant full access in System Settings.";
+"settings.account.calendars.request.hint" = "OWA Widget needs permission to read the calendars this Mac already syncs.";
+"settings.account.calendars.denied" = "Calendar access is turned off for OWA Widget. Turn it on in System Settings to choose calendars.";
+"settings.account.calendars.writeonly" = "OWA Widget was granted write-only calendar access, which cannot show meetings. Grant full access in System Settings.";
 "settings.account.calendars.open.settings" = "Open System Settings";
 "settings.account.calendars.empty" = "No calendars found";
-"settings.account.calendars.hint" = "Add a Google or iCloud account in System Settings › Internet Accounts. Mac Owa Widget shows whatever macOS already syncs.";
+"settings.account.calendars.hint" = "Add a Google or iCloud account in System Settings › Internet Accounts. OWA Widget shows whatever macOS already syncs.";
 
 "preferences.shortcuts.section" = "Shortcuts";
 "preferences.shortcuts.createMeeting" = "New Meeting";
@@ -138,7 +138,6 @@
 "preferences.notifications.sound.tink" = "Tink — light and short";
 "preferences.notifications.sound.ping" = "Ping — clear signal";
 "preferences.notifications.sound.silent" = "Silent";
-"preferences.save" = "Save Preferences";
 
 "preferences.updates.section" = "Updates";
 "preferences.updates.toggle" = "Check for updates automatically";
@@ -157,13 +156,19 @@
 "popover.sync.now" = "Sync now";
 "popover.settings" = "Settings";
 "popover.quit" = "Quit";
-"popover.no.accounts.title" = "No accounts configured";
-"popover.no.accounts.subtitle" = "Open Settings to add your Exchange account.";
 "popover.accounts.unreadable.title" = "Couldn't read your accounts";
 "popover.accounts.unreadable.subtitle" = "Your data is still here, but the app was not granted Keychain access. Allow it and press Try Again. Do not re-add the account — that would overwrite what is saved.";
 "popover.open.settings" = "Open Settings";
 "popover.retry" = "Retry";
 "popover.retry.help" = "Retry sync without re-entering the password";
+"popover.welcome.title" = "Welcome to OWA Widget";
+"popover.welcome.subtitle" = "Connect your calendar and the next meeting is always one glance away in the menu bar.";
+"popover.welcome.point.join" = "Join a call in one click";
+"popover.welcome.point.remind" = "A reminder before every meeting";
+"popover.welcome.point.accounts" = "Exchange, Google and iCloud calendars together";
+"popover.welcome.action" = "Add Account";
+"popover.day.empty" = "No meetings";
+"popover.day.loading" = "Loading meetings…";
 "popover.resize.help" = "Drag to resize";
 "popover.nav.today" = "Today";
 

@@ -35,14 +35,22 @@ struct NextMeetingBannerView: View {
                     if happening {
                         PulsingDot()
                         Text(remainingLabel(event, now: now))
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.app(.footnote, weight: .medium))
+                            .monospacedDigit()
+                            // The minute ticks over as a rolling digit rather than a redraw.
+                            .contentTransition(.numericText(countsDown: true))
+                            .animation(.easeOut(duration: 0.25), value: remainingLabel(event, now: now))
                             .foregroundStyle(.orange)
                     } else {
                         Image(systemName: "play.fill")
                             .font(.app(.micro))
                             .foregroundStyle(.secondary)
                         Text(countdownLabel(event, now: now))
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.app(.footnote, weight: .medium))
+                            .monospacedDigit()
+                            // The minute ticks over as a rolling digit rather than a redraw.
+                            .contentTransition(.numericText(countsDown: true))
+                            .animation(.easeOut(duration: 0.25), value: countdownLabel(event, now: now))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -73,7 +81,8 @@ struct NextMeetingBannerView: View {
                             Task { try? await Task.sleep(for: .seconds(1.5)); didCopy = false }
                         } label: {
                             Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
-                                .font(.system(size: 12))
+                                .copyFeedbackTransition(value: didCopy)
+                                .font(.app(.body))
                                 .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)

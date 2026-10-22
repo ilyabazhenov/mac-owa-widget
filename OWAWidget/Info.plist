@@ -6,9 +6,9 @@
     <key>LSUIElement</key>
     <true/>
     <key>CFBundleName</key>
-    <string>Mac Owa Widget</string>
+    <string>OWA Widget</string>
     <key>CFBundleDisplayName</key>
-    <string>Mac Owa Widget</string>
+    <string>OWA Widget</string>
     <key>CFBundleIdentifier</key>
     <string>com.owawidget.MacOwaWidget</string>
     <key>CFBundleShortVersionString</key>
@@ -28,12 +28,12 @@
         copies live in Resources/*.lproj/InfoPlist.strings.
     -->
     <key>NSCalendarsUsageDescription</key>
-    <string>Mac Owa Widget reads the calendars this Mac already syncs so it can show your next meeting and its join link.</string>
+    <string>OWA Widget reads the calendars this Mac already syncs so it can show your next meeting and its join link.</string>
     <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>Mac Owa Widget reads the calendars this Mac already syncs so it can show your next meeting and its join link.</string>
+    <string>OWA Widget reads the calendars this Mac already syncs so it can show your next meeting and its join link.</string>
     <!-- Required for UNUserNotificationCenter -->
     <key>NSUserNotificationUsageDescription</key>
-    <string>Mac Owa Widget notifies you before meetings start so you can join with one click.</string>
+    <string>OWA Widget notifies you before meetings start so you can join with one click.</string>
     <!--
         App Transport Security is left at its secure defaults (TLS 1.2+, valid chain).
         Self-signed / internal-CA on-premise Exchange servers are supported via an explicit

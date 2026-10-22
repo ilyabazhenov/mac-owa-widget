@@ -35,6 +35,10 @@ struct MeetingListView: View {
     var onSelect: (CalendarEvent) -> Void = { _ in }
     /// The day's name above its hours; off where a date bar right above already says it.
     var showsDayLabel = true
+    /// Said over the grid when the day has no timed meetings; `nil` leaves the grid bare.
+    var emptyMessage: String? = nil
+    /// The calendar has not arrived yet: the empty message gets a spinner.
+    var isLoading = false
     @EnvironmentObject private var localization: LocalizationService
     /// Bumped by every autoscroll request, so a stale retry from an earlier one stands down.
     @State private var autoScrollGeneration = 0
@@ -70,6 +74,27 @@ struct MeetingListView: View {
                 }
             }
             .accessibilityElement(children: .contain)
+            // A bare 24-hour grid read as "still loading" or "something broke"; a quiet note over
+            // it says the day is simply free. Over the grid, not in it, so it stays in view
+            // wherever the grid is scrolled, and clicks pass through.
+            .overlay {
+                if let emptyMessage, isEmptyDay {
+                    HStack(spacing: 6) {
+                        if isLoading {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text(emptyMessage)
+                    }
+                    .font(.app(.footnote, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.regularMaterial, in: Capsule())
+                    .allowsHitTesting(false)
+                    .accessibilityElement(children: .combine)
+                    .transition(.opacity)
+                }
+            }
             .onAppear {
                 scrollToCurrentSlot(proxy: proxy, reason: "appear")
             }
@@ -82,6 +107,12 @@ struct MeetingListView: View {
                 scrollToCurrentSlot(proxy: proxy, reason: "day-change")
             }
         }
+    }
+
+    /// No meeting with a time. An all-day item (a birthday, a vacation) is not a meeting: it
+    /// shows in its own row above the grid, and the day is still free.
+    private var isEmptyDay: Bool {
+        sections.allSatisfy { $0.timedEvents.isEmpty }
     }
 
     private func sectionHeader(_ label: String) -> some View {

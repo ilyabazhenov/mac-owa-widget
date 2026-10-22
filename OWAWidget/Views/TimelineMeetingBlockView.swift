@@ -11,6 +11,10 @@ struct TimelineMeetingBlockView: View {
     @EnvironmentObject private var localization: LocalizationService
     @EnvironmentObject private var calendarService: CalendarService
     @State private var didCopy = false
+    /// The copy button shows on hover (and on the selected card) only: a column of identical
+    /// copy icons down the timeline was noise next to the titles. Join stays visible — whether a
+    /// meeting has a call to join is worth seeing at a glance.
+    @State private var isHovering = false
 
     init(event: CalendarEvent, compact: Bool = false, showsOrganizer: Bool? = nil, isSelected: Bool = false) {
         self.event = event
@@ -72,11 +76,17 @@ struct TimelineMeetingBlockView: View {
                             Task { try? await Task.sleep(for: .seconds(1.5)); didCopy = false }
                         } label: {
                             Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
-                                .font(.system(size: 11))
+                                .copyFeedbackTransition(value: didCopy)
+                                .font(.app(.footnote))
                                 .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
                         .padding(.top, 3)
+                        // Faded rather than removed, so the title keeps its width and does not
+                        // reflow under the pointer.
+                        .opacity(showsCopyButton ? 1 : 0)
+                        .allowsHitTesting(showsCopyButton)
+                        .animation(.easeOut(duration: 0.12), value: showsCopyButton)
                         .help(localization.tr("meeting.copy.link"))
                         .accessibilityLabel(localization.tr("meeting.copy.link"))
                         .accessibilityHint(localization.tr("a11y.meeting.copy.link.hint"))
@@ -114,6 +124,7 @@ struct TimelineMeetingBlockView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .opacity((calendarService.dimPastMeetingsOnTimeline && event.isPast) ? 0.58 : 1.0)
+        .onHover { isHovering = $0 }
         .meetingCopyContextMenu(event, localization: localization)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(a11yEventSummary)
@@ -135,6 +146,10 @@ struct TimelineMeetingBlockView: View {
             parts.append(localization.tr("meeting.status.cancelled"))
         }
         return parts.joined(separator: ", ")
+    }
+
+    private var showsCopyButton: Bool {
+        isHovering || isSelected || didCopy
     }
 
     private var shouldShowOrganizer: Bool {

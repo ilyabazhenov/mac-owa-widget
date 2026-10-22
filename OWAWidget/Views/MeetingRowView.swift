@@ -78,7 +78,8 @@ struct MeetingRowView: View {
                         Task { try? await Task.sleep(for: .seconds(1.5)); didCopy = false }
                     } label: {
                         Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: compact ? 11 : 12))
+                            .copyFeedbackTransition(value: didCopy)
+                            .font(.app(compact ? .footnote : .body))
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)

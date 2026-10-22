@@ -467,7 +467,7 @@ final class SettingsViewModel: ObservableObject {
         service.invitationPopoverSectionEnabled = invitationPopoverSectionEnabled
         service.menuBarDisplayMode = menuBarDisplayMode
         // Only write the popover preset if the user actually changed it here. The footer
-        // quick-switcher can change `service.popoverSizePreset` while this (Save-gated)
+        // quick-switcher can change `service.popoverSizePreset` while this
         // form is open; an unconditional write would clobber that with our stale value.
         if popoverSizePreset != baselinePreferences.popoverSizePreset {
             service.popoverSizePreset = popoverSizePreset

@@ -17,9 +17,6 @@ struct PopoverView: View {
     @StateObject private var inboxReader = InboxPanelReader()
     @Environment(\.openWindow) private var openWindow
     private var popoverSize: PopoverSize { service.popoverSize }
-    private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-    private let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
-    private var fullVersion: String { "\(appVersion).\(appBuild)" }
     let contentHorizontalPadding: CGFloat = 12
     @AppStorage(PopoverInboxPanelStore.key) private var inboxPanelShown = false
     /// The panel found room beside the popover; until it says otherwise, assume it did.
@@ -183,6 +180,12 @@ struct PopoverView: View {
         .onChange(of: service.eventFocusRequest) { _ in
             applyEventFocusRequest()
         }
+        #if DEBUG || PERF_HARNESS
+        // Lets a measuring or screenshot script page the day (see `PerfProbe`).
+        .onReceive(NotificationCenter.default.publisher(for: PerfProbe.harnessStepDay)) { note in
+            if let delta = note.object as? Int { goToDay(offsetBy: delta) }
+        }
+        #endif
         .onDisappear {
             resetMeetingDetailState()
             // The panel opens on its list again next time.
@@ -195,7 +198,7 @@ struct PopoverView: View {
     // MARK: - Header
 
     /// Named after what it shows, like the inbox panel beside it ("Inbox | Calendar"); the app
-    /// itself is already the menu-bar icon, and its version sits in the footer.
+    /// itself is already the menu-bar icon, and its version sits in Settings › About.
     private var header: some View {
         HStack {
             HStack(spacing: 6) {
@@ -269,29 +272,29 @@ struct PopoverView: View {
                 .accessibilityLabel(localization.tr("popover.new.meeting"))
             }
 
+            // Quit is no longer a button of its own beside search and "+", where a stray click
+            // closed the app and its reminders with it. It lives in the gear's context menu, in
+            // the menu bar icon's menu and on ⌘Q.
             Button { openSettings() } label: {
                 Image(systemName: "gearshape")
-                    .font(.system(size: 13))
+                    .font(.app(.headline))
             }
             .buttonStyle(.plain)
             .help(localization.tr("popover.settings"))
             .accessibilityLabel(localization.tr("popover.settings"))
-
-            Button { quitApp() } label: {
-                Image(systemName: "power")
-                    .font(.app(.headline))
+            .contextMenu {
+                Button(localization.tr("popover.settings") + "…") { openSettings() }
+                Divider()
+                Button(localization.tr("popover.quit")) { quitApp() }
             }
-            .buttonStyle(.plain)
-            .help(localization.tr("popover.quit"))
-            .accessibilityLabel(localization.tr("popover.quit"))
+            .accessibilityAction(named: Text(localization.tr("popover.quit"))) { quitApp() }
         }
         .padding(.horizontal, contentHorizontalPadding)
         .padding(.vertical, 11)
         .accessibilitySortPriority(selectedEvent == nil ? 1 : 0)
     }
 
-    /// Quick popover-size switcher. Applies immediately (unlike the Settings picker,
-    /// which is gated behind Save), writing straight through to the shared service.
+    /// Quick popover-size switcher, writing straight through to the shared service.
     private var popoverSizeMenu: some View {
         Menu {
             Picker(localization.tr("preferences.popover.size"), selection: popoverSizeSelection) {
@@ -452,7 +455,9 @@ struct PopoverView: View {
                 selectedEventID: selectedEvent?.id,
                 onSelect: selectEvent,
                 // The date bar right above already names the day.
-                showsDayLabel: false
+                showsDayLabel: false,
+                emptyMessage: localization.tr(isAwaitingFirstSync ? "popover.day.loading" : "popover.day.empty"),
+                isLoading: isAwaitingFirstSync
             )
         }
     }
@@ -564,14 +569,22 @@ struct PopoverView: View {
                         : localization.tr("popover.sync.now"))
                 }
 
+                // What blocks sync (a password, a certificate, a login host) is fixed in Settings.
+                if service.syncStatus.blocksSync {
+                    Button(localization.tr("popover.settings")) { openSettings() }
+                        .buttonStyle(.plain)
+                        .font(.app(.footnote, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .help(localization.tr("popover.open.settings"))
+                }
+
                 Spacer(minLength: 8)
 
+                // The version is in Settings › About, with the build number.
                 popoverSizeMenu
-
-                Text("v\(fullVersion)")
-                    .lineLimit(1)
             }
-                .font(.system(size: 10))
+                // The smallest reading size: the status line is read, not glanced at.
+                .font(.app(.footnote))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, contentHorizontalPadding)
                 .padding(.vertical, 7)
@@ -733,10 +746,19 @@ struct PopoverView: View {
 
     /// The C key (`kVK_ANSI_C`), wherever the layout puts its letter.
     private static let cKeyCode: UInt16 = 8
+    /// The Q key (`kVK_ANSI_Q`).
+    private static let qKeyCode: UInt16 = 12
 
-    /// ↑/↓ walk the inbox panel's list while it shows a message. The panel never takes focus, so
-    /// its keys arrive at the popover; typing in a field here is left alone by the monitor.
+    /// ⌘Q quits from the popover, now that it has no quit button. Otherwise ↑/↓ walk the inbox
+    /// panel's list while it shows a message: the panel never takes focus, so its keys arrive at
+    /// the popover. Typing in a field here is left alone by the monitor.
     private func handleReaderKey(_ event: NSEvent) -> Bool {
+        // By the key, not its character: in the Russian layout ⌘Q arrives as "й".
+        if event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command,
+           event.keyCode == Self.qKeyCode {
+            quitApp()
+            return true
+        }
         guard inboxReader.isOpen, mail.isAvailable else { return false }
         // ⌘C copies what is selected in the message; the monitor leaves ⌘C in a text field alone.
         // By the key, not its character: in the Russian layout ⌘C arrives as "с" (Cyrillic).
@@ -790,42 +812,16 @@ struct PopoverView: View {
     private var unreadableAccountStoreState: some View {
         VStack(spacing: 10) {
             Image(systemName: "lock.trianglebadge.exclamationmark")
-                .font(.system(size: 28))
+                .font(.app(.symbol))
                 .foregroundStyle(.secondary)
             Text(localization.tr("popover.accounts.unreadable.title"))
-                .font(.system(size: 13, weight: .medium))
+                .font(.app(.headline, weight: .medium))
             Text(localization.tr("popover.accounts.unreadable.subtitle"))
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button { service.retryLoadingAccounts() } label: {
                 Text(localization.tr("popover.retry"))
-                    .font(.system(size: 12, weight: .medium))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .background(Color.accentColor)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity)
-    }
-
-    private var noAccountState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "person.badge.plus")
-                .font(.app(.symbol))
-                .foregroundStyle(.secondary)
-            Text(localization.tr("popover.no.accounts.title"))
-                .font(.app(.headline, weight: .medium))
-            Text(localization.tr("popover.no.accounts.subtitle"))
-                .font(.app(.footnote))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Button { openSettings() } label: {
-                Text(localization.tr("popover.open.settings"))
                     .font(.app(.body, weight: .medium))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
@@ -839,6 +835,56 @@ struct PopoverView: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// The first thing a new user sees: what the app is for, and the one step to get there.
+    private var noAccountState: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "calendar.badge.clock")
+                .font(.app(.symbol))
+                .foregroundStyle(Color.accentColor)
+                .symbolRenderingMode(.hierarchical)
+            VStack(spacing: 6) {
+                Text(localization.tr("popover.welcome.title"))
+                    .font(.app(.title, weight: .semibold))
+                Text(localization.tr("popover.welcome.subtitle"))
+                    .font(.app(.footnote))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                welcomePoint("video", "popover.welcome.point.join")
+                welcomePoint("bell", "popover.welcome.point.remind")
+                welcomePoint("person.2", "popover.welcome.point.accounts")
+            }
+            .padding(.vertical, 4)
+            Button { openSettings() } label: {
+                Text(localization.tr("popover.welcome.action"))
+                    .font(.app(.body, weight: .semibold))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(Color.accentColor)
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.defaultAction)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func welcomePoint(_ symbol: String, _ key: String) -> some View {
+        Label {
+            Text(localization.tr(key))
+                .font(.app(.footnote))
+        } icon: {
+            Image(systemName: symbol)
+                .font(.app(.footnote))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 18)
+        }
+    }
+
     private var errorState: some View {
         VStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle")
@@ -848,13 +894,20 @@ struct PopoverView: View {
                 .font(.app(.body))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Button(localization.tr("popover.retry")) {
-                // When auth is latched, syncNow() is a no-op (the breaker guard skips it), so
-                // route through the breaker-lifting retry instead — same action as the footer.
-                if service.syncStatus.isAuthenticationRequired {
-                    service.retryAfterAuthBlock()
-                } else {
-                    service.syncNow()
+            HStack(spacing: 8) {
+                Button(localization.tr("popover.retry")) {
+                    // When auth is latched, syncNow() is a no-op (the breaker guard skips it), so
+                    // route through the breaker-lifting retry instead — same action as the footer.
+                    if service.syncStatus.isAuthenticationRequired {
+                        service.retryAfterAuthBlock()
+                    } else {
+                        service.syncNow()
+                    }
+                }
+                // A password, a certificate or a login host is fixed in Settings: the way there
+                // sits next to the message instead of being left for the user to find.
+                if service.syncStatus.blocksSync {
+                    Button(localization.tr("popover.open.settings")) { openSettings() }
                 }
             }
             .font(.app(.body))
@@ -870,6 +923,16 @@ struct PopoverView: View {
     private var selectedDate: Date {
         AppTimeZone.calendar.date(byAdding: .day, value: selectedDayOffset,
             to: AppTimeZone.calendar.startOfDay(for: Date()))!
+    }
+
+    /// Nothing has arrived from the calendar yet and a sync is on its way: an empty day then
+    /// means "loading", not "free".
+    private var isAwaitingFirstSync: Bool {
+        guard service.events.isEmpty else { return false }
+        switch service.syncStatus {
+        case .idle, .syncing: return true
+        default: return false
+        }
     }
 
     /// Meetings starting within 5 minutes of the earliest upcoming, sorted: with URL first

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AboutView: View {
     private let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    private let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
     private static let appIcon = NSImage(named: "AppIcon") ?? NSImage(named: "AppIcon.icns")
     private static let authorEmailAddress = "amio.env@gmail.com"
     private static let authorEmailURL = URL(string: "mailto:amio.env@gmail.com")!
@@ -20,6 +21,7 @@ struct AboutView: View {
                     .frame(width: 72, height: 72)
                     .accessibilityLabel(localization.tr("app.name"))
             } else {
+                // Stands in for the app icon at its size, outside the type scale on purpose.
                 Image(systemName: "calendar.badge.clock")
                     .font(.system(size: 48))
                     .foregroundColor(.accentColor)
@@ -30,8 +32,11 @@ struct AboutView: View {
             Text(localization.tr("app.name"))
                 .font(.title2.bold())
 
-            Text(localization.tr("about.version", version))
+            // The build number tells two copies of one version apart in a bug report; the popover
+            // footer no longer carries it.
+            Text(localization.tr("about.version", "\(version) (\(build))"))
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
 
             Divider().frame(width: 200)
 

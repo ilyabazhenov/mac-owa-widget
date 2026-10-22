@@ -127,7 +127,8 @@ struct MeetingDetailPanelView: View {
             Task { try? await Task.sleep(for: .seconds(1.5)); didCopyTitle = false }
         } label: {
             Image(systemName: didCopyTitle ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 10))
+                .copyFeedbackTransition(value: didCopyTitle)
+                .font(.app(.caption))
                 .foregroundStyle(.secondary)
                 .frame(width: 16, height: 16)
                 .contentShape(Rectangle())
@@ -428,6 +429,7 @@ private struct MeetingAttendeesView: View {
                 statusIcon(for: attendee.response)
             } else {
                 // Neutral bullet: no status available, so don't imply "no response".
+                // A 3 pt dot is a shape, not type: outside the scale on purpose.
                 Image(systemName: "circle.fill")
                     .font(.system(size: 3))
                     .foregroundStyle(.tertiary)
@@ -542,6 +544,7 @@ private struct MeetingDetailActionsView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                                .copyFeedbackTransition(value: didCopy)
                             Text(localization.tr("meeting.copy.link"))
                         }
                         .font(.app(.body))

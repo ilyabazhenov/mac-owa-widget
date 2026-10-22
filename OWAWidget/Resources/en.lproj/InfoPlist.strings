@@ -1,5 +1,5 @@
-"NSUserNotificationUsageDescription" = "Mac Owa Widget notifies you before meetings start so you can join with one click.";
-"CFBundleDisplayName" = "Mac Owa Widget";
-"CFBundleName" = "Mac Owa Widget";
-"NSCalendarsUsageDescription" = "Mac Owa Widget reads the calendars this Mac already syncs so it can show your next meeting and its join link.";
-"NSCalendarsFullAccessUsageDescription" = "Mac Owa Widget reads the calendars this Mac already syncs so it can show your next meeting and its join link.";
+"NSUserNotificationUsageDescription" = "OWA Widget notifies you before meetings start so you can join with one click.";
+"CFBundleDisplayName" = "OWA Widget";
+"CFBundleName" = "OWA Widget";
+"NSCalendarsUsageDescription" = "OWA Widget reads the calendars this Mac already syncs so it can show your next meeting and its join link.";
+"NSCalendarsFullAccessUsageDescription" = "OWA Widget reads the calendars this Mac already syncs so it can show your next meeting and its join link.";

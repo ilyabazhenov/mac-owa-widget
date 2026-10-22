@@ -276,19 +276,12 @@ struct PreferencesView: View {
         .onAppear {
             DiagnosticLog.event("PreferencesView Form appeared")
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            Divider()
-            HStack {
-                Spacer()
-                Button(localization.tr("preferences.save")) {
-                    vm.savePreferences()
-                }
-                .keyboardShortcut("s", modifiers: [.command])
-                .buttonStyle(.borderedProminent)
-                .disabled(!vm.hasUnsavedChanges)
-            }
-            .padding(12)
-            .background(.regularMaterial)
+        // Applied as soon as they change, the way macOS settings behave and the way the language
+        // and theme pickers above always did. A Save button made the rest look applied when they
+        // were not, and a change was lost to a closed window. Every control here is a picker,
+        // toggle or switch, so there is no half-typed value to apply early.
+        .onChange(of: vm.hasUnsavedChanges) { hasChanges in
+            if hasChanges { vm.savePreferences() }
         }
     }
 }
