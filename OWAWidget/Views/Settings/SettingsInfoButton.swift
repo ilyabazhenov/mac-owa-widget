@@ -5,6 +5,7 @@ import SwiftUI
 /// Short, essential notes (what leaves the Mac, privacy) stay on the page instead.
 struct SettingsInfoButton: View {
     let text: String
+    @EnvironmentObject private var localization: LocalizationService
     @State private var isShown = false
 
     var body: some View {
@@ -16,7 +17,10 @@ struct SettingsInfoButton: View {
         }
         .buttonStyle(.plain)
         .help(text)
-        .accessibilityLabel(text)
+        // A short name for the button; the explanation is its hint, which VoiceOver reads after
+        // a pause and the user can skip, instead of a paragraph spoken as a button name.
+        .accessibilityLabel(localization.tr("settings.info.more"))
+        .accessibilityHint(text)
         .popover(isPresented: $isShown, arrowEdge: .trailing) {
             Text(text)
                 .font(.app(.footnote))
@@ -56,11 +60,15 @@ struct SettingsInfoLabel: View {
     let title: String
     var info: String?
     var isEnabled = true
+    /// True when the control beside it is already labelled with `title` for VoiceOver.
+    var isControlLabel = true
 
     var body: some View {
         HStack(spacing: 6) {
             Text(title)
                 .foregroundStyle(isEnabled ? .primary : .secondary)
+                // The control next to it carries the same title; read it once.
+                .accessibilityHidden(isControlLabel)
             if let info { SettingsInfoButton(text: info) }
         }
     }

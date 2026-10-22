@@ -850,3 +850,4 @@
 "mcp.access.section" = "Доступ";
 "mcp.mail.needsMail" = "Сначала включите почту в разделе «Почта».";
 "popover.size.menu" = "Размер поповера";
+"settings.info.more" = "Подробнее";

@@ -58,7 +58,14 @@ struct SettingsView: View {
         .frame(minWidth: 680, minHeight: 600)
         .onAppear { DiagnosticLog.event("SettingsView sidebar appeared pane=\(storedPane)") }
         // Which section was on screen is what a support report needs when Settings misbehaves.
-        .onChange(of: storedPane) { pane in DiagnosticLog.event("SettingsView pane=\(pane)") }
+        .onChange(of: storedPane) { pane in
+            DiagnosticLog.event("SettingsView pane=\(pane)")
+            // Sent here from outside (Accounts from a sync error) while a search hides that
+            // section: the search goes, so the sidebar shows what the window shows.
+            if let shown = SettingsPane(rawValue: pane), !visiblePanes.contains(shown) {
+                searchText = ""
+            }
+        }
         .sheet(item: $vm.editingAccount) { _ in
             accountSheet
         }
