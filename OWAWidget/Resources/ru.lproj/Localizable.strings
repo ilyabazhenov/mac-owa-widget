@@ -858,7 +858,6 @@
 "mail.digest.tile.flagged" = "с флажком";
 "mail.digest.invitations" = "Ждут ответа";
 "mail.digest.important" = "Важное и с флажком";
-"mail.digest.otherAnswers" = "Другие ответы";
 "mail.key.navigate" = "переход";
 "mail.key.reply" = "ответить";
 "mail.key.replyAll" = "ответить всем";
@@ -873,3 +872,8 @@
 "mail.digest.inProgress" = "идёт";
 "mail.digest.inTime" = "через %@";
 "mail.digest.openMail" = "Открыть письмо-приглашение";
+"mail.digest.confirm.accept" = "Принять «%@»?";
+"mail.digest.confirm.tentative" = "Ответить «Под вопросом» на «%@»?";
+"mail.digest.confirm.decline" = "Отклонить «%@»?";
+"mail.digest.confirm.hint" = "Ответ уйдёт организатору.";
+"mail.digest.confirm.cancel" = "Отмена";

@@ -108,6 +108,13 @@ struct MailDigestView: View {
     /// Invitations with an answer on its way, so a second click cannot send another.
     @State private var responding: Set<String> = []
     @State private var failed: Set<String> = []
+    /// The answer whose confirmation is open, if any.
+    @State private var confirming: PendingAnswer?
+
+    private struct PendingAnswer: Equatable {
+        let eventID: String
+        let action: MeetingResponseAction
+    }
 
     private enum Anchor: Hashable { case invitations, people, important }
 
@@ -407,30 +414,19 @@ struct MailDigestView: View {
             if isResponding {
                 ProgressView().controlSize(.small)
             } else {
-                // Accept is the answer most give: the one coloured button. The other answers and
-                // opening the invitation email are a click further, as icons.
-                Button { respond(event, .accept) } label: {
-                    Text(localization.tr("meeting.rsvp.accept"))
-                        .font(.app(.footnote, weight: .semibold))
-                        .foregroundStyle(.green)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(0.15)))
+                // All three answers as small icons, each asking first: the answer goes to the
+                // organizer, and five similar rows make a click on the wrong one easy.
+                HStack(spacing: 6) {
+                    answerButton(event, .accept)
+                    answerButton(event, .tentative)
+                    answerButton(event, .decline)
                 }
-                .buttonStyle(.plain)
-                Menu {
-                    Button(localization.tr("meeting.rsvp.tentative")) { respond(event, .tentative) }
-                    Button(localization.tr("meeting.rsvp.decline"), role: .destructive) { respond(event, .decline) }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help(localization.tr("mail.digest.otherAnswers"))
-                .accessibilityLabel(localization.tr("mail.digest.otherAnswers"))
                 Button { open(invitation) } label: {
-                    Image(systemName: "arrow.up.right.square").foregroundStyle(.secondary)
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.app(.headline))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(localization.tr("mail.digest.openMail"))
@@ -440,6 +436,84 @@ struct MailDigestView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.07)))
+    }
+
+    private struct AnswerStyle {
+        let icon: String
+        let tint: Color
+        let labelKey: String
+        let confirmKey: String
+    }
+
+    private func style(_ action: MeetingResponseAction) -> AnswerStyle {
+        switch action {
+        case .accept: AnswerStyle(icon: "checkmark", tint: .green, labelKey: "meeting.rsvp.accept", confirmKey: "mail.digest.confirm.accept")
+        case .tentative: AnswerStyle(icon: "questionmark", tint: .orange, labelKey: "meeting.rsvp.tentative", confirmKey: "mail.digest.confirm.tentative")
+        case .decline: AnswerStyle(icon: "xmark", tint: .red, labelKey: "meeting.rsvp.decline", confirmKey: "mail.digest.confirm.decline")
+        }
+    }
+
+    private func answerButton(_ event: CalendarEvent, _ action: MeetingResponseAction) -> some View {
+        let style = style(action)
+        let pending = PendingAnswer(eventID: event.id, action: action)
+        return Button { confirming = pending } label: {
+            Image(systemName: style.icon)
+                .font(.app(.footnote, weight: .bold))
+                .foregroundStyle(style.tint)
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 7).fill(style.tint.opacity(0.15)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(localization.tr(style.labelKey))
+        .accessibilityLabel(localization.tr(style.labelKey))
+        .popover(isPresented: Binding(
+            get: { confirming == pending },
+            set: { if !$0, confirming == pending { confirming = nil } }
+        ), arrowEdge: .bottom) {
+            confirmation(event, action, style: style)
+        }
+    }
+
+    /// Says exactly what is being answered — the meeting's name and time — before anything is
+    /// sent; Return confirms, Esc cancels.
+    private func confirmation(_ event: CalendarEvent, _ action: MeetingResponseAction, style: AnswerStyle) -> some View {
+        let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let day = localization.formatDate(event.startDate, format: "EE, d MMM")
+        let time = "\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))"
+        return VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(question(style.confirmKey, title: title))
+                    .font(.app(.body, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(day), \(time). " + localization.tr("mail.digest.confirm.hint"))
+                    .font(.app(.footnote))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                // "Отмена", not "Отменить": next to "Отклонить" the latter reads as cancelling
+                // the meeting.
+                Button(localization.tr("mail.digest.confirm.cancel")) { confirming = nil }
+                    .keyboardShortcut(.cancelAction)
+                Button(localization.tr(style.labelKey), role: action == .decline ? .destructive : nil) {
+                    confirming = nil
+                    respond(event, action)
+                }
+                .keyboardShortcut(.defaultAction)
+                .tint(style.tint)
+            }
+        }
+        .padding(14)
+        .frame(width: 300)
+    }
+
+    /// "Accept “Shall we?”?" reads badly: a title that already ends in a question mark keeps
+    /// it, and the sentence's own is dropped.
+    private func question(_ key: String, title: String) -> String {
+        let text = localization.tr(key, title)
+        return title.hasSuffix("?") && text.hasSuffix("?") ? String(text.dropLast()) : text
     }
 
     private func soonBadge(_ soon: MailDigest.Soon) -> some View {

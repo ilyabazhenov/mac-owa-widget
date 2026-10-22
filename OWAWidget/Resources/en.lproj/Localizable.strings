@@ -858,7 +858,6 @@
 "mail.digest.tile.flagged" = "flagged";
 "mail.digest.invitations" = "Waiting for your answer";
 "mail.digest.important" = "Important and flagged";
-"mail.digest.otherAnswers" = "Other answers";
 "mail.key.navigate" = "move";
 "mail.key.reply" = "reply";
 "mail.key.replyAll" = "reply all";
@@ -873,3 +872,8 @@
 "mail.digest.inProgress" = "now";
 "mail.digest.inTime" = "in %@";
 "mail.digest.openMail" = "Open the invitation email";
+"mail.digest.confirm.accept" = "Accept “%@”?";
+"mail.digest.confirm.tentative" = "Answer “Tentative” to “%@”?";
+"mail.digest.confirm.decline" = "Decline “%@”?";
+"mail.digest.confirm.hint" = "The organizer gets your answer.";
+"mail.digest.confirm.cancel" = "Cancel";
