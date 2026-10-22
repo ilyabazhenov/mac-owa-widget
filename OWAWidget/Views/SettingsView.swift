@@ -6,7 +6,7 @@ struct SettingsView: View {
     @State private var accountPendingDeletion: CalendarAccount?
 
     init(calendarService: CalendarService) {
-        _vm = StateObject(wrappedValue: SettingsViewModel(calendarService: calendarService, appliesChangesImmediately: true))
+        _vm = StateObject(wrappedValue: SettingsViewModel(calendarService: calendarService))
     }
 
     var body: some View {

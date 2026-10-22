@@ -174,8 +174,17 @@ struct PopoverView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(localization.tr("app.name"))
         .onAppear {
+            // Built unseen by the prewarm: not an opening. No colleagues request (by design the
+            // section only asks when the user opens the popover), and a pending "Open" request
+            // is left for the real opening rather than consumed by a popover nobody sees.
+            guard !PopoverPrewarmer.isPrewarming else { return }
             colleagues.popoverDidAppear()
             applyEventFocusRequest()
+        }
+        // The tree outlives a close and `onAppear` may not come again on reopen, so each real
+        // opening asks as well; the refresh is skipped while its cache is fresh.
+        .onReceive(NotificationCenter.default.publisher(for: .owaPopoverDidOpen)) { _ in
+            colleagues.popoverDidAppear()
         }
         .onChange(of: service.eventFocusRequest) { _ in
             applyEventFocusRequest()

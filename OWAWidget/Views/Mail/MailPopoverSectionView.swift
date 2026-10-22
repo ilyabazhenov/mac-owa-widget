@@ -76,7 +76,8 @@ struct MailPopoverSectionView: View {
                 }
             }
         }
-        .onAppear { mail.popoverDidAppear() }
+        // Not for the prewarm's unseen build: that is no opening, and mail is checked on its own.
+        .onAppear { if !PopoverPrewarmer.isPrewarming { mail.popoverDidAppear() } }
     }
 
     private var emptyKey: String {

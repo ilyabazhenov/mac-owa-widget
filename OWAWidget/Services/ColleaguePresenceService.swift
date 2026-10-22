@@ -114,6 +114,7 @@ final class ColleaguePresenceService: ObservableObject {
         guard !colleagues.isEmpty, let account = availabilityAccount, let calendarService else { return }
         refreshTask?.cancel()
         isRefreshing = true
+        DiagnosticLog.event("Colleagues refresh count=\(colleagues.count)")
 
         let emails = colleagues.map(\.email)
         let bounds = ColleagueAvailabilityWindow.bounds(now: clock(), calendar: calendar)

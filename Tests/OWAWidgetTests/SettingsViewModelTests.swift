@@ -36,7 +36,7 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(vm.hasUnsavedChanges)
     }
 
-    /// Settings have no Save button: in immediate mode (the one the Settings window uses) the
+    /// Settings have no Save button: by default — the way the Settings window builds it — the
     /// model applies each change itself, every time, with nothing left unsaved in between.
     func testImmediateModeAppliesEveryChangeWithoutSaving() {
         let service = CalendarService(
@@ -49,8 +49,7 @@ final class SettingsViewModelTests: XCTestCase {
         )
         let vm = SettingsViewModel(
             calendarService: service,
-            launchAtLoginManager: FakeLaunchAtLoginManager(),
-            appliesChangesImmediately: true
+            launchAtLoginManager: FakeLaunchAtLoginManager()
         )
 
         vm.dimPastMeetingsOnTimeline = false
@@ -75,8 +74,7 @@ final class SettingsViewModelTests: XCTestCase {
         )
         let vm = SettingsViewModel(
             calendarService: service,
-            launchAtLoginManager: FakeLaunchAtLoginManager(),
-            appliesChangesImmediately: true
+            launchAtLoginManager: FakeLaunchAtLoginManager()
         )
         // The popover's footer switcher changes the size while Settings is open.
         service.popoverSizePreset = .large
@@ -363,7 +361,8 @@ final class SettingsViewModelTests: XCTestCase {
             startBackgroundTasks: false
         )
         let launchManager = FakeLaunchAtLoginManager()
-        let vm = SettingsViewModel(calendarService: service, launchAtLoginManager: launchManager)
+        // Off: these tests look at the unsaved state between a change and `savePreferences()`.
+        let vm = SettingsViewModel(calendarService: service, launchAtLoginManager: launchManager, appliesChangesImmediately: false)
         return (service, vm, launchManager)
     }
 

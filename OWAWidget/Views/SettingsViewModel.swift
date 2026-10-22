@@ -26,7 +26,8 @@ final class SettingsViewModel: ObservableObject {
     @Published private(set) var hasUnsavedChanges: Bool = false
     /// Settings apply each change as it is made, the way macOS settings behave: the model saves
     /// on every change itself, whoever made it, so nothing depends on a view being on screen.
-    /// Off by default for tests that look at the unsaved state in between.
+    /// On by default, so no window can end up with a form that saves nothing; tests that look at
+    /// the unsaved state in between turn it off.
     let appliesChangesImmediately: Bool
 
     // Per-account edit state
@@ -85,7 +86,7 @@ final class SettingsViewModel: ObservableObject {
         calendarService: CalendarService,
         launchAtLoginManager: any LaunchAtLoginManaging = LaunchAtLoginService(),
         eventKitStore: any EventKitStoring = SystemEventKitStore.shared,
-        appliesChangesImmediately: Bool = false
+        appliesChangesImmediately: Bool = true
     ) {
         self.appliesChangesImmediately = appliesChangesImmediately
         self.service = calendarService

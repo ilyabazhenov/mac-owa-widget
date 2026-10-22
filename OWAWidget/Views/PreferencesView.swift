@@ -276,9 +276,5 @@ struct PreferencesView: View {
         .onAppear {
             DiagnosticLog.event("PreferencesView Form appeared")
         }
-        // No Save button: the model applies each change as it is made
-        // (`SettingsViewModel.appliesChangesImmediately`), the way macOS settings behave and the
-        // way the language and theme pickers above always did. Every control here is a picker,
-        // toggle or switch, so there is no half-typed value to apply early.
     }
 }

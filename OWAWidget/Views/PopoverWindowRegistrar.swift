@@ -57,7 +57,9 @@ final class PopoverWindowRegistrationView: NSView {
 
     @objc private func windowOcclusionStateDidChange(_ notification: Notification) {
         guard let window else { return }
-        let isVisible = window.occlusionState.contains(.visible)
+        // The prewarm shows the window fully transparent and closes it at once; the occlusion
+        // change can arrive after that, and it is no opening.
+        let isVisible = window.occlusionState.contains(.visible) && window.isVisible && window.alphaValue > 0
         defer { isWindowVisible = isVisible }
         guard isVisible, !isWindowVisible else { return }
         NotificationCenter.default.post(name: .owaPopoverDidOpen, object: window)
