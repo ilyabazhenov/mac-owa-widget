@@ -115,5 +115,7 @@ final class MailWindowSubtitleTests: XCTestCase {
         XCTAssertEqual(MailPresentation.windowSubtitle(unread: 12, lastChecked: checked, localization: localization), "Непрочитанных: 12 · обновлено в 16:44")
         XCTAssertEqual(MailPresentation.windowSubtitle(unread: 0, lastChecked: checked, localization: localization), "Обновлено в 16:44")
         XCTAssertEqual(MailPresentation.windowSubtitle(unread: nil, lastChecked: nil, localization: localization), "Ещё не обновлялось")
+        // The unread filter is a small toolbar button; the subtitle names it first.
+        XCTAssertEqual(MailPresentation.windowSubtitle(unread: 12, lastChecked: checked, unreadOnly: true, localization: localization), "Только новые · непрочитанных: 12 · обновлено в 16:44")
     }
 }

@@ -111,6 +111,9 @@ enum PerfProbe {
                     sendKey(command)
                 case "authblock", "clearevents":
                     NotificationCenter.default.post(name: harnessForceAuthBlock, object: action)
+                case "mail":
+                    // The same request the ⌃⌥M shortcut sends; the menu bar label opens the window.
+                    NotificationCenter.default.post(name: .openMailShortcut, object: nil)
                 case "frontmost":
                     DiagnosticLog.event("Harness frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil")")
                 case "next", "prev":

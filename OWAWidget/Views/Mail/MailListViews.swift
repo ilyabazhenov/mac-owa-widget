@@ -45,8 +45,10 @@ enum MailPresentation {
     }
 
     /// Window subtitle under the folder name: "Unread: 12 · updated 16:44".
-    static func windowSubtitle(unread: Int?, lastChecked: Date?, localization: LocalizationService) -> String {
+    static func windowSubtitle(unread: Int?, lastChecked: Date?, unreadOnly: Bool = false, localization: LocalizationService) -> String {
         var parts: [String] = []
+        // The filter button is small: the subtitle says the list is filtered, first.
+        if unreadOnly { parts.append(localization.tr("mail.window.subtitle.unreadOnly")) }
         if let unread, unread > 0 { parts.append(localization.tr("mail.window.subtitle.unread", unread)) }
         if let lastChecked {
             parts.append(localization.tr("mail.window.subtitle.updated", localization.shortTime(lastChecked)))
@@ -426,94 +428,32 @@ enum MailPanelFolderList {
     }
 }
 
-// MARK: - List filters
+// MARK: - List filter
 
-/// The list filters as segments above the list they filter: one click, and the active one is
-/// visible. A list column too narrow for the segments gets a drop-down instead.
-struct MailModePicker: View {
+/// "Unread only" as one filter button in the window toolbar, the way Mail does it. It used to be
+/// an "All / New" segmented control in a strip of its own above the list: a bright accent segment
+/// in the middle of the window, for a filter with two states.
+struct MailUnreadFilterToggle: View {
     @ObservedObject var model: MailWindowModel
     @EnvironmentObject private var localization: LocalizationService
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            FittingSegmentedControl(
-                items: MailListMode.allCases.map { ($0, title($0)) },
-                selection: $model.mode,
-                accessibilityLabel: localization.tr("mail.mode.help")
+        // A toggle, not a button: the toolbar shows it pressed while the filter is on, and the
+        // window subtitle says so too.
+        Toggle(isOn: Binding(
+            get: { model.mode == .unread },
+            set: { model.mode = $0 ? .unread : .all }
+        )) {
+            Label(
+                localization.tr("mail.filter.unreadOnly"),
+                systemImage: model.mode == .unread
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle"
             )
-            Picker(localization.tr("mail.mode.help"), selection: $model.mode) {
-                ForEach(MailListMode.allCases) { mode in
-                    Text(title(mode)).tag(mode)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .controlSize(.small)
-            .fixedSize()
         }
+        .toggleStyle(.button)
         .disabled(model.isSearching)
         .help(localization.tr("mail.mode.help"))
-    }
-
-    private func title(_ mode: MailListMode) -> String {
-        localization.tr("mail.mode.short.\(mode.rawValue)")
-    }
-}
-
-/// A small segmented control whose segments are as wide as their labels. SwiftUI's segmented
-/// picker gives every segment the widest one's width, which left "Все" a wide grey slab.
-struct FittingSegmentedControl<Value: Hashable>: NSViewRepresentable {
-    let items: [(value: Value, title: String)]
-    @Binding var selection: Value
-    var accessibilityLabel: String?
-    /// Room around a label, both sides together. AppKit's own fit is wider by a few points per
-    /// segment — enough to push the list filters out of a list column of the default width.
-    static var labelPadding: CGFloat { 14 }
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    func makeNSView(context: Context) -> NSSegmentedControl {
-        let control = NSSegmentedControl()
-        control.trackingMode = .selectOne
-        control.segmentDistribution = .fit
-        control.controlSize = .small
-        control.font = .systemFont(ofSize: NSFont.systemFontSize(for: .small))
-        control.target = context.coordinator
-        control.action = #selector(Coordinator.changed(_:))
-        control.setContentHuggingPriority(.required, for: .horizontal)
-        control.setContentCompressionResistancePriority(.required, for: .horizontal)
-        return control
-    }
-
-    func updateNSView(_ control: NSSegmentedControl, context: Context) {
-        context.coordinator.parent = self
-        if control.segmentCount != items.count { control.segmentCount = items.count }
-        for (index, item) in items.enumerated() where control.label(forSegment: index) != item.title {
-            control.setLabel(item.title, forSegment: index)
-            let font = control.font ?? .systemFont(ofSize: NSFont.systemFontSize(for: .small))
-            let width = (item.title as NSString).size(withAttributes: [.font: font]).width
-            control.setWidth(ceil(width) + Self.labelPadding, forSegment: index)
-        }
-        control.selectedSegment = items.firstIndex { $0.value == selection } ?? -1
-        control.isEnabled = context.environment.isEnabled
-        control.setAccessibilityLabel(accessibilityLabel)
-    }
-
-    /// The control's own width, so `ViewThatFits` can tell when it does not fit.
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
-        nsView.intrinsicContentSize
-    }
-
-    @MainActor
-    final class Coordinator: NSObject {
-        var parent: FittingSegmentedControl
-
-        init(_ parent: FittingSegmentedControl) { self.parent = parent }
-
-        @objc func changed(_ sender: NSSegmentedControl) {
-            guard parent.items.indices.contains(sender.selectedSegment) else { return }
-            parent.selection = parent.items[sender.selectedSegment].value
-        }
     }
 }
 
@@ -559,7 +499,9 @@ struct MailConversationListView: View {
     var body: some View {
         let _ = PerfProbe.body("MailConversationListView")
         VStack(spacing: 0) {
-            header
+            // Only when it has something to hold: the search title and scope, or bulk progress.
+            // The list filter lives in the toolbar.
+            if model.isSearching || model.bulkProgress != nil { header }
             if model.isSearching { searchFilters; Divider() }
             if model.selectedIDs.count > 1 { bulkBar; Divider() }
             content
@@ -592,8 +534,8 @@ struct MailConversationListView: View {
         return model.selectedFolderInfo?.displayName ?? localization.tr("mail.folder.inbox")
     }
 
-    /// The folder name and its counts live in the window toolbar; this row holds what belongs to
-    /// the list itself: its filters (or the search scope while searching) and bulk progress.
+    /// The folder name, its counts and the unread filter live in the window toolbar; this row holds
+    /// what belongs to the list itself: the search title and scope, and bulk progress.
     private var header: some View {
         VStack(spacing: 0) {
             headerRow
@@ -607,9 +549,6 @@ struct MailConversationListView: View {
                 Text(title)
                     .font(.app(.headline, weight: .semibold))
                     .lineLimit(1)
-                    .layoutPriority(1)
-            } else {
-                MailModePicker(model: model)
                     .layoutPriority(1)
             }
             if let progress = model.bulkProgress {
@@ -634,9 +573,7 @@ struct MailConversationListView: View {
                 .fixedSize()
             }
         }
-        // No spacer around the filters: it and its gap would take room they need. Centred, as the
-        // agenda's day title next to them; a search keeps its title leading and scope trailing.
-        .frame(maxWidth: .infinity, alignment: model.isSearching ? .leading : .center)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .frame(height: MailColumnWidths.headerHeight)
     }

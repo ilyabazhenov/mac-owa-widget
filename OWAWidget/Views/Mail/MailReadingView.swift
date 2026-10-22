@@ -805,10 +805,12 @@ struct MailWindowView: View {
                 .navigationSubtitle(MailPresentation.windowSubtitle(
                     unread: model.isSearching || model.selectedFolderInfo?.distinguished == .sentitems ? nil : model.selectedFolderInfo?.unreadCount,
                     lastChecked: service.lastChecked,
+                    unreadOnly: model.mode == .unread && !model.isSearching,
                     localization: localization
                 ))
                 .toolbar {
                     ToolbarItemGroup(placement: .primaryAction) {
+                        MailUnreadFilterToggle(model: model)
                         MailListOptionsMenu(model: model, service: service)
                         Button {
                             service.compose(MailComposeRequest(kind: .new, original: nil, to: [], cc: [], subject: "", body: ""))

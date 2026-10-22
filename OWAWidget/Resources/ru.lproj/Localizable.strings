@@ -741,8 +741,6 @@
 "mail.agenda.freeRest" = "Больше встреч сегодня нет";
 "mail.agenda.todayLabel" = "Сегодня, %@";
 "mail.agenda.tomorrowLabel" = "Завтра, %@";
-"mail.mode.short.all" = "Все";
-"mail.mode.short.unread" = "Новые";
 "mail.list.options" = "Ещё";
 "mail.window.subtitle.unread" = "непрочитанных: %d";
 "mail.window.subtitle.updated" = "обновлено в %@";
@@ -851,3 +849,5 @@
 "mcp.mail.needsMail" = "Сначала включите почту в разделе «Почта».";
 "popover.size.menu" = "Размер поповера";
 "settings.info.more" = "Подробнее";
+"mail.filter.unreadOnly" = "Только новые";
+"mail.window.subtitle.unreadOnly" = "только новые";

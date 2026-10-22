@@ -741,8 +741,6 @@
 "mail.agenda.freeRest" = "No more meetings today";
 "mail.agenda.todayLabel" = "Today, %@";
 "mail.agenda.tomorrowLabel" = "Tomorrow, %@";
-"mail.mode.short.all" = "All";
-"mail.mode.short.unread" = "Unread";
 "mail.list.options" = "More";
 "mail.window.subtitle.unread" = "%d unread";
 "mail.window.subtitle.updated" = "updated at %@";
@@ -851,3 +849,5 @@
 "mcp.mail.needsMail" = "Turn on mail in the Mail section first.";
 "popover.size.menu" = "Popover size";
 "settings.info.more" = "More info";
+"mail.filter.unreadOnly" = "Unread only";
+"mail.window.subtitle.unreadOnly" = "unread only";
