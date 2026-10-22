@@ -149,16 +149,28 @@ struct MailDigestView: View {
 
     // MARK: Counts
 
+    /// Four equal tiles across the whole width; two by two when the reader is too narrow for
+    /// four labels side by side.
     private func tiles(_ digest: MailDigest, proxy: ScrollViewProxy) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8, alignment: .top)], alignment: .leading, spacing: 8) {
-            tile(digest.inboxUnread ?? 0, "mail.digest.tile.inbox") {
+        let items: [(Int, String, () -> Void)] = [
+            (digest.inboxUnread ?? 0, "mail.digest.tile.inbox", {
                 // The inbox, new mail only: what the number counts.
                 if let inbox = model.folders.first(where: { $0.distinguished == .inbox }) { model.select(folder: inbox) }
                 model.mode = .unread
+            }),
+            (digest.peopleUnreadCount, "mail.digest.tile.people", { scroll(proxy, to: .people) }),
+            (digest.invitations.count, "mail.digest.tile.invitations", { scroll(proxy, to: .invitations) }),
+            (digest.flaggedCount, "mail.digest.tile.flagged", { scroll(proxy, to: .important) }),
+        ]
+        let columns = { (count: Int) in Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top), count: count) }
+        return ViewThatFits(in: .horizontal) {
+            LazyVGrid(columns: columns(4), spacing: 8) {
+                ForEach(items.indices, id: \.self) { index in tile(items[index].0, items[index].1, action: items[index].2) }
             }
-            tile(digest.peopleUnreadCount, "mail.digest.tile.people") { scroll(proxy, to: .people) }
-            tile(digest.invitations.count, "mail.digest.tile.invitations") { scroll(proxy, to: .invitations) }
-            tile(digest.flaggedCount, "mail.digest.tile.flagged") { scroll(proxy, to: .important) }
+            .frame(minWidth: 4 * 120 + 3 * 8)
+            LazyVGrid(columns: columns(2), spacing: 8) {
+                ForEach(items.indices, id: \.self) { index in tile(items[index].0, items[index].1, action: items[index].2) }
+            }
         }
     }
 
@@ -177,7 +189,9 @@ struct MailDigestView: View {
                     .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.leading)
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            // One height for every tile: a reserved second line is not exactly as tall as a
+            // wrapped one, and the row showed it.
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .topLeading)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.07)))
