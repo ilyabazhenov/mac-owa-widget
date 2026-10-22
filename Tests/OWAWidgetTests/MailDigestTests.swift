@@ -114,4 +114,13 @@ final class MailDigestTests: XCTestCase {
                                     location: nil, bodyPreview: nil, joinURL: nil, platform: .generic, isAllDay: false, organizer: nil, accountID: account)
         XCTAssertNil(MailDigest.soon(nextDay, now: morning, calendar: calendar), "another day: the day badge says it")
     }
+
+    func testCancellationNoticesAreNotImportantUnlessFlagged() {
+        var notice = mail("c", topic: "Planning", importance: .high)
+        notice.itemClasses = ["IPM.Schedule.Meeting.Canceled"]
+        var flaggedNotice = mail("cf", topic: "Retro", flagged: true, importance: .high)
+        flaggedNotice.itemClasses = ["IPM.Schedule.Meeting.Canceled"]
+        let digest = MailDigest.build(peopleUnread: [], folders: [], conversations: [notice, flaggedNotice, mail("h", topic: "Urgent", importance: .high)], now: now)
+        XCTAssertEqual(Set(digest.important.map(\.id)), ["cf", "h"])
+    }
 }

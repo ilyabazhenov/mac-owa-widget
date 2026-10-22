@@ -75,8 +75,10 @@ struct MailDigest: Equatable {
         }
         invitations.sort { $0.event.startDate < $1.event.startDate }
 
+        // A cancellation sent with high importance is a calendar notice, not something important
+        // to read: left out, unless the user flagged it themselves.
         let important = known
-            .filter { $0.isFlagged || $0.importance == .high }
+            .filter { $0.isFlagged || ($0.importance == .high && !$0.isMeetingCancellation) }
             .sorted { ($0.lastDelivery ?? .distantPast) > ($1.lastDelivery ?? .distantPast) }
 
         return MailDigest(
