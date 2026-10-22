@@ -843,6 +843,36 @@ final class CalendarServiceInvitationTests: XCTestCase {
     /// Settings apply each change at once: a switch flipped off and back on must not wipe the
     /// comparison state, or the invitations that came meanwhile would be recorded silently.
     func testTurningFeatureOffForgetsTheTrackerOnlyIfItStaysOff() async throws {
+        let (service, tracker) = makeServiceWithTracker()
+        service.invitationTrackerResetDelay = .milliseconds(100)
+
+        setInvitationAlerts(false, on: service)
+        setInvitationAlerts(true, on: service)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(tracker.resetCount, 0, "flipped back on within the delay: state kept")
+
+        setInvitationAlerts(false, on: service)
+        try await waitUntil { tracker.resetCount == 1 }
+        XCTAssertEqual(tracker.resetCount, 1, "stayed off: state forgotten")
+    }
+
+    /// Off, on and off again: the delay counts from the last switch-off, so the reset pending
+    /// from the first one must not fire while the switch is off only briefly the second time.
+    func testOnlyTheLastSwitchOffStartsTheResetDelay() async throws {
+        let (service, tracker) = makeServiceWithTracker()
+        service.invitationTrackerResetDelay = .milliseconds(1000)
+
+        setInvitationAlerts(false, on: service)          // t = 0: first reset due at 1000
+        try await Task.sleep(for: .milliseconds(500))
+        setInvitationAlerts(true, on: service)
+        setInvitationAlerts(false, on: service)          // t = 500: last reset due at 1500
+        try await Task.sleep(for: .milliseconds(700))    // t = 1200: the first one is past due
+        setInvitationAlerts(true, on: service)
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertEqual(tracker.resetCount, 0)
+    }
+
+    private func makeServiceWithTracker() -> (CalendarService, InMemoryTracker) {
         let account = CalendarAccount(displayName: "Exchange", serverURL: "", email: "", accountType: .owa)
         let tracker = InMemoryTracker()
         let service = CalendarService(
@@ -855,19 +885,20 @@ final class CalendarServiceInvitationTests: XCTestCase {
             loadPersistedAccounts: false,
             startBackgroundTasks: false
         )
-        service.invitationTrackerResetDelay = .milliseconds(50)
+        return (service, tracker)
+    }
 
-        UserDefaults.standard.set(false, forKey: enabledKey)
+    private func setInvitationAlerts(_ enabled: Bool, on service: CalendarService) {
+        UserDefaults.standard.set(enabled, forKey: enabledKey)
         service.applySavedPreferences()
-        UserDefaults.standard.set(true, forKey: enabledKey)
-        service.applySavedPreferences()
-        try await Task.sleep(for: .milliseconds(200))
-        XCTAssertEqual(tracker.resetCount, 0, "flipped back on within the delay: state kept")
+    }
 
-        UserDefaults.standard.set(false, forKey: enabledKey)
-        service.applySavedPreferences()
-        try await Task.sleep(for: .milliseconds(200))
-        XCTAssertEqual(tracker.resetCount, 1, "stayed off: state forgotten")
+    /// Polls instead of sleeping a fixed time: on a busy machine the reset can come late.
+    private func waitUntil(timeout: Duration = .seconds(5), _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
     }
 
     func testTurningFeatureOffClosesThePanel() {

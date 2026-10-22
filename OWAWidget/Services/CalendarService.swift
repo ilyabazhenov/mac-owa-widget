@@ -646,10 +646,14 @@ final class CalendarService: ObservableObject {
     /// How long invitation alerts must stay off before the tracker forgets what it compared with.
     /// Shortened by tests.
     var invitationTrackerResetDelay: Duration = .seconds(10)
+    /// The pending reset; replaced by each change, so only the last switch-off counts.
+    private var invitationTrackerResetTask: Task<Void, Never>?
 
     /// Call after a change in Settings (style, lead time, etc.); Settings apply each change at once.
     func applySavedPreferences() {
         objectWillChange.send()
+        invitationTrackerResetTask?.cancel()
+        invitationTrackerResetTask = nil
         if !invitationAlertsEnabled {
             invitationAlerts.dismissAll()
             unhandledInvitationIDs = []
@@ -658,10 +662,11 @@ final class CalendarService: ObservableObject {
             // state, and the next sync would record the calendar silently as a first one —
             // swallowing the invitations that arrived meanwhile. Before, the same flip was undone
             // by not pressing Save.
+            // The timer restarts on every change: off, on and off again counts from the last off.
             let delay = invitationTrackerResetDelay
-            Task { [weak self] in
+            invitationTrackerResetTask = Task { [weak self] in
                 try? await Task.sleep(for: delay)
-                guard let self, !self.invitationAlertsEnabled else { return }
+                guard !Task.isCancelled, let self, !self.invitationAlertsEnabled else { return }
                 self.invitationTracker.reset()
             }
         }

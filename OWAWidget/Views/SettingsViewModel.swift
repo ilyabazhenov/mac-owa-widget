@@ -24,6 +24,10 @@ final class SettingsViewModel: ObservableObject {
     @Published var launchAtLogin: Bool
     @Published var launchAtLoginRequiresApproval: Bool
     @Published private(set) var hasUnsavedChanges: Bool = false
+    /// Settings apply each change as it is made, the way macOS settings behave: the model saves
+    /// on every change itself, whoever made it, so nothing depends on a view being on screen.
+    /// Off by default for tests that look at the unsaved state in between.
+    let appliesChangesImmediately: Bool
 
     // Per-account edit state
     @Published var editingAccount: CalendarAccount?
@@ -80,8 +84,10 @@ final class SettingsViewModel: ObservableObject {
     init(
         calendarService: CalendarService,
         launchAtLoginManager: any LaunchAtLoginManaging = LaunchAtLoginService(),
-        eventKitStore: any EventKitStoring = SystemEventKitStore.shared
+        eventKitStore: any EventKitStoring = SystemEventKitStore.shared,
+        appliesChangesImmediately: Bool = false
     ) {
+        self.appliesChangesImmediately = appliesChangesImmediately
         self.service = calendarService
         self.launchAtLoginManager = launchAtLoginManager
         self.eventKitStore = eventKitStore
@@ -557,6 +563,8 @@ final class SettingsViewModel: ObservableObject {
 
     private func updateUnsavedChanges() {
         hasUnsavedChanges = currentPreferencesSnapshot() != baselinePreferences
+        // `savePreferences` resets the baseline and comes back here clean, so this runs once.
+        if appliesChangesImmediately, hasUnsavedChanges { savePreferences() }
     }
 
     #if DEBUG

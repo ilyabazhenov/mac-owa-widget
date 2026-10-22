@@ -125,6 +125,9 @@ struct TimelineMeetingBlockView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .opacity((calendarService.dimPastMeetingsOnTimeline && event.isPast) ? 0.58 : 1.0)
         .onHover { isHovering = $0 }
+        // A popover closed under the pointer sends no hover exit: start every opening unhovered.
+        .onReceive(NotificationCenter.default.publisher(for: .owaPopoverDidOpen)) { _ in isHovering = false }
+        .onDisappear { isHovering = false }
         .meetingCopyContextMenu(event, localization: localization)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(a11yEventSummary)

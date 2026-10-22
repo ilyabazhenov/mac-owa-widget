@@ -1,4 +1,3 @@
-import SwiftUI
 import XCTest
 @testable import OWAWidget
 
@@ -37,34 +36,52 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(vm.hasUnsavedChanges)
     }
 
-    /// Settings have no Save button: the form itself applies a change the moment it is made.
-    /// Hosts the real view in a window so its change handler is live, as in the app.
-    func testPreferencesViewAppliesAChangeWithoutSaving() {
-        let (service, vm, _) = makeSUT()
-        let suite = "OWAWidgetTests.PreferencesView.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let view = PreferencesView(vm: vm)
-            .environmentObject(LocalizationService(userDefaults: defaults, selectedLanguage: .english))
-            .environmentObject(UpdateCheckService(defaults: defaults, appVersionOverride: "1.0.0", createUpdater: false))
-            .environmentObject(AppearanceService())
-            .environmentObject(MailService(backend: nil, defaults: defaults))
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: view)
-        defer { window.contentView = nil; window.close() }
-        window.layoutIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
-        XCTAssertTrue(service.dimPastMeetingsOnTimeline)
+    /// Settings have no Save button: in immediate mode (the one the Settings window uses) the
+    /// model applies each change itself, every time, with nothing left unsaved in between.
+    func testImmediateModeAppliesEveryChangeWithoutSaving() {
+        let service = CalendarService(
+            providers: [],
+            eventCacheStore: TestEventCacheStore(),
+            notificationService: TestNotificationService(),
+            customMeetingReminders: TestMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+        let vm = SettingsViewModel(
+            calendarService: service,
+            launchAtLoginManager: FakeLaunchAtLoginManager(),
+            appliesChangesImmediately: true
+        )
 
         vm.dimPastMeetingsOnTimeline = false
-
-        let deadline = Date().addingTimeInterval(2)
-        while service.dimPastMeetingsOnTimeline, Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
-        }
         XCTAssertFalse(service.dimPastMeetingsOnTimeline)
         XCTAssertFalse(vm.hasUnsavedChanges)
+
+        vm.menuBarDisplayMode = .smart
+        XCTAssertEqual(service.menuBarDisplayMode, .smart)
+        vm.dimPastMeetingsOnTimeline = true
+        XCTAssertTrue(service.dimPastMeetingsOnTimeline)
+        XCTAssertFalse(vm.hasUnsavedChanges)
+    }
+
+    func testImmediateModeDoesNotClobberPresetChangedElsewhere() {
+        let service = CalendarService(
+            providers: [],
+            eventCacheStore: TestEventCacheStore(),
+            notificationService: TestNotificationService(),
+            customMeetingReminders: TestMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false
+        )
+        let vm = SettingsViewModel(
+            calendarService: service,
+            launchAtLoginManager: FakeLaunchAtLoginManager(),
+            appliesChangesImmediately: true
+        )
+        // The popover's footer switcher changes the size while Settings is open.
+        service.popoverSizePreset = .large
+        vm.dimPastMeetingsOnTimeline = false
+        XCTAssertEqual(service.popoverSizePreset, .large)
     }
 
     func testSavePreferencesPersistsMenuBarDisplayModeToService() {

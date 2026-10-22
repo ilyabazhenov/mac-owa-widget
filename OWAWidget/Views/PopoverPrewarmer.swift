@@ -61,16 +61,19 @@ enum PopoverPrewarmer {
         }
         // Something of ours is on screen (Settings, a reminder): leave the app alone for now.
         let ourWindowOpen = NSApp.windows.contains { $0.isVisible && !$0.className.contains("NSStatusBar") }
-        if ourWindowOpen || secondsSinceLastInput < requiredIdleSeconds {
+        // No status item yet (the menu bar still laying out at login, or the item hidden behind
+        // the notch): try again later like any other busy moment.
+        let button = MenuBarPopoverOpener.statusButton()
+        if ourWindowOpen || button == nil || secondsSinceLastInput < requiredIdleSeconds {
             if attempt < maxAttempts {
                 schedule(after: retryInterval, attempt: attempt + 1)
             } else {
                 didRun = true
-                DiagnosticLog.event("Popover prewarm skipped: never idle")
+                DiagnosticLog.event("Popover prewarm skipped: windowOpen=\(ourWindowOpen) statusItem=\(button != nil)")
             }
             return
         }
-        guard let button = MenuBarPopoverOpener.statusButton() else { return }
+        guard let button else { return }
         didRun = true
 
         let frontmost = NSWorkspace.shared.frontmostApplication
@@ -81,9 +84,13 @@ enum PopoverPrewarmer {
         isPrewarming = true
         defer {
             isPrewarming = false
-            // Whatever happened above, the app that was in front gets its focus back.
+            // Whatever happened above, the app that was in front gets its focus back; with none
+            // in front (right after login) the app steps back, so typing does not land in an app
+            // with no window.
             if let frontmost, frontmost != NSRunningApplication.current {
                 frontmost.activate()
+            } else {
+                NSApp.deactivate()
             }
         }
 
