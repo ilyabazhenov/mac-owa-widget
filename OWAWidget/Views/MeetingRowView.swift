@@ -20,11 +20,11 @@ struct MeetingRowView: View {
             // Time column
             VStack(alignment: .trailing, spacing: 1) {
                 Text(localization.shortTime(event.startDate))
-                    .font(.system(size: compact ? 10 : 11, weight: .medium))
+                    .font(.app(compact ? .caption : .footnote, weight: .medium))
                     .foregroundStyle(timeColor)
                 if !compact {
                     Text(localization.shortTime(event.endDate))
-                        .font(.system(size: 9))
+                        .font(.app(.micro))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -38,14 +38,14 @@ struct MeetingRowView: View {
             // Title + organizer
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.title)
-                    .font(.system(size: compact ? 12 : 13, weight: .medium))
+                    .font(.app(compact ? .body : .headline, weight: .medium))
                     .lineLimit(1)
                     .foregroundStyle(event.isEffectivelyCancelled ? .secondary : .primary)
                     .strikethrough(event.isEffectivelyCancelled)
 
                 if !compact, let organizer = event.organizer {
                     Text(organizer)
-                        .font(.system(size: 10))
+                        .font(.app(.caption))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -57,7 +57,7 @@ struct MeetingRowView: View {
             HStack(spacing: 6) {
                 if event.responseType == .notResponded {
                     Image(systemName: "questionmark.circle")
-                        .font(.system(size: compact ? 11 : 12))
+                        .font(.app(compact ? .footnote : .body))
                         .foregroundStyle(.secondary)
                         .help(localization.tr("meeting.rsvp.pending.help"))
                         .accessibilityLabel(localization.tr("a11y.meeting.rsvp.pending"))
@@ -66,7 +66,7 @@ struct MeetingRowView: View {
                 if event.platform != .generic {
                     Image(systemName: event.platform.systemIcon)
                         .foregroundStyle(meetingAccentColor(for: event))
-                        .font(.system(size: compact ? 12 : 14))
+                        .font(.app(compact ? .body : .title))
                         .help(event.platform.displayName(localization: localization))
                         .accessibilityLabel(event.platform.displayName(localization: localization))
                 }
@@ -92,11 +92,11 @@ struct MeetingRowView: View {
                     } label: {
                         if iconOnlyJoin {
                             Image(systemName: "arrow.right.circle.fill")
-                                .font(.system(size: compact ? 13 : 16))
+                                .font(.app(compact ? .headline : .largeTitle))
                                 .foregroundStyle(meetingAccentColor(for: event))
                         } else {
                             Text(localization.tr("meeting.join"))
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.app(.footnote, weight: .semibold))
                                 .lineLimit(1)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
@@ -121,7 +121,7 @@ struct MeetingRowView: View {
         .overlay(alignment: .trailing) {
             if event.isHappeningNow && !compact {
                 Text(localization.tr("meeting.now"))
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.app(.micro, weight: .bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)

@@ -35,7 +35,7 @@ struct ColleagueRowView: View {
             InitialsAvatar(name: colleague.displayName, size: 20)
 
             Text(ColleagueNameFormatter.abbreviated(colleague.displayName))
-                .font(.system(size: 12, weight: .medium))
+                .font(.app(.body, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .foregroundStyle(isStale ? Color.primary.opacity(0.75) : Color.primary)
@@ -46,7 +46,7 @@ struct ColleagueRowView: View {
             statusDot
 
             Text(statusText)
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(isStale ? Color.secondary.opacity(0.75) : Color.secondary)
@@ -58,7 +58,7 @@ struct ColleagueRowView: View {
                 if let roomURL {
                     Button { onJoin(roomURL) } label: {
                         Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: 15))
+                            .font(.app(.title))
                             .foregroundStyle(joinForeground)
                     }
                     .buttonStyle(.plain)

@@ -22,7 +22,7 @@ struct MailReadingView: View {
                             }
                             if thread.totalMessageCount > thread.messages.count {
                                 Label(localization.tr("mail.thread.more", thread.totalMessageCount - thread.messages.count), systemImage: "ellipsis.bubble")
-                                    .font(.system(size: 11))
+                                    .font(.app(.footnote))
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -35,15 +35,15 @@ struct MailReadingView: View {
             } else if let error = model.threadError {
                 VStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-                    Text(error).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Text(error).font(.app(.body)).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }
                 .padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.selectedIDs.count > 1 {
                 VStack(spacing: 8) {
-                    Image(systemName: "envelope.open").font(.system(size: 28)).foregroundStyle(.tertiary)
+                    Image(systemName: "envelope.open").font(.app(.symbol)).foregroundStyle(.tertiary)
                     Text(localization.tr("mail.reading.multiple", model.selectedIDs.count))
-                        .font(.system(size: 12))
+                        .font(.app(.body))
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -75,10 +75,10 @@ struct MailReadingView: View {
             if let summary {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(summary.topic.isEmpty ? localization.tr("mail.noSubject") : summary.topic)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.app(.largeTitle, weight: .semibold))
                         .fixedSize(horizontal: false, vertical: true)
                     Text(summary.senders.joined(separator: ", "))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -86,7 +86,7 @@ struct MailReadingView: View {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text(localization.tr("mail.reading.loading"))
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
@@ -196,8 +196,8 @@ struct MailReadingView: View {
             if labelled {
                 // The icon at the size of the icon-only buttons beside it, the text a step smaller.
                 HStack(spacing: 4) {
-                    Image(systemName: icon).font(.system(size: 13))
-                    Text(localization.tr(key)).font(.system(size: 12))
+                    Image(systemName: icon).font(.app(.headline))
+                    Text(localization.tr(key)).font(.app(.body))
                 }
                 .frame(height: 16)
                 .lineLimit(1)
@@ -223,7 +223,7 @@ struct MailReadingView: View {
         VStack(alignment: .leading, spacing: 5) {
             let topic = model.conversations.first { $0.id == thread.id }?.topic ?? thread.topic
             Text(topic.isEmpty ? localization.tr("mail.noSubject") : topic)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.app(.largeTitle, weight: .semibold))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
@@ -239,7 +239,7 @@ struct MailReadingView: View {
                     Text("· \(folder)")
                 }
             }
-            .font(.system(size: 11))
+            .font(.app(.footnote))
             .foregroundStyle(.secondary)
         }
     }
@@ -287,19 +287,19 @@ struct MailMessageCard: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 10) {
             Text(initials)
-                .font(.system(size: isExpanded ? 11 : 9, weight: .semibold))
+                .font(.app(isExpanded ? .footnote : .micro, weight: .semibold))
                 .frame(width: isExpanded ? 30 : 24, height: isExpanded ? 30 : 24)
                 .background(Circle().fill(MailPresentation.categoryColor(message.from?.displayName ?? "").opacity(0.2)))
                 .foregroundStyle(MailPresentation.categoryColor(message.from?.displayName ?? ""))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(message.from?.displayName ?? localization.tr("mail.unknownSender"))
-                        .font(.system(size: isExpanded ? 13 : 12, weight: .semibold))
+                        .font(.app(isExpanded ? .headline : .body, weight: .semibold))
                         .lineLimit(1)
                         .layoutPriority(1)
                     if isExpanded, let email = message.from?.email, email != message.from?.displayName {
                         Text(email)
-                            .font(.system(size: 11))
+                            .font(.app(.footnote))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -307,10 +307,10 @@ struct MailMessageCard: View {
                     }
                     if service.isExternal(message.from?.email) { externalTag }
                     if !message.isRead { Circle().fill(Color.accentColor).frame(width: 6, height: 6) }
-                    if message.isFlagged { Image(systemName: "flag.fill").font(.system(size: 9)).foregroundStyle(.orange) }
+                    if message.isFlagged { Image(systemName: "flag.fill").font(.app(.micro)).foregroundStyle(.orange) }
                     Spacer(minLength: 6)
                     Text(MailPresentation.messageTime(message.received, localization: localization))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .fixedSize()
@@ -319,7 +319,7 @@ struct MailMessageCard: View {
                 if isExpanded {
                     if let sender = message.sender {
                         Text(localization.tr("mail.onBehalf", sender.displayName, message.from?.displayName ?? ""))
-                            .font(.system(size: 11))
+                            .font(.app(.footnote))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -329,7 +329,7 @@ struct MailMessageCard: View {
                     recipients
                 } else {
                     Text(message.preview)
-                        .font(.system(size: 12))
+                        .font(.app(.body))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -341,7 +341,7 @@ struct MailMessageCard: View {
 
     private var externalTag: some View {
         Text(localization.tr("mail.external"))
-            .font(.system(size: 9, weight: .semibold))
+            .font(.app(.micro, weight: .semibold))
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
             .background(RoundedRectangle(cornerRadius: 4).fill(Color.orange.opacity(0.16)))
@@ -370,7 +370,7 @@ struct MailMessageCard: View {
                 Text(localization.tr("mail.recipients.more", message.hiddenRecipientCount))
             }
         }
-        .font(.system(size: 11))
+        .font(.app(.footnote))
         .foregroundStyle(.secondary)
         .textSelection(.enabled)
         .fixedSize(horizontal: false, vertical: true)
@@ -428,7 +428,7 @@ struct MailMessageCard: View {
                 }
             }
             .buttonStyle(.mailIcon)
-            .font(.system(size: 11))
+            .font(.app(.footnote))
             .foregroundStyle(.secondary)
             }
             if !message.visibleAttachments.isEmpty {
@@ -470,7 +470,7 @@ struct MailMessageCard: View {
                 bodyPlaceholder
             }
         } else if !message.preview.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Text(message.preview).font(.system(size: 13)).textSelection(.enabled)
+            Text(message.preview).font(.app(.headline)).textSelection(.enabled)
         }
     }
 
@@ -479,7 +479,7 @@ struct MailMessageCard: View {
     private var bodyPlaceholder: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text(localization.tr("mail.reading.loading")).font(.system(size: 12)).foregroundStyle(.secondary)
+            Text(localization.tr("mail.reading.loading")).font(.app(.body)).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, minHeight: 60)
     }
@@ -501,11 +501,11 @@ struct MailMessageCard: View {
                     if let start = meeting.start {
                         let end = meeting.end.map { " – " + localization.shortTime($0) } ?? ""
                         Text(MailPresentation.fullTime(start, localization: localization) + end)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.app(.body, weight: .medium))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if let location = meeting.location {
-                        Text(location).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(location).font(.app(.footnote)).foregroundStyle(.secondary)
                     }
                 }
                 if message.kind == .meetingRequest {
@@ -517,7 +517,7 @@ struct MailMessageCard: View {
                     } icon: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
                     }
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                 } else if let response = meeting.response {
                     responseLine(response)
                 }
@@ -542,7 +542,7 @@ struct MailMessageCard: View {
         } icon: {
             Image(systemName: icon).foregroundStyle(tint)
         }
-        .font(.system(size: 12))
+        .font(.app(.body))
     }
 
     /// Accept / Tentative / Decline through the calendar, when the meeting is in it; the current
@@ -576,7 +576,7 @@ struct MailMessageCard: View {
         } label: {
             Label(localization.tr(key), systemImage: isCurrent ? icon + ".fill" : icon)
                 .labelStyle(RSVPLabelStyle(labelled: labelled))
-                .font(.system(size: 11, weight: isCurrent ? .semibold : .regular))
+                .font(.app(.footnote, weight: isCurrent ? .semibold : .regular))
                 .lineLimit(1)
                 .fixedSize()
         }
@@ -587,9 +587,9 @@ struct MailMessageCard: View {
 
     private func notice(_ icon: String, _ text: String, action: String, perform: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: icon).font(.system(size: 12))
-            Text(text).font(.system(size: 12))
-            Button(action, action: perform).buttonStyle(.link).font(.system(size: 12))
+            Image(systemName: icon).font(.app(.body))
+            Text(text).font(.app(.body))
+            Button(action, action: perform).buttonStyle(.link).font(.app(.body))
             Spacer(minLength: 0)
         }
         .foregroundStyle(.secondary)
@@ -601,16 +601,16 @@ struct MailMessageCard: View {
     private func attachmentChip(_ attachment: MailAttachmentInfo) -> some View {
         HStack(spacing: 8) {
             Image(systemName: attachment.isItemAttachment ? "envelope" : "doc")
-                .font(.system(size: 16))
+                .font(.app(.largeTitle))
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 1) {
                 Text(attachment.name)
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .lineLimit(1)
                     // The middle goes, so the extension stays in sight.
                     .truncationMode(.middle)
                     .help(attachment.name)
-                Text(MailPresentation.byteCount(attachment.size)).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(MailPresentation.byteCount(attachment.size)).font(.app(.caption)).foregroundStyle(.secondary)
             }
             if stacksAttachments { Spacer(minLength: 0) }
             if attachment.isItemAttachment {
@@ -935,8 +935,8 @@ struct MailWindowView: View {
 
     private func placeholder(_ icon: String, _ text: String) -> some View {
         VStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 30)).foregroundStyle(.tertiary)
-            Text(text).font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 360)
+            Image(systemName: icon).font(.app(.symbol)).foregroundStyle(.tertiary)
+            Text(text).font(.app(.headline)).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 360)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -945,7 +945,7 @@ struct MailWindowView: View {
     private func staleBanner(_ notice: MailStaleListNotice) -> some View {
         HStack(spacing: 8) {
             Image(systemName: notice.isConnectionError ? "wifi.slash" : "exclamationmark.triangle").foregroundStyle(.orange)
-            Text(MailPresentation.staleListText(notice, localization: localization)).font(.system(size: 12)).lineLimit(2)
+            Text(MailPresentation.staleListText(notice, localization: localization)).font(.app(.body)).lineLimit(2)
             Spacer()
             Button(localization.tr("mail.retry")) { Task { await model.refresh() } }
                 .controlSize(.small)
@@ -959,7 +959,7 @@ struct MailWindowView: View {
     private func banner(_ text: String, icon: String, onClose: (() -> Void)? = nil) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon).foregroundStyle(.orange)
-            Text(text).font(.system(size: 12)).lineLimit(2)
+            Text(text).font(.app(.body)).lineLimit(2)
             Spacer()
             if let onClose {
                 Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.mailIcon)

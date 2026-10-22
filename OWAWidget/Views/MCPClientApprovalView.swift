@@ -24,10 +24,10 @@ struct MCPClientApprovalView: View {
                 header
                 client
                 Text(localization.tr(scopeKey))
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .fixedSize(horizontal: false, vertical: true)
                 Text(localization.tr("mcp.approve.hint"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -62,7 +62,7 @@ struct MCPClientApprovalView: View {
             TimelineView(.animation(minimumInterval: 0.25)) { context in
                 let remaining = remaining(at: context.date)
                 Text(localization.tr("mcp.confirm.countdown", Int(remaining.rounded(.up))))
-                    .font(.system(size: 11).monospacedDigit())
+                    .font(.app(.footnote).monospacedDigit())
                     .foregroundStyle(countdownColor(remaining))
                     .lineLimit(1)
             }
@@ -84,17 +84,17 @@ struct MCPClientApprovalView: View {
     private var clientDetails: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(localization.tr(request.forMail ? "mcp.approve.mail.title" : "mcp.approve.title", request.name))
-                .font(.system(size: 14, weight: .semibold))
+                .font(.app(.title, weight: .semibold))
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
             if let declared = request.declaredName, declared != request.name {
                 Text(localization.tr("mcp.clients.declared", declared))
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Text([request.executablePath, request.script].compactMap { $0 }.joined(separator: " "))
-                .font(.system(size: 10, design: .monospaced))
+                .font(.app(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .lineLimit(4)
@@ -102,7 +102,7 @@ struct MCPClientApprovalView: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let note = kindNote {
                 Label(note, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)

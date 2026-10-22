@@ -86,7 +86,7 @@ struct MeetingListView: View {
 
     private func sectionHeader(_ label: String) -> some View {
         Text(label)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.app(.footnote, weight: .semibold))
             .foregroundStyle(.secondary)
             .padding(.horizontal, contentHorizontalPadding)
             .padding(.vertical, 5)
@@ -188,7 +188,7 @@ struct MeetingListView: View {
 
         return HStack(alignment: .top, spacing: 10) {
             Text(!isHalfHourSlot ? localization.shortTime(slot.startDate) : "")
-                .font(.system(size: 10, weight: .medium))
+                .font(.app(.caption, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: timeColumnWidth, alignment: .trailing)
 

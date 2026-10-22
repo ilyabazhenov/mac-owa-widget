@@ -14,7 +14,7 @@ struct MeetingReminderBannerView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.app(.headline, weight: .semibold))
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -24,7 +24,7 @@ struct MeetingReminderBannerView: View {
             .padding(.top, 10)
 
             Text(subtitle)
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 12)
@@ -39,7 +39,7 @@ struct MeetingReminderBannerView: View {
             HStack(spacing: 8) {
                 Button(dismissTitle, action: onDismiss)
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.app(.body, weight: .medium))
                     .foregroundStyle(.secondary)
                     .keyboardShortcut(.cancelAction)
 
@@ -73,17 +73,17 @@ struct MeetingReminderBannerView: View {
             ForEach(items, id: \.eventID) { item in
                 HStack(spacing: 8) {
                     Image(systemName: item.platform.systemIcon)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.app(.caption, weight: .medium))
                         .foregroundStyle(accentColor)
                         .frame(width: 14)
 
                     Text(timeRange(item))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.app(.footnote, weight: .medium))
                         .foregroundStyle(.secondary)
                         .frame(width: 84, alignment: .leading)
 
                     Text(item.title)
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -92,11 +92,11 @@ struct MeetingReminderBannerView: View {
                             onJoin(item)
                         }
                         .buttonStyle(.plain)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.app(.footnote, weight: .semibold))
                         .foregroundStyle(accentColor)
                     } else {
                         Text("-")
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.app(.footnote, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
                 }

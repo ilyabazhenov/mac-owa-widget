@@ -248,7 +248,7 @@ struct MCPPanelBrandBar<Trailing: View>: View {
                 .resizable()
                 .frame(width: 16, height: 16)
             Text(localization.tr("mcp.panel.brand"))
-                .font(.system(size: 11, weight: .semibold))
+                .font(.app(.footnote, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)

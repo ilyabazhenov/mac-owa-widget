@@ -126,7 +126,7 @@ struct MailActionIcon: View {
 
     var body: some View {
         Image(systemName: systemName)
-            .font(.system(size: 13))
+            .font(.app(.headline))
             .frame(width: 18, height: 16)
     }
 }

@@ -18,7 +18,7 @@ struct AllDayEventsHeaderView: View {
         } else {
             HStack(alignment: .center, spacing: 10) {
                 Image(systemName: "sun.max.fill")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.app(.footnote, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(width: timeColumnWidth, alignment: .trailing)
                     .accessibilityLabel(localization.tr("meeting.allday.icon.a11y"))
@@ -57,7 +57,7 @@ struct AllDayEventsHeaderView: View {
         let base = meetingAccentColor(for: event)
         return Button { onSelect(event) } label: {
             Text(event.title)
-                .font(.system(size: 11, weight: .medium))
+                .font(.app(.footnote, weight: .medium))
                 .foregroundStyle(event.isEffectivelyCancelled ? .secondary : .primary)
                 .strikethrough(event.isEffectivelyCancelled)
                 .lineLimit(1)

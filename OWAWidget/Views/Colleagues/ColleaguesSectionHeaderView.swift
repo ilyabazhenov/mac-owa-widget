@@ -19,11 +19,11 @@ struct ColleaguesSectionHeaderView: View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             HStack(spacing: 7) {
                 Image(systemName: "person.2")
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
 
                 Text(localization.tr("colleagues.section.title"))
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.app(.body, weight: .semibold))
 
                 Spacer(minLength: 6)
 
@@ -39,7 +39,7 @@ struct ColleaguesSectionHeaderView: View {
                     model.openSearch()
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.app(.footnote, weight: .medium))
                 }
                 .buttonStyle(.plain)
                 .help(localization.tr("colleagues.add"))
@@ -47,7 +47,7 @@ struct ColleaguesSectionHeaderView: View {
 
                 Button(action: model.toggleExpansion) {
                     Image(systemName: model.isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.app(.caption, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -136,7 +136,7 @@ struct ColleaguesSectionHeaderView: View {
 
                 if all.count > visible {
                     Text("+\(all.count - visible)")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.app(.caption, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -154,7 +154,7 @@ struct ColleaguesSectionHeaderView: View {
 
     private func badge(text: String, color: Color, background: Color) -> some View {
         Text(text)
-            .font(.system(size: 10, weight: .semibold))
+            .font(.app(.caption, weight: .semibold))
             .foregroundStyle(color)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)

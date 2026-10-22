@@ -61,9 +61,9 @@ struct SearchResultsView: View {
     private var scopeHint: some View {
         HStack(spacing: 5) {
             Image(systemName: "info.circle")
-                .font(.system(size: 9))
+                .font(.app(.micro))
             Text(localization.tr("search.scope.hint"))
-                .font(.system(size: 10))
+                .font(.app(.caption))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(.tertiary)
@@ -72,7 +72,7 @@ struct SearchResultsView: View {
 
     private func sectionHeader(_ label: String) -> some View {
         Text(label)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.app(.footnote, weight: .semibold))
             .foregroundStyle(.secondary)
             .padding(.horizontal, contentHorizontalPadding)
             .padding(.vertical, 5)
@@ -83,16 +83,16 @@ struct SearchResultsView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 24))
+                .font(.app(.symbol))
                 .foregroundStyle(.secondary)
             Text(localization.tr("search.empty.title"))
-                .font(.system(size: 13, weight: .medium))
+                .font(.app(.headline, weight: .medium))
             Text(localization.tr("search.empty.subtitle"))
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Text(localization.tr("search.scope.hint"))
-                .font(.system(size: 10))
+                .font(.app(.caption))
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
                 .padding(.top, 2)

@@ -149,7 +149,7 @@ struct ColleaguesPanelView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Text(localization.tr("colleagues.empty.title"))
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
@@ -157,7 +157,7 @@ struct ColleaguesPanelView: View {
                 model.openSearch()
             } label: {
                 Text(localization.tr("colleagues.empty.action"))
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.app(.footnote, weight: .semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(Color.accentColor.opacity(0.15))
@@ -177,12 +177,12 @@ struct ColleaguesPanelView: View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
 
                 TextField(localization.tr("colleagues.search.placeholder"), text: $searchQuery)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .focused($searchFieldFocused)
 
                 if isSearching {
@@ -195,7 +195,7 @@ struct ColleaguesPanelView: View {
                     model.backToList()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -226,7 +226,7 @@ struct ColleaguesPanelView: View {
                 .padding(.bottom, 4)
             } else if !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty, !isSearching {
                 Text(localization.tr("colleagues.search.empty"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, horizontalPadding)
                     .padding(.bottom, 8)
@@ -254,10 +254,10 @@ struct ColleaguesPanelView: View {
                 InitialsAvatar(name: attendee.displayName, size: 20)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(attendee.displayName)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.app(.body, weight: .medium))
                         .lineLimit(1)
                     Text(attendee.jobTitle ?? attendee.email)
-                        .font(.system(size: 10))
+                        .font(.app(.caption))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -265,11 +265,11 @@ struct ColleaguesPanelView: View {
                 Spacer(minLength: 6)
                 if alreadyAdded {
                     Text(localization.tr("colleagues.search.already"))
-                        .font(.system(size: 10))
+                        .font(.app(.caption))
                         .foregroundStyle(.secondary)
                 } else {
                     Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.app(.footnote, weight: .medium))
                         .foregroundStyle(Color.accentColor)
                 }
             }

@@ -13,9 +13,9 @@ struct TimeZoneBadge: View {
         if shouldShow {
             HStack(spacing: 4) {
                 Image(systemName: "globe")
-                    .font(.system(size: prominent ? 10 : 9, weight: .medium))
+                    .font(.app(prominent ? .caption : .micro, weight: .medium))
                 Text(AppTimeZone.shortLabel)
-                    .font(.system(size: prominent ? 11 : 10, weight: .medium))
+                    .font(.app(prominent ? .footnote : .caption, weight: .medium))
             }
             .foregroundStyle(.secondary)
             .padding(.horizontal, prominent ? 8 : 6)

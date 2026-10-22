@@ -57,13 +57,13 @@ struct RichTextToolbar: View {
 
     private var linkEditor: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(localization.tr("richtext.link.title")).font(.system(size: 12, weight: .semibold))
+            Text(localization.tr("richtext.link.title")).font(.app(.body, weight: .semibold))
             TextField(localization.tr("richtext.link.placeholder"), text: $linkAddress)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 280)
                 .onSubmit(submitLink)
             if !linkAddress.trimmingCharacters(in: .whitespaces).isEmpty, RichTextEditorController.linkURL(from: linkAddress) == nil {
-                Text(localization.tr("richtext.link.invalid")).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(localization.tr("richtext.link.invalid")).font(.app(.footnote)).foregroundStyle(.secondary)
             }
             HStack {
                 if controller.state.link != nil {
@@ -99,7 +99,7 @@ private struct RichTextToolbarButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .medium))
+                .font(.app(.body, weight: .medium))
                 .frame(width: 26, height: 22)
                 .foregroundStyle(isOn ? Color.accentColor : Color.primary.opacity(isEnabled ? 0.8 : 0.3))
                 .background(

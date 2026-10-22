@@ -18,13 +18,13 @@ struct MailPopoverSectionView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "tray")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.app(.footnote, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
                     Text(localization.tr(mail.settings.peopleOnly ? "mail.popover.titlePeople" : "mail.popover.title"))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.app(.body, weight: .semibold))
                     if let unread = mail.popoverUnreadCount, unread > 0 {
                         Text(mail.settings.peopleOnly && mail.unreadPageWasFull ? "\(unread)+" : "\(unread)")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.app(.caption, weight: .semibold))
                             .monospacedDigit()
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1)
@@ -34,7 +34,7 @@ struct MailPopoverSectionView: View {
                     Spacer(minLength: 0)
                     statusText
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.app(.micro, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
@@ -49,7 +49,7 @@ struct MailPopoverSectionView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     if mail.popoverUnread.isEmpty {
                         Text(localization.tr(emptyKey))
-                            .font(.system(size: 11))
+                            .font(.app(.footnote))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, horizontalPadding + 2)
                             .padding(.vertical, 4)
@@ -63,9 +63,9 @@ struct MailPopoverSectionView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text(localization.tr("mail.popover.open"))
-                            Image(systemName: "arrow.right").font(.system(size: 9, weight: .semibold))
+                            Image(systemName: "arrow.right").font(.app(.micro, weight: .semibold))
                         }
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(Color.accentColor)
                         .padding(.horizontal, horizontalPadding + 18)
                         .padding(.top, 3)
@@ -89,14 +89,14 @@ struct MailPopoverSectionView: View {
     private var statusText: some View {
         switch mail.checkState {
         case .blocked:
-            Image(systemName: "exclamationmark.lock").font(.system(size: 10)).foregroundStyle(.orange)
+            Image(systemName: "exclamationmark.lock").font(.app(.caption)).foregroundStyle(.orange)
         case .failed:
-            Image(systemName: "exclamationmark.triangle").font(.system(size: 10)).foregroundStyle(.orange)
+            Image(systemName: "exclamationmark.triangle").font(.app(.caption)).foregroundStyle(.orange)
                 .help(localization.tr("mail.popover.failed"))
         default:
             if let latest = mail.popoverUnread.first?.lastDelivery {
                 Text(localization.tr("mail.popover.latest", MailPresentation.listTime(latest, localization: localization)))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
             }
         }
@@ -110,20 +110,20 @@ struct MailPopoverSectionView: View {
                 Circle().fill(Color.accentColor).frame(width: 6, height: 6)
                 HStack(spacing: 4) {
                     Text(conversation.senders.first ?? "")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.app(.body, weight: .semibold))
                         .lineLimit(1)
                     if mail.isExternalSender(conversation) { MailExternalTag() }
                 }
                 .frame(width: 112, alignment: .leading)
                 Text(conversation.topic.isEmpty ? localization.tr("mail.noSubject") : conversation.topic)
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 if conversation.hasAttachments {
-                    Image(systemName: "paperclip").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Image(systemName: "paperclip").font(.app(.caption)).foregroundStyle(.secondary)
                 }
                 Text(MailPresentation.listTime(conversation.lastDelivery, localization: localization))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
@@ -151,12 +151,12 @@ struct MailSettingsSections: View {
             Section(localization.tr("settings.tab.mail")) {
                 Toggle(localization.tr("mail.settings.enabled"), isOn: binding(\.enabled))
                 Text(localization.tr("mail.settings.enabled.hint"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if mail.mailAccounts.isEmpty {
                     Label(localization.tr("mail.settings.noAccount"), systemImage: "info.circle")
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                 } else if mail.mailAccounts.count > 1 {
                     Picker(localization.tr("mail.settings.account"), selection: Binding(
@@ -175,7 +175,7 @@ struct MailSettingsSections: View {
                 Toggle(localization.tr("mail.settings.popoverSection"), isOn: binding(\.popoverSectionEnabled))
                     .disabled(!mail.settings.enabled)
                 Text(localization.tr("mail.settings.popoverSection.hint", "Ctrl+Option+M"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Toggle(localization.tr("mail.settings.menuBarBadge"), isOn: binding(\.menuBarBadgeEnabled))
@@ -183,7 +183,7 @@ struct MailSettingsSections: View {
                 Toggle(localization.tr("mail.settings.peopleOnly"), isOn: binding(\.peopleOnly))
                     .disabled(!mail.settings.enabled)
                 Text(localization.tr("mail.settings.peopleOnly.hint"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Picker(localization.tr("mail.settings.notify"), selection: binding(\.notifyMode)) {
@@ -199,7 +199,7 @@ struct MailSettingsSections: View {
                 }
                 .disabled(!mail.settings.enabled)
                 Text(localization.tr("mail.settings.poll.hint"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -212,7 +212,7 @@ struct MailSettingsSections: View {
                 Toggle(localization.tr("mail.settings.swipeActions"), isOn: binding(\.swipeActionsEnabled))
                     .disabled(!mail.settings.enabled)
                 Text(localization.tr("mail.settings.swipeActions.hint"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Picker(localization.tr("mail.settings.markRead"), selection: binding(\.markReadPolicy)) {
@@ -222,7 +222,7 @@ struct MailSettingsSections: View {
                 }
                 .disabled(!mail.settings.enabled)
                 Text(localization.tr("mail.settings.privacy"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

@@ -54,7 +54,7 @@ struct DayNavArrowButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: direction.systemImage)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.app(.body, weight: .semibold))
                 .foregroundStyle(isEnabled ? Color.primary : Color.secondary.opacity(0.35))
                 .frame(width: chipWidth, height: chipHeight)
                 .background(

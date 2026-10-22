@@ -118,7 +118,7 @@ struct PopoverInboxColumn: View {
                         } else {
                             if invitations.isEmpty { emptyState }
                             Text(localization.tr("popover.inbox.mailOff"))
-                                .font(.system(size: 11))
+                                .font(.app(.footnote))
                                 .foregroundStyle(.tertiary)
                                 .padding(.horizontal, horizontalPadding)
                                 .padding(.top, 10)
@@ -161,10 +161,10 @@ struct PopoverInboxColumn: View {
             Button { reader.close() } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.app(.headline, weight: .medium))
                         .foregroundStyle(Color.accentColor)
                     Text(folderTitle)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.app(.headline, weight: .semibold))
                         .lineLimit(1)
                 }
                 .frame(height: 16)
@@ -211,7 +211,7 @@ struct PopoverInboxColumn: View {
                 Spacer(minLength: 8)
             }
             .frame(height: 16)
-            .font(.system(size: 10))
+            .font(.app(.footnote))
             .foregroundStyle(.secondary)
             .padding(.horizontal, horizontalPadding)
             .padding(.vertical, 7)
@@ -230,14 +230,14 @@ struct PopoverInboxColumn: View {
             // new attempt is on its way, which without VPN takes the whole timeout.
             if mail.isBlocked {
                 Text(localization.tr("popover.inbox.blocked"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
             } else if mail.panelListFailed || mail.isOffline {
                 VStack(spacing: 6) {
                     Text(localization.tr(mail.isOffline || mail.panelListFailedOnConnection ? "popover.inbox.offline" : "popover.inbox.loadFailed"))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                     Button(localization.tr("mail.retry")) { Task { await mail.refreshPanelList(minInterval: 0, evenOffline: true) } }
@@ -252,13 +252,13 @@ struct PopoverInboxColumn: View {
                     ProgressView().controlSize(.small)
                     Text(localization.tr("mail.popover.loading"))
                 }
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
             } else {
                 Text(localization.tr("popover.inbox.folderEmpty"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, horizontalPadding)
                     .padding(.vertical, 10)
@@ -302,7 +302,7 @@ struct PopoverInboxColumn: View {
                     if mail.isLoadingMorePanelList { ProgressView().controlSize(.small) }
                     Text(localization.tr("mail.list.loadingMore"))
                 }
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(10)
@@ -321,11 +321,11 @@ struct PopoverInboxColumn: View {
                 folderMenu
             } else {
                 Image(systemName: "tray")
-                    .font(.system(size: 13))
+                    .font(.app(.headline))
                     .foregroundStyle(Color.accentColor)
             }
             Text(folderTitle)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.app(.headline, weight: .semibold))
                 .lineLimit(1)
             if showsMail, isMarkingRead {
                 ProgressView()
@@ -371,7 +371,7 @@ struct PopoverInboxColumn: View {
             }
         } label: {
             Image(systemName: showsFolders ? "xmark" : "line.3.horizontal")
-                .font(.system(size: 13))
+                .font(.app(.headline))
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 16, height: 16)
                 .contentShape(Rectangle())
@@ -387,7 +387,7 @@ struct PopoverInboxColumn: View {
         let rows = MailPanelFolderList.rows(mail.folders)
         if rows.isEmpty {
             Text(localization.tr("mail.popover.loading"))
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, horizontalPadding)
                 .padding(.vertical, 10)
@@ -411,16 +411,16 @@ struct PopoverInboxColumn: View {
         } label: {
             HStack(spacing: 7) {
                 Image(systemName: MailPresentation.folderIcon(folder))
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .foregroundStyle(isShown ? Color.accentColor : Color.secondary)
                     .frame(width: 16)
                 Text(folder.displayName)
-                    .font(.system(size: 12, weight: folder.unreadCount > 0 ? .semibold : .regular))
+                    .font(.app(.body, weight: folder.unreadCount > 0 ? .semibold : .regular))
                     .lineLimit(1)
                 Spacer(minLength: 6)
                 if folder.unreadCount > 0, folder.distinguished != .sentitems {
                     Text("\(folder.unreadCount)")
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .monospacedDigit()
                         .foregroundStyle(Color.accentColor)
                 }
@@ -442,7 +442,7 @@ struct PopoverInboxColumn: View {
             Button(localization.tr("popover.inbox.markAllRead", unread)) { markAllRead() }
         } label: {
             Text("\(unread)")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.app(.caption, weight: .semibold))
                 .monospacedDigit()
                 .padding(.horizontal, 6)
                 .padding(.vertical, 1)
@@ -477,7 +477,7 @@ struct PopoverInboxColumn: View {
     private func headerButton(_ icon: String, _ key: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 13))
+                .font(.app(.headline))
                 .frame(width: 16, height: 16)
         }
         .buttonStyle(MailIconButtonStyle(horizontalPadding: 3, verticalPadding: 3))
@@ -507,7 +507,7 @@ struct PopoverInboxColumn: View {
                 Text("\(count)").monospacedDigit().foregroundStyle(.tertiary)
             }
         }
-        .font(.system(size: 11, weight: .semibold))
+        .font(.app(.footnote, weight: .semibold))
         .foregroundStyle(.secondary)
         .padding(.horizontal, horizontalPadding)
         .padding(.top, 10)
@@ -516,8 +516,8 @@ struct PopoverInboxColumn: View {
 
     private var emptyState: some View {
         VStack(spacing: 6) {
-            Image(systemName: "checkmark.circle").font(.system(size: 22)).foregroundStyle(.tertiary)
-            Text(localization.tr("popover.inbox.empty")).font(.system(size: 12)).foregroundStyle(.secondary)
+            Image(systemName: "checkmark.circle").font(.app(.symbol)).foregroundStyle(.tertiary)
+            Text(localization.tr("popover.inbox.empty")).font(.app(.body)).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 40)
@@ -530,13 +530,13 @@ struct PopoverInboxColumn: View {
             Button { onSelectEvent(event) } label: {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 4) {
-                        Text(event.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                        Text(event.title).font(.app(.body, weight: .medium)).lineLimit(1)
                         if group.occurrenceCount > 1 {
-                            Text("×\(group.occurrenceCount)").font(.system(size: 10)).foregroundStyle(.secondary)
+                            Text("×\(group.occurrenceCount)").font(.app(.caption)).foregroundStyle(.secondary)
                         }
                     }
                     Text(failed.contains(group.id) ? localization.tr("popover.inbox.respondFailed") : InvitationLabel.when(event, localization: localization))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(failed.contains(group.id) ? Color.orange : Color.secondary)
                         .lineLimit(1)
                 }

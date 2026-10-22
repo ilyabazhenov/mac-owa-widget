@@ -200,17 +200,17 @@ struct PopoverView: View {
         HStack {
             HStack(spacing: 6) {
                 Image(systemName: "calendar")
-                    .font(.system(size: 13))
+                    .font(.app(.headline))
                     .foregroundStyle(Color.accentColor)
                 Text(localization.tr("popover.calendar.title"))
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.app(.headline, weight: .semibold))
             }
 
             Spacer()
 
             Button { toggleSearch() } label: {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13))
+                    .font(.app(.headline))
                     .foregroundStyle(isSearchBarPresented ? Color.accentColor : .primary)
             }
             .buttonStyle(.plain)
@@ -228,7 +228,7 @@ struct PopoverView: View {
                     colleagues.refresh()
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 13))
+                        .font(.app(.headline))
                 }
                 .buttonStyle(.plain)
                 .help(localization.tr("popover.sync.now"))
@@ -247,7 +247,7 @@ struct PopoverView: View {
                     }
                 } label: {
                     Image(systemName: showsInboxPanel ? "envelope.fill" : "envelope")
-                        .font(.system(size: 13))
+                        .font(.app(.headline))
                         .foregroundStyle(showsInboxPanel ? Color.accentColor : .primary)
                         .overlay(alignment: .topTrailing) {
                             // Not there while the panel is open, so nothing then follows the count.
@@ -262,7 +262,7 @@ struct PopoverView: View {
             if service.supportsMeetingCreation {
                 Button { openCreateMeeting() } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 13))
+                        .font(.app(.headline))
                 }
                 .buttonStyle(.plain)
                 .help(localization.tr("popover.new.meeting"))
@@ -279,7 +279,7 @@ struct PopoverView: View {
 
             Button { quitApp() } label: {
                 Image(systemName: "power")
-                    .font(.system(size: 13))
+                    .font(.app(.headline))
             }
             .buttonStyle(.plain)
             .help(localization.tr("popover.quit"))
@@ -302,7 +302,7 @@ struct PopoverView: View {
             .pickerStyle(.inline)
         } label: {
             Image(systemName: "arrow.up.left.and.arrow.down.right")
-                .font(.system(size: 10))
+                .font(.app(.caption))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -491,7 +491,7 @@ struct PopoverView: View {
             ZStack {
                 HStack(spacing: 6) {
                     Text(localization.daySectionLabel(for: selectedDate, calendar: AppTimeZone.calendar))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.app(.body, weight: .semibold))
                     TimeZoneBadge()
                 }
                 .id(selectedDayOffset)
@@ -510,7 +510,7 @@ struct PopoverView: View {
                         .labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .medium))
+                .font(.app(.footnote, weight: .medium))
                 .foregroundStyle(Color.accentColor)
                 .accessibilityLabel(localization.tr("a11y.nav.today"))
             }
@@ -541,7 +541,7 @@ struct PopoverView: View {
 
                 if service.syncStatus.isOfflineCached {
                     Image(systemName: "wifi.slash")
-                        .font(.system(size: 9))
+                        .font(.app(.micro))
                         .foregroundStyle(.orange)
                 }
 
@@ -557,7 +557,7 @@ struct PopoverView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.app(.footnote, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
                     .help(service.syncStatus.isAuthenticationRequired
                         ? localization.tr("popover.retry.help")
@@ -816,17 +816,17 @@ struct PopoverView: View {
     private var noAccountState: some View {
         VStack(spacing: 10) {
             Image(systemName: "person.badge.plus")
-                .font(.system(size: 28))
+                .font(.app(.symbol))
                 .foregroundStyle(.secondary)
             Text(localization.tr("popover.no.accounts.title"))
-                .font(.system(size: 13, weight: .medium))
+                .font(.app(.headline, weight: .medium))
             Text(localization.tr("popover.no.accounts.subtitle"))
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button { openSettings() } label: {
                 Text(localization.tr("popover.open.settings"))
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.app(.body, weight: .medium))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
                     .background(Color.accentColor)
@@ -842,10 +842,10 @@ struct PopoverView: View {
     private var errorState: some View {
         VStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 24))
+                .font(.app(.symbol))
                 .foregroundStyle(.orange)
             Text(localization.syncStatusText(service.syncStatus))
-                .font(.system(size: 12))
+                .font(.app(.body))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button(localization.tr("popover.retry")) {
@@ -857,7 +857,7 @@ struct PopoverView: View {
                     service.syncNow()
                 }
             }
-            .font(.system(size: 12))
+            .font(.app(.body))
         }
         .padding(24)
         .frame(maxWidth: .infinity)
@@ -992,7 +992,7 @@ private struct PopoverMailUnreadBadge: View {
     var body: some View {
         if let unread = mail.inboxUnreadCount, unread > 0 {
             Text(unread > 99 ? "99+" : "\(unread)")
-                .font(.system(size: 8, weight: .bold))
+                .font(.app(.micro, weight: .bold))
                 .monospacedDigit()
                 .foregroundStyle(.white)
                 .padding(.horizontal, 3)

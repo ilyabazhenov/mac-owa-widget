@@ -39,10 +39,10 @@ struct ColleagueEditCardView: View {
                 InitialsAvatar(name: colleague.displayName, size: 28)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(colleague.displayName)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.app(.headline, weight: .semibold))
                         .lineLimit(1)
                     Text(subtitle)
-                        .font(.system(size: 10))
+                        .font(.app(.caption))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -52,30 +52,30 @@ struct ColleagueEditCardView: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(localization.tr("colleagues.edit.room.label"))
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.app(.footnote, weight: .semibold))
                     .foregroundStyle(.secondary)
 
                 TextField(localization.tr("colleagues.edit.room.placeholder"), text: $roomText)
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .focused($roomFieldFocused)
                     .onSubmit(save)
 
                 if !isAcceptable {
                     Text(localization.tr("colleagues.edit.room.invalid"))
-                        .font(.system(size: 10))
+                        .font(.app(.caption))
                         .foregroundStyle(.red)
                 } else if let detectedPlatform {
                     HStack(spacing: 5) {
                         Image(systemName: detectedPlatform.systemIcon)
-                            .font(.system(size: 10))
+                            .font(.app(.caption))
                         Text(localization.tr("colleagues.edit.detected", detectedPlatform.displayName(localization: localization)))
-                            .font(.system(size: 10))
+                            .font(.app(.caption))
                     }
                     .foregroundStyle(.secondary)
                 } else {
                     Text(localization.tr("colleagues.edit.room.hint"))
-                        .font(.system(size: 10))
+                        .font(.app(.caption))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -84,7 +84,7 @@ struct ColleagueEditCardView: View {
             HStack(spacing: 8) {
                 Button(localization.tr("colleagues.menu.remove"), role: .destructive, action: onRemove)
                     .buttonStyle(.plain)
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
 
                 Spacer(minLength: 8)

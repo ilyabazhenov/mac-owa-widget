@@ -14,13 +14,13 @@ struct MeetingSearchField: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 13))
+                .font(.app(.headline))
                 .foregroundStyle(.tertiary)
                 .frame(width: 14, height: 14)
 
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.app(.headline))
                 .focused(isFocused)
                 .onExitCommand { onCancel() }
                 .accessibilityLabel(localization.tr("a11y.search.field"))
@@ -30,7 +30,7 @@ struct MeetingSearchField: View {
                     onClear()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
+                        .font(.app(.headline))
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)

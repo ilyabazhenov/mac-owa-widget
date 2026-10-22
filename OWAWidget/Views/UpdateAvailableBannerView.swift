@@ -16,7 +16,7 @@ struct UpdateAvailableBannerView: View {
                         .imageScale(.medium)
 
                     Text(localization.tr("update.banner.title", update.version))
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.app(.body, weight: .medium))
                         .lineLimit(1)
 
                     Spacer(minLength: 8)
@@ -25,7 +25,7 @@ struct UpdateAvailableBannerView: View {
                         updateCheck.installUpdate()
                     } label: {
                         Text(localization.tr("update.banner.action.install"))
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.app(.footnote, weight: .semibold))
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)

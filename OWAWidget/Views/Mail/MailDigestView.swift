@@ -38,8 +38,8 @@ struct MailDigestView: View {
             VStack(alignment: .leading, spacing: 18) {
                 if digest.isEmpty {
                     VStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle").font(.system(size: 26)).foregroundStyle(.tertiary)
-                        Text(localization.tr("mail.digest.allClear")).font(.system(size: 13)).foregroundStyle(.secondary)
+                        Image(systemName: "checkmark.circle").font(.app(.symbol)).foregroundStyle(.tertiary)
+                        Text(localization.tr("mail.digest.allClear")).font(.app(.headline)).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.top, 60)
@@ -58,7 +58,7 @@ struct MailDigestView: View {
                                         Text(folder.displayName).lineLimit(1)
                                         Text("\(folder.unreadCount)").monospacedDigit().foregroundStyle(Color.accentColor)
                                     }
-                                    .font(.system(size: 12))
+                                    .font(.app(.body))
                                     .padding(.horizontal, 9)
                                     .padding(.vertical, 4)
                                     .background(Capsule().fill(Color.secondary.opacity(0.12)))
@@ -69,7 +69,7 @@ struct MailDigestView: View {
                     }
                 }
                 Text(localization.tr("mail.reading.shortcuts"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.tertiary)
                     .padding(.top, 6)
             }
@@ -83,9 +83,9 @@ struct MailDigestView: View {
     private func section<Content: View>(_ title: String, count: Int?, icon: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 11)).foregroundStyle(.secondary)
-                Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                if let count { Text("\(count)").font(.system(size: 11)).monospacedDigit().foregroundStyle(.tertiary) }
+                Image(systemName: icon).font(.app(.footnote)).foregroundStyle(.secondary)
+                Text(title).font(.app(.body, weight: .semibold)).foregroundStyle(.secondary)
+                if let count { Text("\(count)").font(.app(.footnote)).monospacedDigit().foregroundStyle(.tertiary) }
             }
             content()
         }
@@ -98,18 +98,18 @@ struct MailDigestView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 HStack(spacing: 4) {
                     Text(conversation.primarySender)
-                        .font(.system(size: 12, weight: conversation.isUnread ? .semibold : .regular))
+                        .font(.app(.body, weight: conversation.isUnread ? .semibold : .regular))
                         .lineLimit(1)
                     if service.isExternalSender(conversation) { MailExternalTag() }
                 }
                 .frame(width: 170, alignment: .leading)
                 Text(conversation.topic.isEmpty ? localization.tr("mail.noSubject") : conversation.topic)
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 6)
                 Text(MailPresentation.listTime(conversation.lastDelivery, localization: localization))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
                     .fixedSize()

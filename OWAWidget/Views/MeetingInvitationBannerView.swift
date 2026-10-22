@@ -138,15 +138,15 @@ struct MeetingInvitationBannerView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "envelope.badge")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.app(.body, weight: .semibold))
                     .foregroundStyle(accentColor)
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.app(.headline, weight: .semibold))
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Button(action: onClose) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.app(.caption, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
@@ -170,7 +170,7 @@ struct MeetingInvitationBannerView: View {
             if hiddenRowCount > 0 {
                 Divider().padding(.horizontal, 12)
                 Text(String(format: localization.moreFormat, hiddenRowCount))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -202,25 +202,25 @@ struct MeetingInvitationBannerView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
                 Text(kindLabel(alert.change))
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.app(.caption, weight: .semibold))
                     .foregroundStyle(kindColor(alert.change))
                 if let organizer = alert.organizer, !organizer.isEmpty {
                     Text("· " + String(format: localization.organizerFormat, organizer))
-                        .font(.system(size: 10))
+                        .font(.app(.caption))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 Button { onHide(row) } label: {
                     Text(localization.hideTitle)
-                        .font(.system(size: 10))
+                        .font(.app(.caption))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
             }
 
             Text(alert.title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.app(.body, weight: .semibold))
                 .strikethrough(alert.change == .cancelled)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -228,7 +228,7 @@ struct MeetingInvitationBannerView: View {
             // Without RSVP buttons "Open" shares the date line instead of taking a row of its own.
             HStack(alignment: .lastTextBaseline, spacing: 6) {
                 Text(localization.detailLine(for: alert, now: now))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -251,7 +251,7 @@ struct MeetingInvitationBannerView: View {
 
             if let error = row.errorMessage {
                 Label(error, systemImage: "exclamationmark.circle.fill")
-                    .font(.system(size: 10))
+                    .font(.app(.caption))
                     .foregroundStyle(.red)
                     .lineLimit(2)
             }
@@ -263,7 +263,7 @@ struct MeetingInvitationBannerView: View {
     private func openButton(_ row: MeetingInvitationRow) -> some View {
         Button(localization.openTitle) { onOpen(row) }
             .buttonStyle(.plain)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.app(.footnote, weight: .semibold))
             .foregroundStyle(accentColor)
     }
 
@@ -284,11 +284,11 @@ struct MeetingInvitationBannerView: View {
                         .frame(width: 9, height: 9)
                 } else {
                     Image(systemName: icon)
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.app(.micro, weight: .semibold))
                         .foregroundStyle(color)
                 }
                 Text(title)
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .lineLimit(1)
             }
             .padding(.horizontal, 7)

@@ -39,14 +39,14 @@ struct MailAgendaView: View {
                         let timed = events.filter { !$0.isAllDay }
                         if dayOffset == 0, let status = MailAgendaPolicy.freeStatus(timed, now: now, localization: localization) {
                             Label(status, systemImage: "clock")
-                                .font(.system(size: 11))
+                                .font(.app(.footnote))
                                 .foregroundStyle(.secondary)
                                 .padding(.bottom, 2)
                         }
                         if !allDay.isEmpty {
                             ForEach(allDay) { event in
                                 Text(event.title)
-                                    .font(.system(size: 11, weight: .medium))
+                                    .font(.app(.footnote, weight: .medium))
                                     .lineLimit(1)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 3)
@@ -56,7 +56,7 @@ struct MailAgendaView: View {
                         }
                         if timed.isEmpty {
                             Text(localization.tr("mail.agenda.empty"))
-                                .font(.system(size: 12))
+                                .font(.app(.body))
                                 .foregroundStyle(.secondary)
                                 .padding(.top, 8)
                         }
@@ -96,14 +96,14 @@ struct MailAgendaView: View {
                 .buttonStyle(.mailIcon)
                 .help(localization.tr("mail.agenda.previous"))
             Text(MailAgendaPolicy.dayLabel(day, offset: dayOffset, localization: localization))
-                .font(.system(size: 12, weight: .semibold))
+                .font(.app(.body, weight: .semibold))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
             if dayOffset != 0 {
                 Button(localization.tr("mail.agenda.today")) { dayOffset = 0 }
                     .buttonStyle(.mailIcon)
                     .foregroundStyle(Color.accentColor)
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
             }
             Button { dayOffset += 1 } label: { Image(systemName: "chevron.right") }
                 .buttonStyle(.mailIcon)
@@ -124,8 +124,8 @@ struct MailAgendaView: View {
             } label: {
                 HStack(spacing: 4) {
                     Text(MailAgendaPolicy.dayLabel(tomorrow, offset: 1, localization: localization))
-                        .font(.system(size: 11, weight: .semibold))
-                    Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
+                        .font(.app(.footnote, weight: .semibold))
+                    Image(systemName: "chevron.right").font(.app(.micro, weight: .semibold))
                 }
                 .foregroundStyle(.secondary)
             }
@@ -135,7 +135,7 @@ struct MailAgendaView: View {
             .padding(.top, 10)
             ForEach(events.filter(\.isAllDay)) { event in
                 Text(event.title)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.app(.footnote, weight: .medium))
                     .lineLimit(1)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -143,7 +143,7 @@ struct MailAgendaView: View {
                     .background(RoundedRectangle(cornerRadius: 5).fill(Color.orange.opacity(0.14)))
             }
             if timed.isEmpty {
-                Text(localization.tr("mail.agenda.empty")).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(localization.tr("mail.agenda.empty")).font(.app(.body)).foregroundStyle(.secondary)
             }
             ForEach(timed) { event in
                 eventRow(event).id(event.id)
@@ -155,7 +155,7 @@ struct MailAgendaView: View {
         HStack(spacing: 4) {
             Circle().fill(Color.red).frame(width: 6, height: 6)
             Rectangle().fill(Color.red.opacity(0.7)).frame(height: 1)
-            Text(localization.shortTime(now)).font(.system(size: 10, weight: .semibold)).foregroundStyle(.red).fixedSize()
+            Text(localization.shortTime(now)).font(.app(.caption, weight: .semibold)).foregroundStyle(.red).fixedSize()
         }
     }
 
@@ -175,26 +175,26 @@ struct MailAgendaView: View {
                 // working day fits the column without scrolling.
                 VStack(alignment: .trailing, spacing: 1) {
                     Text(localization.shortTime(event.startDate))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.app(.footnote, weight: .medium))
                     Text(localization.shortTime(event.endDate))
-                        .font(.system(size: 10))
+                        .font(.app(.caption))
                         .foregroundStyle(.secondary)
                 }
                 .monospacedDigit()
                 .fixedSize()
                 VStack(alignment: .leading, spacing: 1) {
                     Text(event.title)
-                        .font(.system(size: 12, weight: live ? .semibold : .medium))
+                        .font(.app(.body, weight: live ? .semibold : .medium))
                         .strikethrough(declined)
                         .lineLimit(expanded ? 4 : 1)
                     if let detail {
-                        Text(detail).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(expanded ? 2 : 1)
+                        Text(detail).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(expanded ? 2 : 1)
                     }
                 }
                 .help(event.title)
                 Spacer(minLength: 2)
                 if event.responseType == .notResponded, !event.isOrganizer, !past {
-                    Image(systemName: "questionmark.circle").font(.system(size: 11)).foregroundStyle(.orange)
+                    Image(systemName: "questionmark.circle").font(.app(.footnote)).foregroundStyle(.orange)
                         .padding(.top, 2)
                         .help(localization.tr("mail.agenda.notAnswered"))
                 }
@@ -202,7 +202,7 @@ struct MailAgendaView: View {
                     Button {
                         calendar.openJoinURL(for: event)
                     } label: {
-                        Image(systemName: "video.fill").font(.system(size: 11))
+                        Image(systemName: "video.fill").font(.app(.footnote))
                     }
                     .buttonStyle(MailIconButtonStyle(horizontalPadding: 4, verticalPadding: 2))
                     .foregroundStyle(live ? Color.accentColor : Color.secondary)

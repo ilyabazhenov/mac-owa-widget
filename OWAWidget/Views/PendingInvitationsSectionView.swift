@@ -23,12 +23,12 @@ struct PendingInvitationsSectionView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "envelope.badge")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.app(.footnote, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
                     Text(localization.tr("invitations.pending.title"))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.app(.body, weight: .semibold))
                     Text("\(groups.count)")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.app(.caption, weight: .semibold))
                         .monospacedDigit()
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
@@ -36,7 +36,7 @@ struct PendingInvitationsSectionView: View {
                         .foregroundStyle(Color.accentColor)
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.app(.micro, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
@@ -67,7 +67,7 @@ struct PendingInvitationsSectionView: View {
             selectButton(group)
             Button { onDismiss(group) } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.app(.micro, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 22, height: 18)
                     .contentShape(Rectangle())
@@ -84,17 +84,17 @@ struct PendingInvitationsSectionView: View {
         return Button { onSelect(event) } label: {
             HStack(spacing: 8) {
                 Text(whenLabel(event))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.app(.footnote, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .frame(width: 118, alignment: .leading)
                 Text(event.title)
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if group.occurrenceCount > 1 {
                     Text("×\(group.occurrenceCount)")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.app(.caption, weight: .medium))
                         .foregroundStyle(.secondary)
                         .help(localization.tr("invitations.pending.series.help", group.occurrenceCount))
                 }

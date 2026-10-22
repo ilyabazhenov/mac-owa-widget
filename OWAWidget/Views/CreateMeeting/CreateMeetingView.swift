@@ -148,7 +148,7 @@ struct CreateMeetingView: View {
                 Text(seed.client.isEmpty
                     ? localization.tr("create.meeting.offeredDraft.unknownClient", seed.title)
                     : localization.tr("create.meeting.offeredDraft", seed.client, seed.title))
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button(localization.tr("create.meeting.offeredDraft.keep")) { vm.dismissOfferedSeed() }
@@ -171,7 +171,7 @@ struct CreateMeetingView: View {
         formRow(localization.tr("create.meeting.title.label"), alignment: .top) {
             TextField(localization.tr("create.meeting.title.placeholder"), text: $vm.draft.title, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14))
+                .font(.app(.title))
                 .lineLimit(1...3)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 10)
@@ -221,11 +221,11 @@ struct CreateMeetingView: View {
         formRow(localization.tr("create.meeting.location.label")) {
             HStack(spacing: 8) {
                 Image(systemName: "link")
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .foregroundStyle(.secondary)
                 TextField(localization.tr("create.meeting.location.placeholder"), text: $vm.draft.location)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.app(.headline))
                     .focused($locationFieldFocused)
                     .onSubmit {
                         vm.recordLocationIfNeeded()
@@ -241,7 +241,7 @@ struct CreateMeetingView: View {
                         locationFieldFocused = true
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
+                            .font(.app(.body))
                             .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
                     }
                     .buttonStyle(.plain)
@@ -430,10 +430,10 @@ struct CreateMeetingView: View {
             placeholderContainer {
                 VStack(spacing: 10) {
                     Image(systemName: "calendar.badge.clock")
-                        .font(.system(size: 28))
+                        .font(.app(.symbol))
                         .foregroundStyle(.quaternary)
                     Text(localization.tr("create.meeting.slots.hint"))
-                        .font(.system(size: 12))
+                        .font(.app(.body))
                         .foregroundStyle(.quaternary)
                         .multilineTextAlignment(.center)
                 }
@@ -492,10 +492,10 @@ struct CreateMeetingView: View {
         VStack(spacing: 12) {
             VStack(spacing: 6) {
                 Image(systemName: "calendar.badge.exclamationmark")
-                    .font(.system(size: 22))
+                    .font(.app(.symbol))
                     .foregroundStyle(.tertiary)
                 Text(localization.tr("create.meeting.no.slots"))
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
@@ -508,7 +508,7 @@ struct CreateMeetingView: View {
                         Text(localization.tr("create.meeting.no.slots.next.week"))
                         Image(systemName: "chevron.right")
                     }
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.app(.footnote, weight: .medium))
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -519,7 +519,7 @@ struct CreateMeetingView: View {
                         vm.setDuration(30)
                     } label: {
                         Text(localization.tr("create.meeting.no.slots.shorter"))
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.app(.footnote, weight: .medium))
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -573,7 +573,7 @@ struct CreateMeetingView: View {
                     vm.setDuration(minutes)
                 } label: {
                     Text(durationLabel(minutes))
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.app(.caption, weight: .medium))
                         .foregroundStyle(isActive ? Color.white : Color(nsColor: .labelColor))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -601,10 +601,10 @@ struct CreateMeetingView: View {
     private var slotConflictWarning: some View {
         HStack(spacing: 5) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 10))
+                .font(.app(.caption))
                 .foregroundStyle(.orange)
             Text(localization.tr("create.meeting.duration.conflict"))
-                .font(.system(size: 10))
+                .font(.app(.caption))
                 .foregroundStyle(.secondary)
         }
     }
@@ -632,12 +632,12 @@ struct CreateMeetingView: View {
 
             VStack(spacing: 1) {
                 Text(currentWeekLabel)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.app(.body, weight: .semibold))
                     .foregroundStyle(Color(nsColor: .labelColor))
                 Text(vm.isOnCurrentWeek
                      ? localization.tr("create.meeting.week.current")
                      : weekRelativeLabel)
-                    .font(.system(size: 10))
+                    .font(.app(.caption))
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .center)
@@ -647,7 +647,7 @@ struct CreateMeetingView: View {
                     vm.resetToCurrentWeek()
                 } label: {
                     Text(localization.tr("create.meeting.week.today"))
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.app(.caption, weight: .medium))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(
@@ -673,7 +673,7 @@ struct CreateMeetingView: View {
                         ProgressView().scaleEffect(0.65)
                     } else {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.app(.caption, weight: .medium))
                             .foregroundStyle(Color(nsColor: .labelColor))
                     }
                 }
@@ -702,7 +702,7 @@ struct CreateMeetingView: View {
     private func navigatorButton(systemName: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.app(.footnote, weight: .semibold))
                 .foregroundStyle(Color(nsColor: .labelColor))
                 .frame(width: 24, height: 24)
                 .background(
@@ -766,12 +766,12 @@ struct CreateMeetingView: View {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                         Text(localization.tr(success))
-                            .font(.system(size: 12))
+                            .font(.app(.body))
                             .foregroundStyle(.secondary)
                     }
                 } else if let error = vm.errorMessage {
                     Text(error)
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.red)
                         .lineLimit(2)
                 } else if let client = vm.seedClient {
@@ -781,7 +781,7 @@ struct CreateMeetingView: View {
                         Text(client.isEmpty
                             ? localization.tr("create.meeting.seeded.unknownClient")
                             : localization.tr("create.meeting.seeded", client))
-                            .font(.system(size: 12))
+                            .font(.app(.body))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
@@ -797,10 +797,10 @@ struct CreateMeetingView: View {
                             ProgressView().scaleEffect(0.7).frame(width: 14, height: 14)
                         }
                         Text(localization.tr("create.meeting.create"))
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.app(.headline, weight: .medium))
                         if !vm.isCreating {
                             Image(systemName: "arrow.right")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.app(.footnote, weight: .semibold))
                         }
                     }
                     .padding(.horizontal, 16)
@@ -817,7 +817,7 @@ struct CreateMeetingView: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.app(.footnote, weight: .semibold))
             .foregroundStyle(.secondary)
             .textCase(.uppercase)
             .tracking(0.3)
@@ -832,7 +832,7 @@ struct CreateMeetingView: View {
     ) -> some View {
         HStack(alignment: alignment, spacing: 10) {
             Text(label)
-                .font(.system(size: 12, weight: .medium))
+                .font(.app(.body, weight: .medium))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(2)
@@ -858,15 +858,16 @@ private struct MeetingCreatedOverlay: View {
                 .opacity(0.85)
 
             VStack(spacing: 16) {
+                // The one hero symbol of the window, outside the scale on purpose.
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 56))
                     .foregroundStyle(.green)
                 Text(title)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.app(.largeTitle, weight: .semibold))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                 Text(localization.plural(key: "create.meeting.success.autoclose", count: countdown))
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
                 Button(localization.tr("create.meeting.success.close")) { onDismiss() }
@@ -983,11 +984,11 @@ private struct LocationDropdownRow: View {
         Button(action: onSelect) {
             HStack(spacing: 8) {
                 Image(systemName: "link")
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .frame(width: 16)
                 Text(url)
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .foregroundStyle(Color(nsColor: .labelColor))
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -1058,17 +1059,17 @@ private struct DropdownRowView: View {
                 InitialsAvatar(name: attendee.displayName, size: 30)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(attendee.displayName)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.app(.headline, weight: .medium))
                         .foregroundStyle(Color(nsColor: .labelColor))
                         .lineLimit(1)
                     if let title = attendee.jobTitle {
                         Text(title)
-                            .font(.system(size: 11))
+                            .font(.app(.footnote))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                     Text(attendee.email)
-                        .font(.system(size: 10))
+                        .font(.app(.caption))
                         .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
                         .lineLimit(1)
                 }
@@ -1097,21 +1098,21 @@ private struct AttendeeChipView: View {
         HStack(spacing: 4) {
             InitialsAvatar(name: attendee.displayName, size: 18)
             Text(attendee.displayName.components(separatedBy: " ").prefix(2).joined(separator: " "))
-                .font(.system(size: 11, weight: .medium))
+                .font(.app(.footnote, weight: .medium))
                 .foregroundStyle(kind == .required ? .primary : .secondary)
                 .lineLimit(1)
             Button(action: onToggleKind) {
                 Image(systemName: kind == .required
                       ? "person.fill.checkmark"
                       : "person.crop.circle.badge.questionmark")
-                    .font(.system(size: 9))
+                    .font(.app(.micro))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .help(toggleHint)
             Button(action: onRemove) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 7, weight: .bold))
+                    .font(.app(.micro, weight: .bold))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
@@ -1188,19 +1189,19 @@ private struct FrequentContactCard: View {
                 InitialsAvatar(name: attendee.displayName, size: 26)
                 if isAdded {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 10))
+                        .font(.app(.caption))
                         .foregroundStyle(.white, Color.accentColor)
                         .offset(x: 3, y: 3)
                 }
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(nameParts.first ?? attendee.displayName)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.app(.footnote, weight: .medium))
                     .foregroundStyle(isAdded ? Color.accentColor : Color(nsColor: .labelColor))
                     .lineLimit(1)
                 if nameParts.count > 1 {
                     Text(nameParts.dropFirst().joined(separator: " "))
-                        .font(.system(size: 10))
+                        .font(.app(.caption))
                         .foregroundStyle(isAdded ? Color.accentColor.opacity(0.8) : .secondary)
                         .lineLimit(1)
                 }
@@ -1208,7 +1209,7 @@ private struct FrequentContactCard: View {
             Spacer(minLength: 0)
             if count > 1 {
                 Text("×\(count)")
-                    .font(.system(size: 9))
+                    .font(.app(.micro))
                     .foregroundStyle(.tertiary)
             }
         }
@@ -1417,10 +1418,10 @@ struct WeekGridSlotView: View {
     private func columnHeader(for day: DayKey) -> some View {
         VStack(spacing: 1) {
             Text(localization.formatDate(day, format: "EEE").capitalized(with: localization.locale))
-                .font(.system(size: 10, weight: .medium))
+                .font(.app(.caption, weight: .medium))
                 .foregroundStyle(.secondary)
             Text(Self.dayNumFmt.string(from: day))
-                .font(.system(size: 12, weight: .semibold))
+                .font(.app(.body, weight: .semibold))
         }
         .frame(maxWidth: .infinity)
     }
@@ -1458,7 +1459,7 @@ struct WeekGridSlotView: View {
                     let rowEndsOnHour = (timeKey + 30) % 60 == 0
                     GridRow(alignment: .top) {
                         Text(timeLabel(timeKey))
-                            .font(.system(size: timeKey % 60 == 0 ? 9 : 8, weight: timeKey % 60 == 0 ? .medium : .regular))
+                            .font(.app(.micro, weight: timeKey % 60 == 0 ? .medium : .regular))
                             .foregroundStyle(timeKey % 60 == 0 ? Color.secondary : Color(nsColor: .tertiaryLabelColor))
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                             .padding(.trailing, 4)
@@ -1616,7 +1617,7 @@ struct WeekGridSlotView: View {
                                 WeekGridSlotView.selFmt.string(from: slot.start),
                                 WeekGridSlotView.selFmt.string(from: slot.end)
                             ))
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(.app(.micro, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 4)
@@ -1776,7 +1777,7 @@ private struct AvailabilityCell: View {
             if let label = cellLabel {
                 HStack(spacing: 0) {
                     Text(label)
-                        .font(.system(size: 8.5, weight: .medium))
+                        .font(.app(.micro, weight: .medium))
                         .foregroundStyle(labelColor)
                         .lineLimit(1)
                         .padding(.leading, 5)
@@ -1847,17 +1848,17 @@ private struct CellTooltipView: View {
                     .fill(statusColor(for: status.rawChar))
                     .frame(width: 8, height: 8)
                 Text(status.isCurrentUser ? localization.tr("create.meeting.attendee.you") : status.displayName)
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .lineLimit(1)
                 Spacer()
                 Text(statusLabel(for: status.rawChar))
-                    .font(.system(size: 10))
+                    .font(.app(.caption))
                     .foregroundStyle(statusColor(for: status.rawChar).opacity(0.85))
             }
             let titles = status.eventTitles
             ForEach(titles.indices, id: \.self) { idx in
                 Text(titles.count > 1 ? "\(idx + 1). \(titles[idx])" : titles[idx])
-                    .font(.system(size: 10))
+                    .font(.app(.caption))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .padding(.leading, 15)
@@ -1869,7 +1870,7 @@ private struct CellTooltipView: View {
         let cellEnd = cell.freeSlot?.end ?? cellStart.addingTimeInterval(30 * 60)
         VStack(alignment: .leading, spacing: 5) {
             Text("\(localization.formatDate(cellStart, format: "EEE, HH:mm")) – \(Self.timeFmt.string(from: cellEnd))")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.app(.footnote, weight: .semibold))
             Divider()
             ForEach(cell.attendeeStatuses.indices, id: \.self) { idx in
                 attendeeRow(cell.attendeeStatuses[idx])
@@ -1877,7 +1878,7 @@ private struct CellTooltipView: View {
             if !cell.optionalAttendeeStatuses.isEmpty {
                 Divider()
                 Text(localization.tr("create.meeting.tooltip.optional"))
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.app(.caption, weight: .medium))
                     .foregroundStyle(.secondary)
                 ForEach(cell.optionalAttendeeStatuses.indices, id: \.self) { idx in
                     attendeeRow(cell.optionalAttendeeStatuses[idx])
@@ -1886,7 +1887,7 @@ private struct CellTooltipView: View {
             if let note = slotQualityNote {
                 Divider()
                 Text(note)
-                    .font(.system(size: 10))
+                    .font(.app(.caption))
                     .foregroundStyle(.secondary)
             }
         }
@@ -1928,7 +1929,7 @@ private struct AvailabilityLegendView: View {
                         .fill(Self.items[idx].color)
                         .frame(width: 7, height: 7)
                     Text(localization.tr(Self.items[idx].key))
-                        .font(.system(size: 10))
+                        .font(.app(.caption))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -1960,6 +1961,7 @@ struct InitialsAvatar: View {
     var body: some View {
         ZStack {
             Circle().fill(color.opacity(0.18))
+            // Scales with the avatar, so outside the type scale on purpose.
             Text(initials)
                 .font(.system(size: size * 0.38, weight: .semibold))
                 .foregroundStyle(color)

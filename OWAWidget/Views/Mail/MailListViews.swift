@@ -287,7 +287,7 @@ struct MailSidebarView: View {
 
     private func header(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.app(.footnote, weight: .semibold))
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .padding(.horizontal, 8)
@@ -319,7 +319,7 @@ struct MailSidebarView: View {
                 if hasChildren {
                     Button { withAnimation(.easeInOut(duration: 0.12)) { model.toggleFolder(folder) } } label: {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.app(.micro, weight: .semibold))
                             .rotationEffect(.degrees(isOpen ? 90 : 0))
                             .frame(width: 12, height: 18)
                             .contentShape(Rectangle())
@@ -335,17 +335,17 @@ struct MailSidebarView: View {
             } label: {
                 HStack(spacing: 7) {
                     Image(systemName: MailPresentation.folderIcon(folder))
-                        .font(.system(size: 12))
+                        .font(.app(.body))
                         .foregroundStyle(selected ? Color.accentColor : .secondary)
                         .frame(width: 16)
                     Text(folder.displayName)
-                        .font(.system(size: 13, weight: showsCount ? .semibold : .regular))
+                        .font(.app(.headline, weight: showsCount ? .semibold : .regular))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 4)
                     if showsCount {
                         Text("\(unread)")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.app(.footnote, weight: .semibold))
                             .monospacedDigit()
                             .foregroundStyle(selected ? Color.primary : Color.accentColor)
                     }
@@ -383,7 +383,7 @@ struct MailExternalTag: View {
 
     var body: some View {
         Text(localization.tr("mail.external"))
-            .font(.system(size: 9, weight: .semibold))
+            .font(.app(.micro, weight: .semibold))
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
             .background(RoundedRectangle(cornerRadius: 3).fill(Color.orange.opacity(0.16)))
@@ -605,7 +605,7 @@ struct MailConversationListView: View {
         HStack(spacing: 8) {
             if model.isSearching {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.app(.headline, weight: .semibold))
                     .lineLimit(1)
                     .layoutPriority(1)
             } else {
@@ -614,7 +614,7 @@ struct MailConversationListView: View {
             }
             if let progress = model.bulkProgress {
                 ProgressView().controlSize(.small)
-                Text(localization.tr("mail.list.marking", progress)).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(localization.tr("mail.list.marking", progress)).font(.app(.footnote)).foregroundStyle(.secondary)
             }
             if model.isSearching {
                 Spacer(minLength: 4)
@@ -644,7 +644,7 @@ struct MailConversationListView: View {
     private var bulkBar: some View {
         let targets = model.actionTargets
         return HStack(spacing: 10) {
-            Text(localization.tr("mail.list.selected", targets.count)).font(.system(size: 12, weight: .medium))
+            Text(localization.tr("mail.list.selected", targets.count)).font(.app(.body, weight: .medium))
             Spacer(minLength: 4)
             HStack(spacing: 2) {
                 Button { Task { await model.markRead(targets, true) } } label: { MailActionIcon("envelope.open") }
@@ -704,7 +704,7 @@ struct MailConversationListView: View {
                     }
                 } label: {
                     Label(localization.tr(model.searchFilters.period.localizationKey), systemImage: "calendar")
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -715,7 +715,7 @@ struct MailConversationListView: View {
                         Task { await model.submitSearch() }
                     }
                 )) {
-                    Label(localization.tr("mail.search.hasAttachments"), systemImage: "paperclip").font(.system(size: 11))
+                    Label(localization.tr("mail.search.hasAttachments"), systemImage: "paperclip").font(.app(.footnote))
                 }
                 .toggleStyle(.button)
                 .controlSize(.small)
@@ -730,13 +730,13 @@ struct MailConversationListView: View {
             if !suggestions.isEmpty {
                 FlowRow(spacing: 6) {
                     Text(localization.tr("mail.search.refine"))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                     ForEach(suggestions, id: \.self) { refiner in
                         Button {
                             Task { await model.applyRefiner(refiner) }
                         } label: {
-                            Text(refinerLabel(refiner)).font(.system(size: 11))
+                            Text(refinerLabel(refiner)).font(.app(.footnote))
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -758,10 +758,10 @@ struct MailConversationListView: View {
 
     private func chip(icon: String, text: String, remove: @escaping () -> Void) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: icon).font(.system(size: 10))
-            Text(text).font(.system(size: 11)).lineLimit(1)
+            Image(systemName: icon).font(.app(.caption))
+            Text(text).font(.app(.footnote)).lineLimit(1)
             Button(action: remove) {
-                Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
+                Image(systemName: "xmark").font(.app(.micro, weight: .bold))
             }
             .buttonStyle(.mailIconCompact)
             .foregroundStyle(.secondary)
@@ -781,11 +781,11 @@ struct MailConversationListView: View {
                     ProgressView().controlSize(.small)
                 } else if let error = model.listError {
                     Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-                    Text(error).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Text(error).font(.app(.body)).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     Button(localization.tr("mail.retry")) { Task { await model.reloadList() } }
                 } else {
                     Text(localization.tr(model.isSearching ? "mail.search.empty" : (model.mode == .all ? "mail.list.empty" : "mail.list.emptyFiltered")))
-                        .font(.system(size: 12))
+                        .font(.app(.body))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -885,7 +885,7 @@ struct MailConversationListView: View {
     private func sectionHeader(_ title: String) -> some View {
         VStack(spacing: 0) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.app(.footnote, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14)
@@ -902,30 +902,30 @@ struct MailConversationListView: View {
         return VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.app(.micro, weight: .semibold))
                     .rotationEffect(.degrees(expanded ? 90 : 0))
                     .foregroundStyle(.secondary)
                     .frame(width: 7)
                     .padding(.top, 4)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Image(systemName: "square.stack.3d.up").font(.system(size: 11)).foregroundStyle(.secondary)
-                        Text(sender).font(.system(size: 13, weight: unread > 0 ? .semibold : .regular)).lineLimit(1)
+                        Image(systemName: "square.stack.3d.up").font(.app(.footnote)).foregroundStyle(.secondary)
+                        Text(sender).font(.app(.headline, weight: unread > 0 ? .semibold : .regular)).lineLimit(1)
                         Text(localization.tr("mail.bundle.count", conversations.count))
-                            .font(.system(size: 10))
+                            .font(.app(.caption))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
                             .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.35), lineWidth: 1))
                         Spacer(minLength: 4)
                         Text(MailPresentation.rowTime(newest?.lastDelivery, localization: localization))
-                            .font(.system(size: 11))
+                            .font(.app(.footnote))
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                             .fixedSize()
                     }
                     HStack(spacing: 6) {
                         Text(newest?.topic ?? "")
-                            .font(.system(size: 12))
+                            .font(.app(.body))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                         Spacer(minLength: 4)
@@ -933,7 +933,7 @@ struct MailConversationListView: View {
                             Button {
                                 Task { await model.markRead(conversations.filter(\.isUnread), true) }
                             } label: {
-                                Text(localization.tr("mail.bundle.markRead", unread)).font(.system(size: 11))
+                                Text(localization.tr("mail.bundle.markRead", unread)).font(.app(.footnote))
                             }
                             .buttonStyle(.mailIcon)
                             .foregroundStyle(Color.accentColor)
@@ -969,7 +969,7 @@ struct MailConversationListView: View {
             HStack {
                 if model.isLoadingList { ProgressView().controlSize(.small) }
                 Text(localization.tr("mail.list.loadingMore"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
@@ -977,7 +977,7 @@ struct MailConversationListView: View {
             .onAppear { Task { await model.loadMore() } }
         } else if model.isSearching, model.searchMoreAvailable || model.conversations.count >= OWAMailPayloads.searchResultsCap {
             Label(localization.tr("mail.search.cap", OWAMailPayloads.searchResultsCap), systemImage: "info.circle")
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .foregroundStyle(.secondary)
                 .padding(10)
         }
@@ -999,8 +999,8 @@ struct MailMeetingStatusTag: View {
         case .response: ("checkmark.circle.fill", .green, "mail.meeting.tag.accepted")
         }
         HStack(spacing: 3) {
-            Image(systemName: icon).font(.system(size: 10)).foregroundStyle(tint)
-            Text(localization.tr(key)).font(.system(size: 12, weight: .medium)).foregroundStyle(tint)
+            Image(systemName: icon).font(.app(.caption)).foregroundStyle(tint)
+            Text(localization.tr(key)).font(.app(.body, weight: .medium)).foregroundStyle(tint)
         }
         .fixedSize()
     }
@@ -1039,16 +1039,16 @@ struct MailConversationRow: View {
                 HStack(spacing: 5) {
                     let people = isSentFolder && !conversation.recipients.isEmpty ? conversation.recipients : conversation.senders
                     Text(people.joined(separator: ", "))
-                        .font(.system(size: 13, weight: conversation.isUnread ? .semibold : .regular))
+                        .font(.app(.headline, weight: conversation.isUnread ? .semibold : .regular))
                         .lineLimit(1)
                     if isExternal { MailExternalTag() }
                     Spacer(minLength: 4)
-                    if conversation.isFlagged { Image(systemName: "flag.fill").font(.system(size: 9)).foregroundStyle(.orange) }
-                    if conversation.hasAttachments { Image(systemName: "paperclip").font(.system(size: 10)).foregroundStyle(.secondary) }
+                    if conversation.isFlagged { Image(systemName: "flag.fill").font(.app(.micro)).foregroundStyle(.orange) }
+                    if conversation.hasAttachments { Image(systemName: "paperclip").font(.app(.caption)).foregroundStyle(.secondary) }
                     Text(underDaySection
                          ? MailPresentation.rowTime(conversation.lastDelivery, localization: localization)
                          : MailPresentation.listTime(conversation.lastDelivery, localization: localization))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -1059,20 +1059,20 @@ struct MailConversationRow: View {
                         MailMeetingStatusTag(status: status)
                     }
                     if conversation.importance == .high {
-                        Text("!").font(.system(size: 12, weight: .bold)).foregroundStyle(.red)
+                        Text("!").font(.app(.body, weight: .bold)).foregroundStyle(.red)
                     }
                     ForEach(conversation.categories.prefix(3), id: \.self) { name in
                         RoundedRectangle(cornerRadius: 2).fill(MailPresentation.categoryColor(name)).frame(width: 8, height: 8).help(name)
                     }
-                    if conversation.isProtected { Image(systemName: "lock.fill").font(.system(size: 9)).foregroundStyle(.secondary) }
+                    if conversation.isProtected { Image(systemName: "lock.fill").font(.app(.micro)).foregroundStyle(.secondary) }
                     let topic = conversation.meetingStatus == nil ? conversation.topic : MailPresentation.strippingMeetingPrefix(conversation.topic)
                     Text(MailPresentation.highlighted(topic.isEmpty ? localization.tr("mail.noSubject") : topic, terms: terms))
-                        .font(.system(size: 12, weight: conversation.isUnread ? .medium : .regular))
+                        .font(.app(.body, weight: conversation.isUnread ? .medium : .regular))
                         .lineLimit(1)
                     Spacer(minLength: 2)
                     if conversation.messageCount > 1 {
                         Text("\(conversation.messageCount)")
-                            .font(.system(size: 10))
+                            .font(.app(.caption))
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
@@ -1084,12 +1084,12 @@ struct MailConversationRow: View {
                     HStack(alignment: .top, spacing: 4) {
                         if let folderName {
                             Text(folderName)
-                                .font(.system(size: 10))
+                                .font(.app(.caption))
                                 .padding(.horizontal, 4)
                                 .background(RoundedRectangle(cornerRadius: 3).fill(Color.secondary.opacity(0.15)))
                         }
                         Text(MailPresentation.highlighted(previewLine, terms: terms))
-                            .font(.system(size: 11.5))
+                            .font(.app(.footnote))
                             .lineLimit(compactPreview || meetingLine != nil ? 1 : 2)
                     }
                     .foregroundStyle(.secondary)

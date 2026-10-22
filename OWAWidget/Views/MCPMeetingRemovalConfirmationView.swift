@@ -60,19 +60,19 @@ struct MCPMeetingRemovalConfirmationView: View {
     private var title: some View {
         HStack(spacing: 8) {
             Image(systemName: "calendar.badge.minus")
-                .font(.system(size: 15))
+                .font(.app(.title))
                 .foregroundStyle(.red)
             Text(proposal.client.isEmpty
                 ? localization.tr("mcp.remove.titleUnknownClient.\(proposal.mode.rawValue)")
                 : localization.tr("mcp.remove.title.\(proposal.mode.rawValue)", proposal.client))
-                .font(.system(size: 12, weight: .semibold))
+                .font(.app(.body, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             TimelineView(.animation(minimumInterval: 0.25)) { context in
                 let remaining = remaining(at: context.date)
                 Text(localization.tr("mcp.confirm.countdown", Int(remaining.rounded(.up))))
-                    .font(.system(size: 11).monospacedDigit())
+                    .font(.app(.footnote).monospacedDigit())
                     .foregroundStyle(countdownColor(remaining))
                     .lineLimit(1)
             }
@@ -83,12 +83,12 @@ struct MCPMeetingRemovalConfirmationView: View {
     private var meeting: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(proposal.title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.app(.title, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)
             Text(MCPMeetingConfirmationView.dayText(proposal.start, now: shownAt, localization: localization))
-                .font(.system(size: 12))
+                .font(.app(.body))
             Text(MCPMeetingConfirmationView.timeText(proposal.start, proposal.end, now: shownAt, localization: localization))
-                .font(.system(size: 12).monospacedDigit())
+                .font(.app(.body).monospacedDigit())
                 .foregroundStyle(.secondary)
             if !proposal.location.isEmpty {
                 note(proposal.location, icon: "mappin.and.ellipse")
@@ -108,17 +108,17 @@ struct MCPMeetingRemovalConfirmationView: View {
                 ForEach(visible, id: \.email) { person in
                     HStack(spacing: 6) {
                         if let name = person.name, !name.isEmpty {
-                            Text(name).font(.system(size: 12)).lineLimit(1)
+                            Text(name).font(.app(.body)).lineLimit(1)
                         }
                         Text(person.email)
-                            .font(.system(size: 11))
+                            .font(.app(.footnote))
                             .foregroundStyle(person.isExternal ? .orange : .secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .help(person.email)
                         if person.isExternal {
                             Text(localization.tr("mcp.confirm.external"))
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.app(.caption, weight: .semibold))
                                 .foregroundStyle(.orange)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
@@ -131,14 +131,14 @@ struct MCPMeetingRemovalConfirmationView: View {
                 let names = proposal.unaddressedAttendees.prefix(max(0, MCPMeetingConfirmationView.visibleAttendeeLimit - visible.count))
                 ForEach(Array(names.enumerated()), id: \.offset) { _, name in
                     Text(name)
-                        .font(.system(size: 12))
+                        .font(.app(.body))
                         .lineLimit(1)
                         .padding(.leading, 18)
                 }
                 let hidden = proposal.attendees.count - visible.count + proposal.unaddressedAttendees.count - names.count
                 if hidden > 0 {
                     Text(localization.tr("mcp.confirm.more", hidden))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                         .padding(.leading, 18)
                 }
@@ -168,7 +168,7 @@ struct MCPMeetingRemovalConfirmationView: View {
     private var message: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(localization.tr(proposal.mode == .decline ? "mcp.remove.messageForOrganizer" : "mcp.remove.messageForAttendees"))
-                .font(.system(size: 11, weight: .medium))
+                .font(.app(.footnote, weight: .medium))
                 .foregroundStyle(.secondary)
             Group {
                 if proposal.message.count > MCPMeetingConfirmationView.inlineAgendaLimit {
@@ -188,7 +188,7 @@ struct MCPMeetingRemovalConfirmationView: View {
 
     private var messageBody: some View {
         Text(proposal.message)
-            .font(.system(size: 12))
+            .font(.app(.body))
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
@@ -227,10 +227,10 @@ struct MCPMeetingRemovalConfirmationView: View {
     private func note(_ text: String, icon: String, color: Color = .secondary) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .frame(width: 12)
             Text(text)
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(color)

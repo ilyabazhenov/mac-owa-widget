@@ -24,7 +24,7 @@ struct EventKitAccountFormSections: View {
 
             if let error = vm.eventKitError {
                 Text(error)
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.red)
             }
         }
@@ -42,14 +42,14 @@ struct EventKitAccountFormSections: View {
                 Text(localization.tr("settings.account.calendars.empty"))
                     .foregroundStyle(.secondary)
                 Text(localization.tr("settings.account.calendars.hint"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
             }
         } else {
             ForEach(vm.eventKitCalendarGroups, id: \.source) { group in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(group.source)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.app(.footnote, weight: .semibold))
                         .foregroundStyle(.secondary)
                     ForEach(group.calendars) { calendar in
                         Toggle(isOn: binding(for: calendar.identifier)) {
@@ -66,7 +66,7 @@ struct EventKitAccountFormSections: View {
     private var accessRequest: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(localization.tr("settings.account.calendars.request.hint"))
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .foregroundStyle(.secondary)
             Button(localization.tr("settings.account.calendars.request")) {
                 Task { await vm.requestCalendarAccess() }
@@ -78,7 +78,7 @@ struct EventKitAccountFormSections: View {
     private func accessBlocked(message: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(message)
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .foregroundStyle(.secondary)
             Button(localization.tr("settings.account.calendars.open.settings")) {
                 vm.openCalendarPrivacySettings()

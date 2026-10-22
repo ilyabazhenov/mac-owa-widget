@@ -43,12 +43,12 @@ struct SettingsView: View {
                 if vm.accounts.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "person.badge.plus")
-                            .font(.system(size: 28))
+                            .font(.app(.symbol))
                             .foregroundStyle(.secondary)
                         Text(localization.tr("settings.accounts.empty.title"))
                             .foregroundStyle(.secondary)
                         Text(localization.tr("settings.accounts.empty.subtitle"))
-                            .font(.system(size: 11))
+                            .font(.app(.footnote))
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity)
@@ -59,14 +59,14 @@ struct SettingsView: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(account.displayName.isEmpty ? account.email : account.displayName)
-                                    .font(.system(size: 13, weight: .medium))
+                                    .font(.app(.headline, weight: .medium))
                                 Text(account.serverURL)
-                                    .font(.system(size: 11))
+                                    .font(.app(.footnote))
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
                             Text(account.accountType.displayName)
-                                .font(.system(size: 10))
+                                .font(.app(.caption))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)

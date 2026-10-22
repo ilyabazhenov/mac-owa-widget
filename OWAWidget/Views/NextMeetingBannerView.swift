@@ -39,7 +39,7 @@ struct NextMeetingBannerView: View {
                             .foregroundStyle(.orange)
                     } else {
                         Image(systemName: "play.fill")
-                            .font(.system(size: 9))
+                            .font(.app(.micro))
                             .foregroundStyle(.secondary)
                         Text(countdownLabel(event, now: now))
                             .font(.system(size: 11, weight: .medium))
@@ -49,18 +49,18 @@ struct NextMeetingBannerView: View {
                     if event.platform != .generic {
                         Image(systemName: event.platform.systemIcon)
                             .foregroundStyle(happening ? .orange : meetingAccentColor(for: event))
-                            .font(.system(size: 12))
+                            .font(.app(.body))
                             .accessibilityLabel(event.platform.displayName(localization: localization))
                     }
                 }
 
                 Text(event.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.app(.headline, weight: .semibold))
                     .lineLimit(2)
 
                 HStack(spacing: 8) {
                     Text(metaString(event))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
@@ -92,10 +92,10 @@ struct NextMeetingBannerView: View {
                                 // list, and it is the shared trait of the buttons users report
                                 // rendering upside down. Visually identical either way.
                                 Image(systemName: "arrow.right.circle.fill")
-                                    .font(.system(size: 12))
+                                    .font(.app(.body))
                                     .foregroundStyle(.white)
                                 Text(localization.tr("meeting.join"))
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.app(.body, weight: .semibold))
                                     .foregroundStyle(.white)
                             }
                             .padding(.horizontal, 10)
@@ -138,9 +138,9 @@ struct NextMeetingBannerView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Image(systemName: "play.fill")
-                    .font(.system(size: 10))
+                    .font(.app(.caption))
                 Text(localization.tr("meeting.multiple.at.time", events.count, localization.shortTime(events[0].startDate)))
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.app(.footnote, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12)

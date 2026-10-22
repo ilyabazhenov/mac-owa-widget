@@ -18,11 +18,11 @@ struct MCPSettingsView: View {
             Section {
                 Toggle(localization.tr("mcp.enabled"), isOn: $server.isEnabled)
                 Text(localization.tr("mcp.description"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                 Label {
                     Text(localization.tr("mcp.privacy.warning"))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                 } icon: {
                     Image(systemName: "exclamationmark.shield")
                         .foregroundStyle(.orange)
@@ -34,12 +34,12 @@ struct MCPSettingsView: View {
                 Toggle(localization.tr("mcp.createMeetings"), isOn: $server.canCreateMeetings)
                     .disabled(!server.isEnabled)
                 Text(localization.tr("mcp.createMeetings.description"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                 Toggle(localization.tr("mcp.cancelMeetings"), isOn: $server.canCancelMeetings)
                     .disabled(!server.isEnabled)
                 Text(localization.tr("mcp.cancelMeetings.description"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
             }
 
@@ -47,16 +47,16 @@ struct MCPSettingsView: View {
                 Toggle(localization.tr("mcp.mail.read"), isOn: $server.canReadMail)
                     .disabled(!server.isEnabled)
                 Text(localization.tr("mcp.mail.read.description"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                 Toggle(localization.tr("mcp.mail.send"), isOn: $server.canSendMail)
                     .disabled(!server.isEnabled || !server.canReadMail)
                 Text(localization.tr("mcp.mail.send.description"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                 if server.canReadMail {
                     Label {
-                        Text(localization.tr("mcp.mail.warning")).font(.system(size: 11))
+                        Text(localization.tr("mcp.mail.warning")).font(.app(.footnote))
                     } icon: {
                         Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
                     }
@@ -69,11 +69,11 @@ struct MCPSettingsView: View {
                         snippetRow(snippet)
                     }
                     Text(localization.tr("mcp.connect.hint"))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                 } else {
                     Text(localization.tr("mcp.connect.bridgeMissing"))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -82,11 +82,11 @@ struct MCPSettingsView: View {
                 Toggle(localization.tr("mcp.clients.ask"), isOn: $server.askNewClients)
                     .disabled(!server.isEnabled)
                 Text(localization.tr(server.askNewClients ? "mcp.clients.ask.on" : "mcp.clients.ask.off"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                 if server.knownClients.isEmpty {
                     Text(localization.tr("mcp.clients.empty"))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(server.knownClients) { client in
@@ -94,14 +94,14 @@ struct MCPSettingsView: View {
                     }
                 }
                 Text(localization.tr("mcp.clients.hint"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
             }
 
             Section(localization.tr("mcp.journal.section")) {
                 if server.journal.isEmpty {
                     Text(localization.tr("mcp.journal.empty"))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(server.journal.prefix(15)) { entry in
@@ -109,20 +109,20 @@ struct MCPSettingsView: View {
                             Image(systemName: entry.isError ? "xmark.circle" : "checkmark.circle")
                                 .foregroundStyle(entry.isError ? .orange : .secondary)
                             Text(entry.tool)
-                                .font(.system(size: 11, design: .monospaced))
+                                .font(.app(.footnote, design: .monospaced))
                             if let client = entry.client, !client.isEmpty {
                                 Text(client)
-                                    .font(.system(size: 11))
+                                    .font(.app(.footnote))
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
                             Text(entry.date, style: .time)
-                                .font(.system(size: 11))
+                                .font(.app(.footnote))
                                 .foregroundStyle(.secondary)
                         }
                     }
                     Text(localization.tr("mcp.journal.hint"))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -156,30 +156,30 @@ struct MCPSettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(client.name)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.app(.body, weight: .medium))
                     accessBadge(client.access)
                     if server.canReadMail, let mailAccess = client.mailAccess {
                         mailBadge(mailAccess)
                     }
                     if let note = kindNote(client.lastKind) {
                         Text(note)
-                            .font(.system(size: 10))
+                            .font(.app(.caption))
                             .foregroundStyle(.orange)
                     }
                 }
                 if let declared = client.declaredName, declared != client.name {
                     Text(localization.tr("mcp.clients.declared", declared))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                 }
                 Text([client.executablePath, client.script].compactMap { $0 }.joined(separator: " "))
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.app(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .lineLimit(3)
                     .truncationMode(.middle)
                 Text(localization.tr("mcp.clients.lastSeen", lastSeenText(client.lastSeen)))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -201,11 +201,11 @@ struct MCPSettingsView: View {
             EmptyView()
         case .denied:
             Text(localization.tr("mcp.clients.access.denied"))
-                .font(.system(size: 10, weight: .semibold))
+                .font(.app(.caption, weight: .semibold))
                 .foregroundStyle(.red)
         case .pending:
             Text(localization.tr("mcp.clients.access.pending"))
-                .font(.system(size: 10, weight: .semibold))
+                .font(.app(.caption, weight: .semibold))
                 .foregroundStyle(.orange)
         }
     }
@@ -215,15 +215,15 @@ struct MCPSettingsView: View {
         switch access {
         case .allowed:
             Label(localization.tr("mcp.clients.mail.allowed"), systemImage: "envelope")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.app(.caption, weight: .semibold))
                 .foregroundStyle(.secondary)
         case .denied:
             Label(localization.tr("mcp.clients.mail.denied"), systemImage: "envelope.badge.shield.half.filled")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.app(.caption, weight: .semibold))
                 .foregroundStyle(.red)
         case .pending:
             Label(localization.tr("mcp.clients.mail.pending"), systemImage: "envelope")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.app(.caption, weight: .semibold))
                 .foregroundStyle(.orange)
         }
     }
@@ -278,7 +278,7 @@ struct MCPSettingsView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(title(snippet))
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.app(.body, weight: .medium))
                 Spacer()
                 Button(copiedSnippet == snippet ? localization.tr("mcp.connect.copied") : localization.tr("mcp.connect.copy")) {
                     NSPasteboard.general.clearContents()
@@ -288,7 +288,7 @@ struct MCPSettingsView: View {
                 .controlSize(.small)
             }
             Text(text(snippet))
-                .font(.system(size: 10, design: .monospaced))
+                .font(.app(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .lineLimit(nil)

@@ -156,11 +156,11 @@ struct MCPMailConfirmationView: View {
                 title
                 VStack(alignment: .leading, spacing: 3) {
                     Text(proposal.subject.isEmpty ? localization.tr("mail.noSubject") : proposal.subject)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.app(.title, weight: .semibold))
                         .fixedSize(horizontal: false, vertical: true)
                     if let original = proposal.original {
                         Text(localization.tr("mcp.mail.confirm.original", original.from, MailConfirmationText.date(original.received, localization: localization)))
-                            .font(.system(size: 12))
+                            .font(.app(.body))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -170,11 +170,11 @@ struct MCPMailConfirmationView: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(localization.tr("mcp.mail.confirm.body"))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.app(.footnote, weight: .medium))
                         .foregroundStyle(.secondary)
                     ScrollView {
                         Text(proposal.body.isEmpty ? " " : proposal.body)
-                            .font(.system(size: 12))
+                            .font(.app(.body))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
@@ -197,7 +197,7 @@ struct MCPMailConfirmationView: View {
                                 .foregroundStyle(.orange)
                         }
                     }
-                    .font(.system(size: 10))
+                    .font(.app(.caption))
                     .foregroundStyle(.secondary)
                 }
                 if !proposal.forwardedAttachments.isEmpty {
@@ -259,17 +259,17 @@ struct MCPMailConfirmationView: View {
     private var title: some View {
         HStack(spacing: 8) {
             Image(systemName: proposal.kind == .forward ? "arrowshape.turn.up.right" : "paperplane")
-                .font(.system(size: 14))
+                .font(.app(.title))
                 .foregroundStyle(proposal.hasExternalRecipients ? Color.orange : Color.accentColor)
             Text(localization.tr(kindKey, proposal.client.isEmpty ? localization.tr("mcp.mail.confirm.unknownClient") : proposal.client))
-                .font(.system(size: 12, weight: .semibold))
+                .font(.app(.body, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             TimelineView(.animation(minimumInterval: 0.25)) { context in
                 let remaining = max(0, deadline.timeIntervalSince(context.date))
                 Text(localization.tr("mcp.confirm.countdown", Int(remaining.rounded(.up))))
-                    .font(.system(size: 11).monospacedDigit())
+                    .font(.app(.footnote).monospacedDigit())
                     .foregroundStyle(remaining <= 10 ? .orange : .secondary)
             }
             .fixedSize()
@@ -294,7 +294,7 @@ struct MCPMailConfirmationView: View {
     @ViewBuilder
     private func section(_ title: String, _ people: [MCPMailProposal.Recipient]) -> some View {
         if !people.isEmpty {
-            Text(title).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+            Text(title).font(.app(.footnote, weight: .medium)).foregroundStyle(.secondary)
             // External and new addresses always, then the rest up to the limit. Without the
             // external check nothing can be told apart, so every address is listed.
             let flagged = people.filter { $0.isExternal || $0.isNew }
@@ -303,7 +303,7 @@ struct MCPMailConfirmationView: View {
             ForEach(visible, id: \.email) { person in
                 HStack(spacing: 6) {
                     Text(person.email)
-                        .font(.system(size: 12))
+                        .font(.app(.body))
                         .foregroundStyle(person.isExternal ? .orange : .primary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -313,14 +313,14 @@ struct MCPMailConfirmationView: View {
                 }
             }
             if people.count > visible.count {
-                Text(localization.tr("mcp.confirm.more", people.count - visible.count)).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(localization.tr("mcp.confirm.more", people.count - visible.count)).font(.app(.footnote)).foregroundStyle(.secondary)
             }
         }
     }
 
     private func tag(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 10, weight: .semibold))
+            .font(.app(.caption, weight: .semibold))
             .foregroundStyle(.orange)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
@@ -362,8 +362,8 @@ struct MCPMailConfirmationView: View {
 
     private func note(_ text: String, icon: String, color: Color = .secondary) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: icon).font(.system(size: 11)).frame(width: 12)
-            Text(text).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+            Image(systemName: icon).font(.app(.footnote)).frame(width: 12)
+            Text(text).font(.app(.footnote)).fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(color)
     }

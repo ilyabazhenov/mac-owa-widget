@@ -396,8 +396,8 @@ private struct MailSwipeRow: ViewModifier {
 
     private func actionLabel(icon: String, key: String) -> some View {
         VStack(spacing: 3) {
-            Image(systemName: icon).font(.system(size: 14, weight: .medium))
-            Text(localization.tr(key)).font(.system(size: 10, weight: .medium)).lineLimit(1)
+            Image(systemName: icon).font(.app(.title, weight: .medium))
+            Text(localization.tr(key)).font(.app(.caption, weight: .medium)).lineLimit(1)
         }
         .foregroundStyle(.white)
         .frame(width: MailSwipePolicy.revealWidth)
@@ -437,14 +437,14 @@ struct MailListNoticeView: View {
             Image(systemName: icon)
                 .foregroundStyle(isFailure ? Color.orange : Color.secondary)
             Text(localization.tr(textKey))
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .lineLimit(2)
             Spacer(minLength: 4)
             if case .deleted(let deletion, _, _) = notice, deletion.canUndo {
                 Button(localization.tr("mail.undo.action"), action: onUndo)
                     .controlSize(.small)
             }
-            Button(action: onClose) { Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)) }
+            Button(action: onClose) { Image(systemName: "xmark").font(.app(.micro, weight: .semibold)) }
                 .buttonStyle(.mailIconCompact)
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(localization.tr("mail.cancel"))

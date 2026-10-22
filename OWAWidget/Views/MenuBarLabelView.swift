@@ -27,7 +27,7 @@ struct MenuBarLabelView: View {
             // and a single text, and silently drops any further view put in the label.
             if let label = Self.composedLabel(label(for: smart), pendingInvitations: pendingInvitations, unreadMail: unreadMail) {
                 Text(label)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.app(.body, weight: .medium))
                     .monospacedDigit()
                     .frame(minWidth: 28, alignment: .trailing)
             }

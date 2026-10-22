@@ -127,7 +127,7 @@ struct PopoverMailReaderView: View {
     private var subject: some View {
         let topic = summary?.topic ?? model.thread?.topic ?? ""
         return Text(topic.isEmpty ? localization.tr("mail.noSubject") : topic)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.app(.title, weight: .semibold))
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -140,7 +140,7 @@ struct PopoverMailReaderView: View {
             }
             if thread.totalMessageCount > thread.messages.count {
                 Label(localization.tr("mail.thread.more", thread.totalMessageCount - thread.messages.count), systemImage: "ellipsis.bubble")
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -148,7 +148,7 @@ struct PopoverMailReaderView: View {
             VStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
                 Text(error)
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -164,14 +164,14 @@ struct PopoverMailReaderView: View {
             VStack(alignment: .leading, spacing: 10) {
                 if let senders = summary?.senders, !senders.isEmpty {
                     Text(senders.joined(separator: ", "))
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text(localization.tr("mail.reading.loading"))
-                        .font(.system(size: 12))
+                        .font(.app(.body))
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -190,8 +190,8 @@ struct PopoverMailReaderView: View {
         HStack(spacing: 2) {
             Button { reply(.reply, message) } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "arrowshape.turn.up.left").font(.system(size: 13))
-                    Text(localization.tr("mail.action.reply")).font(.system(size: 12))
+                    Image(systemName: "arrowshape.turn.up.left").font(.app(.headline))
+                    Text(localization.tr("mail.action.reply")).font(.app(.body))
                 }
                 .frame(height: 16)
                 .lineLimit(1)
@@ -234,10 +234,10 @@ struct PopoverMailReaderView: View {
     private func linkPrompt(_ link: MailLinkActivation) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(localization.tr("mail.link.title"))
-                .font(.system(size: 12, weight: .semibold))
+                .font(.app(.body, weight: .semibold))
             Text(link.explanation(localization))
                 .foregroundStyle(link.mismatchedHost == nil ? Color.secondary : Color.orange)
-                .font(.system(size: 11))
+                .font(.app(.footnote))
                 .lineLimit(4)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
@@ -273,7 +273,7 @@ struct PopoverMailReaderView: View {
                 .buttonStyle(MailIconButtonStyle(horizontalPadding: 3))
                 .help(localization.tr("mail.cancel"))
         }
-        .font(.system(size: 11))
+        .font(.app(.footnote))
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, 6)
     }

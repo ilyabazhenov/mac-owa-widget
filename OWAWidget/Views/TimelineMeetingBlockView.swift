@@ -23,20 +23,20 @@ struct TimelineMeetingBlockView: View {
         HStack(alignment: .top, spacing: 5) {
             VStack(alignment: .leading, spacing: titleToMetaSpacing) {
                 Text(event.title)
-                    .font(.system(size: compact ? 11 : 12, weight: .semibold))
+                    .font(.app(compact ? .footnote : .body, weight: .semibold))
                     .foregroundStyle(event.isEffectivelyCancelled ? .secondary : .primary)
                     .strikethrough(event.isEffectivelyCancelled)
                     .lineLimit(compact ? 1 : 1)
 
                 HStack(spacing: metaItemsSpacing) {
                     Text("\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))")
-                        .font(.system(size: compact ? 9 : 10, weight: .medium))
+                        .font(.app(compact ? .micro : .caption, weight: .medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
                     if event.responseType == .notResponded {
                         Image(systemName: "questionmark.circle")
-                            .font(.system(size: compact ? 8 : 9))
+                            .font(.app(.micro))
                             .foregroundStyle(.secondary)
                             .help(localization.tr("meeting.rsvp.pending.help"))
                             .accessibilityLabel(localization.tr("a11y.meeting.rsvp.pending"))
@@ -44,7 +44,7 @@ struct TimelineMeetingBlockView: View {
 
                     if event.isOrganizer {
                         Text(localization.tr("meeting.role.organizer.short"))
-                            .font(.system(size: compact ? 8 : 9, weight: .semibold))
+                            .font(.app(.micro, weight: .semibold))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
@@ -55,7 +55,7 @@ struct TimelineMeetingBlockView: View {
 
                     if shouldShowOrganizer, let organizer = event.organizer {
                         Text("· \(organizer)")
-                            .font(.system(size: 10))
+                            .font(.app(.caption))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -87,7 +87,7 @@ struct TimelineMeetingBlockView: View {
                         PostJoinDismissController.shared.dismissAfterJoin(context: .popoverContent)
                     } label: {
                         Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: compact ? 13 : 14))
+                            .font(.app(compact ? .headline : .title))
                             .foregroundStyle(accentColor)
                     }
                     .buttonStyle(.plain)

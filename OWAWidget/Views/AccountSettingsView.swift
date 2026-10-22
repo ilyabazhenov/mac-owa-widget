@@ -71,7 +71,7 @@ struct AccountSettingsView: View {
         } footer: {
             if vm.needsPasswordForChangedServer {
                 Text(localization.tr("settings.account.password.changedServer"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.orange)
             }
         }
@@ -91,7 +91,7 @@ struct AccountSettingsView: View {
 
                 if let result = testResult {
                     Text(result)
-                        .font(.system(size: 11))
+                        .font(.app(.footnote))
                         .foregroundStyle(result.hasPrefix("✓") ? .green : .red)
                 }
             }

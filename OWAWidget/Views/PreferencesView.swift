@@ -50,7 +50,7 @@ struct PreferencesView: View {
                 if vm.launchAtLoginRequiresApproval {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(localization.tr("preferences.startup.requiresApproval"))
-                            .font(.system(size: 11))
+                            .font(.app(.footnote))
                             .foregroundStyle(.secondary)
                         Button(localization.tr("preferences.startup.openSettings")) {
                             vm.openLoginItemsSettings()
@@ -85,7 +85,7 @@ struct PreferencesView: View {
                 }
                 .pickerStyle(.menu)
                 Text(localization.tr("preferences.timezone.hint"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
             }
 
@@ -122,7 +122,7 @@ struct PreferencesView: View {
                     isOn: $vm.globalJoinHotkeyEnabled
                 )
                 Text(localization.tr("preferences.shortcuts.joinMeeting.hint", "Ctrl+Option+J"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
             }
 
@@ -156,7 +156,7 @@ struct PreferencesView: View {
                 }
                 .disabled(!vm.colleaguesSectionEnabled)
                 Text(localization.tr("preferences.colleagues.hint"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -179,7 +179,7 @@ struct PreferencesView: View {
                 .disabled(!vm.invitationAlertsEnabled || !vm.invitationPopoverSectionEnabled)
                 .padding(.leading, 32)
                 Text(localization.tr("preferences.invitations.hint"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -233,7 +233,7 @@ struct PreferencesView: View {
                     isOn: $updateCheck.isAutomaticChecksEnabled
                 )
                 Text(localization.tr("preferences.updates.hint"))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
                 Button(localization.tr("preferences.updates.checkNow")) {
                     Task { await updateCheck.checkNow() }

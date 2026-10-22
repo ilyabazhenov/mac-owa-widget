@@ -32,7 +32,7 @@ struct MeetingRelatedMailView: View {
                     load()
                 } label: {
                     Label(localization.tr("mail.related.show"), systemImage: "tray.full")
-                        .font(.system(size: 12))
+                        .font(.app(.body))
                 }
                 .buttonStyle(MailIconButtonStyle(horizontalPadding: 4, verticalPadding: 2))
                 .foregroundStyle(Color.accentColor)
@@ -40,20 +40,20 @@ struct MeetingRelatedMailView: View {
             case .loading:
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text(localization.tr("mail.related.loading")).font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text(localization.tr("mail.related.loading")).font(.app(.body)).foregroundStyle(.secondary)
                 }
             case .failed:
                 Button(localization.tr("mail.related.failed")) { load() }
                     .buttonStyle(MailIconButtonStyle(horizontalPadding: 4, verticalPadding: 2))
                     .foregroundStyle(Color.accentColor)
                     .padding(.leading, -4)
-                    .font(.system(size: 12))
+                    .font(.app(.body))
             case .loaded(let conversations):
                 Label(localization.tr("mail.related.title"), systemImage: "tray.full")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.app(.body, weight: .medium))
                     .foregroundStyle(.secondary)
                 if conversations.isEmpty {
-                    Text(localization.tr("mail.related.empty")).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(localization.tr("mail.related.empty")).font(.app(.footnote)).foregroundStyle(.secondary)
                 } else {
                     ForEach(conversations) { conversation in
                         Button {
@@ -62,17 +62,17 @@ struct MeetingRelatedMailView: View {
                             HStack(spacing: 6) {
                                 HStack(spacing: 4) {
                                     Text(conversation.primarySender)
-                                        .font(.system(size: 11, weight: conversation.isUnread ? .semibold : .medium))
+                                        .font(.app(.footnote, weight: conversation.isUnread ? .semibold : .medium))
                                         .lineLimit(1)
                                     if mail.isExternalSender(conversation) { MailExternalTag() }
                                 }
                                 .frame(maxWidth: 150, alignment: .leading)
                                 Text(conversation.topic)
-                                    .font(.system(size: 11))
+                                    .font(.app(.footnote))
                                     .lineLimit(1)
                                 Spacer(minLength: 4)
                                 Text(MailPresentation.listTime(conversation.lastDelivery, localization: localization))
-                                    .font(.system(size: 10))
+                                    .font(.app(.caption))
                                     .foregroundStyle(.secondary)
                                     .fixedSize()
                             }

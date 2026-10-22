@@ -61,11 +61,11 @@ private struct GlobalHotkeyFeedbackView: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "calendar.badge.exclamationmark")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.app(.largeTitle, weight: .semibold))
                 .foregroundStyle(.orange)
 
             Text(message)
-                .font(.system(size: 13, weight: .medium))
+                .font(.app(.headline, weight: .medium))
                 .foregroundStyle(Color(nsColor: .labelColor))
                 .lineLimit(2)
 

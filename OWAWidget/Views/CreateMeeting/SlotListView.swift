@@ -31,7 +31,7 @@ struct SlotListView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         Text(group.header)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.app(.body, weight: .semibold))
                             .foregroundStyle(Color.accentColor)
                         Rectangle()
                             .fill(Color.accentColor.opacity(0.2))
@@ -58,12 +58,12 @@ struct SlotListView: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 14))
+                    .font(.app(.title))
                     .foregroundStyle(isSelected ? Color.accentColor : Color(nsColor: .tertiaryLabelColor))
                     .frame(width: 18)
 
                 Text(timeRange)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .font(.app(.headline, weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(Color(nsColor: .labelColor))
 
                 Spacer()

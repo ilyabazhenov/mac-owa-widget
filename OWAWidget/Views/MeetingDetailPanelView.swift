@@ -68,7 +68,7 @@ struct MeetingDetailPanelView: View {
         HStack(spacing: 10) {
             Button(action: onClose) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.app(.footnote, weight: .semibold))
                     .foregroundStyle(Color(nsColor: .labelColor))
                     .frame(width: 28, height: 28)
                     .background(
@@ -84,7 +84,7 @@ struct MeetingDetailPanelView: View {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
                     Text(event.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.app(.headline, weight: .semibold))
                         .foregroundStyle(Color(nsColor: event.isEffectivelyCancelled ? .secondaryLabelColor : .labelColor))
                         .strikethrough(event.isEffectivelyCancelled)
                         .lineLimit(1)
@@ -96,7 +96,7 @@ struct MeetingDetailPanelView: View {
                 }
 
                 Text("\(localization.shortTime(event.startDate))–\(localization.shortTime(event.endDate))")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.app(.footnote, weight: .medium))
                     .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                     .lineLimit(1)
             }
@@ -108,7 +108,7 @@ struct MeetingDetailPanelView: View {
 
             if event.platform != .generic {
                 Image(systemName: event.platform.systemIcon)
-                    .font(.system(size: 13))
+                    .font(.app(.headline))
                     .foregroundStyle(event.isHappeningNow ? .orange : meetingAccentColor(for: event))
                     .accessibilityLabel(event.platform.displayName(localization: localization))
             }
@@ -252,7 +252,7 @@ struct MeetingDetailContentView: View {
             Image(systemName: systemImage)
                 .frame(width: 16)
         }
-        .font(.system(size: 12))
+        .font(.app(.body))
         .foregroundStyle(.secondary)
     }
 
@@ -365,7 +365,7 @@ private struct MeetingAttendeesView: View {
                 if isExpanded {
                     if !showStatus {
                         Label(localization.tr("meeting.attendees.status.organizerOnly"), systemImage: "info.circle")
-                            .font(.system(size: 11))
+                            .font(.app(.footnote))
                             .foregroundStyle(.tertiary)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.leading, 22)
@@ -391,10 +391,10 @@ private struct MeetingAttendeesView: View {
                 Text("\(count)")
                     .foregroundStyle(.tertiary)
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.app(.micro, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
-            .font(.system(size: 12, weight: .medium))
+            .font(.app(.body, weight: .medium))
             .foregroundStyle(.secondary)
             .contentShape(Rectangle())
         }
@@ -409,7 +409,7 @@ private struct MeetingAttendeesView: View {
         if !attendees.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 Text(localization.tr(titleKey))
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.app(.caption, weight: .semibold))
                     .foregroundStyle(.tertiary)
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 4) {
                     ForEach(attendees) { attendee in
@@ -438,7 +438,7 @@ private struct MeetingAttendeesView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .font(.system(size: 12))
+        .font(.app(.body))
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .help(attendee.name)
@@ -459,7 +459,7 @@ private struct MeetingAttendeesView: View {
                 .frame(width: 16)
             content()
         }
-        .font(.system(size: 12))
+        .font(.app(.body))
         .foregroundStyle(.secondary)
     }
 
@@ -520,10 +520,10 @@ private struct MeetingDetailActionsView: View {
                             // See NextMeetingBannerView: font/colour pinned per child rather
                             // than inherited from the HStack.
                             Image(systemName: "arrow.right.circle.fill")
-                                .font(.system(size: 12))
+                                .font(.app(.body))
                                 .foregroundStyle(.white)
                             Text(localization.tr("meeting.join"))
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.app(.body, weight: .semibold))
                                 .foregroundStyle(.white)
                         }
                         .padding(.horizontal, 12)
@@ -544,7 +544,7 @@ private struct MeetingDetailActionsView: View {
                             Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
                             Text(localization.tr("meeting.copy.link"))
                         }
-                        .font(.system(size: 12))
+                        .font(.app(.body))
                         .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
@@ -600,13 +600,13 @@ private struct RSVPActionsView: View {
                 EmptyView()
             case .success:
                 Label(localization.tr("meeting.rsvp.response.sent"), systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.green)
                     .accessibilityLabel(localization.tr("meeting.rsvp.response.sent"))
                     .transition(.opacity.combined(with: .move(edge: .top)))
             case .failure(let message):
                 Label(message, systemImage: "exclamationmark.circle.fill")
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.red)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -633,11 +633,11 @@ private struct RSVPActionsView: View {
                         .frame(width: 10, height: 10)
                 } else {
                     Image(systemName: option.icon)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.app(.caption, weight: .semibold))
                         .foregroundStyle(option.color)
                 }
                 Text(localization.tr(option.labelKey))
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 5)

@@ -36,7 +36,7 @@ struct AboutView: View {
             Divider().frame(width: 200)
 
             Text(localization.tr("about.description"))
-                .font(.system(size: 12))
+                .font(.app(.body))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 280)
@@ -58,7 +58,7 @@ struct AboutView: View {
                         isGitHubHovered = hovering
                     }
             }
-            .font(.system(size: 11))
+            .font(.app(.footnote))
             .foregroundStyle(.secondary)
             .padding(.top, 4)
         }

@@ -20,7 +20,7 @@ struct AttendeeSearchField: View {
         HStack(spacing: 8) {
             ZStack {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13))
+                    .font(.app(.headline))
                     .foregroundStyle(.tertiary)
                     .opacity(vm.isSearching(for: kind) ? 0 : 1)
                 if vm.isSearching(for: kind) {
@@ -33,7 +33,7 @@ struct AttendeeSearchField: View {
 
             TextField(placeholder, text: query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.app(.headline))
                 .focused($isFocused)
                 .onSubmit { vm.selectFirstResult(kind: kind) }
                 .onExitCommand { vm.clearSearch(kind: kind) }
@@ -50,7 +50,7 @@ struct AttendeeSearchField: View {
                     vm.clearSearch(kind: kind)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
+                        .font(.app(.headline))
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)

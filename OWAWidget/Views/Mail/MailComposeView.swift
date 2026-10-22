@@ -417,7 +417,7 @@ struct MailComposeView: View {
                 TextField("", text: $model.subject).textFieldStyle(.plain).focused($focusedField, equals: .subject)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .font(.system(size: 13))
+            .font(.app(.headline))
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
             Divider()
@@ -458,14 +458,14 @@ struct MailComposeView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
                             Text(localization.tr("mail.compose.quoted", original.from?.displayName ?? "", MailPresentation.fullTime(original.received, localization: localization)))
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.app(.footnote, weight: .medium))
                                 .lineLimit(1)
                             if model.request.originalDocument != nil {
                                 Button {
                                     showsOriginal.toggle()
                                 } label: {
                                     Image(systemName: showsOriginal ? "chevron.down" : "chevron.right")
-                                        .font(.system(size: 10, weight: .semibold))
+                                        .font(.app(.caption, weight: .semibold))
                                         .frame(width: 18, height: 16)
                                         .contentShape(Rectangle())
                                 }
@@ -476,11 +476,11 @@ struct MailComposeView: View {
                         if let document = model.request.originalDocument {
                             if showsOriginal { originalView(document) }
                         } else {
-                            Text(original.preview).font(.system(size: 11)).lineLimit(3)
+                            Text(original.preview).font(.app(.footnote)).lineLimit(3)
                         }
                         if model.request.kind == .forward, !original.visibleAttachments.isEmpty {
                             Label(localization.tr("mail.compose.forwardAttachments", original.visibleAttachments.map(\.name).joined(separator: ", ")), systemImage: "paperclip")
-                                .font(.system(size: 11))
+                                .font(.app(.footnote))
                         }
                     }
                     .foregroundStyle(.secondary)
@@ -488,7 +488,7 @@ struct MailComposeView: View {
                     .overlay(alignment: .leading) { Rectangle().fill(Color.secondary.opacity(0.4)).frame(width: 2) }
                 }
                 Label(localization.tr("mail.compose.noAttachments"), systemImage: "info.circle")
-                    .font(.system(size: 11))
+                    .font(.app(.footnote))
                     .foregroundStyle(.secondary)
             }
             .padding(14)
@@ -543,7 +543,7 @@ struct MailComposeView: View {
                         focusedField = .recipients(field)
                     } label: {
                         Text(localization.tr("mail.compose.moreRecipients", hidden))
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.app(.body, weight: .medium))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
                             .background(Capsule().fill(Color.secondary.opacity(0.14)))
@@ -560,7 +560,7 @@ struct MailComposeView: View {
                     .onChange(of: input.wrappedValue) { _ in model.inputChanged(field) }
             }
         }
-        .font(.system(size: 13))
+        .font(.app(.headline))
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
@@ -577,11 +577,11 @@ struct MailComposeView: View {
         if external { tooltip += " — " + localization.tr("mail.external") }
         return HStack(spacing: 4) {
             Text(model.chipLabel(address))
-                .font(.system(size: 12))
+                .font(.app(.body))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: 260)
-            Button { model.remove(address) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
+            Button { model.remove(address) } label: { Image(systemName: "xmark").font(.app(.micro, weight: .bold)) }
                 .buttonStyle(.mailIconCompact)
                 .foregroundStyle(.secondary)
         }
@@ -616,7 +616,7 @@ struct MailComposeView: View {
                 HStack(spacing: 8) {
                     if model.isSearchingPeople { ProgressView().controlSize(.small) }
                     Text(localization.tr(model.isSearchingPeople ? "mail.compose.searchingPeople" : "mail.compose.noPeople"))
-                        .font(.system(size: 12))
+                        .font(.app(.body))
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 8)
@@ -631,12 +631,12 @@ struct MailComposeView: View {
                     focusedField = .recipients(field)
                 } label: {
                     HStack(spacing: 8) {
-                        Text(person.displayName).font(.system(size: 12, weight: .medium))
+                        Text(person.displayName).font(.app(.body, weight: .medium))
                             .foregroundStyle(highlighted ? Color.white : Color.primary)
-                        Text(person.email).font(.system(size: 11))
+                        Text(person.email).font(.app(.footnote))
                             .foregroundStyle(highlighted ? Color.white.opacity(0.85) : Color.secondary)
                         if let title = person.jobTitle {
-                            Text(title).font(.system(size: 11)).lineLimit(1)
+                            Text(title).font(.app(.footnote)).lineLimit(1)
                                 .foregroundStyle(highlighted ? Color.white.opacity(0.7) : Color.secondary.opacity(0.8))
                         }
                         Spacer(minLength: 0)
@@ -660,7 +660,7 @@ struct MailComposeView: View {
     private func warning(_ text: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-            Text(text).font(.system(size: 12))
+            Text(text).font(.app(.body))
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
@@ -674,17 +674,17 @@ struct MailComposeView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                Text(localization.tr("mail.compose.review.title")).font(.system(size: 12, weight: .semibold))
+                Text(localization.tr("mail.compose.review.title")).font(.app(.body, weight: .semibold))
             }
             if !prepared.addedRecipients.isEmpty {
                 Text(localization.tr("mail.compose.review.added", prepared.addedRecipients.map(reviewName).joined(separator: ", ")))
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !prepared.droppedRecipients.isEmpty {
                 Text(localization.tr("mail.compose.review.dropped", prepared.droppedRecipients.joined(separator: ", ")))
-                    .font(.system(size: 12))
+                    .font(.app(.body))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -712,21 +712,21 @@ struct MailComposeView: View {
             switch model.phase {
             case .countdown(let remaining):
                 Image(systemName: "paperplane").foregroundStyle(Color.accentColor)
-                Text(localization.tr("mail.compose.sendingIn", remaining)).font(.system(size: 13))
+                Text(localization.tr("mail.compose.sendingIn", remaining)).font(.app(.headline))
                 Spacer()
                 Button(localization.tr("mail.compose.undo")) { model.undo() }
                     .keyboardShortcut(.cancelAction)
                     .buttonStyle(.borderedProminent)
             case .sending:
                 ProgressView().controlSize(.small)
-                Text(localization.tr("mail.compose.sending")).font(.system(size: 13))
+                Text(localization.tr("mail.compose.sending")).font(.app(.headline))
                 Spacer()
             case .review(let prepared):
                 reviewFooter(prepared)
             default:
                 Button(localization.tr("mail.compose.saveDraft")) { model.saveDraft() }
                 if case .failed(let message) = model.phase {
-                    Text(message).font(.system(size: 11)).foregroundStyle(.red).lineLimit(2)
+                    Text(message).font(.app(.footnote)).foregroundStyle(.red).lineLimit(2)
                 }
                 Spacer()
                 Button(localization.tr("mail.cancel")) { dismiss() }
