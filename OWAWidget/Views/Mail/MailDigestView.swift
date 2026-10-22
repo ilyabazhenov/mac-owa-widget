@@ -150,7 +150,7 @@ struct MailDigestView: View {
     // MARK: Counts
 
     private func tiles(_ digest: MailDigest, proxy: ScrollViewProxy) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8, alignment: .top)], alignment: .leading, spacing: 8) {
             tile(digest.inboxUnread ?? 0, "mail.digest.tile.inbox") {
                 // The inbox, new mail only: what the number counts.
                 if let inbox = model.folders.first(where: { $0.distinguished == .inbox }) { model.select(folder: inbox) }
@@ -169,13 +169,15 @@ struct MailDigestView: View {
                     .font(.app(.title, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(value > 0 ? .primary : .tertiary)
+                // Two lines kept for every label, so a one-line tile is as tall as its neighbours
+                // and the numbers sit on one line across the row.
                 Text(localization.tr(key))
                     .font(.app(.footnote))
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2, reservesSpace: true)
+                    .multilineTextAlignment(.leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.07)))
