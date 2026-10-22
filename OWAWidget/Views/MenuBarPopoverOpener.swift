@@ -21,6 +21,14 @@ enum MenuBarPopoverOpener {
         DiagnosticLog.event("MenuBarPopoverOpener: status item button not found")
     }
 
+    /// The status item's own button, or `nil` before the item is on screen.
+    static func statusButton() -> NSButton? {
+        for window in NSApp.windows where window.className.contains("NSStatusBarWindow") {
+            if let button = statusButton(in: window.contentView) { return button }
+        }
+        return nil
+    }
+
     private static func statusButton(in view: NSView?) -> NSButton? {
         guard let view else { return nil }
         if let button = view as? NSButton { return button }

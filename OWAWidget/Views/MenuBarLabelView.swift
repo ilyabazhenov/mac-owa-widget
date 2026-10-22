@@ -76,6 +76,7 @@ struct MenuBarLabelView: View {
         }
         .onAppear {
             logAppearance()
+            PopoverPrewarmer.scheduleAfterLaunch()
             KeyboardShortcuts.onKeyUp(for: .createMeeting) {
                 NotificationCenter.default.post(name: .openCreateMeetingShortcut, object: nil)
             }

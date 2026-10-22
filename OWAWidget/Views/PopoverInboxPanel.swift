@@ -167,7 +167,9 @@ final class InboxPanelAttachmentView: NSView {
 
     /// Shows the panel beside a visible popover, hides it otherwise.
     private func sync() {
-        guard isEnabled, let window, self.panel != nil, window.isVisible, window.occlusionState.contains(.visible) else {
+        // The popover is open only to be built (`PopoverPrewarmer`): the panel stays hidden.
+        guard !PopoverPrewarmer.isPrewarming,
+              isEnabled, let window, self.panel != nil, window.isVisible, window.occlusionState.contains(.visible) else {
             hidePanel()
             return
         }
