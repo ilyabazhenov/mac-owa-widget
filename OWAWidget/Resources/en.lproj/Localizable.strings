@@ -870,7 +870,6 @@
 "mail.overview" = "Overview";
 "mail.overview.help" = "Mailbox overview (Esc)";
 "mail.key.overview" = "mailbox overview";
-"mail.digest.today" = "today";
 "mail.digest.inProgress" = "now";
 "mail.digest.inTime" = "in %@";
 "mail.digest.openMail" = "Open the invitation email";

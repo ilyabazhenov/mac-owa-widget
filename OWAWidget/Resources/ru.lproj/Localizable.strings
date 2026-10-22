@@ -870,7 +870,6 @@
 "mail.overview" = "Обзор";
 "mail.overview.help" = "Обзор ящика (Esc)";
 "mail.key.overview" = "обзор ящика";
-"mail.digest.today" = "сегодня";
 "mail.digest.inProgress" = "идёт";
 "mail.digest.inTime" = "через %@";
 "mail.digest.openMail" = "Открыть письмо-приглашение";

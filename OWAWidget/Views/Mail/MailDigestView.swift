@@ -295,7 +295,7 @@ struct MailDigestView: View {
                                 .font(.app(.body))
                                 .foregroundStyle(conversation.isFlagged ? Color.orange : Color.red)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(conversation.topic.isEmpty ? localization.tr("mail.noSubject") : conversation.topic)
+                                Text(conversation.topic.isEmpty ? localization.tr("mail.noSubject") : conversation.topic.trimmingCharacters(in: .whitespacesAndNewlines))
                                     .font(.app(.body))
                                     .lineLimit(1)
                                 Text([conversation.primarySender, MailPresentation.listTime(conversation.lastDelivery, localization: localization)]
@@ -357,11 +357,14 @@ struct MailDigestView: View {
 
     // MARK: Rows
 
-    /// The day on the left says when at a glance; today's is orange and shows the time.
+    /// The day on the left says when at a glance: the weekday on top, the date below — or, for
+    /// today's meeting, the time, in orange. The weekday rather than "today" on top, so every
+    /// badge reads the same way; "today" did not fit the badge, and the colour and the
+    /// "in 14 h" badge already say it.
     private func dayBadge(_ event: CalendarEvent) -> some View {
         let isToday = AppTimeZone.calendar.isDateInToday(event.startDate)
         return VStack(spacing: 0) {
-            Text(isToday ? localization.tr("mail.digest.today") : localization.formatDate(event.startDate, format: "EE"))
+            Text(localization.formatDate(event.startDate, format: "EE"))
                 .font(.app(.micro, weight: .medium))
                 .textCase(.uppercase)
             Text(isToday ? localization.shortTime(event.startDate) : localization.formatDate(event.startDate, format: "d"))
@@ -383,7 +386,10 @@ struct MailDigestView: View {
             dayBadge(event)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
-                    Text(event.title).font(.app(.body, weight: .semibold)).lineLimit(1)
+                    // Titles come as typed by the organizer, leading spaces included.
+                    Text(event.title.trimmingCharacters(in: .whitespacesAndNewlines))
+                        .font(.app(.body, weight: .semibold))
+                        .lineLimit(1)
                     if let soon = MailDigest.soon(event, now: Date()) { soonBadge(soon) }
                 }
                 Text([event.organizer, AppTimeZone.calendar.isDateInToday(event.startDate) ? time : "\(day), \(time)"]
