@@ -18,13 +18,14 @@ final class ClosureMenuItem: NSMenuItem {
 }
 
 struct MenuBarRightClickHandler: NSViewRepresentable {
-    let menu: NSMenu
+    /// Called on each right click, so the menu reflects the state at that moment.
+    let makeMenu: @MainActor () -> NSMenu
 
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> NSView { NSView() }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.menu = menu
+        context.coordinator.makeMenu = makeMenu
         context.coordinator.startIfNeeded()
     }
 
@@ -33,7 +34,7 @@ struct MenuBarRightClickHandler: NSViewRepresentable {
     }
 
     final class Coordinator {
-        var menu: NSMenu?
+        var makeMenu: (@MainActor () -> NSMenu)?
         private var monitor: Any?
 
         func startIfNeeded() {
@@ -51,8 +52,13 @@ struct MenuBarRightClickHandler: NSViewRepresentable {
         }
 
         private func showMenu(for event: NSEvent) {
-            guard let menu, let view = event.window?.contentView else { return }
-            NSMenu.popUpContextMenu(menu, with: event, for: view)
+            guard let makeMenu, let contentView = event.window?.contentView else { return }
+            // Local event monitors run on the main thread, where the event and view live too.
+            nonisolated(unsafe) let mainEvent = event
+            nonisolated(unsafe) let mainView = contentView
+            MainActor.assumeIsolated {
+                NSMenu.popUpContextMenu(makeMenu(), with: mainEvent, for: mainView)
+            }
         }
     }
 }

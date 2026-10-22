@@ -7,25 +7,38 @@ struct MenuBarLabelView: View {
     @EnvironmentObject private var localization: LocalizationService
     @Environment(\.openWindow) private var openWindow
     @State private var pulseOpacity: Double = 1.0
-    @State private var now: Date = .init()
+    /// What the label showed when the clock last looked. The clock ticks every second, but every
+    /// formatter here counts whole minutes: redrawing the status item each second re-rendered the
+    /// same picture (a main-thread turn of ~17 ms, every second, all day). The tick now compares
+    /// and redraws only when something visible changed.
+    @State private var shown: Presentation?
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
+    /// Everything the label puts on screen; two equal values draw the same status item.
+    struct Presentation: Equatable {
+        let icon: String
+        let label: String?
+        let pulse: Bool
+        let help: String
+    }
+
     var body: some View {
         let _ = PerfProbe.body("MenuBarLabelView")
-        // Compute the smart-mode presentation once per render; icon/label/pulse/tooltip all derive
-        // from it, so recomputing per accessor would run the formatter several times each tick.
-        let smart = self.smart
-        let pendingInvitations = service.menuBarInvitationCount
-        let unreadMail = mail.menuBarUnreadCount
+        // Always the current time, never a stored one: the body also runs when the calendar or
+        // mail changes, and a time kept from the last visible change could be minutes old.
+        let visible = presentation(at: Date())
+        // Read so that the tick's write redraws the label: SwiftUI skips a body that does not
+        // depend on the state that changed.
+        let _ = shown
 
         HStack(spacing: 4) {
-            Image(systemName: iconName(smart))
+            Image(systemName: visible.icon)
                 .imageScale(.medium)
 
             // The invitation count rides inside the one Text: a status item renders a single image
             // and a single text, and silently drops any further view put in the label.
-            if let label = Self.composedLabel(label(for: smart), pendingInvitations: pendingInvitations, unreadMail: unreadMail) {
+            if let label = visible.label {
                 Text(label)
                     .font(.app(.body, weight: .medium))
                     .monospacedDigit()
@@ -33,9 +46,13 @@ struct MenuBarLabelView: View {
             }
         }
         .opacity(pulseOpacity)
-        .background(MenuBarRightClickHandler(menu: buildContextMenu()))
-        .onReceive(ticker) { now = $0 }
-        .onChange(of: shouldPulse(smart)) { happening in
+        // Built when the menu opens, not on every redraw of the label.
+        .background(MenuBarRightClickHandler(makeMenu: buildContextMenu))
+        .onReceive(ticker) { date in
+            let current = presentation(at: date)
+            if current != shown { shown = current }
+        }
+        .onChange(of: visible.pulse) { happening in
             if happening {
                 withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
                     pulseOpacity = 0.3
@@ -44,7 +61,7 @@ struct MenuBarLabelView: View {
                 withAnimation { pulseOpacity = 1.0 }
             }
         }
-        .help(helpText(for: smart, pendingInvitations: pendingInvitations, unreadMail: unreadMail))
+        .help(visible.help)
         // Compose and "show this conversation" can be asked for from anywhere (the popover, an MCP
         // panel); the label is always on screen, so it is the one place that opens the windows.
         .onChange(of: mail.composeRequest?.id) { id in
@@ -144,8 +161,22 @@ struct MenuBarLabelView: View {
         )
     }
 
+    /// The label as it should look at `now`. The smart-mode presentation is computed once and
+    /// icon, label, pulse and tooltip all derive from it.
+    private func presentation(at now: Date) -> Presentation {
+        let smart = smart(at: now)
+        let pendingInvitations = service.menuBarInvitationCount
+        let unreadMail = mail.menuBarUnreadCount
+        return Presentation(
+            icon: iconName(smart, now: now),
+            label: Self.composedLabel(label(for: smart, now: now), pendingInvitations: pendingInvitations, unreadMail: unreadMail),
+            pulse: shouldPulse(smart, now: now),
+            help: helpText(for: smart, pendingInvitations: pendingInvitations, unreadMail: unreadMail)
+        )
+    }
+
     /// Smart-mode presentation, or `nil` when another display mode is active.
-    private var smart: MenuBarSmartStatusFormatter.Presentation? {
+    private func smart(at now: Date) -> MenuBarSmartStatusFormatter.Presentation? {
         guard service.menuBarDisplayMode == .smart else { return nil }
         return MenuBarSmartStatusFormatter.presentation(
             events: service.events,
@@ -154,20 +185,20 @@ struct MenuBarLabelView: View {
         )
     }
 
-    private func iconName(_ smart: MenuBarSmartStatusFormatter.Presentation?) -> String {
+    private func iconName(_ smart: MenuBarSmartStatusFormatter.Presentation?, now: Date) -> String {
         // An actionable sync problem takes precedence over the "meeting in progress" icon:
         // if sync is broken the calendar data may be stale, so surfacing it matters more.
         if hasSyncProblem { return "calendar.badge.exclamationmark" }
         if let smart { return smart.category == .engaged ? "calendar.badge.clock" : "calendar" }
-        return isHappeningNow ? "calendar.badge.clock" : "calendar"
+        return isHappeningNow(at: now) ? "calendar.badge.clock" : "calendar"
     }
 
     /// Drives the pulse animation: in smart mode the formatter decides "act now / live"
     /// (imminent or in a meeting); otherwise fall back to the legacy "happening now" rule.
-    private func shouldPulse(_ smart: MenuBarSmartStatusFormatter.Presentation?) -> Bool {
+    private func shouldPulse(_ smart: MenuBarSmartStatusFormatter.Presentation?, now: Date) -> Bool {
         if hasSyncProblem { return false }
         if let smart { return smart.pulse }
-        return isHappeningNow
+        return isHappeningNow(at: now)
     }
 
     /// True for sync states that need the user to act (re-enter password, re-trust the server,
@@ -183,11 +214,11 @@ struct MenuBarLabelView: View {
         return status.blocksSync || status.isError
     }
 
-    private var isHappeningNow: Bool {
+    private func isHappeningNow(at now: Date) -> Bool {
         service.events.contains { $0.startDate <= now && $0.endDate > now }
     }
 
-    private func label(for smart: MenuBarSmartStatusFormatter.Presentation?) -> String? {
+    private func label(for smart: MenuBarSmartStatusFormatter.Presentation?, now: Date) -> String? {
         if let smart {
             switch smart.content {
             case .iconOnly: return nil
