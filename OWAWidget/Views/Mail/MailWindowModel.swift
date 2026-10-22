@@ -464,8 +464,13 @@ final class MailWindowModel: ObservableObject {
         if expandedFolderIDs.contains(folder.id) { expandedFolderIDs.remove(folder.id) } else { expandedFolderIDs.insert(folder.id) }
     }
 
+    /// Something is open or picked, so the reader is not showing the mailbox overview.
+    var isShowingConversation: Bool {
+        thread != nil || isLoadingThread || threadError != nil || !selectedIDs.isEmpty
+    }
+
     /// Nothing open, nothing picked: after a folder or a search changes, the reader must not keep
-    /// showing a conversation from somewhere else.
+    /// showing a conversation from somewhere else. Also the way back to the overview.
     func clearSelection() {
         markReadTask?.cancel()
         selectedConversationID = nil

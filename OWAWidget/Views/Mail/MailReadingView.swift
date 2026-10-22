@@ -810,6 +810,15 @@ struct MailWindowView: View {
                 ))
                 .toolbar {
                     ToolbarItemGroup(placement: .primaryAction) {
+                        // The way back to the overview once a message is open (Esc does it too).
+                        // With its title: the overview is a place to go back to, and an icon
+                        // alone did not say so.
+                        Button { model.clearSelection() } label: {
+                            Label(localization.tr("mail.overview"), systemImage: "square.grid.2x2")
+                                .labelStyle(.titleAndIcon)
+                        }
+                        .help(localization.tr("mail.overview.help"))
+                        .disabled(!model.isShowingConversation)
                         MailUnreadFilterToggle(model: model)
                         MailListOptionsMenu(model: model, service: service)
                         Button {
@@ -898,8 +907,15 @@ struct MailWindowView: View {
             Task { await model.delete(targets) }
             return true
         case 53: // Esc
-            guard model.isSearching || model.selectedIDs.count > 1 else { return false }
-            if model.isSearching { model.clearSearch(); Task { await model.reloadList() } } else { model.clearSelection() }
+            // One layer at a time: the search first, then whatever is open or picked — which
+            // brings back the mailbox overview.
+            if model.isSearching {
+                model.clearSearch()
+                Task { await model.reloadList() }
+                return true
+            }
+            guard model.isShowingConversation else { return false }
+            model.clearSelection()
             return true
         default:
             break

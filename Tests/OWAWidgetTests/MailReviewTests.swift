@@ -279,6 +279,21 @@ final class MailReviewTests: XCTestCase {
         XCTAssertNil(model.selectedConversationID)
     }
 
+    /// The overview shows when nothing is open; clearing the selection (the toolbar's Overview
+    /// button, Esc) brings it back after a conversation was open.
+    func testClearingTheSelectionReturnsToTheOverview() async {
+        await provider.setConversations([conversation("B", from: "Дмитрий Орлов")])
+        await provider.setThread(MailThread(id: "B", messages: [MailFixtures.message("M1", conversation: "B", isRead: true)], totalMessageCount: 1))
+        let model = MailWindowModel(service: makeService())
+        await model.start()
+        XCTAssertFalse(model.isShowingConversation)
+        await model.openConversation("B")
+        XCTAssertTrue(model.isShowingConversation)
+        model.clearSelection()
+        XCTAssertFalse(model.isShowingConversation)
+        XCTAssertNil(model.thread)
+    }
+
     func testCommandClickPicksSeveral() async {
         await provider.setConversations([conversation("A", from: "Ольга Васильева"), conversation("B", from: "Дмитрий Орлов"), conversation("C", from: "Сергей Морозов")])
         let service = makeService()

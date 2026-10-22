@@ -868,3 +868,6 @@
 "mail.key.delete" = "delete";
 "mail.key.multiSelect" = "click to select several";
 "mail.key.window" = "mail window";
+"mail.overview" = "Overview";
+"mail.overview.help" = "Mailbox overview (Esc)";
+"mail.key.overview" = "mailbox overview";

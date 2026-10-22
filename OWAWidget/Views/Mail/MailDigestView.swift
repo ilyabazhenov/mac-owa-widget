@@ -388,7 +388,8 @@ struct MailDigestView: View {
         (["↑", "↓"], "mail.key.navigate"), (["R"], "mail.key.reply"),
         (["⇧R"], "mail.key.replyAll"), (["F"], "mail.key.forward"),
         (["U"], "mail.key.read"), (["⌫"], "mail.key.delete"),
-        (["⌘"], "mail.key.multiSelect"), (["⌃⌥M"], "mail.key.window"),
+        (["⌘"], "mail.key.multiSelect"), (["Esc"], "mail.key.overview"),
+        (["⌃⌥M"], "mail.key.window"),
     ]
 
     private var keys: some View {

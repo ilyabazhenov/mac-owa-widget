@@ -868,3 +868,6 @@
 "mail.key.delete" = "удалить";
 "mail.key.multiSelect" = "клик — выбрать несколько";
 "mail.key.window" = "окно почты";
+"mail.overview" = "Обзор";
+"mail.overview.help" = "Обзор ящика (Esc)";
+"mail.key.overview" = "обзор ящика";
