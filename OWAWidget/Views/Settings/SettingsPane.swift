@@ -64,10 +64,12 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .general:
             [
                 "preferences.startup.section", "preferences.startup.launchAtLogin",
+                "preferences.startup.requiresApproval", "preferences.startup.openSettings",
                 "settings.group.languageTheme", "language.picker.title", "appearance.picker.title",
                 "preferences.timezone.section", "preferences.timezone.picker", "preferences.timezone.hint",
                 "preferences.shortcuts.section", "preferences.shortcuts.joinMeeting",
                 "preferences.shortcuts.createMeeting", "preferences.shortcuts.openMail",
+                "preferences.shortcuts.always.hint",
                 "preferences.updates.section", "preferences.updates.toggle", "preferences.updates.hint",
                 "preferences.updates.checkNow",
             ]
@@ -97,10 +99,12 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .mail:
             [
                 "mail.settings.enabled", "mail.settings.enabled.hint", "mail.settings.account",
-                "mail.settings.section.popover", "mail.settings.popoverSection",
+                "mail.settings.noAccount",
+                "mail.settings.section.popover", "mail.settings.popoverSection", "mail.settings.popoverSection.hint",
                 "mail.settings.menuBarBadge", "mail.settings.peopleOnly", "mail.settings.peopleOnly.hint",
-                "mail.settings.notify", "mail.settings.poll", "mail.settings.section.reading",
+                "mail.settings.notify", "mail.settings.poll", "mail.settings.poll.hint", "mail.settings.section.reading",
                 "mail.list.bundle", "mail.list.groupByConversation", "mail.settings.swipeActions",
+                "mail.settings.swipeActions.hint",
                 "mail.settings.markRead", "mail.settings.privacy",
             ]
         case .colleagues:
@@ -110,13 +114,16 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             ]
         case .mcp:
             [
-                "mcp.enabled", "mcp.description", "mcp.status", "mcp.createMeetings", "mcp.cancelMeetings",
-                "mcp.mail.section", "mcp.mail.read", "mcp.mail.send", "mcp.connect.section",
+                "mcp.access.section", "mcp.enabled", "mcp.description", "mcp.privacy.warning", "mcp.status",
+                "mcp.createMeetings", "mcp.createMeetings.description",
+                "mcp.cancelMeetings", "mcp.cancelMeetings.description",
+                "mcp.mail.section", "mcp.mail.needsMail", "mcp.mail.read", "mcp.mail.read.description",
+                "mcp.mail.send", "mcp.mail.send.description", "mcp.mail.warning", "mcp.connect.section",
                 "mcp.clients.section", "mcp.clients.ask", "mcp.journal.section",
             ]
         case .about:
             [
-                "about.description", "about.github", "menu.copy.diagnostics",
+                "app.name", "about.description", "about.github", "menu.copy.diagnostics",
             ]
         }
     }

@@ -849,3 +849,4 @@
 "preferences.reminders.group.banner" = "Banner";
 "mcp.access.section" = "Access";
 "mcp.mail.needsMail" = "Turn on mail in the Mail section first.";
+"popover.size.menu" = "Popover size";

@@ -1,3 +1,4 @@
+import KeyboardShortcuts
 import SwiftUI
 
 // The sections of the Settings window (see `SettingsPane`). Each is a grouped form bound to the
@@ -19,6 +20,12 @@ struct GeneralSettingsPane: View {
     @EnvironmentObject private var localization: LocalizationService
     @EnvironmentObject private var updateCheck: UpdateCheckService
     @EnvironmentObject private var appearance: AppearanceService
+
+    /// The combination as stored, not as shipped: a binding kept from an older build, when the
+    /// recorder was still in Settings, is the one that works.
+    static func shortcutText(_ name: KeyboardShortcuts.Name) -> String {
+        KeyboardShortcuts.getShortcut(for: name)?.description ?? "—"
+    }
 
     private func timeZoneLabel(_ option: DisplayTimeZoneOption) -> String {
         "\(localization.tr(option.localizationKey)) · \(option.utcOffsetLabel)"
@@ -84,14 +91,14 @@ struct GeneralSettingsPane: View {
                     HStack {
                         Text(localization.tr("preferences.shortcuts.joinMeeting"))
                         Spacer()
-                        Text("⌃⌥J").foregroundStyle(.secondary).monospaced()
+                        Text(Self.shortcutText(.joinMeeting)).foregroundStyle(.secondary).monospaced()
                     }
                 }
                 LabeledContent(localization.tr("preferences.shortcuts.createMeeting")) {
-                    Text("⌃⌥N").monospaced()
+                    Text(Self.shortcutText(.createMeeting)).monospaced()
                 }
                 LabeledContent(localization.tr("preferences.shortcuts.openMail")) {
-                    Text("⌃⌥M").monospaced()
+                    Text(Self.shortcutText(.openMail)).monospaced()
                 }
                 Text(localization.tr("preferences.shortcuts.always.hint"))
                     .font(.app(.footnote))
@@ -270,7 +277,8 @@ struct InvitationsSettingsPane: View {
 
     var body: some View {
         Form {
-            Section(localization.tr("settings.pane.invitations")) {
+            // No header: the window title already says "Invitations".
+            Section {
                 SettingsToggle(
                     title: localization.tr("preferences.invitations.enabled"),
                     info: localization.tr("preferences.invitations.hint"),
@@ -317,7 +325,8 @@ struct ColleaguesSettingsPane: View {
 
     var body: some View {
         Form {
-            Section(localization.tr("preferences.colleagues.section")) {
+            // No header: the window title already says "Colleagues".
+            Section {
                 SettingsToggle(
                     title: localization.tr("preferences.colleagues.enabled"),
                     info: localization.tr("preferences.colleagues.hint"),

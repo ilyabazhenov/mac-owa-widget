@@ -148,7 +148,8 @@ struct MailSettingsSections: View {
 
     var body: some View {
         Group {
-            Section(localization.tr("settings.tab.mail")) {
+            // No header: the window title already says "Mail".
+            Section {
                 SettingsToggle(
                     title: localization.tr("mail.settings.enabled"),
                     info: localization.tr("mail.settings.enabled.hint"),
@@ -175,34 +176,40 @@ struct MailSettingsSections: View {
                 SettingsToggle(
                     title: localization.tr("mail.settings.popoverSection"),
                     info: localization.tr("mail.settings.popoverSection.hint", "⌃⌥M"),
-                    isOn: binding(\.popoverSectionEnabled)
+                    isOn: binding(\.popoverSectionEnabled),
+                    isEnabled: !(!mail.settings.enabled)
                 )
-                .disabled(!mail.settings.enabled)
                 Toggle(localization.tr("mail.settings.menuBarBadge"), isOn: binding(\.menuBarBadgeEnabled))
                     .disabled(!mail.settings.enabled)
                 SettingsToggle(
                     title: localization.tr("mail.settings.peopleOnly"),
                     info: localization.tr("mail.settings.peopleOnly.hint"),
-                    isOn: binding(\.peopleOnly)
+                    isOn: binding(\.peopleOnly),
+                    isEnabled: !(!mail.settings.enabled)
                 )
-                .disabled(!mail.settings.enabled)
                 Picker(localization.tr("mail.settings.notify"), selection: binding(\.notifyMode)) {
                     ForEach(MailNotifyMode.allCases) { mode in
                         Text(localization.tr(mode.localizationKey)).tag(mode)
                     }
                 }
                 .disabled(!mail.settings.enabled)
-                Picker(selection: binding(\.pollMinutes)) {
-                    ForEach(MailSettings.pollOptions, id: \.self) { minutes in
-                        Text(localization.tr("mail.settings.poll.minutes", minutes)).tag(minutes)
+                // The picker is disabled on its own, so the "?" stays readable with mail off.
+                LabeledContent {
+                    Picker(localization.tr("mail.settings.poll"), selection: binding(\.pollMinutes)) {
+                        ForEach(MailSettings.pollOptions, id: \.self) { minutes in
+                            Text(localization.tr("mail.settings.poll.minutes", minutes)).tag(minutes)
+                        }
                     }
+                    .labelsHidden()
+                    .fixedSize()
+                    .disabled(!mail.settings.enabled)
                 } label: {
-                    HStack(spacing: 6) {
-                        Text(localization.tr("mail.settings.poll"))
-                        SettingsInfoButton(text: localization.tr("mail.settings.poll.hint"))
-                    }
+                    SettingsInfoLabel(
+                        title: localization.tr("mail.settings.poll"),
+                        info: localization.tr("mail.settings.poll.hint"),
+                        isEnabled: mail.settings.enabled
+                    )
                 }
-                .disabled(!mail.settings.enabled)
             }
 
             Section(localization.tr("mail.settings.section.reading")) {
@@ -213,9 +220,9 @@ struct MailSettingsSections: View {
                 SettingsToggle(
                     title: localization.tr("mail.settings.swipeActions"),
                     info: localization.tr("mail.settings.swipeActions.hint"),
-                    isOn: binding(\.swipeActionsEnabled)
+                    isOn: binding(\.swipeActionsEnabled),
+                    isEnabled: !(!mail.settings.enabled)
                 )
-                .disabled(!mail.settings.enabled)
                 Picker(localization.tr("mail.settings.markRead"), selection: binding(\.markReadPolicy)) {
                     ForEach(MailMarkReadPolicy.allCases) { policy in
                         Text(localization.tr(policy.localizationKey)).tag(policy)

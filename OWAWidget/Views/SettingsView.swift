@@ -26,15 +26,17 @@ struct SettingsView: View {
     var body: some View {
         // A sidebar rather than tabs: nine sections fit, and there is room for search. The tab bar
         // it replaced folded into a ">>" menu at the fifth tab.
+        // Searched once per pass: the list and the empty note read the same result.
+        let visible = visiblePanes
         NavigationSplitView {
-            List(visiblePanes, selection: selection) { pane in
+            List(visible, selection: selection) { pane in
                 Label(localization.tr(pane.titleKey), systemImage: pane.systemImage)
                     .tag(pane)
             }
             // Wide enough for the longest title ("Menu bar and popover") without truncation.
             .navigationSplitViewColumnWidth(min: 220, ideal: 220, max: 260)
             .overlay {
-                if visiblePanes.isEmpty {
+                if visible.isEmpty {
                     Text(localization.tr("settings.search.empty"))
                         .font(.app(.footnote))
                         .foregroundStyle(.secondary)
@@ -55,6 +57,8 @@ struct SettingsView: View {
         // Room for the account sheet (580 pt) inside the window.
         .frame(minWidth: 680, minHeight: 600)
         .onAppear { DiagnosticLog.event("SettingsView sidebar appeared pane=\(storedPane)") }
+        // Which section was on screen is what a support report needs when Settings misbehaves.
+        .onChange(of: storedPane) { pane in DiagnosticLog.event("SettingsView pane=\(pane)") }
         .sheet(item: $vm.editingAccount) { _ in
             accountSheet
         }

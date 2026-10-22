@@ -315,7 +315,7 @@ struct PopoverView: View {
     /// Quick popover-size switcher, writing straight through to the shared service.
     private var popoverSizeMenu: some View {
         Menu {
-            Picker(localization.tr("preferences.popover.size"), selection: popoverSizeSelection) {
+            Picker(localization.tr("popover.size.menu"), selection: popoverSizeSelection) {
                 ForEach(PopoverSize.Preset.allCases) { preset in
                     Text(localization.tr(preset.localizationKey)).tag(preset)
                 }
@@ -328,8 +328,8 @@ struct PopoverView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help(localization.tr("preferences.popover.size"))
-        .accessibilityLabel(localization.tr("preferences.popover.size"))
+        .help(localization.tr("popover.size.menu"))
+        .accessibilityLabel(localization.tr("popover.size.menu"))
     }
 
     private var popoverSizeSelection: Binding<PopoverSize.Preset> {

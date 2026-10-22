@@ -33,16 +33,16 @@ struct MCPSettingsView: View {
                 SettingsToggle(
                     title: localization.tr("mcp.createMeetings"),
                     info: localization.tr("mcp.createMeetings.description"),
-                    isOn: $server.canCreateMeetings
+                    isOn: $server.canCreateMeetings,
+                    isEnabled: !(!server.isEnabled)
                 )
-                .disabled(!server.isEnabled)
                 .padding(.leading, 16)
                 SettingsToggle(
                     title: localization.tr("mcp.cancelMeetings"),
                     info: localization.tr("mcp.cancelMeetings.description"),
-                    isOn: $server.canCancelMeetings
+                    isOn: $server.canCancelMeetings,
+                    isEnabled: !(!server.isEnabled)
                 )
-                .disabled(!server.isEnabled)
                 .padding(.leading, 16)
             }
 
@@ -56,15 +56,15 @@ struct MCPSettingsView: View {
                 SettingsToggle(
                     title: localization.tr("mcp.mail.read"),
                     info: localization.tr("mcp.mail.read.description"),
-                    isOn: $server.canReadMail
+                    isOn: $server.canReadMail,
+                    isEnabled: !(!server.isEnabled)
                 )
-                .disabled(!server.isEnabled)
                 SettingsToggle(
                     title: localization.tr("mcp.mail.send"),
                     info: localization.tr("mcp.mail.send.description"),
-                    isOn: $server.canSendMail
+                    isOn: $server.canSendMail,
+                    isEnabled: !(!server.isEnabled || !server.canReadMail)
                 )
-                .disabled(!server.isEnabled || !server.canReadMail)
                 .padding(.leading, 16)
                 if server.canReadMail {
                     Label {
