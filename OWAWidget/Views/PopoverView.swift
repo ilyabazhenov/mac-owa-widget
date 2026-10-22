@@ -603,6 +603,8 @@ struct PopoverView: View {
     private func openCreateMeeting() {
         NSApp.activate(ignoringOtherApps: true)
         openWindow(id: "create-meeting")
+        // The popover floats above ordinary windows: left open, it covers the window just opened.
+        PostJoinDismissController.shared.dismissPopover()
     }
 
     private func openMailCompose() {
@@ -631,6 +633,8 @@ struct PopoverView: View {
     private func openSettings() {
         NSApp.activate(ignoringOtherApps: true)
         openWindow(id: "settings")
+        // The popover floats above ordinary windows: left open, it covers Settings.
+        PostJoinDismissController.shared.dismissPopover()
     }
 
     private func quitApp() {
