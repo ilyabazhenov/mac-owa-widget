@@ -107,8 +107,8 @@ enum PerfProbe {
                     sendMouse(command)
                 case let command where command.hasPrefix("key:"):
                     sendKey(command)
-                case "authblock":
-                    NotificationCenter.default.post(name: harnessForceAuthBlock, object: nil)
+                case "authblock", "clearevents":
+                    NotificationCenter.default.post(name: harnessForceAuthBlock, object: action)
                 case "frontmost":
                     DiagnosticLog.event("Harness frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil")")
                 case "next", "prev":
@@ -119,7 +119,8 @@ enum PerfProbe {
         }
     }
 
-    /// Posted in the app for `authblock`; a debug build latches the auth breaker (see PopoverView).
+    /// Posted in the app for `authblock` (a debug build latches the auth breaker) and `clearevents`
+    /// (drops the events held in memory until the next sync, for the empty error state); see PopoverView.
     static let harnessForceAuthBlock = Notification.Name("com.owawidget.perf.authBlock")
 
     /// `click:x,y` / `rclick:x,y` / `rdown:x,y` (press only, leaves a menu open): a mouse click at a

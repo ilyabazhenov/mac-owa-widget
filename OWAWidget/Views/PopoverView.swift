@@ -187,8 +187,12 @@ struct PopoverView: View {
         }
         #endif
         #if DEBUG
-        .onReceive(NotificationCenter.default.publisher(for: PerfProbe.harnessForceAuthBlock)) { _ in
-            service.debugForceAuthBlock()
+        .onReceive(NotificationCenter.default.publisher(for: PerfProbe.harnessForceAuthBlock)) { note in
+            if note.object as? String == "clearevents" {
+                service.replaceEventsForTests([])
+            } else {
+                service.debugForceAuthBlock()
+            }
         }
         #endif
         .onDisappear {
