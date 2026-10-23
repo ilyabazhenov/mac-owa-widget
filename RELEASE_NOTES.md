@@ -1,3 +1,39 @@
+## v1.0.61 - 2026-10-23
+
+### RU
+
+#### Что изменилось
+
+- **«Обзор» в окне почты.** Когда письмо не открыто, вместо пустой читалки — сводка дня: нагрузка (сколько встреч, сколько времени в них, свободные окна) с полосой рабочего дня, ближайшая встреча с кнопкой «Подключиться», счётчики писем, приглашения с ответом ✓ ? ✕ (с подтверждением), важное и с флажком, свободные коллеги и папки с непрочитанным. Всё из уже загруженных данных, без лишних запросов. Вернуться к обзору — кнопка «Обзор» в тулбаре или Esc.
+- **Новое окно настроек.** Вместо вкладок — боковая панель с разделами и поиском: «уведомления» находит Напоминания, Приглашения и Почту. Длинные пояснения спрятаны под «?», настройки применяются сразу, без кнопки «Сохранить». Ни одна настройка не потерялась.
+- **Приложение стало легче.** В простое оно нагружает процессор примерно в 7 раз меньше, а первое открытие поповера после запуска так же быстрое, как следующие.
+- **Поповер аккуратнее.** Единая шкала шрифтов, понятные пустые состояния («Встреч нет», «Загружаем встречи…», приветствие при первом запуске), кнопка «Открыть настройки» при ошибке синхронизации. Кнопки выхода в шапке больше нет — её легко было нажать случайно: выход в меню шестерёнки и по ⌘Q. Настройки и новая встреча открываются поверх поповера, а не под ним.
+- **Почта:** фильтр «Только новые» — кнопкой в тулбаре; группировка писем по беседам и «Отметить всё прочитанным».
+- **AI-ассистент может отменить встречу** (MCP `cancel_meeting`): свою — отменить для всех, приглашение — отклонить или удалить. Каждое действие подтверждается в окне приложения; включается отдельной настройкой в разделе AI (MCP).
+
+#### Установка
+
+1. Скачайте `.zip`, распакуйте и перенесите `OWAWidget.app` в `/Applications`.
+2. Запустите приложение — дополнительных шагов не нужно.
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- **Overview in the mail window.** With no message open, the reader shows a summary of the day instead of an empty page: today's load (meetings, time in them, free windows) on a strip of the working day, the next meeting with Join, mail counts, invitations to answer with ✓ ? ✕ (after a confirmation), important and flagged mail, free colleagues and folders with unread mail. All from data already loaded, with no extra requests. The Overview button in the toolbar or Esc brings it back.
+- **New Settings window.** A sidebar with sections and search instead of tabs: "notifications" finds Reminders, Invitations and Mail. Long explanations sit behind "?", and changes apply at once, without a Save button. No setting was lost.
+- **Lighter on the Mac.** At idle the app uses about 7 times less CPU, and the first popover open after launch is as fast as the following ones.
+- **A tidier popover.** One type scale, clear empty states ("No meetings", "Loading meetings…", a welcome on first launch), and an Open Settings button when sync fails. The quit button is gone from the header, where it was easy to hit by accident: quit from the gear menu or with ⌘Q. Settings and New Meeting now open above the popover, not under it.
+- **Mail:** the "New only" filter is a toolbar button; mail can be grouped by conversation, and "Mark all as read" was added.
+- **AI assistants can cancel a meeting** (MCP `cancel_meeting`): your own is cancelled for everyone, an invitation is declined or deleted. Each action is confirmed in the app's window; it has its own switch under AI (MCP).
+
+#### Installation
+
+1. Download the `.zip`, unzip it and move `OWAWidget.app` to `/Applications`.
+2. Launch the app — no extra steps needed.
+3. All subsequent updates install automatically via the "Install" button inside the app.
+
 ## v1.0.60 - 2026-10-21
 
 ### RU
