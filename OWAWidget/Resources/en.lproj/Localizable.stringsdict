@@ -114,5 +114,21 @@
             <string>Closes in %d seconds</string>
         </dict>
     </dict>
+    <key>preferences.notifications.before.minutes</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@minutes@</string>
+        <key>minutes</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d minute before</string>
+            <key>other</key>
+            <string>%d minutes before</string>
+        </dict>
+    </dict>
 </dict>
 </plist>

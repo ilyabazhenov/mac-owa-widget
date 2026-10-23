@@ -173,24 +173,58 @@ enum TimelineMeetingLayout {
     /// any other day would otherwise open at midnight: look at today around 9am, swipe to
     /// tomorrow, and the timeline drops to the small hours instead of staying where the eye was.
     /// Anchoring every day at the same clock position keeps the grid still under a swipe.
+    ///
+    /// Except when that position shows none of another day's meetings: paging to Sunday at 20:00
+    /// opened it at 18:00 above an empty evening, and its only meeting at 16:00 stayed out of
+    /// sight, so the day read as free. Then the timeline goes to the day's first meeting, half an
+    /// hour above it. `visibleMinutes` is the height of the list in minutes of the grid; without
+    /// it the clock position is kept. Today always keeps it: there the clock is what matters.
     static func scrollAnchorSlotStart(
         sectionDate: Date,
         now: Date,
-        calendar: Calendar
+        calendar: Calendar,
+        events: [CalendarEvent] = [],
+        visibleMinutes: Int? = nil
     ) -> Date? {
+        let dayStart = calendar.startOfDay(for: sectionDate)
         let nowMinutes = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
         // Clamped, not wrapped: two hours before 00:30 is yesterday evening, and projecting that
         // clock time onto this day would land the user at the bottom of it.
-        let anchorMinutes = max(0, nowMinutes - 120)
+        var anchorMinutes = max(0, nowMinutes - 120)
+
+        if let visibleMinutes, visibleMinutes > 0, !calendar.isDate(sectionDate, inSameDayAs: now),
+           let firstMeetingMinutes = firstMeetingMinutes(
+               events: events, dayStart: dayStart, calendar: calendar,
+               // A card peeking in under the bottom edge is not "in view": the last slot is left out.
+               ifNoneOverlaps: anchorMinutes..<(anchorMinutes + max(slotDurationMinutes, visibleMinutes - slotDurationMinutes))
+           ) {
+            anchorMinutes = max(0, firstMeetingMinutes - slotDurationMinutes)
+        }
         let snappedMinutes = (anchorMinutes / slotDurationMinutes) * slotDurationMinutes
 
         // Built by adding minutes to the day's start, exactly the way `makeHourSlots` builds the
         // slots, so the start still matches one of them on a day that gains or loses an hour to DST.
-        return calendar.date(
-            byAdding: .minute,
-            value: snappedMinutes,
-            to: calendar.startOfDay(for: sectionDate)
-        )
+        return calendar.date(byAdding: .minute, value: snappedMinutes, to: dayStart)
+    }
+
+    /// Minutes from the day's start to its earliest meeting, or `nil` when the day has none or
+    /// one of them shows in `window`. Counts meetings with a time that start on this day and are
+    /// not cancelled — the ones the grid draws as cards worth scrolling to.
+    private static func firstMeetingMinutes(
+        events: [CalendarEvent],
+        dayStart: Date,
+        calendar: Calendar,
+        ifNoneOverlaps window: Range<Int>
+    ) -> Int? {
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
+        let spans = events
+            .filter { !$0.isAllDay && !$0.isEffectivelyCancelled && $0.startDate >= dayStart && $0.startDate < dayEnd }
+            .map { event in
+                let start = Int(event.startDate.timeIntervalSince(dayStart) / 60)
+                return start..<max(start + 1, Int(event.endDate.timeIntervalSince(dayStart) / 60))
+            }
+        guard !spans.contains(where: { $0.overlaps(window) }) else { return nil }
+        return spans.map(\.lowerBound).min()
     }
 
     private static func adjustedHourBounds(

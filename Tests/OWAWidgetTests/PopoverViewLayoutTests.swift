@@ -110,6 +110,51 @@ final class PopoverViewLayoutTests: XCTestCase {
         XCTAssertEqual(result.map(\.id), ["upcoming-soon", "near-promoted"])
     }
 
+    // MARK: - Day wrap-up (nothing left today)
+
+    private var utcCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+
+    /// 2023-11-14 20:00 UTC.
+    private var evening: Date { Date(timeIntervalSince1970: 1_699_992_000) }
+
+    func testWrapUpNamesTomorrowsFirstMeetingOnceTodayIsOver() {
+        let past = makeEvent(id: "past", startDate: evening.addingTimeInterval(-3 * 3600), endDate: evening.addingTimeInterval(-2 * 3600))
+        let tomorrowLate = makeEvent(id: "late", startDate: evening.addingTimeInterval(18 * 3600), endDate: evening.addingTimeInterval(19 * 3600))
+        let tomorrowEarly = makeEvent(id: "early", startDate: evening.addingTimeInterval(14 * 3600), endDate: evening.addingTimeInterval(15 * 3600))
+
+        let next = NextMeetingGroupPolicy.nextAfterToday(from: [past, tomorrowLate, tomorrowEarly], now: evening, calendar: utcCalendar)
+
+        XCTAssertEqual(next?.id, "early")
+    }
+
+    func testWrapUpStaysQuietWhileTodayHasAMeetingLeft() {
+        let later = makeEvent(id: "later", startDate: evening.addingTimeInterval(3600), endDate: evening.addingTimeInterval(2 * 3600))
+        let tomorrow = makeEvent(id: "tomorrow", startDate: evening.addingTimeInterval(14 * 3600), endDate: evening.addingTimeInterval(15 * 3600))
+
+        XCTAssertNil(NextMeetingGroupPolicy.nextAfterToday(from: [later, tomorrow], now: evening, calendar: utcCalendar))
+    }
+
+    func testWrapUpStaysQuietDuringAMeetingThatRunsPastMidnight() {
+        let running = makeEvent(id: "running", startDate: evening.addingTimeInterval(-600), endDate: evening.addingTimeInterval(5 * 3600))
+        let tomorrow = makeEvent(id: "tomorrow", startDate: evening.addingTimeInterval(14 * 3600), endDate: evening.addingTimeInterval(15 * 3600))
+
+        XCTAssertNil(NextMeetingGroupPolicy.nextAfterToday(from: [running, tomorrow], now: evening, calendar: utcCalendar))
+    }
+
+    func testWrapUpSkipsCancelledAndAllDayMeetings() {
+        let cancelled = makeEvent(id: "cancelled", startDate: evening.addingTimeInterval(13 * 3600), endDate: evening.addingTimeInterval(14 * 3600), isCancelled: true)
+        let allDay = makeEvent(id: "allday", startDate: evening.addingTimeInterval(4 * 3600), endDate: evening.addingTimeInterval(28 * 3600), isAllDay: true)
+        let real = makeEvent(id: "real", startDate: evening.addingTimeInterval(16 * 3600), endDate: evening.addingTimeInterval(17 * 3600))
+
+        let next = NextMeetingGroupPolicy.nextAfterToday(from: [cancelled, allDay, real], now: evening, calendar: utcCalendar)
+
+        XCTAssertEqual(next?.id, "real")
+    }
+
     func testNextEventsPolicySortsGroupedEventsWithJoinURLFirst() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let noURL = makeEvent(

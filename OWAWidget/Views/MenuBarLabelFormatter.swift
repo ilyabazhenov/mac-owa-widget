@@ -11,7 +11,8 @@ enum MenuBarLabelFormatter {
         events: [CalendarEvent],
         now: Date,
         shortTimeFormatter: (Date) -> String,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        units: MenuBarUnits = .english
     ) -> Presentation? {
         switch mode {
         case .countdown:
@@ -24,12 +25,13 @@ enum MenuBarLabelFormatter {
                 eventStartDate: event.startDate,
                 now: now,
                 shortTimeFormatter: shortTimeFormatter,
-                calendar: calendar
+                calendar: calendar,
+                units: units
             )
             else { return nil }
             return Presentation(text: text, statusKind: nil)
         case .status:
-            let status = MenuBarStatusFormatter.presentation(events: events, now: now, calendar: calendar)
+            let status = MenuBarStatusFormatter.presentation(events: events, now: now, calendar: calendar, units: units)
             return Presentation(text: status.text, statusKind: status.kind)
         case .smart:
             // Smart mode also drives icon + pulse + tooltip, so `MenuBarLabelView` computes it
@@ -43,14 +45,16 @@ enum MenuBarLabelFormatter {
         events: [CalendarEvent],
         now: Date,
         shortTimeFormatter: (Date) -> String,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        units: MenuBarUnits = .english
     ) -> String? {
         presentation(
             mode: mode,
             events: events,
             now: now,
             shortTimeFormatter: shortTimeFormatter,
-            calendar: calendar
+            calendar: calendar,
+            units: units
         )?.text
     }
 }

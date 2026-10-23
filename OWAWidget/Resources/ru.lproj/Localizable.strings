@@ -114,7 +114,6 @@
 "preferences.notifications.style.inApp" = "Баннер в приложении";
 "preferences.notifications.style.both" = "Системные и баннер";
 "preferences.notifications.remind" = "Напоминать";
-"preferences.notifications.before" = "за %@";
 "preferences.notifications.screen" = "Показывать баннеры на";
 "preferences.notifications.screen.main" = "Главном экране";
 "preferences.notifications.screen.active" = "Активном экране (где курсор)";
@@ -266,7 +265,7 @@
 "notification.body.without.join" = "Начнётся через %@ в %@";
 
 "about.version" = "Версия %@";
-"about.description" = "Быстрый доступ к календарю Exchange из строки меню.";
+"about.description" = "Встречи и почта Exchange, календари Google и iCloud — прямо в строке меню.";
 "about.github" = "GitHub";
 
 "window.create.meeting.title" = "Новая встреча";
@@ -840,7 +839,7 @@
 "settings.search.keywords.mcp" = "ai ии mcp claude cursor codex vs code ассистент клиенты журнал запросы подключение";
 "settings.search.keywords.about" = "версия сборка автор github диагностика лог поддержка";
 "preferences.shortcuts.openMail" = "Открыть почту";
-"preferences.shortcuts.always.hint" = "Эти два сочетания работают всегда.";
+"preferences.shortcuts.always.hint" = "«Новая встреча» и «Открыть почту» работают всегда.";
 "preferences.menubar.counters.hint" = "Счётчики ✉︎ и @ настраиваются в разделах «Приглашения» и «Почта».";
 "preferences.reminders.group.before" = "Перед встречей";
 "preferences.reminders.group.banner" = "Баннер";
@@ -889,3 +888,18 @@
 "mail.digest.next.noMore" = "Сегодня встреч больше нет";
 "mail.digest.colleagues" = "Коллеги";
 "mail.digest.colleagues.asOf" = "по данным на %@";
+
+/* Menu bar label: unit marks and status words. %@ is the number or the formatted duration. */
+"menubar.unit.minutes" = "%@ мин";
+"menubar.unit.hours" = "%@ ч";
+"menubar.unit.days" = "%@ дн";
+"menubar.status.now.remaining" = "Ещё %@";
+"menubar.status.now.overlap" = "Сейчас ×%@";
+"menubar.status.next.in" = "Через %@";
+"menubar.status.free" = "Свободно";
+"menubar.status.free.for" = "Свободно %@";
+
+/* Popover: today has nothing left; the next meeting is named below. */
+"popover.day.done" = "Сегодня встреч больше нет";
+"popover.day.free" = "Сегодня встреч нет";
+"a11y.popover.day.next.hint" = "Открыть день этой встречи";

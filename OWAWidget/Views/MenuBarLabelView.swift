@@ -182,7 +182,8 @@ struct MenuBarLabelView: View {
         return MenuBarSmartStatusFormatter.presentation(
             events: service.events,
             now: now,
-            calendar: AppTimeZone.calendar
+            calendar: AppTimeZone.calendar,
+            units: localization.menuBarUnits
         )
     }
 
@@ -224,7 +225,7 @@ struct MenuBarLabelView: View {
             switch smart.content {
             case .iconOnly: return nil
             case .duration(let text): return text
-            case .relativeDays(let days): return "\(days)d"
+            case .relativeDays(let days): return localization.menuBarUnits.days(days)
             case .time(let date): return localization.shortTime(date)
             }
         }
@@ -233,7 +234,8 @@ struct MenuBarLabelView: View {
             events: service.events,
             now: now,
             shortTimeFormatter: localization.shortTime,
-            calendar: AppTimeZone.calendar
+            calendar: AppTimeZone.calendar,
+            units: localization.menuBarUnits
         )
     }
 

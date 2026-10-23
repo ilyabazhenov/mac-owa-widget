@@ -46,6 +46,27 @@ final class LocalizationServiceTests: XCTestCase {
         XCTAssertEqual(service.minutes(5), "5 минут")
     }
 
+    /// "за 1 минута" read wrong: after «за» the count takes the accusative.
+    func testReminderLeadUsesAccusativeInRussian() {
+        let service = LocalizationService(selectedLanguage: .russian, preferredLanguages: ["en-US"])
+        let key = "preferences.notifications.before.minutes"
+
+        XCTAssertEqual(service.plural(key: key, count: 1), "за 1 минуту")
+        XCTAssertEqual(service.plural(key: key, count: 2), "за 2 минуты")
+        XCTAssertEqual(service.plural(key: key, count: 15), "за 15 минут")
+        XCTAssertEqual(service.plural(key: key, count: 21), "за 21 минуту")
+    }
+
+    func testMenuBarUnitsAreLocalized() {
+        let russian = LocalizationService(selectedLanguage: .russian, preferredLanguages: ["en-US"]).menuBarUnits
+        let english = LocalizationService(selectedLanguage: .english, preferredLanguages: ["ru-RU"]).menuBarUnits
+
+        XCTAssertEqual(russian.minutes(5, padded: true), " 5 мин")
+        XCTAssertEqual(russian.days(2), "2 дн")
+        XCTAssertEqual(russian.fill(russian.nextIn, russian.minutes(7)), "Через 7 мин")
+        XCTAssertEqual(english, .english)
+    }
+
     func testSyncStatusShowsJustNowWhenRecentInRussian() {
         let service = LocalizationService(
             selectedLanguage: .russian,

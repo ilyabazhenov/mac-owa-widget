@@ -98,6 +98,43 @@ final class MeetingDraftTests: XCTestCase {
         XCTAssertLessThan(abs(monday.timeIntervalSince(expected)), 1.0)
     }
 
+    // MARK: - Ближайший рабочий слот (2025-05-12 — понедельник)
+
+    private func nextSlot(_ now: Date) -> Date {
+        MeetingDraft.nextWorkingSlotStart(after: now, calendar: moscow)
+    }
+
+    func testNextWorkingSlotDuringTheDayIsTheNextHalfHour() {
+        XCTAssertEqual(nextSlot(moscowDate(year: 2025, month: 5, day: 14, hour: 11, minute: 10)),
+                       moscowDate(year: 2025, month: 5, day: 14, hour: 11, minute: 30))
+        XCTAssertEqual(nextSlot(moscowDate(year: 2025, month: 5, day: 14, hour: 11, minute: 30)),
+                       moscowDate(year: 2025, month: 5, day: 14, hour: 12))
+    }
+
+    func testNextWorkingSlotBeforeNineIsNine() {
+        XCTAssertEqual(nextSlot(moscowDate(year: 2025, month: 5, day: 14, hour: 7, minute: 40)),
+                       moscowDate(year: 2025, month: 5, day: 14, hour: 9))
+    }
+
+    func testNextWorkingSlotOnAWeekdayEveningIsTomorrowMorning() {
+        XCTAssertEqual(nextSlot(moscowDate(year: 2025, month: 5, day: 14, hour: 17, minute: 31)),
+                       moscowDate(year: 2025, month: 5, day: 15, hour: 9))
+    }
+
+    func testNextWorkingSlotKeepsTheLastSlotOfTheDay() {
+        XCTAssertEqual(nextSlot(moscowDate(year: 2025, month: 5, day: 14, hour: 17, minute: 5)),
+                       moscowDate(year: 2025, month: 5, day: 14, hour: 17, minute: 30))
+    }
+
+    /// The audit case: Friday 20:30 opened the past week with "no free slots".
+    func testNextWorkingSlotOnFridayEveningAndWeekendIsMondayMorning() {
+        let monday = moscowDate(year: 2025, month: 5, day: 19, hour: 9)
+        XCTAssertEqual(nextSlot(moscowDate(year: 2025, month: 5, day: 16, hour: 20, minute: 30)), monday)
+        XCTAssertEqual(nextSlot(moscowDate(year: 2025, month: 5, day: 17, hour: 12)), monday)
+        XCTAssertEqual(nextSlot(moscowDate(year: 2025, month: 5, day: 18, hour: 23, minute: 50)), monday)
+        XCTAssertEqual(MeetingDraft.mondayOfWeek(containing: monday), moscowDate(year: 2025, month: 5, day: 19))
+    }
+
     func testWeekStartOffsetMovesBySevenDays() {
         var d = MeetingDraft()
         d.selectedWeekStart = moscowDate(year: 2025, month: 5, day: 12)

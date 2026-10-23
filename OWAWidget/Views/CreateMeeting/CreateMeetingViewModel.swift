@@ -412,11 +412,7 @@ final class CreateMeetingViewModel: ObservableObject {
     // MARK: - Time picker bindings
 
     private func nextRoundedSlotStart() -> Date {
-        let now = Date()
-        let cal = AppTimeZone.calendar
-        let minute = cal.component(.minute, from: now)
-        let addMinutes = minute < 30 ? (30 - minute) : (60 - minute)
-        return cal.date(byAdding: .minute, value: addMinutes, to: now) ?? now
+        MeetingDraft.nextWorkingSlotStart(after: Date())
     }
 
     var slotStartBinding: Binding<Date> {

@@ -42,6 +42,8 @@ struct MeetingListView: View {
     @EnvironmentObject private var localization: LocalizationService
     /// Bumped by every autoscroll request, so a stale retry from an earlier one stands down.
     @State private var autoScrollGeneration = 0
+    /// Height of the scrolled area, so the autoscroll knows which hours of another day show.
+    @State private var viewportHeight: CGFloat = 0
 
     private let timeColumnWidth: CGFloat = 56
     private let timelinePointsPerMinute: CGFloat = 1.0
@@ -74,6 +76,13 @@ struct MeetingListView: View {
                 }
             }
             .accessibilityElement(children: .contain)
+            .background {
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { viewportHeight = geo.size.height }
+                        .onChange(of: geo.size.height) { viewportHeight = $0 }
+                }
+            }
             // A bare 24-hour grid read as "still loading" or "something broke"; a quiet note over
             // it says the day is simply free. Over the grid, not in it, so it stays in view
             // wherever the grid is scrolled, and clicks pass through.
@@ -280,29 +289,32 @@ struct MeetingListView: View {
 
     private func scrollToCurrentSlot(proxy: ScrollViewProxy, reason: String) {
         guard let section = sections.first else { return }
-        let calendar = AppTimeZone.calendar
-        let now = Date()
-        guard let slotStart = TimelineMeetingLayout.scrollAnchorSlotStart(
-            sectionDate: section.date,
-            now: now,
-            calendar: calendar
-        ) else {
-            return
-        }
-        let id = slotID(for: section.date, slotStart: slotStart)
-        DiagnosticLog.event(Self.autoScrollDiagnostic(reason: reason, now: now, slotStart: slotStart, calendar: calendar))
-
         autoScrollGeneration += 1
         let generation = autoScrollGeneration
         for delay in Self.autoScrollDelays {
             Task { @MainActor in
                 if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
                 guard generation == autoScrollGeneration else { return }
+                // Worked out on each attempt, not once up front: a day paged in builds a fresh
+                // list whose height is not measured yet at the first attempt, and only the late
+                // one can tell whether the day's meetings are in view.
+                let calendar = AppTimeZone.calendar
+                let now = Date()
+                guard let slotStart = TimelineMeetingLayout.scrollAnchorSlotStart(
+                    sectionDate: section.date,
+                    now: now,
+                    calendar: calendar,
+                    events: section.timedEvents,
+                    visibleMinutes: viewportHeight > 0 ? Int(viewportHeight / timelinePointsPerMinute) : nil
+                ) else { return }
+                if delay == Self.autoScrollDelays.last {
+                    DiagnosticLog.event(Self.autoScrollDiagnostic(reason: reason, now: now, slotStart: slotStart, calendar: calendar))
+                }
                 // Deliberately not animated. This runs as the list appears, so there is no
                 // previous position for the user to have seen it travel from — and when the list
                 // appears as a page sliding in from the side, an animated scroll runs against
                 // that slide over the same fifth of a second.
-                proxy.scrollTo(id, anchor: .top)
+                proxy.scrollTo(slotID(for: section.date, slotStart: slotStart), anchor: .top)
             }
         }
     }

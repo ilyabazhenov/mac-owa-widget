@@ -14,8 +14,8 @@ import Foundation
 /// `Tooltip`, not a distinct glyph. The `problem` state (broken sync) is not produced here — it
 /// stays driven by `CalendarService.syncStatus` in `MenuBarLabelView`, which takes precedence.
 ///
-/// This type is pure and localization-free so it can be unit-tested; the view renders the final
-/// (localized, timezone-aware) strings from the semantic result.
+/// This type is pure so it can be unit-tested: the unit marks of a duration come in as
+/// `MenuBarUnits`, and the view renders the rest (times, tooltips) from the semantic result.
 enum MenuBarSmartStatusFormatter {
     /// Menu bar glyph category. Maps 1:1 to an SF Symbol in the view.
     enum Category: Equatable {
@@ -23,9 +23,9 @@ enum MenuBarSmartStatusFormatter {
         case engaged    // "calendar.badge.clock"
     }
 
-    /// What the trailing label shows. Durations ("12m"/"2h") and relative-day counts ("3d") are
-    /// language-neutral and produced here; a `time` is formatted by the view with the user's
-    /// short-time formatter + timezone.
+    /// What the trailing label shows. Durations ("12m"/"2h") are produced here with the given
+    /// units; relative-day counts and a `time` are formatted by the view (the time with the
+    /// user's short-time formatter + timezone).
     enum Content: Equatable {
         case iconOnly
         case duration(String)
@@ -63,7 +63,8 @@ enum MenuBarSmartStatusFormatter {
     static func presentation(
         events: [CalendarEvent],
         now: Date,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        units: MenuBarUnits = .english
     ) -> Presentation {
         // Cancelled meetings are still present in `events` (shown struck-through elsewhere), but
         // they must not drive the status — mirror the "next meeting" filter in `MeetingReminderShared`.
@@ -76,7 +77,7 @@ enum MenuBarSmartStatusFormatter {
         if active.count > 1, let soonestEnding = active.first {
             return Presentation(
                 category: .engaged,
-                content: .duration(compact(minutes(from: now, to: soonestEnding.endDate))),
+                content: .duration(compact(minutes(from: now, to: soonestEnding.endDate), units)),
                 pulse: true,
                 tooltip: .overlap(count: active.count)
             )
@@ -86,7 +87,7 @@ enum MenuBarSmartStatusFormatter {
             let remaining = minutes(from: now, to: current.endDate)
             return Presentation(
                 category: .engaged,
-                content: .duration(compact(remaining)),
+                content: .duration(compact(remaining, units)),
                 pulse: true,
                 tooltip: .inMeeting(remainingMinutes: remaining, hasJoinURL: current.joinURLForActions != nil)
             )
@@ -107,7 +108,7 @@ enum MenuBarSmartStatusFormatter {
         if until <= imminentThresholdMinutes {
             return Presentation(
                 category: .engaged,
-                content: .duration(compact(until)),
+                content: .duration(compact(until, units)),
                 pulse: true,
                 tooltip: .joinNow(hasJoinURL: hasJoin)
             )
@@ -115,7 +116,7 @@ enum MenuBarSmartStatusFormatter {
         if until <= soonThresholdMinutes {
             return Presentation(
                 category: .engaged,
-                content: .duration(compact(until)),
+                content: .duration(compact(until, units)),
                 pulse: false,
                 tooltip: .soon(start: next.startDate, hasJoinURL: hasJoin)
             )
@@ -145,9 +146,9 @@ enum MenuBarSmartStatusFormatter {
 
     /// Компактная метка меню-бара. Многодневная встреча (отпуск, командировка) иначе
     /// показывалась бы как "42h" — для суток и больше переходим на дни, как в `.relativeDays`.
-    private static func compact(_ minutes: Int) -> String {
-        if minutes < 60 { return "\(minutes)m" }
-        if minutes < 24 * 60 { return "\(Int(ceil(Double(minutes) / 60)))h" }
-        return "\(Int(ceil(Double(minutes) / (24 * 60))))d"
+    private static func compact(_ minutes: Int, _ units: MenuBarUnits) -> String {
+        if minutes < 60 { return units.minutes(minutes) }
+        if minutes < 24 * 60 { return units.hours(Int(ceil(Double(minutes) / 60))) }
+        return units.days(Int(ceil(Double(minutes) / (24 * 60))))
     }
 }

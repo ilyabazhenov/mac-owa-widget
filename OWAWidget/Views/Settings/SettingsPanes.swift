@@ -223,7 +223,7 @@ struct RemindersSettingsPane: View {
             Section(localization.tr("preferences.reminders.group.before")) {
                 Picker(localization.tr("preferences.notifications.remind"), selection: $vm.notificationLeadMinutes) {
                     ForEach(SettingsOptions.reminderLeadMinutes, id: \.self) { minutes in
-                        Text(localization.tr("preferences.notifications.before", localization.minutes(minutes))).tag(minutes)
+                        Text(localization.plural(key: "preferences.notifications.before.minutes", count: minutes)).tag(minutes)
                     }
                 }
                 .pickerStyle(.menu)

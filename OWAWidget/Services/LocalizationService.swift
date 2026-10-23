@@ -105,6 +105,20 @@ final class LocalizationService: ObservableObject {
         }
     }
 
+    /// Unit marks and words of the menu bar label ("12 мин", "Через 7 мин").
+    var menuBarUnits: MenuBarUnits {
+        MenuBarUnits(
+            minutes: tr("menubar.unit.minutes"),
+            hours: tr("menubar.unit.hours"),
+            days: tr("menubar.unit.days"),
+            nowRemaining: tr("menubar.status.now.remaining"),
+            nowOverlap: tr("menubar.status.now.overlap"),
+            nextIn: tr("menubar.status.next.in"),
+            free: tr("menubar.status.free"),
+            freeFor: tr("menubar.status.free.for")
+        )
+    }
+
     func meetings(_ count: Int) -> String {
         plural(key: "unit.meetings", count: count)
     }

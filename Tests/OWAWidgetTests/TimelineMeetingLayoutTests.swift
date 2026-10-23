@@ -42,6 +42,48 @@ final class TimelineMeetingLayoutTests: XCTestCase {
         XCTAssertEqual(anchor, calendar.startOfDay(for: dayStart))
     }
 
+    /// Looking at another day from 20:16: the clock position (18:00) would show an empty evening
+    /// and hide the day's only meeting at 16:00.
+    func testScrollAnchorForAnotherDayGoesToItsFirstMeetingWhenNoneShows() throws {
+        let now = try XCTUnwrap(calendar.date(byAdding: .minute, value: 24 * 60 + 20 * 60 + 16, to: calendar.startOfDay(for: dayStart)))
+        let meeting = event(id: "a", startHour: 16, startMinute: 0, endHour: 17, endMinute: 0)
+        let anchor = try XCTUnwrap(TimelineMeetingLayout.scrollAnchorSlotStart(
+            sectionDate: dayStart, now: now, calendar: calendar, events: [meeting], visibleMinutes: 300
+        ))
+        XCTAssertEqual(calendar.component(.hour, from: anchor), 15)
+        XCTAssertEqual(calendar.component(.minute, from: anchor), 30)
+    }
+
+    func testScrollAnchorForAnotherDayStaysWhenAMeetingShows() throws {
+        let now = try XCTUnwrap(calendar.date(byAdding: .minute, value: 24 * 60 + 14 * 60, to: calendar.startOfDay(for: dayStart)))
+        let early = event(id: "a", startHour: 9, startMinute: 0, endHour: 10, endMinute: 0)
+        let inView = event(id: "b", startHour: 13, startMinute: 0, endHour: 14, endMinute: 0)
+        let anchor = try XCTUnwrap(TimelineMeetingLayout.scrollAnchorSlotStart(
+            sectionDate: dayStart, now: now, calendar: calendar, events: [early, inView], visibleMinutes: 300
+        ))
+        XCTAssertEqual(calendar.component(.hour, from: anchor), 12)
+    }
+
+    func testScrollAnchorTodayKeepsTheClockEvenWithMeetingsOutOfView() throws {
+        let now = try XCTUnwrap(calendar.date(byAdding: .minute, value: 20 * 60, to: calendar.startOfDay(for: dayStart)))
+        let morning = event(id: "a", startHour: 9, startMinute: 0, endHour: 10, endMinute: 0)
+        let anchor = try XCTUnwrap(TimelineMeetingLayout.scrollAnchorSlotStart(
+            sectionDate: dayStart, now: now, calendar: calendar, events: [morning], visibleMinutes: 300
+        ))
+        XCTAssertEqual(calendar.component(.hour, from: anchor), 18)
+    }
+
+    func testScrollAnchorIgnoresCardPeekingUnderTheBottomEdge() throws {
+        // Anchor 12:00, 300 visible minutes → 12:00–17:00; a meeting at 16:45 shows only its top.
+        let now = try XCTUnwrap(calendar.date(byAdding: .minute, value: 24 * 60 + 14 * 60, to: calendar.startOfDay(for: dayStart)))
+        let late = event(id: "a", startHour: 16, startMinute: 45, endHour: 17, endMinute: 30)
+        let anchor = try XCTUnwrap(TimelineMeetingLayout.scrollAnchorSlotStart(
+            sectionDate: dayStart, now: now, calendar: calendar, events: [late], visibleMinutes: 300
+        ))
+        XCTAssertEqual(calendar.component(.hour, from: anchor), 16)
+        XCTAssertEqual(calendar.component(.minute, from: anchor), 0)
+    }
+
     func testCreatesFixedHalfHourlySlotsForFullDay() {
         let slots = TimelineMeetingLayout.makeHourSlots(
             events: [],

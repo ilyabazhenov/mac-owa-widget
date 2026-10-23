@@ -5,7 +5,8 @@ enum MenuBarCountdownFormatter {
         eventStartDate: Date,
         now: Date,
         shortTimeFormatter: (Date) -> String,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        units: MenuBarUnits = .english
     ) -> String? {
         let interval = eventStartDate.timeIntervalSince(now)
         guard interval > 0 else { return nil }
@@ -17,10 +18,10 @@ enum MenuBarCountdownFormatter {
         if calendar.isDate(eventStartDate, inSameDayAs: now) {
             if interval < hourBoundary {
                 let minutes = Int(ceil(interval / minuteBoundary))
-                return String(format: "%2d", minutes) + "m"
+                return units.minutes(minutes, padded: true)
             }
             let hours = Int(ceil(interval / hourBoundary))
-            return String(format: "%2d", hours) + "h"
+            return units.hours(hours, padded: true)
         }
 
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
@@ -30,15 +31,15 @@ enum MenuBarCountdownFormatter {
 
         if interval < hourBoundary {
             let minutes = Int(ceil(interval / minuteBoundary))
-            return String(format: "%2d", minutes) + "m"
+            return units.minutes(minutes, padded: true)
         }
 
         if interval >= dayBoundary {
             let days = Int(ceil(interval / dayBoundary))
-            return String(format: "%2d", days) + "d"
+            return units.days(days, padded: true)
         }
 
         let hours = Int(ceil(interval / hourBoundary))
-        return String(format: "%2d", hours) + "h"
+        return units.hours(hours, padded: true)
     }
 }

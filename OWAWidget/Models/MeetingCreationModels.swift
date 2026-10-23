@@ -113,7 +113,9 @@ struct MeetingDraft: Sendable {
     var requiredAttendees: [ResolvedAttendee] = []
     var optionalAttendees: [ResolvedAttendee] = []
     /// Понедельник (startOfDay) выбранной недели. Поиск слотов идёт по Mon–Fri этой недели.
-    var selectedWeekStart: Date = MeetingDraft.mondayOfWeek(containing: Date())
+    /// По умолчанию — неделя ближайшего рабочего слота: в пятницу вечером и в выходные это
+    /// следующая неделя, а не прошедшая, где «нет свободных слотов».
+    var selectedWeekStart: Date = MeetingDraft.mondayOfWeek(containing: MeetingDraft.nextWorkingSlotStart(after: Date()))
     /// Желаемая длительность встречи в минутах. Поиск ищет окна именно такой длины
     /// (`MeetingFreeSlotCalculator` берёт ceil(duration/30) смежных свободных ячеек).
     var durationMinutes: Int = 30
@@ -178,6 +180,31 @@ struct MeetingDraft: Sendable {
             return DateInterval(start: monday, duration: 86400 * 7)
         }
         return DateInterval(start: monday, end: weekEnd)
+    }
+
+    /// Рабочие часы сетки слотов: 09:00–18:00, Mon–Fri.
+    static let workdayStartMinutes = 9 * 60
+    static let workdayEndMinutes = 18 * 60
+
+    /// Начало ближайшего получасового слота в рабочее время, куда помещается встреча на 30 минут:
+    /// днём — следующий получас, до 09:00 — 09:00 того же дня, после 17:30 и в выходные —
+    /// 09:00 следующего рабочего дня. Окно новой встречи открывается на нём, а не на 20:30.
+    static func nextWorkingSlotStart(after now: Date, calendar: Calendar = weekCalendar) -> Date {
+        let dayStart = calendar.startOfDay(for: now)
+        let nowMinutes = Int(now.timeIntervalSince(dayStart) / 60)
+        var day = dayStart
+        var minutes = (nowMinutes / 30 + 1) * 30
+        while true {
+            let weekday = calendar.component(.weekday, from: day)
+            let isWorkday = weekday != 1 && weekday != 7
+            if isWorkday, minutes + 30 <= workdayEndMinutes {
+                let start = max(minutes, workdayStartMinutes)
+                return calendar.date(byAdding: .minute, value: start, to: day) ?? now
+            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { return now }
+            day = next
+            minutes = 0
+        }
     }
 
     /// Понедельник (startOfDay) недели, содержащей дату.

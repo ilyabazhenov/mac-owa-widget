@@ -466,6 +466,14 @@ struct PopoverView: View {
                     onSelect: selectEvent
                 )
                 Divider().padding(.top, 8)
+            } else if selectedDayOffset == 0, let next = nextMeetingAfterToday {
+                DayWrapUpBannerView(
+                    next: next,
+                    hadMeetingsToday: eventSections.contains { !$0.timedEvents.isEmpty },
+                    horizontalPadding: contentHorizontalPadding,
+                    onOpenDay: { openDay(of: next) }
+                )
+                Divider()
             }
             MeetingListView(
                 sections: eventSections,
@@ -474,7 +482,8 @@ struct PopoverView: View {
                 onSelect: selectEvent,
                 // The date bar right above already names the day.
                 showsDayLabel: false,
-                emptyMessage: emptyDayMessage,
+                // The wrap-up banner above already says today is free.
+                emptyMessage: selectedDayOffset == 0 && nextMeetingAfterToday != nil ? nil : emptyDayMessage,
                 isLoading: emptyDayNote == .loading
             )
         }
@@ -685,6 +694,15 @@ struct PopoverView: View {
 
     private func goToToday() {
         goToDay(offsetBy: -selectedDayOffset)
+    }
+
+    /// Pages to the day `event` starts on, the way the arrows would.
+    private func openDay(of event: CalendarEvent) {
+        let calendar = AppTimeZone.calendar
+        guard let days = calendar.dateComponents(
+            [.day], from: calendar.startOfDay(for: Date()), to: calendar.startOfDay(for: event.startDate)
+        ).day else { return }
+        goToDay(offsetBy: days - selectedDayOffset)
     }
 
     private func handlePagingSwipe(_ step: HorizontalSwipePagingPolicy.Step) {
@@ -968,6 +986,11 @@ struct PopoverView: View {
         case .free: localization.tr("popover.day.empty")
         case nil: nil
         }
+    }
+
+    /// Tomorrow's (or a later day's) first meeting once today has nothing left; see `DayWrapUpBannerView`.
+    private var nextMeetingAfterToday: CalendarEvent? {
+        NextMeetingGroupPolicy.nextAfterToday(from: service.events, now: now, calendar: AppTimeZone.calendar)
     }
 
     /// Meetings starting within 5 minutes of the earliest upcoming, sorted: with URL first

@@ -38,6 +38,20 @@ enum NextMeetingGroupPolicy {
         return group(around: earliest, in: candidates)
     }
 
+    /// The first meeting of a later day once today has nothing left — none running, none still
+    /// to start — or `nil` while today still has one. The popover says so in the evening instead
+    /// of showing an empty grid under a meeting that ended hours ago.
+    static func nextAfterToday(from events: [CalendarEvent], now: Date, calendar: Calendar) -> CalendarEvent? {
+        let candidates = events
+            .filter { !$0.isAllDay && !$0.isEffectivelyCancelled && ($0.startDate > now || isHappening($0, now: now)) }
+            .sorted { $0.startDate < $1.startDate }
+        guard let first = candidates.first,
+              !isHappening(first, now: now),
+              !calendar.isDate(first.startDate, inSameDayAs: now)
+        else { return nil }
+        return first
+    }
+
     static func isHappening(_ event: CalendarEvent, now: Date) -> Bool {
         event.startDate <= now && event.endDate > now
     }

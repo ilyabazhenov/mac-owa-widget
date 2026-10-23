@@ -114,7 +114,6 @@
 "preferences.notifications.style.inApp" = "In-app banner";
 "preferences.notifications.style.both" = "System + in-app";
 "preferences.notifications.remind" = "Remind me";
-"preferences.notifications.before" = "%@ before";
 "preferences.notifications.screen" = "Show banners on";
 "preferences.notifications.screen.main" = "Main screen";
 "preferences.notifications.screen.active" = "Active screen (where cursor is)";
@@ -266,7 +265,7 @@
 "notification.body.without.join" = "Starts in %@ at %@";
 
 "about.version" = "Version %@";
-"about.description" = "Quick access to your Exchange calendar from the menu bar.";
+"about.description" = "Exchange meetings and mail, plus Google and iCloud calendars, right in the menu bar.";
 "about.github" = "GitHub";
 
 "window.create.meeting.title" = "New Meeting";
@@ -840,7 +839,7 @@
 "settings.search.keywords.mcp" = "ai mcp claude cursor codex vs code assistant clients journal requests connect";
 "settings.search.keywords.about" = "version build author github diagnostics log support";
 "preferences.shortcuts.openMail" = "Open Mail";
-"preferences.shortcuts.always.hint" = "These two shortcuts are always on.";
+"preferences.shortcuts.always.hint" = "New Meeting and Open Mail are always on.";
 "preferences.menubar.counters.hint" = "The ✉︎ and @ counters are set in Invitations and Mail.";
 "preferences.reminders.group.before" = "Before a meeting";
 "preferences.reminders.group.banner" = "Banner";
@@ -889,3 +888,18 @@
 "mail.digest.next.noMore" = "No more meetings today";
 "mail.digest.colleagues" = "Colleagues";
 "mail.digest.colleagues.asOf" = "as of %@";
+
+/* Menu bar label: unit marks and status words. %@ is the number or the formatted duration. */
+"menubar.unit.minutes" = "%@m";
+"menubar.unit.hours" = "%@h";
+"menubar.unit.days" = "%@d";
+"menubar.status.now.remaining" = "Now %@";
+"menubar.status.now.overlap" = "Now x%@";
+"menubar.status.next.in" = "Next %@";
+"menubar.status.free" = "Free";
+"menubar.status.free.for" = "Free %@";
+
+/* Popover: today has nothing left; the next meeting is named below. */
+"popover.day.done" = "No more meetings today";
+"popover.day.free" = "No meetings today";
+"a11y.popover.day.next.hint" = "Opens the day of this meeting";
