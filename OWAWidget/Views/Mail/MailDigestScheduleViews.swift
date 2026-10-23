@@ -48,7 +48,7 @@ struct MailDigestDayLoadView: View {
 
     private func content(_ load: MailDigestSchedule.DayLoad, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            summary(load, now: now)
+            summary(load)
             strip(load, now: now)
                 .frame(height: 12)
                 .accessibilityHidden(true)
@@ -57,7 +57,7 @@ struct MailDigestDayLoadView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func summary(_ load: MailDigestSchedule.DayLoad, now: Date) -> some View {
+    private func summary(_ load: MailDigestSchedule.DayLoad) -> some View {
         var main = [
             localization.tr("mail.digest.load.today", localization.meetings(load.meetingCount)),
             localization.compactDuration(minutes: Int((load.meetingSeconds / 60).rounded())),
@@ -66,24 +66,22 @@ struct MailDigestDayLoadView: View {
             ? localization.tr("mail.digest.load.remaining", load.remainingCount)
             : localization.tr("mail.digest.load.done"))
         return (Text(main.joined(separator: " · ")).foregroundColor(.primary)
-            + Text(freeText(load, now: now).map { " · \($0)" } ?? "").foregroundColor(.secondary))
+            + Text(freeText(load).map { " · \($0)" } ?? "").foregroundColor(.secondary))
             .font(.app(.footnote))
             .lineLimit(1)
             .truncationMode(.tail)
     }
 
-    /// "свободно до 10:30, 12:30–14:00, после 15:00": the next two windows at most; one that has
-    /// already begun is named by its end alone.
-    private func freeText(_ load: MailDigestSchedule.DayLoad, now: Date) -> String? {
-        let shown = Array(load.freeWindows.prefix(2))
-        guard !shown.isEmpty else { return nil }
-        let parts = shown.enumerated().map { index, window in
-            let runsToEnd = load.lastWindowRunsToEndOfDay && index == load.freeWindows.count - 1
-            if window.start <= now { return localization.tr("mail.digest.load.until", localization.shortTime(window.end)) }
-            return runsToEnd
-                ? localization.tr("mail.digest.load.after", localization.shortTime(window.start))
-                : "\(localization.shortTime(window.start))–\(localization.shortTime(window.end))"
+    /// "свободно до 10:30, 12:30–14:00": the next two windows at most.
+    private func freeText(_ load: MailDigestSchedule.DayLoad) -> String? {
+        let parts = load.freeSlots.prefix(2).map { slot in
+            switch slot {
+            case .until(let end): localization.tr("mail.digest.load.until", localization.shortTime(end))
+            case .between(let window): "\(localization.shortTime(window.start))–\(localization.shortTime(window.end))"
+            case .after(let start): localization.tr("mail.digest.load.after", localization.shortTime(start))
+            }
         }
+        guard !parts.isEmpty else { return nil }
         return localization.tr("mail.digest.load.free", parts.joined(separator: ", "))
     }
 
@@ -185,6 +183,9 @@ struct MailDigestNextMeetingView: View {
                         .lineLimit(1)
                 }
             }
+            // The text reads as one element; Join stays a button of its own, so moving through
+            // the card does not press it.
+            .accessibilityElement(children: .combine)
             Spacer(minLength: 8)
             if event.joinURLForActions != nil {
                 Button {
@@ -207,7 +208,7 @@ struct MailDigestNextMeetingView: View {
         .background(RoundedRectangle(cornerRadius: 10).fill(tint.opacity(0.08)))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(tint.opacity(0.3), lineWidth: 0.5))
         .meetingCopyContextMenu(event, localization: localization)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     private func countdown(_ event: CalendarEvent, happening: Bool, now: Date) -> String {
@@ -237,8 +238,8 @@ struct MailDigestNextMeetingView: View {
             Image(systemName: "moon.stars")
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            (Text(localization.tr("mail.digest.next.noMore")).foregroundColor(.secondary)
-                + Text(" · \(day), \(localization.shortTime(event.startDate)) — \(event.title)").foregroundColor(.secondary))
+            Text("\(localization.tr("mail.digest.next.noMore")) · \(day), \(localization.shortTime(event.startDate)) — \(event.title)")
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
@@ -295,6 +296,7 @@ struct MailDigestColleaguesView: View {
             Circle()
                 .fill(ColleaguePresenceStyle.color(for: status.presence))
                 .frame(width: 7, height: 7)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
                 Text(ColleagueNameFormatter.abbreviated(colleague.displayName))
                     .font(.app(.body, weight: .medium))
@@ -305,6 +307,7 @@ struct MailDigestColleaguesView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            .accessibilityElement(children: .combine)
             if let room, prominent {
                 Button {
                     MeetingURLOpener.open(room)
@@ -324,6 +327,6 @@ struct MailDigestColleaguesView: View {
         .padding(.trailing, room != nil && prominent ? 6 : 10)
         .padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.secondary.opacity(0.2), lineWidth: 0.5))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 }

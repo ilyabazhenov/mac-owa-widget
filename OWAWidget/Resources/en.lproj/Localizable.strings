@@ -877,7 +877,7 @@
 "mail.digest.confirm.decline" = "Decline “%@”?";
 "mail.digest.confirm.hint" = "The organizer gets your answer.";
 "mail.digest.confirm.cancel" = "Cancel";
-"mail.digest.load.today" = "Today %@";
+"mail.digest.load.today" = "%@ today";
 "mail.digest.load.remaining" = "%d to go";
 "mail.digest.load.done" = "all done";
 "mail.digest.load.free" = "free %@";

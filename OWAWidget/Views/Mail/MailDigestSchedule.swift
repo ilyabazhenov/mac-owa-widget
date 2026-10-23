@@ -10,6 +10,16 @@ enum MailDigestSchedule {
 
     // MARK: Today's load
 
+    /// A free window as the line names it.
+    enum FreeSlot: Equatable {
+        /// Free now, until then ("до 10:30").
+        case until(Date)
+        /// "12:30–14:00".
+        case between(DateInterval)
+        /// Free from then to the end of the working day ("после 17:30").
+        case after(Date)
+    }
+
     struct DayLoad: Equatable {
         struct Block: Equatable {
             let interval: DateInterval
@@ -21,10 +31,9 @@ enum MailDigestSchedule {
         let meetingSeconds: TimeInterval
         /// Meetings not over yet, the one in progress included.
         let remainingCount: Int
-        /// Free time left today within working hours, from now on, at least `minimumFreeWindow` long.
-        let freeWindows: [DateInterval]
-        /// True when the last free window runs to the end of the working day ("after 17:30").
-        let lastWindowRunsToEndOfDay: Bool
+        /// Free time left today within working hours, from now on, at least `minimumFreeWindow`
+        /// long. None on a day off: there is no working day to be free in.
+        let freeSlots: [FreeSlot]
         let blocks: [Block]
         let overlaps: [DateInterval]
         /// The span the strip draws: working hours, widened to whole hours around early and late meetings.
@@ -50,8 +59,9 @@ enum MailDigestSchedule {
         let meetings = counted(events, in: day)
         let intervals = meetings.map { DateInterval(start: max($0.startDate, dayStart), end: min($0.endDate, nextDay)) }
 
-        let workStart = dayStart.addingTimeInterval(TimeInterval(options.workStartMinute * 60))
-        let workEnd = dayStart.addingTimeInterval(TimeInterval(options.workEndMinute * 60))
+        let workStart = wallClock(options.workStartMinute, on: dayStart, calendar: calendar)
+        let workEnd = wallClock(options.workEndMinute, on: dayStart, calendar: calendar)
+        let isWorkday = options.workDays.contains(calendar.component(.weekday, from: dayStart))
         var freeWindows: [DateInterval] = []
         var cursor = max(now, workStart)
         for busy in ScheduleStatsCalculator.union(intervals) where cursor < workEnd {
@@ -61,7 +71,12 @@ enum MailDigestSchedule {
             cursor = max(cursor, busy.end)
         }
         if cursor < workEnd { freeWindows.append(DateInterval(start: cursor, end: workEnd)) }
-        freeWindows = freeWindows.filter { $0.duration >= minimumFreeWindow }
+        let freeSlots: [FreeSlot] = !isWorkday ? [] : freeWindows
+            .filter { $0.duration >= minimumFreeWindow }
+            .map { window in
+                if window.start <= now { return .until(window.end) }
+                return window.end == workEnd ? .after(window.start) : .between(window)
+            }
 
         let earliest = min(workStart, intervals.map(\.start).min() ?? workStart)
         let latest = max(workEnd, intervals.map(\.end).max() ?? workEnd)
@@ -73,12 +88,17 @@ enum MailDigestSchedule {
             meetingCount: stats.meetingCount,
             meetingSeconds: stats.meetingSeconds,
             remainingCount: meetings.filter { $0.endDate > now }.count,
-            freeWindows: freeWindows,
-            lastWindowRunsToEndOfDay: freeWindows.last?.end == workEnd,
+            freeSlots: freeSlots,
             blocks: zip(meetings, intervals).map { DayLoad.Block(interval: $1, isOver: $0.endDate <= now) },
             overlaps: stats.overlaps.map(\.interval),
             axis: DateInterval(start: max(axisStart, dayStart), end: min(axisEnd, nextDay))
         )
+    }
+
+    /// A time of day on the clock, so a day the clocks change on keeps 9:00 at 9:00.
+    private static func wallClock(_ minuteOfDay: Int, on dayStart: Date, calendar: Calendar) -> Date {
+        calendar.date(bySettingHour: minuteOfDay / 60, minute: minuteOfDay % 60, second: 0, of: dayStart)
+            ?? dayStart.addingTimeInterval(TimeInterval(minuteOfDay * 60))
     }
 
     /// The meetings the load counts, in order of start.

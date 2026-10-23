@@ -40,12 +40,8 @@ final class MailDigestScheduleTests: XCTestCase {
         XCTAssertEqual(load.meetingSeconds, 3 * 3600, "b and c together are 1.5 h, not 2")
         XCTAssertEqual(load.remainingCount, 3)
         XCTAssertEqual(load.overlaps.count, 1)
-        // From now: 10:40–11:00 is too short; 12:30–14:00 and 15:00–18:00 are left.
-        XCTAssertEqual(load.freeWindows, [
-            DateInterval(start: at(12, 30), end: at(14)),
-            DateInterval(start: at(15), end: at(18)),
-        ])
-        XCTAssertTrue(load.lastWindowRunsToEndOfDay)
+        // From now: 10:40–11:00 is too short; 12:30–14:00 and from 15:00 to the end of the day are left.
+        XCTAssertEqual(load.freeSlots, [.between(DateInterval(start: at(12, 30), end: at(14))), .after(at(15))])
         XCTAssertEqual(load.blocks.filter(\.isOver).count, 1)
         XCTAssertEqual(load.axis, DateInterval(start: at(9), end: at(18)))
     }
@@ -54,15 +50,38 @@ final class MailDigestScheduleTests: XCTestCase {
         let events = [meeting("early", from: at(8, 15)), meeting("late", from: at(19, 10))]
         let load = try XCTUnwrap(MailDigestSchedule.dayLoad(events: events, now: at(7), calendar: calendar))
         XCTAssertEqual(load.axis, DateInterval(start: at(8), end: at(20)))
-        XCTAssertEqual(load.freeWindows, [DateInterval(start: at(9), end: at(18))], "working hours only")
+        XCTAssertEqual(load.freeSlots, [.after(at(9))], "working hours only")
     }
 
     func testNoFreeTimeAfterTheWorkingDayAndNoLineWithoutMeetings() throws {
         let load = try XCTUnwrap(MailDigestSchedule.dayLoad(events: [meeting("a", from: at(10))], now: at(18, 30), calendar: calendar))
-        XCTAssertTrue(load.freeWindows.isEmpty)
-        XCTAssertFalse(load.lastWindowRunsToEndOfDay)
+        XCTAssertTrue(load.freeSlots.isEmpty)
         XCTAssertEqual(load.remainingCount, 0)
         XCTAssertNil(MailDigestSchedule.dayLoad(events: [meeting("allDay", from: at(0), minutes: 1440, allDay: true)], now: at(10), calendar: calendar))
+    }
+
+    func testWindowThatHasBegunIsNamedByItsEnd() throws {
+        let load = try XCTUnwrap(MailDigestSchedule.dayLoad(events: [meeting("a", from: at(10, 30))], now: at(9, 13), calendar: calendar))
+        XCTAssertEqual(load.freeSlots, [.until(at(10, 30)), .after(at(11))])
+    }
+
+    /// The base date is a Friday: the next day is a Saturday, with no working day to be free in.
+    func testNoFreeTimeOnADayOff() throws {
+        let load = try XCTUnwrap(MailDigestSchedule.dayLoad(events: [meeting("a", from: at(12, dayOffset: 1))], now: at(9, dayOffset: 1), calendar: calendar))
+        XCTAssertEqual(load.meetingCount, 1)
+        XCTAssertTrue(load.freeSlots.isEmpty)
+    }
+
+    /// Working hours are on the clock: on the day the clocks go forward 9:00 is still 9:00.
+    func testWorkingHoursFollowTheClockWhenTheClocksChange() throws {
+        var berlin = Calendar(identifier: .gregorian)
+        berlin.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Berlin"))
+        let day = try XCTUnwrap(berlin.date(from: DateComponents(year: 2026, month: 3, day: 29)))
+        func clock(_ hour: Int) -> Date { berlin.date(bySettingHour: hour, minute: 0, second: 0, of: day)! }
+        var options = ScheduleStatsCalculator.Options()
+        options.workDays = Set(1...7)
+        let load = try XCTUnwrap(MailDigestSchedule.dayLoad(events: [meeting("a", from: clock(12))], now: clock(7), calendar: berlin, options: options))
+        XCTAssertEqual(load.freeSlots, [.between(DateInterval(start: clock(9), end: clock(12))), .after(clock(12).addingTimeInterval(1800))])
     }
 
     // MARK: Up next
