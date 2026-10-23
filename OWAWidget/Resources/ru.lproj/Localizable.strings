@@ -877,3 +877,15 @@
 "mail.digest.confirm.decline" = "Отклонить «%@»?";
 "mail.digest.confirm.hint" = "Ответ уйдёт организатору.";
 "mail.digest.confirm.cancel" = "Отмена";
+"mail.digest.load.today" = "Сегодня %@";
+"mail.digest.load.remaining" = "осталось %d";
+"mail.digest.load.done" = "все прошли";
+"mail.digest.load.free" = "свободно %@";
+"mail.digest.load.after" = "после %@";
+"mail.digest.load.until" = "до %@";
+"mail.digest.next.inTime" = "Через %@";
+"mail.digest.next.remaining" = "Идёт · ещё %@";
+"mail.digest.next.after" = "Дальше: %1$@ · %2$@";
+"mail.digest.next.noMore" = "Сегодня встреч больше нет";
+"mail.digest.colleagues" = "Коллеги";
+"mail.digest.colleagues.asOf" = "по данным на %@";

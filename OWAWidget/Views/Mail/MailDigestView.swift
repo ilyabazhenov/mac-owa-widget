@@ -132,7 +132,11 @@ struct MailDigestView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    header
+                    VStack(alignment: .leading, spacing: 12) {
+                        header
+                        MailDigestDayLoadView()
+                        MailDigestNextMeetingView()
+                    }
                     tiles(digest, proxy: proxy)
                     if digest.isEmpty {
                         VStack(spacing: 8) {
@@ -154,6 +158,7 @@ struct MailDigestView: View {
                         }
                         .id(Anchor.people)
                     }
+                    MailDigestColleaguesView()
                     // Side by side while there is room, one under the other in a narrow reader.
                     ViewThatFits(in: .horizontal) {
                         HStack(alignment: .top, spacing: 22) {
@@ -275,19 +280,7 @@ struct MailDigestView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
-                Image(systemName: icon).font(.app(.headline)).foregroundStyle(tint)
-                Text(title).font(.app(.headline, weight: .semibold))
-                if let count {
-                    Text("\(count)")
-                        .font(.app(.caption, weight: .medium))
-                        .monospacedDigit()
-                        .foregroundStyle(countIsUrgent ? AnyShapeStyle(tint) : AnyShapeStyle(.secondary))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(Capsule().fill(countIsUrgent ? tint.opacity(0.16) : Color.secondary.opacity(0.12)))
-                }
-            }
+            MailDigestSectionHeader(title: title, count: count, icon: icon, tint: tint, countIsUrgent: countIsUrgent)
             content()
         }
     }

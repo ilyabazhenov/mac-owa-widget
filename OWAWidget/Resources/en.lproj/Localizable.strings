@@ -877,3 +877,15 @@
 "mail.digest.confirm.decline" = "Decline “%@”?";
 "mail.digest.confirm.hint" = "The organizer gets your answer.";
 "mail.digest.confirm.cancel" = "Cancel";
+"mail.digest.load.today" = "Today %@";
+"mail.digest.load.remaining" = "%d to go";
+"mail.digest.load.done" = "all done";
+"mail.digest.load.free" = "free %@";
+"mail.digest.load.after" = "after %@";
+"mail.digest.load.until" = "until %@";
+"mail.digest.next.inTime" = "In %@";
+"mail.digest.next.remaining" = "In progress · %@ left";
+"mail.digest.next.after" = "Next: %1$@ · %2$@";
+"mail.digest.next.noMore" = "No more meetings today";
+"mail.digest.colleagues" = "Colleagues";
+"mail.digest.colleagues.asOf" = "as of %@";

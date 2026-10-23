@@ -88,6 +88,7 @@ struct OWAWidgetApp: App {
                 .environmentObject(localizationService)
                 .environmentObject(calendarService)
                 .environmentObject(appearanceService)
+                .environmentObject(colleaguePresenceService)
                 .environment(\.locale, localizationService.locale)
                 .onAppear {
                     DiagnosticLog.event("Window mail appeared")
