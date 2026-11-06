@@ -365,6 +365,35 @@ struct MailThread: Identifiable, Hashable, Sendable {
     let totalMessageCount: Int
 
     var topic: String { messages.last?.subject ?? messages.first?.subject ?? "" }
+
+    /// Whether the history `message` quotes lies outside this thread, so its own text
+    /// (`UniqueBody`, which Exchange cuts the quote from) would hide it for good: the oldest
+    /// message of a thread loaded whole. A forward quotes a message that never was in the
+    /// mailbox, and Exchange cuts its "From: … Sent: …" part with the pictures in it.
+    func lacksQuotedHistory(of message: MailMessage) -> Bool {
+        message.kind.hasReadableBody && messages.count >= totalMessageCount && messages.last?.id == message.id
+    }
+}
+
+extension MailMessage {
+    /// Previews this long may have been cut by their length (Exchange keeps about 255 characters).
+    static let previewLengthLimit = 200
+
+    /// Whether `text` — the plain text of a conversation's copy of a message, which Exchange cut
+    /// the quote from — is all the message has, judged by its preview, the start of the whole
+    /// text. A text shorter than the preview lost something; a preview long enough to have been
+    /// cut says nothing of the rest, and neither does a missing one.
+    static func textIsWhole(_ text: String, preview: String) -> Bool {
+        let preview = collapsingWhitespace(preview)
+        guard !preview.isEmpty, preview.count < previewLengthLimit else { return false }
+        // A few characters of leeway: the preview and the reader's text turn markup into text
+        // their own ways. What a forward loses ("From: … Sent: …") is longer than that.
+        return collapsingWhitespace(text).count + 10 >= preview.count
+    }
+
+    private static func collapsingWhitespace(_ text: String) -> String {
+        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
 }
 
 /// Paging position for folder lists: the first page, or everything after a known item.

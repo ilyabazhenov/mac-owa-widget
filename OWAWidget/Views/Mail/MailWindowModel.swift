@@ -303,6 +303,8 @@ final class MailWindowModel: ObservableObject {
     /// Messages of the open thread shown expanded; the newest and every unread one by default.
     @Published var expandedMessageIDs: Set<String> = []
     @Published private(set) var inlineImages: [String: [String: (data: Data, type: String)]] = [:]
+    /// The last inline image scan of each message, for the next one to wait on.
+    private var inlineImageLoads: [String: Task<Void, Never>] = [:]
     @Published private(set) var remoteImages: [String: [String: (data: Data, type: String)]] = [:]
     /// Full text (with the quoted history) loaded on request, by message id.
     @Published private(set) var fullBodies: [String: String] = [:]
@@ -825,6 +827,7 @@ final class MailWindowModel: ObservableObject {
             expandedMessageIDs = []
             readerDocuments = [:]
             readerDocumentBuilds = [:]
+            inlineImageLoads = [:]
         }
         threadError = nil
         isLoadingThread = true
@@ -838,7 +841,9 @@ final class MailWindowModel: ObservableObject {
             var expanded = Set(loaded.messages.filter { !$0.isRead }.map(\.id))
             if let newest = loaded.messages.first { expanded.insert(newest.id) }
             expandedMessageIDs.formUnion(expanded)
-            loadInlineImages(for: loaded.messages.filter { expandedMessageIDs.contains($0.id) })
+            let opened = loaded.messages.filter { expandedMessageIDs.contains($0.id) }
+            loadMissingHistory(for: opened)
+            loadInlineImages(for: opened)
             scheduleMarkRead(loaded)
         } catch {
             guard selectedConversationID == id, !MailCancellation.isCancellation(error) else { return }
@@ -851,7 +856,34 @@ final class MailWindowModel: ObservableObject {
             expandedMessageIDs.remove(message.id)
         } else {
             expandedMessageIDs.insert(message.id)
+            loadMissingHistory(for: [message])
             loadInlineImages(for: [message])
+        }
+    }
+
+    /// Whether the reader offers the message whole: a conversation brings each message without
+    /// its quoted history; a message opened alone comes whole already.
+    func offersFullBody(_ message: MailMessage) -> Bool {
+        !selectedIsMessage && fullBodies[message.id] == nil && message.kind.hasReadableBody
+    }
+
+    /// Shows whole, without waiting for a click, the opened messages whose quoted history is not
+    /// in the thread: cut from their text, it could not be read anywhere. A message whose preview
+    /// shows its text came whole (most messages alone in their conversation) is not read again.
+    private func loadMissingHistory(for messages: [MailMessage]) {
+        guard !selectedIsMessage, let thread else { return }
+        for message in messages where fullBodies[message.id] == nil && thread.lacksQuotedHistory(of: message) {
+            let body = message.bodyHTML ?? ""
+            let preview = message.preview
+            Task {
+                let whole = await Task.detached(priority: .userInitiated) {
+                    MailMessage.textIsWhole(MailHTMLDocument.plainText(body), preview: preview)
+                }.value
+                DiagnosticLog.event("Mail reader history outside the thread whole=\(whole)")
+                guard !whole else { return }
+                // A failure is reported by the service; the button stays to try again.
+                await loadFullBody(message, quietly: true)
+            }
         }
     }
 
@@ -859,14 +891,18 @@ final class MailWindowModel: ObservableObject {
     /// the inline attachments of its older messages, so a body that refers to a `cid:` image its
     /// message does not list is read again on its own, attachments included. Finding those
     /// references scans the whole body: done off the main thread, as the reader's document is.
-    private func loadInlineImages(for messages: [MailMessage]) {
-        for message in messages where inlineImages[message.id] == nil {
-            inlineImages[message.id] = [:]
+    /// `again` scans a message already done, its text having grown by the quoted history. Scans
+    /// of a message run one after another, so a picture both find is fetched once.
+    private func loadInlineImages(for messages: [MailMessage], again: Bool = false) {
+        for message in messages where again || inlineImages[message.id] == nil {
+            if inlineImages[message.id] == nil { inlineImages[message.id] = [:] }
             let body = fullBodies[message.id] ?? message.bodyHTML ?? ""
-            Task {
-                let references = await Task.detached(priority: .userInitiated) {
+            let previous = inlineImageLoads[message.id]
+            inlineImageLoads[message.id] = Task {
+                await previous?.value
+                let references = Set(await Task.detached(priority: .userInitiated) {
                     MailHTMLDocument.inlineImageReferences(in: body)
-                }.value
+                }.value)
                 let listed = Set(message.attachments.filter(\.isInline).compactMap { $0.contentID?.lowercased() })
                 guard !references.isEmpty || !listed.isEmpty else {
                     // Nothing to load: left unmarked, so a later look (at the full text with the
@@ -874,11 +910,14 @@ final class MailWindowModel: ObservableObject {
                     if inlineImages[message.id]?.isEmpty ?? false { inlineImages[message.id] = nil }
                     return
                 }
+                let loaded = Set((inlineImages[message.id] ?? [:]).keys.map { $0.lowercased() })
+                if again, references.isSubset(of: loaded) { return }
                 var source = message
-                if references.contains(where: { !listed.contains($0) }), let full = try? await service.fullMessage(message.ref) {
+                if references.contains(where: { !listed.contains($0) }), let full = try? await service.wholeMessage(message.ref) {
                     source = full
                 }
-                inlineImages[message.id] = await service.inlineImages(for: source)
+                let images = await service.inlineImages(for: source, skipping: loaded)
+                inlineImages[message.id, default: [:]].merge(images) { current, _ in current }
             }
         }
     }
@@ -1048,15 +1087,17 @@ final class MailWindowModel: ObservableObject {
         self.thread = MailThread(id: thread.id, messages: messages, totalMessageCount: thread.totalMessageCount)
     }
 
-    func loadFullBody(_ message: MailMessage) async {
+    /// Loads the message whole, with its quoted history. `quietly`: the reader asked for it
+    /// itself, so a failure leaves the button to try again rather than an error.
+    func loadFullBody(_ message: MailMessage, quietly: Bool = false) async {
         await whilePending(.fullBody(message.id)) {
             do {
-                let full = try await service.fullMessage(message.ref)
+                let full = try await service.wholeMessage(message.ref)
                 fullBodies[message.id] = full.bodyHTML ?? ""
                 // The quoted history may refer to pictures the short text did not.
-                loadInlineImages(for: [full])
+                loadInlineImages(for: [full], again: true)
             } catch {
-                show(error)
+                if !quietly { show(error) }
             }
         }
     }

@@ -393,7 +393,7 @@ struct MailMessageCard: View {
             }
             let document = readerDocument
             let offersImages = (document?.hasRemoteImages ?? false) && model.remoteImages[message.id] == nil
-            let offersQuoted = model.fullBodies[message.id] == nil && message.kind.hasReadableBody && (model.thread?.messages.count ?? 0) > 1
+            let offersQuoted = model.offersFullBody(message)
             // In a dark theme: back to white for a message shown dark, and dark again after that.
             let switchedToLight = model.lightBackground.contains(message.id)
             let offersBackground = colorScheme == .dark && (document?.isDark == true || switchedToLight)

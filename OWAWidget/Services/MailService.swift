@@ -210,6 +210,8 @@ final class MailPopoverChrome: ObservableObject {
 @MainActor
 final class MailService: ObservableObject {
     static let threadCacheLimit = 100
+    /// Messages kept whole for the reader: fewer than threads, a whole text can be long.
+    static let wholeMessageCacheLimit = 30
     /// Threads kept after the mail window closes, then dropped.
     static let cacheLingerAfterClose: TimeInterval = 10 * 60
     static let popoverUnreadLimit = 5
@@ -285,6 +287,9 @@ final class MailService: ObservableObject {
     private var pollTimer: Timer?
     private var threadCache: [String: MailThread] = [:]
     private var threadOrder: [String] = []
+    /// Messages read whole for the reader (`GetItem`), by item id, oldest first in `wholeMessageOrder`.
+    private var wholeMessageCache: [String: MailMessage] = [:]
+    private var wholeMessageOrder: [String] = []
     private var cacheClearTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
     let popoverChrome = MailPopoverChrome()
@@ -946,6 +951,27 @@ final class MailService: ObservableObject {
         try await perform("mail.message") { try await $0.mailMessage(ref) }
     }
 
+    /// A message whole for the reader: the text with the quoted history and every inline
+    /// attachment. Neither changes once a message is sent, so it is kept with the threads, and
+    /// the inbox panel's reader (a new one each time it opens) does not ask again. A draft can
+    /// change and is read anew.
+    func wholeMessage(_ ref: MailItemRef) async throws -> MailMessage {
+        if let cached = wholeMessageCache[ref.id] {
+            wholeMessageOrder.removeAll { $0 == ref.id }
+            wholeMessageOrder.append(ref.id)
+            return cached
+        }
+        let message = try await fullMessage(MailItemRef(id: ref.id, changeKey: nil))
+        guard !message.isDraft else { return message }
+        wholeMessageCache[ref.id] = message
+        wholeMessageOrder.removeAll { $0 == ref.id }
+        wholeMessageOrder.append(ref.id)
+        while wholeMessageOrder.count > Self.wholeMessageCacheLimit {
+            wholeMessageCache[wholeMessageOrder.removeFirst()] = nil
+        }
+        return message
+    }
+
     func attachment(_ info: MailAttachmentInfo) async throws -> Data {
         guard info.size <= OWAClient.mailAttachmentLimit else { throw MailError.tooLarge(info.size) }
         let id = info.id
@@ -954,11 +980,12 @@ final class MailService: ObservableObject {
 
     /// Inline images of a message by `ContentId`, for `cid:` references in its body. Images that
     /// fail or are too large are left out: the body shows the server's blank pixel instead.
-    func inlineImages(for message: MailMessage) async -> [String: (data: Data, type: String)] {
+    /// `skipping`: lowercased ids of images already at hand.
+    func inlineImages(for message: MailMessage, skipping: Set<String> = []) async -> [String: (data: Data, type: String)] {
         var images: [String: (data: Data, type: String)] = [:]
         var total = 0
         for info in message.attachments where info.isInline && info.contentType.hasPrefix("image/") {
-            guard let contentID = info.contentID, info.size <= Self.inlineImageLimit, total + info.size <= 4 * Self.inlineImageLimit else { continue }
+            guard let contentID = info.contentID, !skipping.contains(contentID.lowercased()), info.size <= Self.inlineImageLimit, total + info.size <= 4 * Self.inlineImageLimit else { continue }
             let id = info.id
             if let data = try? await perform("mail.inlineImage", { try await $0.mailAttachment(id: id, maxBytes: Self.inlineImageLimit) }) {
                 images[contentID] = (data, info.contentType)
@@ -1361,6 +1388,8 @@ final class MailService: ObservableObject {
             guard !Task.isCancelled, let self, !self.isWindowOpen, !self.isPanelReaderOpen else { return }
             self.threadCache = [:]
             self.threadOrder = []
+            self.wholeMessageCache = [:]
+            self.wholeMessageOrder = []
         }
     }
 
@@ -1425,6 +1454,8 @@ final class MailService: ObservableObject {
     private func clearState() {
         threadCache = [:]
         threadOrder = []
+        wholeMessageCache = [:]
+        wholeMessageOrder = []
         folders = []
         inboxUnreadCount = nil
         latestUnread = []
