@@ -254,6 +254,13 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         return normalized.hasPrefix("отменено:") || normalized.hasPrefix("cancelled:") || normalized.hasPrefix("canceled:")
     }
 
+    /// Accept / Tentative / Decline apply: an invitation the user received (not one they organise)
+    /// from a calendar that takes answers (`changeKey`), and not cancelled — Exchange refuses any
+    /// answer to a cancelled meeting with `ErrorCalendarIsCancelledForAccept`.
+    var acceptsResponse: Bool {
+        !isOrganizer && responseType != .organizer && changeKey != nil && !isEffectivelyCancelled
+    }
+
     /// URL used for Join/Copy actions; cancelled meetings hide actions even if a URL remains cached.
     var joinURLForActions: URL? {
         guard !isEffectivelyCancelled else { return nil }
