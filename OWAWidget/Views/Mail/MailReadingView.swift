@@ -493,9 +493,13 @@ struct MailMessageCard: View {
     }
 
     private func meetingRow(_ meeting: MailMeetingInfo) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: message.kind == .meetingCancellation ? "calendar.badge.minus" : "calendar")
-                .foregroundStyle(message.kind == .meetingCancellation ? Color.red : Color.accentColor)
+        // A cancellation email, or an invitation whose meeting the organizer has cancelled since:
+        // either way there is nothing to answer.
+        let isCancelled = message.kind == .meetingCancellation
+            || (message.kind == .meetingRequest && service.isMeetingCancelled(for: message))
+        return HStack(alignment: .top, spacing: 8) {
+            Image(systemName: isCancelled ? "calendar.badge.minus" : "calendar")
+                .foregroundStyle(isCancelled ? Color.red : Color.accentColor)
             VStack(alignment: .leading, spacing: 6) {
                 VStack(alignment: .leading, spacing: 2) {
                     if let start = meeting.start {
@@ -508,10 +512,10 @@ struct MailMessageCard: View {
                         Text(location).font(.app(.footnote)).foregroundStyle(.secondary)
                     }
                 }
-                if message.kind == .meetingRequest {
+                if message.kind == .meetingRequest && !isCancelled {
                     rsvpButtons
                 }
-                if message.kind == .meetingCancellation {
+                if isCancelled {
                     Label {
                         Text(localization.tr("mail.list.meetingCancelled"))
                     } icon: {

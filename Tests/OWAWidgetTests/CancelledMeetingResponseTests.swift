@@ -125,4 +125,17 @@ final class CancelledMeetingResponseTests: XCTestCase {
         let sent = await provider.responses
         XCTAssertEqual(sent, [.tentative])
     }
+
+    // MARK: - Mail
+
+    /// An old invitation email asks the calendar whether its meeting was cancelled since.
+    func testMailBackendReportsCancelledMeeting() {
+        let service = makeService(provider: RecordingProvider(account: account))
+        service.replaceEventsForTests([event(isCancelled: true)])
+        XCTAssertTrue(service.mailMeetingIsCancelled(calendarItemID: "e1"))
+        XCTAssertFalse(service.mailMeetingIsCancelled(calendarItemID: "unknown"))
+
+        service.replaceEventsForTests([event()])
+        XCTAssertFalse(service.mailMeetingIsCancelled(calendarItemID: "e1"))
+    }
 }
