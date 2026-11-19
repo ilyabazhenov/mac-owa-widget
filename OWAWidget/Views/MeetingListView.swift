@@ -159,8 +159,10 @@ struct MeetingListView: View {
             ZStack(alignment: .topLeading) {
                 VStack(spacing: 0) {
                     ForEach(slots) { slot in
+                        // Same value as the `ForEach` identity (see `DayHourSlot.id(startingAt:)`):
+                        // newer macOS scrolls by that one, earlier versions by this explicit id.
                         timeGridRow(slot, fixedHeight: fixedSlotHeight)
-                            .id(slotID(for: section.date, slotStart: slot.startDate))
+                            .id(slot.id)
                     }
                 }
 
@@ -276,12 +278,6 @@ struct MeetingListView: View {
         return slot.startDate <= now && now < slot.endDate
     }
 
-    private func slotID(for sectionDate: Date, slotStart: Date) -> String {
-        let sectionKey = Int(sectionDate.timeIntervalSince1970)
-        let slotKey = Int(slotStart.timeIntervalSince1970)
-        return "slot-\(sectionKey)-\(slotKey)"
-    }
-
     /// Delays at which the scroll is applied. `scrollTo` reports nothing and quietly does nothing
     /// when the target has not been laid out yet — on the popover's first sizing, or while a day
     /// slides in (0.22 s) — and the list then stays at midnight. The late repeat lands after both.
@@ -314,7 +310,7 @@ struct MeetingListView: View {
                 // previous position for the user to have seen it travel from — and when the list
                 // appears as a page sliding in from the side, an animated scroll runs against
                 // that slide over the same fifth of a second.
-                proxy.scrollTo(slotID(for: section.date, slotStart: slotStart), anchor: .top)
+                proxy.scrollTo(DayHourSlot.id(startingAt: slotStart), anchor: .top)
             }
         }
     }

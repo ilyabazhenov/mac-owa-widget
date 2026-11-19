@@ -36,6 +36,15 @@ final class TimelineMeetingLayoutTests: XCTestCase {
         XCTAssertTrue(slots.contains { $0.startDate == anchor })
     }
 
+    func testScrollAnchorIdentityMatchesASlotIdentity() throws {
+        // The timeline scrolls by identity, not by date: the id it asks for must be one a row has.
+        let now = try XCTUnwrap(calendar.date(byAdding: .minute, value: 9 * 60 + 45, to: calendar.startOfDay(for: dayStart)))
+        let tomorrow = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: dayStart)))
+        let anchor = try XCTUnwrap(TimelineMeetingLayout.scrollAnchorSlotStart(sectionDate: tomorrow, now: now, calendar: calendar))
+        let slots = TimelineMeetingLayout.makeHourSlots(events: [], sectionDate: tomorrow, calendar: calendar, referenceDate: now)
+        XCTAssertTrue(slots.map(\.id).contains(DayHourSlot.id(startingAt: anchor)))
+    }
+
     func testScrollAnchorClampsToMidnightEarlyInTheDay() throws {
         let now = try XCTUnwrap(calendar.date(byAdding: .minute, value: 30, to: calendar.startOfDay(for: dayStart)))
         let anchor = try XCTUnwrap(TimelineMeetingLayout.scrollAnchorSlotStart(sectionDate: dayStart, now: now, calendar: calendar))
