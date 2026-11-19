@@ -162,6 +162,8 @@ final class MCPMailToolsTests: XCTestCase {
         await provider.set(conversations: [conversation], threads: [MailThread(id: conversation.id, messages: [original], totalMessageCount: 1)])
     }
 
+    private static let fixtureNow = Date(timeIntervalSince1970: 1_792_000_000 + 86_400)
+
     private func makeTools(read: Bool = true, send: Bool = true, draftWindow: Bool = true) -> MCPMailTools {
         MCPMailTools(
             calendarService: service,
@@ -171,6 +173,9 @@ final class MCPMailToolsTests: XCTestCase {
             canHandOff: { draftWindow },
             isEnabled: { read },
             canSend: { send },
+            // A fixed "now" a day after the fixture's message: windows such as `awaiting_days`
+            // count back from the clock, and real time would age the fixture out of them.
+            clock: { Self.fixtureNow },
             timeZone: { TimeZone(identifier: "Europe/Moscow")! }
         )
     }
