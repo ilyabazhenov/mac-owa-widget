@@ -13,7 +13,15 @@ struct DayHourSlot: Identifiable, Sendable, Hashable {
     let endDate: Date
     let items: [HourSlotMeetingItem]
 
-    var id: String { "\(startDate.timeIntervalSince1970)" }
+    var id: String { Self.id(startingAt: startDate) }
+
+    /// The slot's identity, which is also what the timeline scrolls to. One value for both on
+    /// purpose: newer macOS (seen on 27) resolves `ScrollViewProxy.scrollTo` against the
+    /// `ForEach(slots)` element identity, and a different `.id(_:)` on the row is never found —
+    /// the list then silently stays at midnight. Older versions go by the row's `.id(_:)`.
+    static func id(startingAt startDate: Date) -> String {
+        "\(startDate.timeIntervalSince1970)"
+    }
 }
 
 struct TimelineBlockMetrics: Sendable, Hashable {
