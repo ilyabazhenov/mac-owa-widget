@@ -1,3 +1,39 @@
+## v1.0.62 - 2026-11-19
+
+### RU
+
+#### Что изменилось
+
+- **Таймлайн на macOS 27.** При открытии поповера список снова прокручивается к текущему часу, а не остаётся на полуночи.
+- **Другой день — сразу к встречам.** Если на привычном часе встреч не видно, таймлайн прокручивается к первой встрече дня: воскресенье в 20:00 больше не выглядит пустым.
+- **«Сегодня встреч больше нет».** Когда встречи на сегодня закончились, в поповере полоса с ближайшей следующей встречей; по клику открывается её день.
+- **Новая встреча — на ближайшее рабочее время** (пн–пт, 09:00–18:00): вечером — на завтра, в пятницу вечером и в выходные — на следующую неделю.
+- **Почта: пересланное письмо видно целиком.** Exchange отрезал пересланную часть вместе с картинками как цитату, и если исходного письма нет в ящике, её нельзя было увидеть. Кнопка показа цитаты теперь есть и в беседе из одного письма.
+- **Тексты:** «за 1 минуту» вместо «за 1 минута» в напоминаниях; строка меню по-русски — «2 дн», «12 мин», «Через 7 мин»; подсказка горячих клавиш называет оба сочетания; в «О приложении» упомянуты почта и календари Google/iCloud.
+
+#### Установка
+
+1. Скачайте `.zip`, распакуйте и перенесите `OWAWidget.app` в `/Applications`.
+2. Запустите приложение — дополнительных шагов не нужно.
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### What's Changed
+
+- **Timeline on macOS 27.** When the popover opens, the list scrolls to the current hour again instead of staying at midnight.
+- **Another day opens at its meetings.** If no meeting shows at the usual hour, the timeline scrolls to the day's first meeting: Sunday at 8 PM no longer looks empty.
+- **"No more meetings today".** Once today's meetings are over, the popover shows a strip with the next meeting; clicking it opens that day.
+- **New meetings start at the nearest working time** (Mon–Fri, 9:00–18:00): tomorrow in the evening, next week on Friday evening and at weekends.
+- **Mail: forwarded messages show in full.** Exchange cut the forwarded part, images included, as a quote, and when the original message was not in the mailbox there was no way to see it. The show-quote button is now there in a one-message conversation too.
+- **Wording:** Russian menu bar units and reminder text are fixed, the shortcut hint names both shortcuts, and About mentions mail and Google/iCloud calendars.
+
+#### Installation
+
+1. Download the `.zip`, unzip it and move `OWAWidget.app` to `/Applications`.
+2. Launch the app — no extra steps needed.
+3. All subsequent updates install automatically via the "Install" button inside the app.
+
 ## v1.0.61 - 2026-10-23
 
 ### RU
