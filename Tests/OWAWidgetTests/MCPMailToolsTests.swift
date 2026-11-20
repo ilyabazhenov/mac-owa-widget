@@ -53,8 +53,17 @@ final class MCPMailToolsTests: XCTestCase {
             return message
         }
         func mailAttachment(id: String, maxBytes: Int) async throws -> Data { Data() }
+        /// Each `UpdateItem`: the item ids and the change.
+        private(set) var updates: [(ids: [String], update: MailItemUpdate)] = []
+        /// Items deleted after their thread was read: an update naming one fails as a whole.
+        private var missingItemIDs: Set<String> = []
+        func setMissingItemIDs(_ ids: Set<String>) { missingItemIDs = ids }
+        func add(_ thread: MailThread) { threads[thread.id] = thread }
+
         func mailUpdate(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [MailItemRef] {
             calls.append("update")
+            updates.append((targets.map(\.ref.id), update))
+            if targets.contains(where: { missingItemIDs.contains($0.ref.id) }) { throw MailError.notFound }
             return targets.map(\.ref)
         }
         func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef] {
@@ -112,6 +121,20 @@ final class MCPMailToolsTests: XCTestCase {
         }
     }
 
+    /// Records whether `set_mail_read` reached the marking at all.
+    private final class RecordingReadMarker: MCPMailReadMarking {
+        private(set) var calls = 0
+        func setRead(
+            threads: [MailThread],
+            _ isRead: Bool,
+            accountID: UUID,
+            ownAddress: String?,
+            via run: (_ operation: @Sendable (any MailProvider) async throws -> [MailItemRef]) async throws -> [MailItemRef]
+        ) async throws {
+            calls += 1
+        }
+    }
+
     private final class FakeMailConfirmer: MCPMailConfirming {
         var outcome: MCPConfirmationOutcome
         private(set) var proposals: [MCPMailProposal] = []
@@ -127,6 +150,8 @@ final class MCPMailToolsTests: XCTestCase {
     private var service: CalendarService!
     private var confirmer: FakeMailConfirmer!
     private var handedOff: [MailComposeRequest] = []
+    /// `MCPMailTools` holds its marker weakly: the test keeps it alive.
+    private var mailService: MailService?
 
     override func setUp() async throws {
         provider = MailboxProvider(account: account)
@@ -164,8 +189,11 @@ final class MCPMailToolsTests: XCTestCase {
 
     private static let fixtureNow = Date(timeIntervalSince1970: 1_792_000_000 + 86_400)
 
-    private func makeTools(read: Bool = true, send: Bool = true, draftWindow: Bool = true) -> MCPMailTools {
-        MCPMailTools(
+    private func makeTools(read: Bool = true, send: Bool = true, organize: Bool = true, marker: MCPMailReadMarking? = nil, draftWindow: Bool = true) -> MCPMailTools {
+        if marker == nil, mailService == nil {
+            mailService = MailService(backend: service, defaults: UserDefaults(suiteName: "mcp-mail-\(UUID().uuidString)")!)
+        }
+        return MCPMailTools(
             calendarService: service,
             accessGuard: MCPAccessGuard(calendarService: service),
             confirmer: confirmer,
@@ -173,6 +201,8 @@ final class MCPMailToolsTests: XCTestCase {
             canHandOff: { draftWindow },
             isEnabled: { read },
             canSend: { send },
+            canOrganize: { organize },
+            readMarker: marker ?? mailService,
             // A fixed "now" a day after the fixture's message: windows such as `awaiting_days`
             // count back from the clock, and real time would age the fixture out of them.
             clock: { Self.fixtureNow },
@@ -441,7 +471,139 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertTrue(settings.serverEnabled)
         XCTAssertFalse(settings.mailRead)
         XCTAssertFalse(settings.mailSend)
+        XCTAssertFalse(settings.mailOrganize, "marking mail stays off for settings saved before the switch")
         let client = Data(#"{"key":"k","name":"n","executablePath":"/x","lastKind":"bridge","firstSeen":0,"lastSeen":0,"access":"allowed"}"#.utf8)
         XCTAssertNil(try JSONDecoder().decode(MCPKnownClient.self, from: client).mailAccess)
+    }
+    // MARK: - set_mail_read
+
+    private static let inboxID = "F-INBOX-FULL-ID-0000000000"
+
+    private func message(_ id: String, in conversation: String, folder: String = inboxID, from email: String = "g.miller@example.com", isRead: Bool, received: TimeInterval) -> MailMessage {
+        MailMessage(
+            ref: MailItemRef(id: id, changeKey: "CK-\(id)"), conversationID: conversation, parentFolderID: folder, kind: .note,
+            subject: "Budget", from: MailAddress(name: email, email: email), to: [], cc: [], bcc: [], hiddenRecipientCount: 0,
+            received: Date(timeIntervalSince1970: received), sent: nil, isRead: isRead, isDraft: false, importance: .normal,
+            bodyHTML: "<div>Text</div>", preview: "Text", attachments: [], categories: [], isFlagged: false, actions: [],
+            meeting: nil, internetMessageID: nil
+        )
+    }
+
+    /// A second conversation: an unread question in the inbox and the user's own newer reply.
+    private func addBudgetThread() async {
+        let question = message("MSG-BUDGET-Q-FULL-ID-0000000", in: "CONV-2-FULL-ID-0000000000000", isRead: false, received: 1_791_990_000)
+        let reply = message("MSG-BUDGET-R-FULL-ID-0000000", in: "CONV-2-FULL-ID-0000000000000", folder: "F-SENT", from: "a.morgan@example.com", isRead: true, received: 1_791_995_000)
+        await provider.add(MailThread(id: "CONV-2-FULL-ID-0000000000000", messages: [reply, question], totalMessageCount: 2))
+    }
+
+    private func threadIDs(_ tools: MCPMailTools) async throws -> [String] {
+        let list = try object(await tools.call(name: "list_mail", arguments: [:], client: nil))
+        let fromList = try XCTUnwrap(list["threads"]?.arrayValue?.first?["thread_id"]?.stringValue)
+        // The second one as a full id, which the tools also take.
+        return [fromList, "CONV-2-FULL-ID-0000000000000"]
+    }
+
+    func testSetMailReadMarksEveryMessageAndTheCountsFollow() async throws {
+        await addBudgetThread()
+        let defaults = UserDefaults(suiteName: "mcp-mail-read-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let mail = MailService(backend: service, defaults: defaults)
+        mail.notifier = { _, _ in }
+        mailService = mail
+        await mail.checkInbox()
+        XCTAssertEqual(mail.inboxUnreadCount, 7)
+        XCTAssertEqual(mail.latestUnread.map(\.id), ["CONV-1-FULL-ID-0000000000000"])
+
+        let tools = makeTools()
+        let ids = try await threadIDs(tools)
+        let result = try object(await tools.call(name: "set_mail_read", arguments: ["thread_ids": .array(ids.map(JSONValue.string)), "read": true], client: nil))
+        XCTAssertEqual(result["updated"], 2)
+        XCTAssertEqual(result["failed"]?.arrayValue?.count, 0)
+
+        let updates = await provider.updates
+        XCTAssertEqual(updates.count, 1, "one UpdateItem for both conversations")
+        XCTAssertEqual(Set(updates.first?.ids ?? []), ["MSG-ORIGINAL-FULL-ID-000000000", "MSG-BUDGET-Q-FULL-ID-0000000", "MSG-BUDGET-R-FULL-ID-0000000"])
+        XCTAssertEqual(updates.first?.update, .isRead(true))
+        // Two unread inbox messages became read; the menu bar and the popover follow.
+        XCTAssertEqual(mail.inboxUnreadCount, 5)
+        XCTAssertTrue(mail.latestUnread.isEmpty)
+    }
+
+    func testSetMailUnreadMarksOnlyTheNewestReceivedMessage() async throws {
+        await addBudgetThread()
+        let result = try object(await makeTools().call(name: "set_mail_read", arguments: ["thread_ids": ["CONV-2-FULL-ID-0000000000000"], "read": false], client: nil))
+        XCTAssertEqual(result["updated"], 1)
+        let updates = await provider.updates
+        XCTAssertEqual(updates.count, 1)
+        XCTAssertEqual(updates.first?.ids, ["MSG-BUDGET-Q-FULL-ID-0000000"], "the user's own newer reply is not the one to mark unread")
+        XCTAssertEqual(updates.first?.update, .isRead(false))
+    }
+
+    func testSetMailReadReportsMissingThreadsAndMarksTheRest() async throws {
+        let tools = makeTools()
+        let known = try await threadIDs(tools)[0]
+        let result = try object(await tools.call(name: "set_mail_read", arguments: [
+            "thread_ids": [.string(known), "0123456789ab", "CONV-GONE-FULL-ID-00000000000"], "read": true,
+        ], client: nil))
+        XCTAssertEqual(result["updated"], 1)
+        let failed = try XCTUnwrap(result["failed"]?.arrayValue)
+        XCTAssertEqual(failed.compactMap { $0["thread_id"]?.stringValue }, ["0123456789ab", "CONV-GONE-FULL-ID-00000000000"])
+        XCTAssertTrue(failed.allSatisfy { !($0["reason"]?.stringValue ?? "").isEmpty })
+        let updates = await provider.updates
+        XCTAssertEqual(updates.map(\.ids), [["MSG-ORIGINAL-FULL-ID-000000000"]])
+    }
+
+    /// A message deleted between reading its thread and marking it fails the whole request:
+    /// the conversations are marked one by one to find which one is gone.
+    func testSetMailReadRetriesOneByOneWhenAMessageVanished() async throws {
+        await addBudgetThread()
+        await provider.setMissingItemIDs(["MSG-BUDGET-Q-FULL-ID-0000000"])
+        let tools = makeTools()
+        let ids = try await threadIDs(tools)
+        let result = try object(await tools.call(name: "set_mail_read", arguments: ["thread_ids": .array(ids.map(JSONValue.string)), "read": true], client: nil))
+        XCTAssertEqual(result["updated"], 1)
+        XCTAssertEqual(result["failed"]?.arrayValue?.compactMap { $0["thread_id"]?.stringValue }, ["CONV-2-FULL-ID-0000000000000"])
+        let updates = await provider.updates
+        XCTAssertEqual(updates.count, 3, "the batch, then each conversation")
+    }
+
+    func testSetMailReadTakesAtMostFiftyThreads() async {
+        let ids = (0...MCPMailTools.maxThreadsPerMark).map { JSONValue.string(String(format: "%012x", $0)) }
+        let result = await makeTools().call(name: "set_mail_read", arguments: ["thread_ids": .array(ids), "read": true], client: nil)
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue("\(result)".contains("At most 50"), "\(result)")
+        let calls = await provider.calls
+        XCTAssertTrue(calls.isEmpty)
+    }
+
+    func testSetMailReadNeedsItsSwitch() async throws {
+        let marker = RecordingReadMarker()
+        let tools = makeTools(organize: false, marker: marker)
+        let result = await tools.call(name: "set_mail_read", arguments: ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "read": true], client: nil)
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue("\(result)".contains("Marking mail is turned off"), "\(result)")
+        XCTAssertEqual(marker.calls, 0)
+        let calls = await provider.calls
+        XCTAssertTrue(calls.isEmpty)
+        // Mail reading off turns it off too.
+        let unread = await makeTools(read: false, marker: marker).call(name: "set_mail_read", arguments: ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "read": true], client: nil)
+        XCTAssertTrue(unread.isError)
+        XCTAssertEqual(marker.calls, 0)
+    }
+
+    func testSetMailReadIsListedOnlyWithItsSwitch() {
+        let names = { (read: Bool, organize: Bool) in Set(MCPToolRegistry.tools(mailRead: read, mailSend: false, mailOrganize: organize).map(\.name)) }
+        XCTAssertTrue(names(true, true).contains("set_mail_read"))
+        XCTAssertFalse(names(true, false).contains("set_mail_read"))
+        XCTAssertFalse(names(false, true).contains("set_mail_read"), "needs mail reading on")
+        XCTAssertTrue(MCPMailTools.toolNames.contains("set_mail_read"), "asks the client's mail consent like every mail tool")
+        XCTAssertFalse(MCPToolRegistry.setMailReadTool.isReadOnly)
+        XCTAssertFalse(MCPToolRegistry.setMailReadTool.isDestructive)
+
+        let snapshot = MCPSettingsSnapshot(MCPSettings(serverEnabled: true, mailRead: true, mailOrganize: true))
+        let toolbox = MCPToolbox(calendarTools: MCPCalendarTools(calendarService: service, accessGuard: MCPAccessGuard(calendarService: service)), mailTools: makeTools(), settings: snapshot) { _, _, _ in }
+        XCTAssertTrue(toolbox.tools.contains { $0.name == "set_mail_read" }, "tools/list follows the saved switch")
     }
 }

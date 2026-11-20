@@ -1,18 +1,34 @@
 import Foundation
 import OWAWidgetMCPShared
 
-/// The MCP mail tools: reading folders, lists, threads and search results, and `prepare_mail`,
-/// which sends only after the user confirms in OWA Widget's own panel.
+/// What `set_mail_read` marks through: `MailService`, so the app's counts follow the mark.
+@MainActor
+protocol MCPMailReadMarking: AnyObject {
+    func setRead(
+        threads: [MailThread],
+        _ isRead: Bool,
+        accountID: UUID,
+        ownAddress: String?,
+        via run: (_ operation: @Sendable (any MailProvider) async throws -> [MailItemRef]) async throws -> [MailItemRef]
+    ) async throws
+}
+
+extension MailService: MCPMailReadMarking {}
+
+/// The MCP mail tools: reading folders, lists, threads and search results, `prepare_mail`,
+/// which sends only after the user confirms in OWA Widget's own panel, and `set_mail_read`.
 ///
 /// Every request goes through `MCPAccessGuard` (budget, concurrency, blocked sync, circuit
 /// breaker), straight to the account's provider: the mail window's switch does not gate these,
-/// the MCP mail switches do. Nothing here changes the mailbox — no read marks, no moves, no
-/// search history — except the message the user confirms.
+/// the MCP mail switches do. Nothing here changes the mailbox — no moves, no search history —
+/// except the message the user confirms and the read marks `set_mail_read` sets when its own
+/// switch is on.
 @MainActor
 final class MCPMailTools {
     nonisolated static let readToolNames: Set<String> = ["get_mail_digest", "list_mail_folders", "list_mail", "search_mail", "get_mail_thread", "get_mail_message"]
     nonisolated static let sendToolName = "prepare_mail"
-    nonisolated static var toolNames: Set<String> { readToolNames.union([sendToolName]) }
+    nonisolated static let organizeToolName = "set_mail_read"
+    nonisolated static var toolNames: Set<String> { readToolNames.union([sendToolName, organizeToolName]) }
 
     static let maxMessageCharacters = 8_000
     static let maxThreadCharacters = 40_000
@@ -28,9 +44,12 @@ final class MCPMailTools {
     /// Pause after the user declined or let a panel expire.
     static let pauseAfterDecline: TimeInterval = 20
     static let duplicateWindow: TimeInterval = 10 * 60
+    /// Conversations per `set_mail_read` call: each is read once to find its messages.
+    nonisolated static let maxThreadsPerMark = 50
 
     static let disabledMessage = "Mail access for AI assistants is turned off in OWA Widget (Settings → AI (MCP) → Mail). Ask the user to turn it on."
     static let sendDisabledMessage = "Preparing emails is turned off in OWA Widget (Settings → AI (MCP) → Mail). Nothing was sent. Ask the user to turn it on."
+    static let organizeDisabledMessage = "Marking mail is turned off: ask the user to turn on “Let assistants change mail marks: read” in OWA Widget settings → AI (MCP) → Mail. Nothing was changed."
 
     struct ToolError: Error {
         let message: String
@@ -44,6 +63,8 @@ final class MCPMailTools {
     private let canHandOff: () -> Bool
     private let isEnabled: () -> Bool
     private let canSend: () -> Bool
+    private let canOrganize: () -> Bool
+    private weak var readMarker: MCPMailReadMarking?
     private let clock: () -> Date
     private let timeZoneProvider: () -> TimeZone
     private let confirmationTimeout: TimeInterval
@@ -69,6 +90,8 @@ final class MCPMailTools {
         canHandOff: @escaping () -> Bool = { false },
         isEnabled: @escaping () -> Bool = { false },
         canSend: @escaping () -> Bool = { false },
+        canOrganize: @escaping () -> Bool = { false },
+        readMarker: MCPMailReadMarking? = nil,
         confirmationTimeout: TimeInterval = MCPCalendarTools.confirmationTimeout,
         clock: @escaping () -> Date = { Date() },
         timeZone: @escaping () -> TimeZone = { AppTimeZone.zone },
@@ -82,6 +105,8 @@ final class MCPMailTools {
         self.canHandOff = canHandOff
         self.isEnabled = isEnabled
         self.canSend = canSend
+        self.canOrganize = canOrganize
+        self.readMarker = readMarker
         self.confirmationTimeout = confirmationTimeout
         self.clock = clock
         self.timeZoneProvider = timeZone
@@ -99,6 +124,7 @@ final class MCPMailTools {
             case "get_mail_thread": return try await getThread(arguments, coder)
             case "get_mail_message": return try await getMessage(arguments, coder)
             case "prepare_mail": return try await prepareMail(arguments, coder, client: client)
+            case "set_mail_read": return try await setMailRead(arguments)
             default: return .failure("Unknown tool: \(name)")
             }
         } catch let error as ToolError {
@@ -829,5 +855,123 @@ final class MCPMailTools {
         result["note"] = "Sent by Exchange; a copy is in the Sent folder."
         recentSends[key] = (now, result)
         return .success(result)
+    }
+
+    // MARK: - set_mail_read
+
+    /// Marks conversations read or unread. Each thread is read first (its messages as the server
+    /// holds them now: one gone comes back in `failed`), then all of them are marked in one
+    /// `UpdateItem` through `MailService`, so the app's counts follow. A request that fails on
+    /// a message gone in between is retried thread by thread, to tell which one it was.
+    private func setMailRead(_ arguments: [String: JSONValue]) async throws -> MCPToolResult {
+        guard canOrganize() else { return .failure(Self.organizeDisabledMessage) }
+        guard let isRead = arguments["read"]?.boolValue else {
+            throw ToolError("`read` is required: true marks the conversations read, false unread")
+        }
+        guard let items = arguments["thread_ids"]?.arrayValue else {
+            throw ToolError("`thread_ids` must be an array of thread_id values from list_mail, search_mail or get_mail_thread")
+        }
+        guard !items.isEmpty else { throw ToolError("`thread_ids` is empty") }
+        guard items.count <= Self.maxThreadsPerMark else {
+            throw ToolError("At most \(Self.maxThreadsPerMark) conversations per call, got \(items.count). Nothing was changed: split them into several calls.")
+        }
+        let raw = try items.map { item in
+            guard let text = item.stringValue?.trimmingCharacters(in: .whitespaces), !text.isEmpty else {
+                throw ToolError("`thread_ids` must contain thread_id strings")
+            }
+            return text
+        }
+        let account = try mailAccount(arguments)
+        guard let marker = readMarker else {
+            return .failure("OWA Widget cannot mark mail right now (it is still starting). Nothing was changed; try again in a minute.")
+        }
+        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) { return .failure(reason) }
+
+        var failed: [JSONValue] = []
+        func fail(_ threadID: String, _ reason: String) {
+            failed.append(["thread_id": .string(threadID), "reason": .string(reason)])
+        }
+        let gone = "not found: the conversation was deleted or moved — list or search again"
+
+        var threads: [(threadID: String, thread: MailThread)] = []
+        var seen: Set<String> = []
+        var stopReason: String?
+        for threadID in raw {
+            if let stopReason {
+                fail(threadID, stopReason)
+                continue
+            }
+            guard let id = resolve(threadID) else {
+                fail(threadID, "unknown thread_id: ids are remembered only while OWA Widget runs — list or search again")
+                continue
+            }
+            guard seen.insert(id).inserted else { continue }
+            do {
+                let thread = try await request(account, context: "mcp.mail.setRead") { try await $0.mailThread(conversationID: id, ignoringFolders: []) }
+                guard !thread.messages.isEmpty else {
+                    fail(threadID, gone)
+                    continue
+                }
+                threads.append((threadID, thread))
+            } catch MailError.notFound {
+                fail(threadID, gone)
+            } catch {
+                // The budget, a blocked sync or the connection: the next requests would fare no
+                // better, and each one sends the password again.
+                let reason = (error as? ToolError)?.message ?? error.localizedDescription
+                fail(threadID, reason)
+                stopReason = reason
+            }
+        }
+
+        let own = isRead ? nil : await ownAddress(account)
+        var updated = 0
+        // One request per batch of threads, as many as one `UpdateItem` carries.
+        var batches: [[(threadID: String, thread: MailThread)]] = []
+        var size = 0
+        for entry in threads {
+            let count = MailService.readMarkTargets(in: entry.thread, isRead, ownAddress: own).count
+            if batches.isEmpty || size + count > MailService.bulkPageSize {
+                batches.append([])
+                size = 0
+            }
+            batches[batches.count - 1].append(entry)
+            size += count
+        }
+        for batch in batches {
+            if let stopReason {
+                for entry in batch { fail(entry.threadID, stopReason) }
+                continue
+            }
+            do {
+                try await mark(batch.map(\.thread), isRead, account: account, ownAddress: own, marker: marker)
+                updated += batch.count
+            } catch MailError.notFound where batch.count > 1 {
+                for entry in batch {
+                    do {
+                        try await mark([entry.thread], isRead, account: account, ownAddress: own, marker: marker)
+                        updated += 1
+                    } catch MailError.notFound {
+                        fail(entry.threadID, gone)
+                    } catch {
+                        fail(entry.threadID, (error as? ToolError)?.message ?? error.localizedDescription)
+                    }
+                }
+            } catch MailError.notFound {
+                for entry in batch { fail(entry.threadID, gone) }
+            } catch {
+                let reason = (error as? ToolError)?.message ?? error.localizedDescription
+                for entry in batch { fail(entry.threadID, reason) }
+                stopReason = reason
+            }
+        }
+        MCPDebugLog.log("set_mail_read read=\(isRead) asked=\(raw.count) updated=\(updated) failed=\(failed.count)")
+        return .success(["updated": .int(Int64(updated)), "failed": .array(failed)])
+    }
+
+    private func mark(_ threads: [MailThread], _ isRead: Bool, account: CalendarAccount, ownAddress: String?, marker: MCPMailReadMarking) async throws {
+        try await marker.setRead(threads: threads, isRead, accountID: account.id, ownAddress: ownAddress) { operation in
+            try await request(account, context: "mcp.mail.setRead", operation)
+        }
     }
 }

@@ -658,9 +658,11 @@
 "mail.settings.privacy" = "Messages show without scripts and without loading anything from the internet; external images load only when you ask. Saved attachments are quarantined like browser downloads. Read receipts are never sent.";
 "mcp.mail.section" = "Mail";
 "mcp.mail.read" = "Let AI assistants read mail";
-"mcp.mail.read.description" = "Folders, lists, conversations and search. Each client is asked separately the first time. Assistants change nothing in the mailbox: no read marks, moves or deletions.";
+"mcp.mail.read.description" = "Folders, lists, conversations and search. Each client is asked separately the first time. Assistants change nothing in the mailbox: no moves or deletions, and read marks only if you allow them below.";
 "mcp.mail.send" = "Let assistants prepare emails";
 "mcp.mail.send.description" = "An email goes out only after you press Send in OWA Widget’s window; the button works after 3 seconds, external and new recipients are highlighted. At most 5 per hour.";
+"mcp.mail.organize" = "Let assistants change mail marks: read";
+"mcp.mail.organize.description" = "Assistants can mark conversations read or unread, without asking each time: the mark can be undone and nothing is sent. No moves, flags or deletions.";
 "mcp.mail.warning" = "Message text goes to the AI assistant you connected. Make sure your organization allows it.";
 "mcp.clients.mail.allowed" = "mail";
 "mcp.clients.mail.denied" = "no mail";

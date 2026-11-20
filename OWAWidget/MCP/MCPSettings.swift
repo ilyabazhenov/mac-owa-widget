@@ -19,13 +19,16 @@ struct MCPSettings: Codable, Equatable, Sendable {
     var mailRead = false
     /// Off by default: an email goes out only after the user confirms it in the app's panel.
     var mailSend = false
+    /// Off by default: marking mail threads read or unread (`set_mail_read`). Reversible and
+    /// sends nothing, so no panel asks; it still needs `mailRead`.
+    var mailOrganize = false
     /// Off by default and separate from `createMeetings`: cancelling tells every attendee.
     var cancelMeetings = false
 }
 
 extension MCPSettings {
     private enum CodingKeys: String, CodingKey {
-        case serverEnabled, createMeetings, askNewClients, mailRead, mailSend, cancelMeetings
+        case serverEnabled, createMeetings, askNewClients, mailRead, mailSend, mailOrganize, cancelMeetings
     }
 
     /// Settings saved before a switch existed lack its key: it takes its default (off).
@@ -36,6 +39,7 @@ extension MCPSettings {
         askNewClients = try container.decodeIfPresent(Bool.self, forKey: .askNewClients) ?? true
         mailRead = try container.decodeIfPresent(Bool.self, forKey: .mailRead) ?? false
         mailSend = try container.decodeIfPresent(Bool.self, forKey: .mailSend) ?? false
+        mailOrganize = try container.decodeIfPresent(Bool.self, forKey: .mailOrganize) ?? false
         cancelMeetings = try container.decodeIfPresent(Bool.self, forKey: .cancelMeetings) ?? false
     }
 }

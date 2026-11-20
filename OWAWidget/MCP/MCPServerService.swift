@@ -88,7 +88,10 @@ final class MCPServerService: ObservableObject {
     @Published var canReadMail: Bool {
         didSet {
             guard canReadMail != oldValue else { return }
-            if !canReadMail { canSendMail = false }
+            if !canReadMail {
+                canSendMail = false
+                canOrganizeMail = false
+            }
             settingsChanged()
             MCPDebugLog.log("mailRead=\(canReadMail)")
         }
@@ -98,6 +101,14 @@ final class MCPServerService: ObservableObject {
             guard canSendMail != oldValue else { return }
             settingsChanged()
             MCPDebugLog.log("mailSend=\(canSendMail)")
+        }
+    }
+    /// Marking threads read or unread (`set_mail_read`); needs `canReadMail`.
+    @Published var canOrganizeMail: Bool {
+        didSet {
+            guard canOrganizeMail != oldValue else { return }
+            settingsChanged()
+            MCPDebugLog.log("mailOrganize=\(canOrganizeMail)")
         }
     }
     /// What the tool calls read. The gate (`authorize`) and the tools must see the same switches:
@@ -132,6 +143,7 @@ final class MCPServerService: ObservableObject {
         canCancelMeetings = settings.cancelMeetings
         canReadMail = settings.mailRead
         canSendMail = settings.mailRead && settings.mailSend
+        canOrganizeMail = settings.mailRead && settings.mailOrganize
         settingsSnapshot = MCPSettingsSnapshot(settings)
     }
 
@@ -142,6 +154,7 @@ final class MCPServerService: ObservableObject {
             askNewClients: askNewClients,
             mailRead: canReadMail,
             mailSend: canReadMail && canSendMail,
+            mailOrganize: canReadMail && canOrganizeMail,
             cancelMeetings: canCancelMeetings
         )
         settingsSnapshot.update(settings)
@@ -169,7 +182,9 @@ final class MCPServerService: ObservableObject {
             handOff: { [weak mailService] request in mailService?.compose(request) },
             canHandOff: { [weak mailService] in mailService?.settings.enabled ?? false },
             isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled && settingsSnapshot.current.mailRead },
-            canSend: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailSend }
+            canSend: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailSend },
+            canOrganize: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailOrganize },
+            readMarker: mailService
         )
         let toolbox = MCPToolbox(calendarTools: calendarTools, mailTools: mailTools, settings: settingsSnapshot) { tool, client, isError in
             MCPServerService.shared.record(tool: tool, client: client, isError: isError)
