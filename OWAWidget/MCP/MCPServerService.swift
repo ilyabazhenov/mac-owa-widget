@@ -435,6 +435,7 @@ final class MCPServerService: ObservableObject {
             guard let mailApproval, var request = approvalRequest(clientID) else { return Self.mailWaitingMessage }
             request.forMail = true
             request.canSendMail = canSendMail
+            request.canOrganizeMail = canOrganizeMail
             updateKnownClients(MCPKnownClientList.setMailAccess(.pending, forKey: identity.key, in: knownClients))
             switch await mailApproval.decision(for: request) {
             case .allowed: return nil

@@ -365,6 +365,41 @@ final class OWAMailParsersTests: XCTestCase {
         XCTAssertEqual(try OWAMailParsers.updatedRefs(data(json)), [MailItemRef(id: "I1", changeKey: "CK2")])
     }
 
+    /// Exchange applies the other items when one fails: the answer says which one did.
+    func testUpdateResultsItemByItem() throws {
+        let json = """
+        {"Body":{"ResponseMessages":{"Items":[
+         {"ResponseCode":"NoError","ResponseClass":"Success","Items":[{"__type":"Message:#Exchange","ItemId":{"ChangeKey":"CK2","Id":"I1"}}]},
+         {"ResponseCode":"ErrorItemNotFound","ResponseClass":"Error","MessageText":"The specified object was not found in the store."},
+         {"ResponseCode":"ErrorAccessDenied","ResponseClass":"Error","MessageText":"Access is denied."}]}}}
+        """
+        let refs = ["I1", "I2", "I3"].map { MailItemRef(id: $0, changeKey: "CK") }
+        let results = try OWAMailParsers.updateResults(data(json), targets: refs)
+        XCTAssertEqual(results.count, 3)
+        XCTAssertEqual(try results[0].get(), MailItemRef(id: "I1", changeKey: "CK2"))
+        XCTAssertEqual(results[1], .failure(.notFound))
+        XCTAssertEqual(results[2], .failure(.serverError("ErrorAccessDenied")))
+        XCTAssertThrowsError(try OWAMailParsers.updatedRefs(data(json)), "the all-or-nothing parser still fails as a whole")
+    }
+
+    func testUpdateResultsFailOnARequestError() {
+        let json = #"{"Body":{"ResponseCode":"ErrorServerBusy","ResponseClass":"Error"}}"#
+        XCTAssertThrowsError(try OWAMailParsers.updateResults(data(json), targets: [MailItemRef(id: "I1", changeKey: nil)]))
+    }
+
+    func testThreadsOneByOne() throws {
+        let json = """
+        {"Body":{"ResponseMessages":{"Items":[
+         {"ResponseCode":"ErrorItemNotFound","ResponseClass":"Error"},
+         {"ResponseCode":"NoError","ResponseClass":"Success","Conversation":{"ConversationId":{"Id":"C2"},"TotalConversationNodesCount":0,"ConversationNodes":[]}}]}}}
+        """
+        let results = try OWAMailParsers.threads(data(json), conversationIDs: ["C1", "C2", "C3"])
+        XCTAssertEqual(results.count, 3)
+        XCTAssertEqual(results[0].failureValue, .notFound)
+        XCTAssertEqual(try results[1].get().id, "C2")
+        XCTAssertEqual(results[2].failureValue, .notFound, "a conversation the answer leaves out")
+    }
+
     func testCreatedItemRefFromSOAP() {
         let soap = #"<m:CreateItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Items><t:Message><t:ItemId Id="DRAFT-1" ChangeKey="CK"/></t:Message></m:Items>"#
         XCTAssertEqual(OWAMailParsers.createdItemRef(fromSOAP: soap), MailItemRef(id: "DRAFT-1", changeKey: "CK"))
@@ -391,5 +426,12 @@ final class OWAMailParsersTests: XCTestCase {
         XCTAssertFalse(OWAClient.isFolderLevelError(OWAError.httpError(503, "")))
         XCTAssertFalse(OWAClient.isFolderLevelError(MailError.blocked("paused")))
         XCTAssertFalse(OWAClient.isFolderLevelError(URLError(.notConnectedToInternet)))
+    }
+}
+
+private extension Result {
+    var failureValue: Failure? {
+        if case .failure(let error) = self { return error }
+        return nil
     }
 }

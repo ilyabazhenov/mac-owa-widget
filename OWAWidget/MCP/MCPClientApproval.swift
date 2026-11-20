@@ -18,6 +18,8 @@ struct MCPClientApprovalRequest: Equatable, Sendable {
     var forMail = false
     /// With `forMail`: the client may also prepare emails (sent only after confirmation).
     var canSendMail = false
+    /// With `forMail`: the client may also mark conversations read or unread (`set_mail_read`).
+    var canOrganizeMail = false
 }
 
 enum MCPClientApprovalOutcome: Equatable, Sendable {

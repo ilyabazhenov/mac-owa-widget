@@ -1098,34 +1098,52 @@ final class MailService: ObservableObject {
     }
 
     /// Marks whole threads read or unread for an MCP client: the same `UpdateItem` as the
-    /// window's marks (`readMarkTargets`), in one request. It goes through `run` — MCP's own
-    /// budget and circuit breaker, to `accountID`'s mailbox — not through `perform`, which
-    /// serves the mail window's account and only while mail is on in the app.
+    /// window's marks (`readMarkTargets`), as few requests as `bulkPageSize` allows. It goes
+    /// through `run` — MCP's own budget and circuit breaker, to `accountID`'s mailbox — not
+    /// through `perform`, which serves the mail window's account and only while mail is on in
+    /// the app.
+    ///
+    /// Exchange marks the other items when one of them fails, so the answer is per thread, in
+    /// order: `nil` when every target was marked, else the first error of one of its targets.
+    /// A request that fails as a whole (budget, connection) stops the ones after it.
     ///
     /// When `accountID` is the account this service shows, the popover's unread lists, the inbox
-    /// panel, the folder counts and the menu bar count follow, as after a mark in the app.
-    /// `threads` are as the server held them before the mark: what changes is what was
-    /// different.
+    /// panel, the folder counts and the menu bar count follow the messages that were marked, as
+    /// after a mark in the app. `threads` are as the server held them before the mark: what
+    /// changes is what was different.
     func setRead(
         threads: [MailThread],
         _ isRead: Bool,
         accountID: UUID,
         ownAddress: String?,
-        via run: (_ operation: @Sendable (any MailProvider) async throws -> [MailItemRef]) async throws -> [MailItemRef]
-    ) async throws {
+        via run: (_ operation: @Sendable (any MailProvider) async throws -> [Result<MailItemRef, MailError>]) async throws -> [Result<MailItemRef, MailError>]
+    ) async -> [(any Error)?] {
         let targetsByThread = threads.map { Self.readMarkTargets(in: $0, isRead, ownAddress: ownAddress) }
-        let targets = targetsByThread.flatMap { $0 }
-        guard !targets.isEmpty else { return }
-        for chunk in targets.chunked(Self.bulkPageSize) {
-            _ = try await run { try await $0.mailUpdate(chunk, .isRead(isRead)) }
+        var failedIDs: [String: any Error] = [:]
+        var stop: (any Error)?
+        for chunk in targetsByThread.flatMap({ $0 }).chunked(Self.bulkPageSize) {
+            if let stop {
+                for target in chunk { failedIDs[target.ref.id] = stop }
+                continue
+            }
+            do {
+                let results = try await run { try await $0.mailUpdateEach(chunk, .isRead(isRead)) }
+                for (target, result) in zip(chunk, results) {
+                    if case .failure(let error) = result { failedIDs[target.ref.id] = error }
+                }
+            } catch {
+                stop = error
+                for target in chunk { failedIDs[target.ref.id] = error }
+            }
         }
-        guard accountID == account?.id else { return }
+        let outcome = targetsByThread.map { targets in targets.lazy.compactMap { failedIDs[$0.ref.id] }.first }
+        guard accountID == account?.id else { return outcome }
 
         var inboxDelta = 0
         var folderDeltas: [String: Int] = [:]
         var unreadListCounts: [String: Int] = [:]
-        for (thread, threadTargets) in zip(threads, targetsByThread) {
-            let ids = Set(threadTargets.map(\.ref.id))
+        for ((thread, threadTargets), failure) in zip(zip(threads, targetsByThread), outcome) {
+            let ids = Set(threadTargets.map(\.ref.id)).subtracting(failedIDs.keys)
             let changed = thread.messages.filter { ids.contains($0.ref.id) && $0.isRead != isRead }
             let step = isRead ? -1 : 1
             evict(thread.id)
@@ -1136,7 +1154,7 @@ final class MailService: ObservableObject {
                 if message.parentFolderID == nil || message.parentFolderID == inboxFolderID { inboxDelta += step }
             }
             // A thread read through leaves the unread lists (they hold inbox conversations).
-            if isRead { unreadListCounts[thread.id] = Int.max }
+            if isRead, failure == nil { unreadListCounts[thread.id] = Int.max }
             // The panel's row counts only its folder's messages: a conversation row by the
             // thread's id, a message row (grouping off) by its own.
             for row in panelList {
@@ -1154,6 +1172,7 @@ final class MailService: ObservableObject {
         if let count = inboxUnreadCount { inboxUnreadCount = max(0, count + inboxDelta) }
         if !unreadListCounts.isEmpty { reduceUnreadLists(unreadListCounts) }
         changeGeneration += 1
+        return outcome
     }
 
     func setFlag(conversations: [MailConversationSummary], _ flagged: Bool) async throws {

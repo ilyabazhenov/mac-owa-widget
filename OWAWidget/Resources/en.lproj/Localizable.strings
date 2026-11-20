@@ -674,6 +674,8 @@
 "mcp.approve.mail.title" = "Let %@ read your mail?";
 "mcp.approve.mail.scope" = "This client can already read your calendar. Mail is a separate permission: it will see subjects, message text and attachment lists in every folder, but change nothing.";
 "mcp.approve.mail.scopeWithSend" = "This client can already read your calendar. Mail is a separate permission: it will see subjects, message text and attachment lists in every folder, and may prepare emails that go out only after you confirm each one.";
+"mcp.approve.mail.scopeWithMarks" = "This client can already read your calendar. Mail is a separate permission: it will see subjects, message text and attachment lists in every folder, and may mark conversations read or unread without asking each time. It changes nothing else in the mailbox.";
+"mcp.approve.mail.scopeWithSendAndMarks" = "This client can already read your calendar. Mail is a separate permission: it will see subjects, message text and attachment lists in every folder, may mark conversations read or unread without asking each time, and may prepare emails that go out only after you confirm each one.";
 "mcp.mail.confirm.title.new" = "%@ wants to send an email";
 "mcp.mail.confirm.title.reply" = "%@ wants to send a reply";
 "mcp.mail.confirm.title.replyAll" = "%@ wants to reply to all";

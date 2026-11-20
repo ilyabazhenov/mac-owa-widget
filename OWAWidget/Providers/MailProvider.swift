@@ -30,8 +30,14 @@ protocol MailProvider: Actor {
     /// One message in full (with the quoted history). Does not mark it as read.
     func mailMessage(_ ref: MailItemRef) async throws -> MailMessage
     func mailAttachment(id: String, maxBytes: Int) async throws -> Data
+    /// Several conversations in one request, in order, without the messages in
+    /// `ignoringFolders`: one the server cannot find fails on its own.
+    func mailThreads(conversationIDs: [String], ignoringFolders: [String]) async throws -> [Result<MailThread, MailError>]
     /// One request for all `targets`; returns their new ids and change keys, in order.
     func mailUpdate(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [MailItemRef]
+    /// `mailUpdate` item by item: Exchange applies the other items when one fails, and this
+    /// says which did. Throws only when the request as a whole failed.
+    func mailUpdateEach(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [Result<MailItemRef, MailError>]
     /// Returns the new ids: a moved item gets a new one.
     func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef]
     func mailSearch(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage
@@ -44,4 +50,29 @@ protocol MailProvider: Actor {
     func mailSendDraft(_ ref: MailItemRef) async throws
     /// Deletes a review draft the user did not send.
     func mailDeleteDraft(_ ref: MailItemRef) async throws
+}
+
+/// One request per conversation and all-or-nothing updates: what a provider without batched
+/// requests (and the test fakes) does. The Exchange provider batches both.
+extension MailProvider {
+    func mailThreads(conversationIDs: [String], ignoringFolders: [String]) async throws -> [Result<MailThread, MailError>] {
+        var results: [Result<MailThread, MailError>] = []
+        for id in conversationIDs {
+            do {
+                results.append(.success(try await mailThread(conversationID: id, ignoringFolders: ignoringFolders)))
+            } catch let error as MailError {
+                results.append(.failure(error))
+            }
+        }
+        return results
+    }
+
+    func mailUpdateEach(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [Result<MailItemRef, MailError>] {
+        do {
+            let refs = try await mailUpdate(targets, update)
+            return targets.indices.map { .success($0 < refs.count ? refs[$0] : targets[$0].ref) }
+        } catch let error as MailError {
+            return targets.map { _ in .failure(error) }
+        }
+    }
 }

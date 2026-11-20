@@ -51,6 +51,15 @@ final class OWAMailPayloadsTests: XCTestCase {
         XCTAssertEqual((request["FoldersToIgnore"] as? [[String: Any]])?.first?["Id"] as? String, "DEL")
     }
 
+    func testConversationItemsForSeveralConversations() throws {
+        let request = try body(OWAMailPayloads.getConversationItems(conversationIDs: ["C1", "C2"], foldersToIgnore: ["DEL"], maximumBodySize: 1_024, timeZoneID: zone))
+        let conversations = try XCTUnwrap(request["Conversations"] as? [[String: Any]])
+        XCTAssertEqual(conversations.compactMap { ($0["ConversationId"] as? [String: Any])?["Id"] as? String }, ["C1", "C2"])
+        XCTAssertEqual((request["ItemShape"] as? [String: Any])?["MaximumBodySize"] as? Int, 1_024)
+        XCTAssertEqual((request["ItemShape"] as? [String: Any])?["FilterHtmlContent"] as? Bool, true, "the same reading shape")
+        XCTAssertEqual((request["FoldersToIgnore"] as? [[String: Any]])?.first?["Id"] as? String, "DEL")
+    }
+
     func testUpdateItemNeverSendsReadReceipts() throws {
         for update in [MailItemUpdate.isRead(true), .isRead(false), .categories(["X"]), .flag(.flagged)] {
             let request = try body(OWAMailPayloads.updateItem(MailItemTarget(MailItemRef(id: "I1", changeKey: "CK"), kind: .note), update: update, timeZoneID: zone))

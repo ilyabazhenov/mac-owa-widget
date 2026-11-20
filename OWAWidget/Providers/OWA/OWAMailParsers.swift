@@ -31,18 +31,37 @@ enum OWAMailParsers {
     static func json(_ data: Data) throws -> Any {
         guard let json = try? JSONSerialization.jsonObject(with: data) else { throw OWAError.invalidResponse }
         if let code = errorCode(in: json) {
-            let isIDError = code == "ErrorItemNotFound" || code == "ErrorInvalidIdMalformed" || code == "ErrorInvalidIdNotAnItemAttachmentId"
-            // The server's wording only for a wrong id: it names id types ("ID type 9; actual
-            // type 12"), which tells a stale id from a request bound to the wrong type. Other
-            // errors may quote addresses or file names in it, and the code alone goes.
-            let text = isIDError ? errorText(in: json).map { " text=" + String($0.prefix(200)) } ?? "" : ""
-            DiagnosticLog.event("Mail server error code=\(code)\(text)")
-            if isIDError {
-                throw MailError.notFound
-            }
-            throw MailError.serverError(code)
+            throw error(code: code, text: errorText(in: json))
         }
         return json
+    }
+
+    /// The JSON of a request whose items succeed or fail one by one (`UpdateItem` and
+    /// `GetConversationItems` for several targets): only an error of the request itself fails it.
+    /// The server has applied the other items when one of them fails.
+    static func jsonWithItemErrors(_ data: Data) throws -> Any {
+        guard let json = try? JSONSerialization.jsonObject(with: data) else { throw OWAError.invalidResponse }
+        if let body = (json as? [String: Any])?["Body"] as? [String: Any],
+           let code = body["ResponseCode"] as? String, code != "NoError" {
+            throw error(code: code, text: body["MessageText"] as? String)
+        }
+        return json
+    }
+
+    /// The error of one item of `ResponseMessages.Items`, `nil` when it succeeded.
+    static func itemError(_ item: [String: Any]) -> MailError? {
+        guard let code = item["ResponseCode"] as? String, code != "NoError" else { return nil }
+        return error(code: code, text: item["MessageText"] as? String)
+    }
+
+    private static func error(code: String, text: String?) -> MailError {
+        let isIDError = code == "ErrorItemNotFound" || code == "ErrorInvalidIdMalformed" || code == "ErrorInvalidIdNotAnItemAttachmentId"
+        // The server's wording only for a wrong id: it names id types ("ID type 9; actual
+        // type 12"), which tells a stale id from a request bound to the wrong type. Other
+        // errors may quote addresses or file names in it, and the code alone goes.
+        let detail = isIDError ? text.map { " text=" + String($0.prefix(200)) } ?? "" : ""
+        DiagnosticLog.event("Mail server error code=\(code)\(detail)")
+        return isIDError ? .notFound : .serverError(code)
     }
 
     private static func body(_ json: Any) -> [String: Any] {
@@ -372,7 +391,22 @@ enum OWAMailParsers {
 
     static func thread(_ data: Data, conversationID: String) throws -> MailThread {
         let parsed = try json(data)
-        let conversation = responseItems(parsed).first?["Conversation"] as? [String: Any] ?? [:]
+        return thread(from: responseItems(parsed).first?["Conversation"] as? [String: Any] ?? [:], conversationID: conversationID)
+    }
+
+    /// Several conversations of one `GetConversationItems`, in request order: one the server
+    /// could not find fails on its own.
+    static func threads(_ data: Data, conversationIDs: [String]) throws -> [Result<MailThread, MailError>] {
+        let items = responseItems(try jsonWithItemErrors(data))
+        return conversationIDs.enumerated().map { index, id in
+            guard index < items.count else { return .failure(.notFound) }
+            let item = items[index]
+            if let error = itemError(item) { return .failure(error) }
+            return .success(thread(from: item["Conversation"] as? [String: Any] ?? [:], conversationID: id))
+        }
+    }
+
+    private static func thread(from conversation: [String: Any], conversationID: String) -> MailThread {
         let nodes = conversation["ConversationNodes"] as? [[String: Any]] ?? []
         let messages = nodes
             .flatMap { ($0["Items"] as? [[String: Any]]) ?? [] }
@@ -394,6 +428,18 @@ enum OWAMailParsers {
         let parsed = try json(data)
         return responseItems(parsed).compactMap { item in
             ((item["Items"] as? [[String: Any]])?.first).flatMap { itemRef($0["ItemId"]) }
+        }
+    }
+
+    /// `UpdateItem` item by item, in request order: the new id and change key, or why that item
+    /// was not updated. An item the response leaves out keeps its old ref.
+    static func updateResults(_ data: Data, targets: [MailItemRef]) throws -> [Result<MailItemRef, MailError>] {
+        let items = responseItems(try jsonWithItemErrors(data))
+        return targets.enumerated().map { index, ref in
+            guard index < items.count else { return .success(ref) }
+            let item = items[index]
+            if let error = itemError(item) { return .failure(error) }
+            return .success(((item["Items"] as? [[String: Any]])?.first).flatMap { itemRef($0["ItemId"]) } ?? ref)
         }
     }
 

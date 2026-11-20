@@ -204,6 +204,18 @@ extension OWAClient {
         return try OWAMailParsers.thread(data, conversationID: conversationID)
     }
 
+    /// Conversations for a read mark (`set_mail_read`): only which messages they hold matters,
+    /// so the one body each carries is cut short.
+    func mailThreads(conversationIDs: [String], ignoringFolders: [String]) async throws -> [Result<MailThread, MailError>] {
+        guard !conversationIDs.isEmpty else { return [] }
+        let payload = OWAMailPayloads.getConversationItems(
+            conversationIDs: conversationIDs, foldersToIgnore: ignoringFolders,
+            maximumBodySize: OWAMailPayloads.markingBodySize, timeZoneID: windowsTimezoneID()
+        )
+        let data = try await mailServiceCall(action: "GetConversationItems", payload: payload)
+        return try OWAMailParsers.threads(data, conversationIDs: conversationIDs)
+    }
+
     func mailMessage(_ ref: MailItemRef) async throws -> MailMessage {
         let data = try await mailServiceCall(action: "GetItem", payload: OWAMailPayloads.getItem(ref, timeZoneID: windowsTimezoneID()))
         guard let message = try OWAMailParsers.messages(data).first else { throw MailError.notFound }
@@ -244,6 +256,12 @@ extension OWAClient {
         let data = try await mailServiceCall(action: "UpdateItem", payload: OWAMailPayloads.updateItems(targets, update: update, timeZoneID: windowsTimezoneID()))
         let updated = try OWAMailParsers.updatedRefs(data)
         return updated.count == targets.count ? updated : targets.map(\.ref)
+    }
+
+    func mailUpdateEach(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [Result<MailItemRef, MailError>] {
+        guard !targets.isEmpty else { return [] }
+        let data = try await mailServiceCall(action: "UpdateItem", payload: OWAMailPayloads.updateItems(targets, update: update, timeZoneID: windowsTimezoneID()))
+        return try OWAMailParsers.updateResults(data, targets: targets.map(\.ref))
     }
 
     func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef] {

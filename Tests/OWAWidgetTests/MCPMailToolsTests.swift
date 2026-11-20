@@ -29,6 +29,7 @@ final class MCPMailToolsTests: XCTestCase {
             return [
                 MailFolder(id: "F-INBOX-FULL-ID-0000000000", distinguishedID: "inbox", displayName: "Inbox", parentID: nil, unreadCount: 2, totalCount: 10, childFolderCount: 1),
                 MailFolder(id: "F-JIRA-FULL-ID-00000000000", distinguishedID: nil, displayName: "Jira", parentID: "F-INBOX-FULL-ID-0000000000", unreadCount: 1, totalCount: 5, childFolderCount: 0),
+                MailFolder(id: "F-DELETED-FULL-ID-00000000", distinguishedID: "deleteditems", displayName: "Deleted Items", parentID: nil, unreadCount: 0, totalCount: 3, childFolderCount: 0),
             ]
         }
         func mailFolderCounts(_ folders: [MailFolderRef]) async throws -> [MailFolder] {
@@ -44,9 +45,23 @@ final class MCPMailToolsTests: XCTestCase {
         }
         func mailThread(conversationID: String, ignoringFolders: [String]) async throws -> MailThread {
             calls.append("thread")
-            guard let thread = threads[conversationID] else { throw MailError.notFound }
-            return thread
+            return try thread(conversationID, ignoringFolders: ignoringFolders)
         }
+        /// As Exchange: the messages of `ignoringFolders` stay out.
+        private func thread(_ id: String, ignoringFolders: [String]) throws -> MailThread {
+            guard let thread = threads[id] else { throw MailError.notFound }
+            let messages = thread.messages.filter { !ignoringFolders.contains($0.parentFolderID ?? "") }
+            return MailThread(id: thread.id, messages: messages, totalMessageCount: messages.count)
+        }
+        /// One `GetConversationItems` for several conversations: a missing one fails alone.
+        func mailThreads(conversationIDs: [String], ignoringFolders: [String]) async throws -> [Result<MailThread, MailError>] {
+            calls.append("threads:\(conversationIDs.count)")
+            ignoredFolders.append(ignoringFolders)
+            return conversationIDs.map { id in
+                Result { try thread(id, ignoringFolders: ignoringFolders) }.mapError { $0 as? MailError ?? .notFound }
+            }
+        }
+        private(set) var ignoredFolders: [[String]] = []
         func mailMessage(_ ref: MailItemRef) async throws -> MailMessage {
             calls.append("message")
             guard let message = threads.values.flatMap(\.messages).first(where: { $0.ref.id == ref.id }) else { throw MailError.notFound }
@@ -55,8 +70,12 @@ final class MCPMailToolsTests: XCTestCase {
         func mailAttachment(id: String, maxBytes: Int) async throws -> Data { Data() }
         /// Each `UpdateItem`: the item ids and the change.
         private(set) var updates: [(ids: [String], update: MailItemUpdate)] = []
-        /// Items deleted after their thread was read: an update naming one fails as a whole.
+        /// Items deleted after their thread was read: as on Exchange, the update fails for each
+        /// of them and goes through for the rest.
         private var missingItemIDs: Set<String> = []
+        /// The next `UpdateItem` fails as a whole (the connection, say).
+        private var updateFailure: Error?
+        func setUpdateFailure(_ error: Error?) { updateFailure = error }
         func setMissingItemIDs(_ ids: Set<String>) { missingItemIDs = ids }
         func add(_ thread: MailThread) { threads[thread.id] = thread }
 
@@ -65,6 +84,12 @@ final class MCPMailToolsTests: XCTestCase {
             updates.append((targets.map(\.ref.id), update))
             if targets.contains(where: { missingItemIDs.contains($0.ref.id) }) { throw MailError.notFound }
             return targets.map(\.ref)
+        }
+        func mailUpdateEach(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [Result<MailItemRef, MailError>] {
+            calls.append("update")
+            updates.append((targets.map(\.ref.id), update))
+            if let updateFailure { throw updateFailure }
+            return targets.map { missingItemIDs.contains($0.ref.id) ? .failure(.notFound) : .success($0.ref) }
         }
         func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef] {
             calls.append("move")
@@ -129,9 +154,10 @@ final class MCPMailToolsTests: XCTestCase {
             _ isRead: Bool,
             accountID: UUID,
             ownAddress: String?,
-            via run: (_ operation: @Sendable (any MailProvider) async throws -> [MailItemRef]) async throws -> [MailItemRef]
-        ) async throws {
+            via run: (_ operation: @Sendable (any MailProvider) async throws -> [Result<MailItemRef, MailError>]) async throws -> [Result<MailItemRef, MailError>]
+        ) async -> [(any Error)?] {
             calls += 1
+            return threads.map { _ in nil }
         }
     }
 
@@ -555,9 +581,9 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertEqual(updates.map(\.ids), [["MSG-ORIGINAL-FULL-ID-000000000"]])
     }
 
-    /// A message deleted between reading its thread and marking it fails the whole request:
-    /// the conversations are marked one by one to find which one is gone.
-    func testSetMailReadRetriesOneByOneWhenAMessageVanished() async throws {
+    /// A message deleted between reading its thread and marking it: Exchange marks the rest of
+    /// the request, and only its conversation comes back in `failed`.
+    func testSetMailReadReportsOnlyTheThreadWhoseMessageVanished() async throws {
         await addBudgetThread()
         await provider.setMissingItemIDs(["MSG-BUDGET-Q-FULL-ID-0000000"])
         let tools = makeTools()
@@ -566,7 +592,60 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertEqual(result["updated"], 1)
         XCTAssertEqual(result["failed"]?.arrayValue?.compactMap { $0["thread_id"]?.stringValue }, ["CONV-2-FULL-ID-0000000000000"])
         let updates = await provider.updates
-        XCTAssertEqual(updates.count, 3, "the batch, then each conversation")
+        XCTAssertEqual(updates.count, 1, "no retries: the answer says which items failed")
+    }
+
+    /// The marks that went through count even when a later request fails, and the counts
+    /// follow only them.
+    func testSetMailReadCountsOnlyMessagesThatWereMarked() async throws {
+        await addBudgetThread()
+        await provider.setMissingItemIDs(["MSG-BUDGET-Q-FULL-ID-0000000"])
+        let defaults = UserDefaults(suiteName: "mcp-mail-partial-\(UUID().uuidString)")!
+        var settings = MailSettings()
+        settings.enabled = true
+        settings.save(to: defaults)
+        let mail = MailService(backend: service, defaults: defaults)
+        mail.notifier = { _, _ in }
+        mailService = mail
+        await mail.checkInbox()
+        XCTAssertEqual(mail.inboxUnreadCount, 7)
+        let tools = makeTools()
+        let ids = try await threadIDs(tools)
+        _ = try object(await tools.call(name: "set_mail_read", arguments: ["thread_ids": .array(ids.map(JSONValue.string)), "read": true], client: nil))
+        XCTAssertEqual(mail.inboxUnreadCount, 6, "the budget question stayed unread")
+    }
+
+    func testSetMailReadReportsEveryThreadWhenTheRequestFails() async throws {
+        await addBudgetThread()
+        await provider.setUpdateFailure(MailError.serverError("ErrorServerBusy"))
+        let tools = makeTools()
+        let ids = try await threadIDs(tools)
+        let result = try object(await tools.call(name: "set_mail_read", arguments: ["thread_ids": .array(ids.map(JSONValue.string)), "read": true], client: nil))
+        XCTAssertEqual(result["updated"], 0)
+        XCTAssertEqual(result["failed"]?.arrayValue?.count, 2)
+    }
+
+    /// Deleted Items stay out, as in the mail window: the newest received copy there is not the
+    /// one to mark unread.
+    func testSetMailUnreadLeavesDeletedItemsOut() async throws {
+        let kept = message("MSG-KEPT-FULL-ID-000000000000", in: "CONV-3-FULL-ID-0000000000000", isRead: true, received: 1_791_990_000)
+        let deleted = message("MSG-DELETED-FULL-ID-000000000", in: "CONV-3-FULL-ID-0000000000000", folder: "F-DELETED-FULL-ID-00000000", isRead: true, received: 1_791_995_000)
+        await provider.add(MailThread(id: "CONV-3-FULL-ID-0000000000000", messages: [deleted, kept], totalMessageCount: 2))
+        let result = try object(await makeTools().call(name: "set_mail_read", arguments: ["thread_ids": ["CONV-3-FULL-ID-0000000000000"], "read": false], client: nil))
+        XCTAssertEqual(result["updated"], 1)
+        let updates = await provider.updates
+        XCTAssertEqual(updates.map(\.ids), [["MSG-KEPT-FULL-ID-000000000000"]])
+        let ignored = await provider.ignoredFolders
+        XCTAssertEqual(ignored, [["F-DELETED-FULL-ID-00000000"]])
+    }
+
+    /// Fifty conversations take five reads, not fifty.
+    func testSetMailReadReadsThreadsInBatches() async throws {
+        let ids = (0..<MCPMailTools.maxThreadsPerMark).map { JSONValue.string(String(format: "CONV-BATCH-%03d-FULL-ID-000000000", $0)) }
+        _ = try object(await makeTools().call(name: "set_mail_read", arguments: ["thread_ids": .array(ids), "read": true], client: nil))
+        let calls = await provider.calls
+        XCTAssertEqual(calls.filter { $0.hasPrefix("threads:") }, Array(repeating: "threads:\(MCPMailTools.threadsPerMarkRead)", count: 5))
+        XCTAssertFalse(calls.contains("thread"))
     }
 
     func testSetMailReadTakesAtMostFiftyThreads() async {
