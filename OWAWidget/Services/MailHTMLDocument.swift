@@ -216,6 +216,26 @@ enum MailHTMLDocument {
         return MeetingBodyHTMLConverter.plainText(from: visible).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Markup of a body for a client that draws the message itself (MCP `include_html`): the
+    /// same cleaning as `plainText` — no scripts, frames, forms, hidden text — and nothing that
+    /// loads but web pictures: no style sheets, media, styles that fetch, URL attributes but
+    /// `href` and an image's `src`. Images that need the mailbox (`cid:`, OWA's own addresses
+    /// behind them) are dropped: drawing them would take more requests to Exchange. Comments go
+    /// too. Formatting — tables, empty cells, bold, italics, colours, cell backgrounds — stays.
+    static func clientHTML(_ html: String?) -> String {
+        guard let html, !html.isEmpty else { return "" }
+        return MailHTMLScanner.process(
+            html, sanitize: true, dropHidden: true, offline: true, dropComments: true, keepImage: isWebImage
+        ) { _ in nil }
+    }
+
+    /// A picture a browser can draw on its own: `http(s)` or a raster `data:` image.
+    private static func isWebImage(_ source: String) -> Bool {
+        let lowered = source.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if lowered.hasPrefix("https://") || lowered.hasPrefix("http://") { return true }
+        return lowered.hasPrefix("data:image/") && !lowered.hasPrefix("data:image/svg")
+    }
+
     /// Whether a body shows nothing: no text (spaces, `&nbsp;` and zero-width characters do not
     /// count) and no images. Invitations often carry such a body; the reader then skips it rather
     /// than drawing an empty white frame.
@@ -279,8 +299,14 @@ enum MailHTMLScanner {
     /// - Parameter rewriteAttribute: a new value for an attribute (element, attribute, value with
     ///   its entities undone); `""` drops the attribute, `nil` keeps it.
     /// - Parameter rewriteStyleSheet: new text for what a `<style>` element holds.
+    /// - Parameter dropComments: drop comments (Outlook's conditional markup included); what
+    ///   sits between them stays. Text in a comment is never shown, so it is hidden text.
+    /// - Parameter keepImage: with `offline`, an `<img>` whose source (`originalsrc` first, as
+    ///   OWA keeps it, else `src`) passes stays, with that source as its only `src`; the others
+    ///   are dropped as without it.
     static func process(
         _ html: String, sanitize: Bool, dropHidden: Bool = false, offline: Bool = false,
+        dropComments: Bool = false, keepImage: ((String) -> Bool)? = nil,
         imageSource: (String) -> String?, zoomLink: ((String) -> String?)? = nil,
         rewriteAttribute: ((_ element: String, _ name: String, _ value: String) -> String?)? = nil,
         rewriteStyleSheet: ((String) -> String)? = nil
@@ -311,6 +337,10 @@ enum MailHTMLScanner {
                 let isComment = starts(s, at: lt, with: "<!--")
                 let end = isComment ? find(s, "-->", from: lt + 4).map { $0 + 3 } : index(of: ">", in: s, from: lt).map { $0 + 1 }
                 guard let end else { break }
+                if isComment, dropComments {
+                    i = end
+                    continue
+                }
                 if isComment, inStyleSheet, rewriteStyleSheet != nil, end - 3 >= lt + 4 {
                     // Outlook wraps its style sheet in a comment.
                     out.append(contentsOf: "<!--".unicodeScalars)
@@ -361,7 +391,13 @@ enum MailHTMLScanner {
                 }
                 continue
             }
-            if sanitize, droppedTags.contains(name) || (offline && offlineTags.contains(name)) {
+            var keptImageSource: String?
+            if sanitize, offline, name == "img", !closing, let keepImage {
+                let source = parsed.list.first(where: { $0.name == "originalsrc" })?.value
+                    ?? parsed.list.first(where: { $0.name == "src" })?.value
+                keptImageSource = source.map { unescaped(String(String.UnicodeScalarView(s[$0]))) }.flatMap { keepImage($0) ? $0 : nil }
+            }
+            if sanitize, droppedTags.contains(name) || (offline && offlineTags.contains(name) && keptImageSource == nil) {
                 i = tagEnd
                 continue
             }
@@ -397,6 +433,10 @@ enum MailHTMLScanner {
             }
             var replacedSource = false
             for attribute in parsed.list {
+                if keptImageSource != nil, attribute.name == "src" || attribute.name == "originalsrc" {
+                    rebuilt = true
+                    continue
+                }
                 if sanitize, attribute.name.hasPrefix("on") || attribute.name == "ping" {
                     rebuilt = true
                     continue
@@ -441,6 +481,10 @@ enum MailHTMLScanner {
                     continue
                 }
                 parts.append(String(String.UnicodeScalarView(s[attribute.range])))
+            }
+            if let keptImageSource {
+                let escaped = keptImageSource.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;")
+                parts.append("src=\"" + escaped + "\"")
             }
             if let originalReplacement, !replacedSource, !parsed.list.contains(where: { $0.name == "src" }) {
                 parts.append("src=\"" + originalReplacement + "\"")

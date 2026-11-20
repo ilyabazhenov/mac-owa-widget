@@ -243,6 +243,12 @@ final class MCPMailTools {
         return id
     }
 
+    private func optionalBool(_ arguments: [String: JSONValue], _ key: String) throws -> Bool? {
+        guard let value = arguments[key], value != .null else { return nil }
+        guard let bool = value.boolValue else { throw ToolError("`\(key)` must be true or false") }
+        return bool
+    }
+
     private func optionalInt(_ arguments: [String: JSONValue], _ key: String, range: ClosedRange<Int>) throws -> Int? {
         guard let value = arguments[key], value != .null else { return nil }
         guard let number = value.intValue, range.contains(number) else {
@@ -380,7 +386,9 @@ final class MCPMailTools {
     }
 
     /// One message; `budget` is what is left of the characters this answer may still carry.
-    private func messageJSON(_ message: MailMessage, _ coder: MCPDateCoder, ownDomain: String?, characterLimit: Int, budget: inout Int) -> JSONValue {
+    /// With `includeHTML`, also `html`: the same part of the body as `text`, cleaned markup for a
+    /// client that draws the message itself. It is not limited: cutting markup would break it.
+    private func messageJSON(_ message: MailMessage, _ coder: MCPDateCoder, ownDomain: String?, characterLimit: Int, includeHTML: Bool, budget: inout Int) -> JSONValue {
         var fields: [String: JSONValue] = [
             "message_id": .string(handle(message.ref.id)),
             "subject": .string(message.subject),
@@ -420,12 +428,23 @@ final class MCPMailTools {
         }
         switch message.kind {
         case .protected:
+            let reason: JSONValue = "The message is encrypted (IRM or S/MIME); only OWA can open it."
             fields["text"] = .null
-            fields["text_unavailable"] = "The message is encrypted (IRM or S/MIME); only OWA can open it."
+            fields["text_unavailable"] = reason
+            if includeHTML {
+                fields["html"] = .null
+                fields["html_unavailable"] = reason
+            }
         case .archived:
+            let reason: JSONValue = "The message is in the Enterprise Vault archive; this is only its stub. The full text opens in OWA."
             fields["text"] = .string(String(MailHTMLDocument.plainText(message.bodyHTML).prefix(1_000)))
-            fields["text_unavailable"] = "The message is in the Enterprise Vault archive; this is only its stub. The full text opens in OWA."
+            fields["text_unavailable"] = reason
+            if includeHTML {
+                fields["html"] = .null
+                fields["html_unavailable"] = reason
+            }
         default:
+            if includeHTML { fields["html"] = .string(MailHTMLDocument.clientHTML(message.bodyHTML)) }
             let text = MailHTMLDocument.plainText(message.bodyHTML)
             let allowed = max(0, min(characterLimit, budget))
             if text.count > allowed {
@@ -622,6 +641,7 @@ final class MCPMailTools {
         let account = try mailAccount(arguments)
         let id = try requiredID(arguments, "thread_id", from: "list_mail or search_mail")
         let maxMessages = try optionalInt(arguments, "max_messages", range: 1...20) ?? 10
+        let includeHTML = try optionalBool(arguments, "include_html") ?? false
         let thread = try await request(account, context: "mcp.mail.thread") { try await $0.mailThread(conversationID: id, ignoringFolders: []) }
         let ownDomain = Self.domain(await ownAddress(account))
         var budget = Self.maxThreadCharacters
@@ -631,7 +651,7 @@ final class MCPMailTools {
         result["subject"] = .string(thread.topic)
         result["total_messages"] = .int(Int64(thread.totalMessageCount))
         result["messages"] = .array(thread.messages.prefix(maxMessages).map {
-            messageJSON($0, coder, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, budget: &budget)
+            messageJSON($0, coder, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, includeHTML: includeHTML, budget: &budget)
         })
         if thread.messages.count > maxMessages || thread.totalMessageCount > thread.messages.count {
             result["note"] = "Newest messages first; older ones are not included. Each message's `text` is only what it added, without the quoted history: get_mail_message returns the full text."
@@ -645,11 +665,12 @@ final class MCPMailTools {
     private func getMessage(_ arguments: [String: JSONValue], _ coder: MCPDateCoder) async throws -> MCPToolResult {
         let account = try mailAccount(arguments)
         let id = try requiredID(arguments, "message_id", from: "get_mail_thread")
+        let includeHTML = try optionalBool(arguments, "include_html") ?? false
         let message = try await request(account, context: "mcp.mail.message") { try await $0.mailMessage(MailItemRef(id: id, changeKey: nil)) }
         let ownDomain = Self.domain(await ownAddress(account))
         var budget = Self.maxFullMessageCharacters
         var result = commonFields(coder, account)
-        result["message"] = messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxFullMessageCharacters, budget: &budget)
+        result["message"] = messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxFullMessageCharacters, includeHTML: includeHTML, budget: &budget)
         result["open_url"] = openURL(.message(id: message.ref.id, accountID: linkAccountID(account)))
         if let conversation = message.conversationID { result["thread_id"] = .string(handle(conversation)) }
         return .success(result)
