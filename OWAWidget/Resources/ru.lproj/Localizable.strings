@@ -591,6 +591,9 @@
 "mail.undo.deleted" = "Перенесено в «Удалённые»";
 "mail.undo.action" = "Отменить";
 "mail.undo.failed" = "Не удалось вернуть письмо";
+"mail.link.notFound" = "Письмо по ссылке не найдено. Запросите ссылку заново";
+"mail.link.otherAccount" = "Письмо по ссылке — в другом аккаунте. Выберите его в настройках почты";
+"mail.link.unavailable" = "Не удалось открыть письмо по ссылке";
 "mail.action.openInOWA" = "Открыть в OWA";
 "mail.action.new" = "Новое письмо";
 "mail.action.refresh" = "Обновить";

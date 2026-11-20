@@ -47,6 +47,9 @@ final class MCPMailTools {
     private let clock: () -> Date
     private let timeZoneProvider: () -> TimeZone
     private let confirmationTimeout: TimeInterval
+    /// The scheme of `open_url` links: this copy's own, so a development build's links do not
+    /// open the release one.
+    private let linkScheme: String
 
     private var handles: [String: String] = [:]
     private var handleOrder: [String] = []
@@ -68,8 +71,10 @@ final class MCPMailTools {
         canSend: @escaping () -> Bool = { false },
         confirmationTimeout: TimeInterval = MCPCalendarTools.confirmationTimeout,
         clock: @escaping () -> Date = { Date() },
-        timeZone: @escaping () -> TimeZone = { AppTimeZone.zone }
+        timeZone: @escaping () -> TimeZone = { AppTimeZone.zone },
+        linkScheme: String = AppURLRoute.currentScheme
     ) {
+        self.linkScheme = linkScheme
         self.calendarService = calendarService
         self.accessGuard = accessGuard
         self.confirmer = confirmer ?? MCPMailConfirmationController()
@@ -179,6 +184,18 @@ final class MCPMailTools {
         }
         handles[short] = id
         return short
+    }
+
+    /// A link that opens this in OWA Widget's mail window (`owawidget://`), for a notification or
+    /// a note. It carries the full Exchange id, so it still works after the app restarts; lists
+    /// do not get one (a full id is about 170 characters a row), their short ids work in links too.
+    private func openURL(_ route: AppURLRoute) -> JSONValue {
+        .optional(route.url(scheme: linkScheme)?.absoluteString)
+    }
+
+    /// The account goes into a link only when there is a choice.
+    private func linkAccountID(_ account: CalendarAccount) -> UUID? {
+        calendarService.mailAccounts.count > 1 ? account.id : nil
     }
 
     /// The full id behind a handle; a full id is accepted as is.
@@ -581,6 +598,7 @@ final class MCPMailTools {
         var budget = Self.maxThreadCharacters
         var result = commonFields(coder, account)
         result["thread_id"] = .string(handle(thread.id))
+        result["open_url"] = openURL(.thread(id: thread.id, accountID: linkAccountID(account)))
         result["subject"] = .string(thread.topic)
         result["total_messages"] = .int(Int64(thread.totalMessageCount))
         result["messages"] = .array(thread.messages.prefix(maxMessages).map {
@@ -603,6 +621,7 @@ final class MCPMailTools {
         var budget = Self.maxFullMessageCharacters
         var result = commonFields(coder, account)
         result["message"] = messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxFullMessageCharacters, budget: &budget)
+        result["open_url"] = openURL(.message(id: message.ref.id, accountID: linkAccountID(account)))
         if let conversation = message.conversationID { result["thread_id"] = .string(handle(conversation)) }
         return .success(result)
     }

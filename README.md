@@ -209,6 +209,21 @@ The button appears when the online meeting field, location or description contai
 **Where does my data go if I connect an AI assistant?**
 The app itself sends it nowhere: the assistant reads it over a local connection on your Mac. What the assistant reads — meeting titles, descriptions and attendees — goes to the AI service you use. While access is off, the assistant sees nothing.
 
+**Can I open an email in OWA Widget from a link — in a notification or a note?**
+Yes, the app has `owawidget://` links:
+
+- `owawidget://mail` opens the mail window and brings it to the front;
+- `owawidget://thread?id=<id>` opens a conversation;
+- `owawidget://message?id=<id>` opens a conversation and scrolls to the message.
+
+MCP hands an AI assistant a ready link: the `open_url` field of `get_mail_thread` and `get_mail_message`. It carries the message's full id, so it keeps working after the app restarts. A short `thread_id` from `list_mail` works in a link too, but only until OWA Widget restarts. With several accounts the link also carries `account=<account_id>`. A notification that opens the email when clicked:
+
+```bash
+terminal-notifier -title "Important email" -message "Release 1.3" -open "owawidget://message?id=…"
+```
+
+Links only open the window: nothing can be sent, deleted or changed through them. An email opened from a link is marked as read just as when you open it yourself (the setting is in Mail). With mail turned off, a link does nothing.
+
 **Why does macOS ask for access to the Keychain?**
 The account passwords and the key that encrypts app data live in the Keychain. macOS asks when an app with a different signature reads them, for example the first time after updating from a version released before the app was signed with a Developer ID. Click **Always Allow**: plain **Allow** lets the app in for this launch only, and the question comes back next time.
 

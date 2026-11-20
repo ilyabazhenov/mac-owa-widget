@@ -109,6 +109,12 @@ final class MCPServerService: ObservableObject {
     private var listener: MCPSocketListener?
     private var watchdog: Timer?
     private var toolbox: MCPToolbox?
+
+    /// The full Exchange id behind a short mail id the MCP tools handed out (`owawidget://`
+    /// links carry either). The handles live in memory: after a restart a short id is unknown.
+    func resolveMailID(_ id: String) -> String? {
+        toolbox?.mailTools?.resolve(id)
+    }
     private var handler: MCPProtocolHandler?
     private var verifier: MCPPeerVerifier?
     private let inspector = MCPSystemProcessInspector()

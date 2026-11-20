@@ -201,6 +201,9 @@ struct OWAWidgetApp: App {
         // Same launch-time hook: the label renders at launch, so MCP clients can connect before
         // the popover has ever been opened.
         MCPServerService.shared.start(calendarService: calendarService, mailService: mailService)
+        // `owawidget://` links: the label is now on screen to open the mail window, and the MCP
+        // tools are there to turn their short mail ids back into Exchange ids.
+        AppURLRouter.shared.attach(mailService: mailService) { MCPServerService.shared.resolveMailID($0) }
     }
 
     private func configureAppIcon() {
@@ -226,6 +229,24 @@ struct OWAWidgetApp: App {
 /// set in its onAppear/onDisappear plus an identifier check as a belt-and-suspenders guard,
 /// which also keeps us off the half-constructed settings window during its mount.
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// `owawidget://` links come as a Get URL Apple Event. Taken here, before launch finishes, so
+    /// a link that launches the app is not lost, and so SwiftUI does not answer it by opening a
+    /// window of its own.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURL(_:withReply:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+    }
+
+    @objc private func handleGetURL(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) {
+        guard let string = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+              let url = URL(string: string) else { return }
+        MainActor.assumeIsolated { AppURLRouter.shared.handle(url) }
+    }
+
     /// Flipped to `true` while the create-meeting window is on screen.
     /// Mutated from SwiftUI onAppear/onDisappear (main thread). Read from
     /// applicationDidBecomeActive (main thread). Single-thread access only.

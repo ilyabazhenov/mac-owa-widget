@@ -119,6 +119,11 @@ struct MailOpenRequest: Equatable {
     let conversationID: String
     /// The folder to show around it (the inbox panel's), when not the window's own.
     var folder: MailFolderRef? = nil
+    /// A link to one message (`owawidget://message`): its conversation opens with this message
+    /// unfolded and scrolled to. `conversationID` is then empty: the window looks it up.
+    var messageID: String? = nil
+    /// Shown in the window instead of opening anything: a link it could not follow.
+    var notice: MailListNotice? = nil
     let token = UUID()
 }
 
@@ -1351,6 +1356,16 @@ final class MailService: ObservableObject {
         openRequest = MailOpenRequest(conversationID: conversationID, folder: folder)
     }
 
+    /// Opens the conversation of one message, with that message unfolded and scrolled to.
+    func open(messageID: String) {
+        openRequest = MailOpenRequest(conversationID: "", messageID: messageID)
+    }
+
+    /// Opens the window with a notice instead of a conversation: a link it could not follow.
+    func openWindow(notice: MailListNotice) {
+        openRequest = MailOpenRequest(conversationID: "", notice: notice)
+    }
+
     func compose(_ request: MailComposeRequest) {
         composeRequest = request
     }
@@ -1493,12 +1508,18 @@ enum MailListNotice: Equatable, Sendable {
     case failed
     /// Undo did not get through: the conversation stays in Deleted Items.
     case undoFailed
+    /// A link (`owawidget://`) named a message this copy of the app no longer knows: an MCP
+    /// short id from before a restart, say.
+    case linkNotFound
+    /// A link named a message of another account than the one the window shows.
+    case linkOtherAccount
 
     /// Seconds on screen: long enough to reach Undo, short enough not to linger.
     var lifetime: Double {
         switch self {
         case .deleted: 6
         case .failed, .undoFailed: 4
+        case .linkNotFound, .linkOtherAccount: 8
         }
     }
 }

@@ -211,6 +211,27 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertFalse(calls.contains("update"), "reading must not mark anything as read")
     }
 
+    /// `open_url` opens the thread or message in the mail window: it carries the full id, so it
+    /// outlives the short ids; lists do not get one.
+    func testThreadAndMessageCarryAnOpenLink() async throws {
+        let tools = makeTools()
+        let list = try object(await tools.call(name: "list_mail", arguments: [:], client: nil))
+        let row = try XCTUnwrap(list["threads"]?.arrayValue?.first)
+        XCTAssertNil(row["open_url"])
+        let threadID = try XCTUnwrap(row["thread_id"]?.stringValue)
+
+        let thread = try object(await tools.call(name: "get_mail_thread", arguments: ["thread_id": .string(threadID)], client: nil))
+        let threadLink = try XCTUnwrap(thread["open_url"]?.stringValue.flatMap(URL.init(string:)))
+        XCTAssertEqual(AppURLRoute.parse(threadLink), .thread(id: "CONV-1-FULL-ID-0000000000000", accountID: nil), "one account: no account in the link")
+
+        let messageID = try XCTUnwrap(thread["messages"]?.arrayValue?.first?["message_id"]?.stringValue)
+        let message = try object(await tools.call(name: "get_mail_message", arguments: ["message_id": .string(messageID)], client: nil))
+        let messageLink = try XCTUnwrap(message["open_url"]?.stringValue)
+        XCTAssertEqual(AppURLRoute.parse(try XCTUnwrap(URL(string: messageLink))), .message(id: "MSG-ORIGINAL-FULL-ID-000000000", accountID: nil))
+        XCTAssertTrue(messageLink.hasPrefix("owawidget://"), "outside an app bundle: the release scheme")
+        XCTAssertEqual(tools.resolve(messageID), "MSG-ORIGINAL-FULL-ID-000000000", "the short id resolves for links too")
+    }
+
     func testUnknownHandleAsksToListAgain() async {
         let result = await makeTools().call(name: "get_mail_thread", arguments: ["thread_id": "0123456789ab"], client: nil)
         XCTAssertTrue(result.isError)

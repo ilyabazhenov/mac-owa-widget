@@ -14,21 +14,7 @@ struct MailReadingView: View {
                 VStack(spacing: 0) {
                     actionBar(thread)
                     Divider()
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 10) {
-                            threadHeader(thread)
-                            ForEach(thread.messages) { message in
-                                MailMessageCard(model: model, service: service, message: message)
-                            }
-                            if thread.totalMessageCount > thread.messages.count {
-                                Label(localization.tr("mail.thread.more", thread.totalMessageCount - thread.messages.count), systemImage: "ellipsis.bubble")
-                                    .font(.app(.footnote))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(16)
-                        .padding(.trailing, scrollerInset)
-                    }
+                    threadScroll(thread)
                 }
             } else if model.isLoadingThread {
                 loadingView
@@ -100,6 +86,42 @@ struct MailReadingView: View {
     }
 
     private var newest: MailMessage? { model.thread?.messages.first }
+
+    private func threadScroll(_ thread: MailThread) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    threadHeader(thread)
+                    ForEach(thread.messages) { message in
+                        MailMessageCard(model: model, service: service, message: message)
+                            .id(message.id)
+                    }
+                    if thread.totalMessageCount > thread.messages.count {
+                        Label(localization.tr("mail.thread.more", thread.totalMessageCount - thread.messages.count), systemImage: "ellipsis.bubble")
+                            .font(.app(.footnote))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(16)
+                .padding(.trailing, scrollerInset)
+            }
+            // A link opened one message of the conversation: show it, and again while
+            // the texts above it load and push it down.
+            .onChange(of: model.scrollTarget) { target in scroll(proxy, to: target) }
+            .onChange(of: model.readerDocuments.count) { _ in scroll(proxy, to: model.scrollTarget, settling: true) }
+            .onChange(of: model.fullBodies.count) { _ in scroll(proxy, to: model.scrollTarget, settling: true) }
+            .onAppear { scroll(proxy, to: model.scrollTarget) }
+        }
+    }
+
+    /// Scrolls the reader to the message a link opened. `settling`: a text above it has just
+    /// loaded; follow the message only for a short while after it opened, so a user who has
+    /// started reading elsewhere is not pulled back.
+    private func scroll(_ proxy: ScrollViewProxy, to target: MailScrollTarget?, settling: Bool = false) {
+        guard let target else { return }
+        if settling, Date() > target.until { return }
+        DispatchQueue.main.async { proxy.scrollTo(target.messageID, anchor: .top) }
+    }
 
     /// Labelled buttons while they fit, icons with tooltips when the reader is narrow: a label must
     /// never wrap into "Отве / тить".
@@ -943,9 +965,17 @@ struct MailWindowView: View {
     private func consumeOpenRequest() {
         guard let request = service.openRequest else { return }
         service.openRequest = nil
+        if let notice = request.notice {
+            model.showLinkNotice(notice)
+            return
+        }
         // Opened from the inbox panel: show the folder the panel shows, so the conversation sits
         // in its own list (and one in Deleted Items loads with that folder included).
         if let folder = request.folder { model.select(ref: folder) }
+        if let messageID = request.messageID {
+            Task { await model.openMessage(messageID) }
+            return
+        }
         guard !request.conversationID.isEmpty else { return }
         model.clearSearch()
         Task { await model.openConversation(request.conversationID) }

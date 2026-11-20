@@ -591,6 +591,9 @@
 "mail.undo.deleted" = "Moved to Deleted Items";
 "mail.undo.action" = "Undo";
 "mail.undo.failed" = "Couldn’t bring the message back";
+"mail.link.notFound" = "The linked message wasn’t found. Ask for the link again";
+"mail.link.otherAccount" = "The linked message is in another account. Choose it in Mail settings";
+"mail.link.unavailable" = "Couldn’t open the linked message";
 "mail.action.openInOWA" = "Open in OWA";
 "mail.action.new" = "New Message";
 "mail.action.refresh" = "Refresh";

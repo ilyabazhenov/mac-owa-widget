@@ -48,6 +48,18 @@ struct MailSearchFilters: Equatable {
     }
 }
 
+/// Where the reader scrolls to after a link opened one message of a conversation.
+struct MailScrollTarget: Equatable {
+    /// Long enough for the texts above the message to load and settle; the user scrolling
+    /// within this time is not fought for longer than that.
+    static let settleTime: TimeInterval = 3
+
+    let messageID: String
+    /// Until when the reader scrolls back to it as the messages above it grow.
+    let until: Date
+    let token = UUID()
+}
+
 /// The "Open in OWA" link for a message.
 enum MailOWALink {
     static func url(serverURL: String, itemID: String) -> URL? {
@@ -302,6 +314,9 @@ final class MailWindowModel: ObservableObject {
     @Published private(set) var threadError: String?
     /// Messages of the open thread shown expanded; the newest and every unread one by default.
     @Published var expandedMessageIDs: Set<String> = []
+    /// The message a link opened (`owawidget://message`): the reader scrolls to it, and again
+    /// while the messages above it are still growing as their text loads.
+    @Published private(set) var scrollTarget: MailScrollTarget?
     @Published private(set) var inlineImages: [String: [String: (data: Data, type: String)]] = [:]
     /// The last inline image scan of each message, for the next one to wait on.
     private var inlineImageLoads: [String: Task<Void, Never>] = [:]
@@ -817,10 +832,15 @@ final class MailWindowModel: ObservableObject {
         return id == selectedConversationID && selectedIsMessage
     }
 
-    func openConversation(_ id: String, reload: Bool = false) async {
+    /// - Parameters:
+    ///   - asMessage: open `id` as one message on its own rather than as a conversation; by
+    ///     default, as the list on screen shows it.
+    ///   - focus: a message of the conversation to unfold and scroll to.
+    func openConversation(_ id: String, reload: Bool = false, asMessage forced: Bool? = nil, focus: String? = nil) async {
         markReadTask?.cancel()
-        let asMessage = isMessageRow(id)
-        if selectedConversationID != id {
+        let asMessage = forced ?? isMessageRow(id)
+        if focus == nil { scrollTarget = nil }
+        if selectedConversationID != id || selectedIsMessage != asMessage {
             selectedConversationID = id
             selectedIsMessage = asMessage
             thread = nil
@@ -840,6 +860,10 @@ final class MailWindowModel: ObservableObject {
             thread = loaded
             var expanded = Set(loaded.messages.filter { !$0.isRead }.map(\.id))
             if let newest = loaded.messages.first { expanded.insert(newest.id) }
+            if let focus, loaded.messages.contains(where: { $0.id == focus }) {
+                expanded.insert(focus)
+                scrollTarget = MailScrollTarget(messageID: focus, until: Date().addingTimeInterval(MailScrollTarget.settleTime))
+            }
             expandedMessageIDs.formUnion(expanded)
             let opened = loaded.messages.filter { expandedMessageIDs.contains($0.id) }
             loadMissingHistory(for: opened)
@@ -849,6 +873,42 @@ final class MailWindowModel: ObservableObject {
             guard selectedConversationID == id, !MailCancellation.isCancellation(error) else { return }
             threadError = error.localizedDescription
         }
+    }
+
+    /// Opens a link to one message (`owawidget://message`): its conversation, with the message
+    /// unfolded and scrolled to. A message its conversation does not bring (one in Deleted Items,
+    /// which conversations leave out) opens on its own.
+    func openMessage(_ messageID: String) async {
+        clearSearch()
+        clearSelection()
+        scrollTarget = nil
+        isLoadingThread = true
+        let message: MailMessage
+        do {
+            message = try await service.fullMessage(MailItemRef(id: messageID, changeKey: nil))
+        } catch {
+            isLoadingThread = false
+            guard !MailCancellation.isCancellation(error), selectedConversationID == nil else { return }
+            let title = service.localization?.tr("mail.link.unavailable") ?? "Couldn’t open the linked message"
+            threadError = "\(title)\n\(error.localizedDescription)"
+            return
+        }
+        isLoadingThread = false
+        // The user may have opened something else while the message loaded.
+        guard selectedConversationID == nil, thread == nil else { return }
+        guard let conversationID = message.conversationID, !conversationID.isEmpty else {
+            await openConversation(messageID, asMessage: true)
+            return
+        }
+        await openConversation(conversationID, asMessage: false, focus: messageID)
+        if let thread, thread.id == conversationID, !thread.messages.contains(where: { $0.id == messageID }) {
+            await openConversation(messageID, asMessage: true)
+        }
+    }
+
+    /// A link the window could not follow.
+    func showLinkNotice(_ notice: MailListNotice) {
+        showNotice(notice)
     }
 
     func toggleExpanded(_ message: MailMessage) {
