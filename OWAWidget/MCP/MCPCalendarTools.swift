@@ -1725,6 +1725,34 @@ final class MCPCalendarTools {
         return fields
     }
 
+    /// `now`, time zone, `coverage`, `data_as_of` and `sync_state`, as every calendar answer has.
+    func statusFields(now: Date, coder: MCPDateCoder) -> [String: JSONValue] {
+        commonFields(CallContext(now: now, coder: coder))
+    }
+
+    /// One calendar entry of `get_changes`: the meeting's usual fields plus what happened.
+    func changeJSON(_ entry: MCPChangeEntry, _ change: MCPCalendarChange, now: Date, coder: MCPDateCoder) -> JSONValue {
+        var fields: [String: JSONValue]
+        if change.kind == .removed {
+            fields = [
+                "event_id": .string(MCPEventID.short(change.event.id)),
+                "title": .string(change.event.title),
+                "start": .string(coder.string(change.event.startDate)),
+                "end": .string(coder.string(change.event.endDate)),
+                "account_id": .string(change.event.accountID.uuidString),
+            ]
+        } else {
+            fields = eventFields(change.event, CallContext(now: now, coder: coder))
+            let event = change.event
+            fields["needs_response"] = .bool(!event.isOrganizer && event.responseType == .notResponded && !event.isEffectivelyCancelled)
+        }
+        fields["seq"] = .int(Int64(entry.seq))
+        fields["type"] = .string(change.kind.rawValue)
+        fields["at"] = .string(coder.string(entry.date))
+        if change.kind == .updated { fields["changed"] = .array(change.fields.map(JSONValue.string)) }
+        return .object(fields)
+    }
+
     private func eventFields(_ event: CalendarEvent, _ context: CallContext) -> [String: JSONValue] {
         let coder = context.coder
         var fields: [String: JSONValue] = [

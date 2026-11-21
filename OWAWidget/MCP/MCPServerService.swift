@@ -186,7 +186,27 @@ final class MCPServerService: ObservableObject {
             canOrganize: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailOrganize },
             readMarker: mailService
         )
-        let toolbox = MCPToolbox(calendarTools: calendarTools, mailTools: mailTools, settings: settingsSnapshot) { tool, client, isError in
+        let pollInterval: () -> TimeInterval = { [weak mailService] in
+            TimeInterval((mailService?.settings.pollMinutes ?? 2) * 60)
+        }
+        let inboxWatcher = MCPInboxWatcher(
+            calendarService: calendarService,
+            accessGuard: accessGuard,
+            feed: calendarService.changeFeed,
+            interval: pollInterval
+        )
+        mailService?.inboxCountsObserver = { [weak inboxWatcher] accountID, unread, total in
+            inboxWatcher?.countsObserved(accountID: accountID, unread: unread, total: total)
+        }
+        let changeTools = MCPChangeTools(
+            calendarService: calendarService,
+            calendarTools: calendarTools,
+            mailTools: mailTools,
+            watcher: inboxWatcher,
+            isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled },
+            checkInterval: pollInterval
+        )
+        let toolbox = MCPToolbox(calendarTools: calendarTools, mailTools: mailTools, changeTools: changeTools, settings: settingsSnapshot) { tool, client, isError in
             MCPServerService.shared.record(tool: tool, client: client, isError: isError)
         }
         self.toolbox = toolbox
@@ -445,6 +465,15 @@ final class MCPServerService: ObservableObject {
         }
     }
 
+    /// Whether `get_changes` may give this client mail. Never asks: a question popping up from a
+    /// background refresh would be a surprise; the mail tools ask.
+    func changesMailAccess(_ clientID: UUID) -> MCPChangeTools.MailAccess {
+        guard canReadMail else { return .off }
+        guard let identity = clients.first(where: { $0.id == clientID })?.identity, identity.isResolved,
+              knownClients.first(where: { $0.key == identity.key })?.mailAccess == .allowed else { return .notAllowed }
+        return .allowed
+    }
+
     func setMailAccess(_ access: MCPClientAccess?, forKey key: String) {
         MCPDebugLog.log("set mail access \(access?.rawValue ?? "none"): \(key)")
         updateKnownClients(MCPKnownClientList.setMailAccess(access, forKey: key, in: knownClients))
@@ -564,6 +593,10 @@ struct MCPGatedToolbox: MCPToolProviding {
         if MCPMailTools.toolNames.contains(name), let refusal = await MCPServerService.shared.authorizeMail(clientID, tool: name) {
             await base.recordCall(name, client, true)
             return .failure(refusal)
+        }
+        if name == MCPChangeTools.toolName {
+            let access = await MCPServerService.shared.changesMailAccess(clientID)
+            return await base.callTool(name: name, arguments: arguments, client: client, mailAccess: access)
         }
         return await base.callTool(name: name, arguments: arguments, client: client)
     }

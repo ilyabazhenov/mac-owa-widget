@@ -337,6 +337,20 @@ final class MCPMailTools {
 
     // MARK: - JSON
 
+    /// One mail entry of `get_changes`: the conversation as `list_mail` shows it plus what happened.
+    func changeJSON(_ entry: MCPChangeEntry, _ change: MCPMailChange, coder: MCPDateCoder) -> JSONValue {
+        guard case .object(var fields) = conversationJSON(change.conversation, coder) else { return .null }
+        fields["folder"] = nil
+        fields["folder_id"] = nil
+        fields["seq"] = .int(Int64(entry.seq))
+        fields["type"] = .string(change.kind.rawValue)
+        fields["at"] = .string(coder.string(entry.date))
+        if let kind = change.conversation.uniformItemKind { fields["kind"] = .string(Self.kindName(kind)) }
+        if calendarService.mailAccounts.count > 1 { fields["account_id"] = .string(change.accountID.uuidString) }
+        if change.kind == .updated { fields["changed"] = .array(change.fields.map(JSONValue.string)) }
+        return .object(fields)
+    }
+
     private func conversationJSON(_ conversation: MailConversationSummary, _ coder: MCPDateCoder, folderNames: [String: String] = [:]) -> JSONValue {
         var fields: [String: JSONValue] = [
             "thread_id": .string(handle(conversation.id)),

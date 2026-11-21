@@ -147,6 +147,13 @@ final class CalendarService: ObservableObject {
         )
     }
 
+    /// What changed between syncs, for the MCP `get_changes` tool. Memory only.
+    let changeFeed = MCPChangeFeed()
+    /// Each account's meetings and window as its last sync fetched them — not `events`, which
+    /// also carries what the app changed itself in between (an optimistic RSVP, loaded details),
+    /// and would hide those changes from the comparison.
+    private var lastFetched: [UUID: (events: [CalendarEvent], window: DateInterval)] = [:]
+
     private let syncIntervalKey = "syncInterval"
     private let notificationLeadKey = "notificationLeadMinutes"
     private let meetingReminderStyleKey = "meetingReminderStyle"
@@ -701,6 +708,10 @@ final class CalendarService: ObservableObject {
         self.events = events
     }
 
+    func applyResponseTypeForTests(_ type: MeetingResponseType, to eventID: String) {
+        applyResponseType(type, to: eventID)
+    }
+
     /// Sets the account list without touching the Keychain or the encrypted store.
     func replaceAccountsForTests(_ accounts: [CalendarAccount]) {
         self.accounts = accounts
@@ -925,6 +936,32 @@ final class CalendarService: ObservableObject {
             unhandledInvitationIDs = invitationTracker.unhandledEventIDs
         }
         syncNow()
+    }
+
+    // MARK: - Changes for MCP
+
+    /// Compares each fetched account with its previous fetch. An account fetched for the first
+    /// time in this run is a baseline: nothing is known about what changed before it.
+    private func recordChanges(_ fetched: [UUID: [CalendarEvent]], window: DateInterval) {
+        var changes: [MCPChange] = []
+        var baseline = false
+        for (accountID, batch) in fetched.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+            if let previous = lastFetched[accountID] {
+                changes += CalendarChangeDetector.changes(
+                    old: previous.events,
+                    oldWindow: previous.window,
+                    new: batch,
+                    newWindow: window
+                ).map(MCPChange.calendar)
+            } else {
+                baseline = true
+            }
+            lastFetched[accountID] = (batch, window)
+        }
+        let known = Set(providers.map(\.account.id))
+        lastFetched = lastFetched.filter { known.contains($0.key) }
+        if baseline { changeFeed.markCalendarBaseline() }
+        changeFeed.append(changes)
     }
 
     // MARK: - Meeting response
@@ -1422,6 +1459,7 @@ final class CalendarService: ObservableObject {
                 }
 
                 processInvitationChanges(refreshedAccountIDs: Set(fetchedByAccount.keys), windowEnd: end)
+                recordChanges(fetchedByAccount, window: DateInterval(start: start, end: end))
             }
 
             if let failure = failures.first {

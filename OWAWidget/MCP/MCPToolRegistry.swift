@@ -31,6 +31,25 @@ enum MCPToolRegistry {
             inputSchema: ["type": "object", "properties": [:], "additionalProperties": false]
         ),
         MCPToolDefinition(
+            name: "get_changes",
+            title: "What changed",
+            description: """
+            What changed in the calendar (and, for a client allowed to read mail, in the inbox) since the previous call, oldest first, so a client keeps its copy fresh without re-reading everything. Pass the `cursor` of the previous answer as `since_cursor`; the first call has none. `reset: true` means changes since that cursor are unknown — the app restarted (`reset_reason: restarted`), the cursor is too old (`expired`; the app remembers \(MCPChangeFeed.capacity) changes or 24 hours), a calendar or the inbox was read for the first time since (`calendar_resync`, `mail_resync`), or there was no cursor (`no_cursor`) — then `changes` is empty: re-read what you keep (list_events, list_mail) and continue from the new `cursor`. With `has_more: true`, call again at once with the new `cursor`.
+            The data is the app's own: meetings as of the last sync (every few minutes, `data_as_of`), the inbox as of `mail.checked_at`. The calendar part costs no request to Exchange.
+            Calendar entries (`type`): `event_created`, `event_updated` with `changed` (any of `time`, `title`, `location`, `attendees`, `my_response`, `cancelled`, `other` — `other` means Exchange changed the meeting in a way the list does not show; on a meeting the user organizes that is usually an attendee's answer, which get_event_details shows), `event_removed` (deleted, or no longer in the calendar). They carry the fields list_events gives plus `needs_response` (an invitation the user has not answered); `event_removed` only `event_id`, `title`, `start`, `end`. Meetings that only came into or went out of the sync window (−7 … +30 days) as time passed are not changes. A cancelled meeting usually comes as `event_updated` with `cancelled`.
+            Mail entries, only when `mail.state` is `watching`: `mail_added` (a conversation new in the first inbox page — new mail, or mail moved into the inbox), `mail_updated` with `changed` (any of `new_message`, `message_removed`, `read`, `unread`, `flag`, `categories`) and `mail_removed` (moved out of the inbox or deleted). They carry the fields list_mail gives (`thread_id`, `subject`, `from`, `last_received`, `unread`, …) and `kind` (`message`, `meeting_request`, `meeting_response`, `meeting_cancellation`, …) when the conversation holds one kind. Only the newest \(OWAMailPayloads.pageSize) inbox conversations are watched.
+            `mail.state`: `watching`; `starting` (the first inbox look is pending — mail entries begin after a `mail_resync` reset); `off` (mail for assistants is off in OWA Widget); `not_allowed` (the user has not allowed this client to read mail; this tool does not ask — any mail tool does); `unavailable` (no Exchange mailbox). Watching the inbox asks Exchange about every \(Int(MCPInboxWatcher.defaultInterval / 60)) minutes (`mail.check_every_seconds`): one `GetFolder`, and one `FindConversation` when the counts moved or every 10 minutes; it stops 10 minutes after the last call, so call at least that often. Every entry has `seq` and `at` (when the app noticed it).
+            """,
+            inputSchema: [
+                "type": "object",
+                "properties": [
+                    "since_cursor": ["type": "string", "description": "`cursor` from the previous get_changes answer. Omit on the first call."],
+                    "limit": ["type": "integer", "minimum": 1, "maximum": .int(Int64(MCPChangeTools.maxLimit)), "description": .string("At most this many changes (default \(MCPChangeTools.defaultLimit)).")],
+                ],
+                "additionalProperties": false,
+            ]
+        ),
+        MCPToolDefinition(
             name: "get_current_and_next",
             title: "Current and next meeting",
             description: "Meetings happening right now, the next meeting (several if they start within 5 minutes of each other), all-day events today, and until when the user is free. `next` has no time limit, so it may be on a later day. `free_until` is null while a meeting is in progress or when nothing is ahead. Declined and cancelled meetings are ignored.",
@@ -441,17 +460,20 @@ extension MCPToolRegistry {
 struct MCPToolbox: MCPToolProviding {
     let calendarTools: MCPCalendarTools
     let mailTools: MCPMailTools?
+    let changeTools: MCPChangeTools?
     let settings: MCPSettingsSnapshot?
     let recordCall: @MainActor @Sendable (_ tool: String, _ client: String?, _ isError: Bool) -> Void
 
     init(
         calendarTools: MCPCalendarTools,
         mailTools: MCPMailTools? = nil,
+        changeTools: MCPChangeTools? = nil,
         settings: MCPSettingsSnapshot? = nil,
         recordCall: @escaping @MainActor @Sendable (_ tool: String, _ client: String?, _ isError: Bool) -> Void
     ) {
         self.calendarTools = calendarTools
         self.mailTools = mailTools
+        self.changeTools = changeTools
         self.settings = settings
         self.recordCall = recordCall
     }
@@ -462,8 +484,15 @@ struct MCPToolbox: MCPToolProviding {
     }
 
     func callTool(name: String, arguments: [String: JSONValue], client: String?) async -> MCPToolResult {
+        await callTool(name: name, arguments: arguments, client: client, mailAccess: .notAllowed)
+    }
+
+    /// `mailAccess` matters only to `get_changes`: whether its answer may carry mail.
+    func callTool(name: String, arguments: [String: JSONValue], client: String?, mailAccess: MCPChangeTools.MailAccess) async -> MCPToolResult {
         let result: MCPToolResult
-        if MCPMailTools.toolNames.contains(name), let mailTools {
+        if name == MCPChangeTools.toolName, let changeTools {
+            result = await changeTools.call(arguments: arguments, mail: mailAccess)
+        } else if MCPMailTools.toolNames.contains(name), let mailTools {
             result = await mailTools.call(name: name, arguments: arguments, client: client)
         } else {
             result = await calendarTools.call(name: name, arguments: arguments, client: client)

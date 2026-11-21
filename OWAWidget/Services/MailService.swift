@@ -312,6 +312,9 @@ final class MailService: ObservableObject {
     /// Posts a system notification; replaced in tests. The second argument is the "external"
     /// label when the sender is outside the organization, `nil` otherwise.
     var notifier: (MailConversationSummary, String?) -> Void = { MailService.postNotification($0, externalLabel: $1) }
+    /// Inbox counts from every successful check (account, unread, total): the MCP inbox watcher
+    /// takes them instead of asking Exchange again.
+    var inboxCountsObserver: ((UUID, Int, Int) -> Void)?
     /// For the words notifications carry; set by the app.
     weak var localization: LocalizationService?
 
@@ -497,6 +500,7 @@ final class MailService: ObservableObject {
             let counts = try await provider.mailFolderCounts([.distinguished(.inbox)])
             let unread = counts.first?.unreadCount ?? 0
             if let id = counts.first?.id { inboxFolderID = id }
+            if let inbox = counts.first { inboxCountsObserver?(account.id, inbox.unreadCount, inbox.totalCount) }
             let changed = unread != inboxUnreadCount
             inboxUnreadCount = unread
             lastChecked = Date()
