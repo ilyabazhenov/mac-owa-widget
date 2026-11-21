@@ -15,6 +15,25 @@ protocol MCPMailReadMarking: AnyObject {
 
 extension MailService: MCPMailReadMarking {}
 
+/// A message an MCP client moved, for the app's own lists and counts.
+struct MCPMailMove: Sendable, Equatable {
+    let conversationID: String
+    /// The id it had before the move.
+    let oldID: String
+    let fromFolderID: String
+    let toFolderID: String
+    let isRead: Bool
+}
+
+/// Lets the app follow what `move_mail` and `set_mail_flag` changed (`MailService`).
+@MainActor
+protocol MCPMailArrangeObserving: AnyObject {
+    func mailMovedByAssistant(_ moves: [MCPMailMove], accountID: UUID)
+    func mailFlaggedByAssistant(conversationIDs: [String], messageIDs: [String], flagged: Bool, accountID: UUID)
+}
+
+extension MailService: MCPMailArrangeObserving {}
+
 /// The MCP mail tools: reading folders, lists, threads and search results, `prepare_mail`,
 /// which sends only after the user confirms in OWA Widget's own panel, and `set_mail_read`.
 ///
@@ -28,7 +47,8 @@ final class MCPMailTools {
     nonisolated static let readToolNames: Set<String> = ["get_mail_digest", "list_mail_folders", "list_mail", "search_mail", "get_mail_thread", "get_mail_message"]
     nonisolated static let sendToolName = "prepare_mail"
     nonisolated static let organizeToolName = "set_mail_read"
-    nonisolated static var toolNames: Set<String> { readToolNames.union([sendToolName, organizeToolName]) }
+    nonisolated static let arrangeToolNames: Set<String> = ["move_mail", "set_mail_flag"]
+    nonisolated static var toolNames: Set<String> { readToolNames.union([sendToolName, organizeToolName]).union(arrangeToolNames) }
 
     static let maxMessageCharacters = 8_000
     static let maxThreadCharacters = 40_000
@@ -50,6 +70,14 @@ final class MCPMailTools {
     /// budget, not fifty, and stay well inside the client's 60 seconds.
     nonisolated static let threadsPerMarkRead = 10
 
+    /// Undo records kept for `move_mail` (in memory, so until OWA Widget restarts).
+    static let moveUndoLimit = 200
+    nonisolated static let moveUndoLifetime: TimeInterval = 24 * 60 * 60
+    /// Rounds of reading and moving for a conversation longer than one read returns (20 messages).
+    static let moveRounds = 4
+    /// Folders nothing is moved into: deleting is not a move, and the rest are Exchange's own.
+    static let forbiddenDestinations: Set<MailDistinguishedFolder> = [.deleteditems, .drafts, .outbox, .junkemail, .sentitems, .msgfolderroot]
+    static let arrangeDisabledMessage = "Moving and flagging mail is turned off: ask the user to turn on “Let assistants move and flag mail” in OWA Widget settings → AI (MCP) → Mail. Nothing was changed."
     static let disabledMessage = "Mail access for AI assistants is turned off in OWA Widget (Settings → AI (MCP) → Mail). Ask the user to turn it on."
     static let sendDisabledMessage = "Preparing emails is turned off in OWA Widget (Settings → AI (MCP) → Mail). Nothing was sent. Ask the user to turn it on."
     static let organizeDisabledMessage = "Marking mail is turned off: ask the user to turn on “Let assistants change mail marks: read” in OWA Widget settings → AI (MCP) → Mail. Nothing was changed."
@@ -67,7 +95,9 @@ final class MCPMailTools {
     private let isEnabled: () -> Bool
     private let canSend: () -> Bool
     private let canOrganize: () -> Bool
+    private let canArrange: () -> Bool
     private weak var readMarker: MCPMailReadMarking?
+    private weak var arrangeObserver: MCPMailArrangeObserving?
     private let clock: () -> Date
     private let timeZoneProvider: () -> TimeZone
     private let confirmationTimeout: TimeInterval
@@ -84,6 +114,8 @@ final class MCPMailTools {
     private var panelTimes: [Date] = []
     private var lastDecline: Date?
     private var isConfirming = false
+    private var moveUndos: [String: MoveUndo] = [:]
+    private var moveUndoOrder: [String] = []
 
     init(
         calendarService: CalendarService,
@@ -94,7 +126,9 @@ final class MCPMailTools {
         isEnabled: @escaping () -> Bool = { false },
         canSend: @escaping () -> Bool = { false },
         canOrganize: @escaping () -> Bool = { false },
+        canArrange: @escaping () -> Bool = { false },
         readMarker: MCPMailReadMarking? = nil,
+        arrangeObserver: MCPMailArrangeObserving? = nil,
         confirmationTimeout: TimeInterval = MCPCalendarTools.confirmationTimeout,
         clock: @escaping () -> Date = { Date() },
         timeZone: @escaping () -> TimeZone = { AppTimeZone.zone },
@@ -109,7 +143,9 @@ final class MCPMailTools {
         self.isEnabled = isEnabled
         self.canSend = canSend
         self.canOrganize = canOrganize
+        self.canArrange = canArrange
         self.readMarker = readMarker
+        self.arrangeObserver = arrangeObserver
         self.confirmationTimeout = confirmationTimeout
         self.clock = clock
         self.timeZoneProvider = timeZone
@@ -128,6 +164,8 @@ final class MCPMailTools {
             case "get_mail_message": return try await getMessage(arguments, coder)
             case "prepare_mail": return try await prepareMail(arguments, coder, client: client)
             case "set_mail_read": return try await setMailRead(arguments)
+            case "move_mail": return try await moveMail(arguments)
+            case "set_mail_flag": return try await setMailFlag(arguments)
             default: return .failure("Unknown tool: \(name)")
             }
         } catch let error as ToolError {
@@ -993,4 +1031,456 @@ final class MCPMailTools {
     }
 
     private static let goneReason = "not found: the conversation was deleted or moved — list or search again"
+
+    // MARK: - Moving and flagging (`move_mail`, `set_mail_flag`)
+
+    /// What a `move_mail` answer can undo: the messages it moved, by their new ids, and the
+    /// folder each one came from. In memory, so an undo works until OWA Widget restarts.
+    private struct MoveUndo {
+        struct Item {
+            let threadID: String
+            let conversationID: String
+            let ref: MailItemRef
+            let folderID: String
+            let backTo: String
+            let isRead: Bool
+        }
+        let accountID: UUID
+        let items: [Item]
+        let date: Date
+        /// The answer of the undo once it ran: a repeated undo returns it again, moving nothing.
+        var answer: [String: JSONValue]?
+    }
+
+    private func threadIDs(_ arguments: [String: JSONValue]) throws -> [String] {
+        guard let items = arguments["thread_ids"]?.arrayValue else {
+            throw ToolError("`thread_ids` must be an array of thread_id values from list_mail, search_mail or get_mail_thread")
+        }
+        guard !items.isEmpty else { throw ToolError("`thread_ids` is empty") }
+        guard items.count <= Self.maxThreadsPerMark else {
+            throw ToolError("At most \(Self.maxThreadsPerMark) conversations per call, got \(items.count). Nothing was changed: split them into several calls.")
+        }
+        return try items.map { item in
+            guard let text = item.stringValue?.trimmingCharacters(in: .whitespaces), !text.isEmpty else {
+                throw ToolError("`thread_ids` must contain thread_id strings")
+            }
+            return text
+        }
+    }
+
+    private static func reason(_ error: any Error) -> String {
+        if case MailError.notFound? = error as? MailError { return goneReason }
+        return (error as? ToolError)?.message ?? error.localizedDescription
+    }
+
+    private static func failure(_ threadID: String, _ reason: String) -> JSONValue {
+        ["thread_id": .string(threadID), "reason": .string(reason)]
+    }
+
+    /// Resolves `thread_ids`, one entry per conversation; unknown ids go to `failed`.
+    private func wantedThreads(_ raw: [String], failed: inout [JSONValue]) -> [(threadID: String, id: String)] {
+        var wanted: [(threadID: String, id: String)] = []
+        var seen: Set<String> = []
+        for threadID in raw {
+            guard let id = resolve(threadID) else {
+                failed.append(Self.failure(threadID, "unknown thread_id: ids are remembered only while OWA Widget runs — list or search again"))
+                continue
+            }
+            if seen.insert(id).inserted { wanted.append((threadID, id)) }
+        }
+        return wanted
+    }
+
+    /// Reads conversations ten per request. A request that fails as a whole (budget, blocked
+    /// sync, connection) stops the rest: the next would fare no better, and each one sends the
+    /// password again. Returns the threads read and that reason, if any.
+    private func readThreads(
+        _ wanted: [(threadID: String, id: String)],
+        _ account: CalendarAccount,
+        ignoring: [String],
+        context: String,
+        failed: inout [JSONValue]
+    ) async -> (threads: [(threadID: String, thread: MailThread)], stop: String?) {
+        var threads: [(threadID: String, thread: MailThread)] = []
+        var stop: String?
+        for batch in wanted.chunked(Self.threadsPerMarkRead) {
+            if let stop {
+                for entry in batch { failed.append(Self.failure(entry.threadID, stop)) }
+                continue
+            }
+            let ids = batch.map(\.id)
+            do {
+                let results = try await request(account, context: context) {
+                    try await $0.mailThreads(conversationIDs: ids, ignoringFolders: ignoring)
+                }
+                for (entry, result) in zip(batch, results) {
+                    switch result {
+                    case .success(let thread): threads.append((entry.threadID, thread))
+                    case .failure(let error): failed.append(Self.failure(entry.threadID, Self.reason(error)))
+                    }
+                }
+            } catch {
+                stop = Self.reason(error)
+                for entry in batch { failed.append(Self.failure(entry.threadID, Self.reason(error))) }
+            }
+        }
+        return (threads, stop)
+    }
+
+    /// A folder of the tree by system name, folder_id or name.
+    private func pickFolder(_ raw: String, in list: [MailFolder], argument: String) throws -> MailFolder {
+        let text = raw.trimmingCharacters(in: .whitespaces)
+        if let system = Self.systemFolderNames[text.lowercased()] {
+            guard let folder = list.first(where: { $0.distinguished == system }) else {
+                if system == .archive {
+                    throw ToolError("This mailbox has no Archive folder (Exchange creates it the first time Archive is used in Outlook or OWA). Nothing was moved: pick another folder from list_mail_folders, or ask the user to archive one message in OWA once.")
+                }
+                throw ToolError("This mailbox has no `\(text)` folder. Nothing was moved.")
+            }
+            return folder
+        }
+        if let id = resolve(text), let folder = list.first(where: { $0.id == id }) { return folder }
+        let named = list.filter { $0.displayName.caseInsensitiveCompare(text) == .orderedSame }
+        if named.count == 1 { return named[0] }
+        if named.count > 1 {
+            throw ToolError("Several folders are named `\(text)`: pass `\(argument)` as a folder_id from list_mail_folders. Nothing was moved.")
+        }
+        throw ToolError("Unknown folder `\(text)` in `\(argument)`. Use inbox, archive, a folder name or a folder_id from list_mail_folders. Nothing was moved.")
+    }
+
+    /// The folder and the ones above it, nearest first.
+    private static func lineage(_ folder: MailFolder, in list: [MailFolder]) -> [MailFolder] {
+        var chain = [folder]
+        var parent = folder.parentID
+        while let id = parent, chain.count < 32, let next = list.first(where: { $0.id == id }) {
+            chain.append(next)
+            parent = next.parentID
+        }
+        return chain
+    }
+
+    /// Why nothing may go into `folder`: Deleted Items (deleting is not a move) and the rest of
+    /// Exchange's own folders other than Inbox and Archive, with every folder under them.
+    private static func destinationRefusal(_ folder: MailFolder, in list: [MailFolder]) -> String? {
+        for node in lineage(folder, in: list) {
+            if let system = node.distinguished, forbiddenDestinations.contains(system) {
+                return "Nothing is moved into `\(folder.displayName)`: move_mail does not delete, draft, send or mark as junk."
+            }
+            if node.distinguished == nil, node.distinguishedID != nil, node.id == folder.id {
+                return "`\(folder.displayName)` is one of Exchange's own folders; move_mail moves only to inbox, archive and the user's folders."
+            }
+        }
+        return nil
+    }
+
+    private func folderJSON(_ folder: MailFolder) -> JSONValue {
+        ["folder_id": .string(handle(folder.id)), "name": .string(folder.displayName), "system": .optional(folder.distinguishedID)]
+    }
+
+    private func rememberUndo(_ undo: MoveUndo) -> String {
+        let now = clock()
+        for key in moveUndoOrder where now.timeIntervalSince(moveUndos[key]?.date ?? now) > Self.moveUndoLifetime {
+            moveUndos[key] = nil
+        }
+        moveUndoOrder.removeAll { moveUndos[$0] == nil }
+        let id = "u" + MCPShortHash.hex(undo.items.map(\.ref.id).joined(separator: ",") + "\(now.timeIntervalSince1970)", bytes: 5)
+        moveUndos[id] = undo
+        moveUndoOrder.append(id)
+        if moveUndoOrder.count > Self.moveUndoLimit { moveUndos[moveUndoOrder.removeFirst()] = nil }
+        return id
+    }
+
+    private struct PlannedMove {
+        let threadID: String
+        let conversationID: String
+        let message: MailMessage
+        let backTo: String
+    }
+
+    /// Moves messages in requests of `bulkPageSize`. Returns the new ref (or the error) of each
+    /// message in order, and why it stopped when a request failed as a whole.
+    private func performMoves(_ refs: [MailItemRef], to folderID: String, _ account: CalendarAccount) async -> (results: [Result<MailItemRef, any Error>], stop: String?) {
+        var results: [Result<MailItemRef, any Error>] = []
+        var stop: String?
+        for chunk in refs.chunked(MailService.bulkPageSize) {
+            if let stop {
+                results += chunk.map { _ in .failure(ToolError(stop)) }
+                continue
+            }
+            do {
+                let moved = try await request(account, context: "mcp.mail.move") { try await $0.mailMoveEach(chunk, to: .id(folderID)) }
+                results += moved.map { $0.mapError { $0 as any Error } }
+            } catch {
+                stop = Self.reason(error)
+                results += chunk.map { _ in .failure(error) }
+            }
+        }
+        return (results, stop)
+    }
+
+    /// Moves conversations: every message of each one that sits in `from_folder` (Inbox by
+    /// default) goes to `folder`, with `MoveItem` — the request OWA's own Archive button sends.
+    /// The answer names the new ids and an `undo_id` that moves them back. Nothing goes to
+    /// Deleted Items or Exchange's other own folders.
+    private func moveMail(_ arguments: [String: JSONValue]) async throws -> MCPToolResult {
+        guard canArrange() else { return .failure(Self.arrangeDisabledMessage) }
+        if let undoID = arguments["undo_id"], undoID != .null {
+            guard arguments["thread_ids"] == nil, arguments["folder"] == nil, arguments["from_folder"] == nil else {
+                throw ToolError("Pass either `undo_id` alone or `thread_ids` with `folder`. Nothing was moved.")
+            }
+            guard let text = undoID.stringValue?.trimmingCharacters(in: .whitespaces), !text.isEmpty else {
+                throw ToolError("`undo_id` must be the `undo_id` string of an earlier move_mail answer")
+            }
+            return try await undoMove(text, arguments)
+        }
+        let raw = try threadIDs(arguments)
+        guard let folderText = arguments["folder"]?.stringValue, !folderText.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw ToolError("`folder` is required: archive, inbox, a folder name or a folder_id from list_mail_folders")
+        }
+        let account = try mailAccount(arguments)
+        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) { return .failure(reason) }
+        let list = try await folders(account, load: true) ?? []
+        let target = try pickFolder(folderText, in: list, argument: "folder")
+        if let refusal = Self.destinationRefusal(target, in: list) { throw ToolError(refusal + " Nothing was moved.") }
+        let source = try pickFolder(arguments["from_folder"]?.stringValue ?? "inbox", in: list, argument: "from_folder")
+        if Self.lineage(source, in: list).contains(where: { $0.distinguished == .deleteditems }) {
+            throw ToolError("`from_folder` cannot be Deleted Items: move_mail does not restore deleted mail. Nothing was moved.")
+        }
+        guard source.id != target.id else {
+            throw ToolError("`folder` and `from_folder` are the same folder (\(target.displayName)). Nothing was moved.")
+        }
+        // Deleted Items as in the mail window; the destination too, so a later round of a long
+        // conversation reads the messages that did not fit into the first one.
+        let ignored = list.filter { $0.distinguished == .deleteditems }.map(\.id) + [target.id]
+
+        var failed: [JSONValue] = []
+        var pending = wantedThreads(raw, failed: &failed)
+        var movedByThread: [String: [MoveUndo.Item]] = [:]
+        var notMoved: [String: Int] = [:]
+        var touched: [String] = []
+        var observed: [MCPMailMove] = []
+        var stop: String?
+        for round in 0..<Self.moveRounds where !pending.isEmpty && stop == nil {
+            let read = await readThreads(pending, account, ignoring: ignored, context: "mcp.mail.move", failed: &failed)
+            if let reason = read.stop {
+                // Read before the stop, but not moved: they still get an answer.
+                for (threadID, _) in read.threads { failed.append(Self.failure(threadID, reason)) }
+                stop = reason
+                break
+            }
+            var plan: [PlannedMove] = []
+            var again: [(threadID: String, id: String)] = []
+            for (threadID, thread) in read.threads {
+                let inSource = thread.messages.filter { $0.parentFolderID == source.id }
+                if inSource.isEmpty {
+                    if round == 0 {
+                        failed.append(Self.failure(threadID, "nothing to move: no message of this conversation is in \(source.displayName) (moved already? pass `from_folder`)"))
+                    }
+                    continue
+                }
+                if !touched.contains(threadID) { touched.append(threadID) }
+                plan += inSource.map { PlannedMove(threadID: threadID, conversationID: thread.id, message: $0, backTo: source.id) }
+                if thread.messages.count < thread.totalMessageCount { again.append((threadID, thread.id)) }
+            }
+            guard stop == nil, !plan.isEmpty else { break }
+            let outcome = await performMoves(plan.map(\.message.ref), to: target.id, account)
+            stop = outcome.stop
+            var failedThreads: Set<String> = []
+            for (move, result) in zip(plan, outcome.results) {
+                switch result {
+                case .success(let ref):
+                    movedByThread[move.threadID, default: []].append(MoveUndo.Item(
+                        threadID: move.threadID, conversationID: move.conversationID, ref: ref,
+                        folderID: target.id, backTo: move.backTo, isRead: move.message.isRead
+                    ))
+                    observed.append(MCPMailMove(conversationID: move.conversationID, oldID: move.message.ref.id, fromFolderID: source.id, toFolderID: target.id, isRead: move.message.isRead))
+                case .failure(let error):
+                    notMoved[move.threadID, default: 0] += 1
+                    if failedThreads.insert(move.threadID).inserted {
+                        failed.append(Self.failure(move.threadID, Self.reason(error)))
+                    }
+                }
+            }
+            pending = again.filter { !failedThreads.contains($0.threadID) }
+        }
+        arrangeObserver?.mailMovedByAssistant(observed, accountID: account.id)
+
+        let items = touched.flatMap { movedByThread[$0] ?? [] }
+        var moved: [JSONValue] = []
+        for threadID in touched {
+            guard let entries = movedByThread[threadID], !entries.isEmpty else { continue }
+            var entry: [String: JSONValue] = [
+                "thread_id": .string(threadID),
+                "messages": .int(Int64(entries.count)),
+                "message_ids": .array(entries.map { .string(handle($0.ref.id)) }),
+            ]
+            if let left = notMoved[threadID] { entry["not_moved"] = .int(Int64(left)) }
+            moved.append(.object(entry))
+        }
+        var result: [String: JSONValue] = [
+            "moved": .array(moved),
+            "failed": .array(failed),
+            "from_folder": folderJSON(source),
+            "to_folder": folderJSON(target),
+            "undo_id": .null,
+        ]
+        if !items.isEmpty {
+            result["undo_id"] = .string(rememberUndo(MoveUndo(accountID: account.id, items: items, date: clock())))
+        }
+        MCPDebugLog.log("move_mail asked=\(raw.count) moved=\(moved.count) messages=\(items.count) failed=\(failed.count)")
+        return .success(result)
+    }
+
+    /// Moves what an earlier `move_mail` moved back where each message came from. Its answer has
+    /// an `undo_id` of its own (to move them again); repeating the undo moves nothing.
+    private func undoMove(_ undoID: String, _ arguments: [String: JSONValue]) async throws -> MCPToolResult {
+        guard var undo = moveUndos[undoID], clock().timeIntervalSince(undo.date) <= Self.moveUndoLifetime else {
+            throw ToolError("Unknown `undo_id` \(undoID): an undo is remembered for 24 hours and only while OWA Widget runs. Nothing was moved; move the conversations with `thread_ids` and `folder` instead.")
+        }
+        if var answer = undo.answer {
+            answer["repeated"] = true
+            return .success(answer)
+        }
+        guard let account = calendarService.mailAccounts.first(where: { $0.id == undo.accountID }) else {
+            throw ToolError("The account of this move is no longer connected. Nothing was moved.")
+        }
+        if let raw = arguments["account_id"]?.stringValue, UUID(uuidString: raw) != account.id {
+            throw ToolError("This `undo_id` belongs to another account. Nothing was moved.")
+        }
+        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) { return .failure(reason) }
+        let list = try await folders(account, load: true) ?? []
+
+        var failed: [JSONValue] = []
+        var redo: [MoveUndo.Item] = []
+        var observed: [MCPMailMove] = []
+        var movedCount: [String: Int] = [:]
+        var messageIDs: [String: [String]] = [:]
+        var order: [String] = []
+        var failedThreads: Set<String> = []
+        var stop: String?
+        let groups = Dictionary(grouping: undo.items, by: \.backTo)
+        for (folderID, items) in groups.sorted(by: { $0.key < $1.key }) {
+            for item in items where !order.contains(item.threadID) { order.append(item.threadID) }
+            func fail(_ reason: String) {
+                for item in items where failedThreads.insert(item.threadID).inserted { failed.append(Self.failure(item.threadID, reason)) }
+            }
+            if let stop { fail(stop); continue }
+            guard list.contains(where: { $0.id == folderID }) else {
+                fail("the folder these messages came from no longer exists")
+                continue
+            }
+            let outcome = await performMoves(items.map(\.ref), to: folderID, account)
+            stop = outcome.stop
+            for (item, result) in zip(items, outcome.results) {
+                switch result {
+                case .success(let ref):
+                    redo.append(MoveUndo.Item(threadID: item.threadID, conversationID: item.conversationID, ref: ref, folderID: folderID, backTo: item.folderID, isRead: item.isRead))
+                    observed.append(MCPMailMove(conversationID: item.conversationID, oldID: item.ref.id, fromFolderID: item.folderID, toFolderID: folderID, isRead: item.isRead))
+                    movedCount[item.threadID, default: 0] += 1
+                    messageIDs[item.threadID, default: []].append(handle(ref.id))
+                case .failure(let error):
+                    if failedThreads.insert(item.threadID).inserted { failed.append(Self.failure(item.threadID, Self.reason(error))) }
+                }
+            }
+        }
+        arrangeObserver?.mailMovedByAssistant(observed, accountID: account.id)
+        let moved: [JSONValue] = order.compactMap { threadID in
+            guard let count = movedCount[threadID] else { return nil }
+            return ["thread_id": .string(threadID), "messages": .int(Int64(count)), "message_ids": .array((messageIDs[threadID] ?? []).map(JSONValue.string))]
+        }
+        var answer: [String: JSONValue] = ["moved": .array(moved), "failed": .array(failed), "undone": .string(undoID), "undo_id": .null]
+        if !redo.isEmpty {
+            answer["undo_id"] = .string(rememberUndo(MoveUndo(accountID: account.id, items: redo, date: clock())))
+        }
+        // Retried only while nothing was moved: once some messages went back, a repeat would
+        // find them gone and report every one as failed.
+        if !redo.isEmpty || failed.isEmpty {
+            undo.answer = answer
+            moveUndos[undoID] = undo
+        }
+        MCPDebugLog.log("move_mail undo messages=\(redo.count) failed=\(failed.count)")
+        return .success(answer)
+    }
+
+    /// Flags or unflags conversations: `true` flags the newest message the user received (as a
+    /// flag on a conversation in OWA does) unless one is flagged already; `false` clears every
+    /// flagged message. Repeating a call changes nothing (`unchanged`).
+    private func setMailFlag(_ arguments: [String: JSONValue]) async throws -> MCPToolResult {
+        guard canArrange() else { return .failure(Self.arrangeDisabledMessage) }
+        guard let flagged = arguments["flagged"]?.boolValue else {
+            throw ToolError("`flagged` is required: true flags the conversations, false clears their flags")
+        }
+        let raw = try threadIDs(arguments)
+        let account = try mailAccount(arguments)
+        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) { return .failure(reason) }
+        let ignored = try await folders(account, load: true)?
+            .filter { $0.distinguished == .deleteditems }.map(\.id) ?? []
+
+        var failed: [JSONValue] = []
+        let wanted = wantedThreads(raw, failed: &failed)
+        let read = await readThreads(wanted, account, ignoring: ignored, context: "mcp.mail.flag", failed: &failed)
+        if let stop = read.stop {
+            for entry in read.threads { failed.append(Self.failure(entry.threadID, stop)) }
+            return .success(["updated": 0, "unchanged": .array([]), "failed": .array(failed)])
+        }
+        let own = flagged ? await ownAddress(account) : nil
+        var unchanged: [JSONValue] = []
+        var plan: [(threadID: String, conversationID: String, target: MailItemTarget)] = []
+        for (threadID, thread) in read.threads {
+            guard !thread.messages.isEmpty else {
+                failed.append(Self.failure(threadID, Self.goneReason))
+                continue
+            }
+            let messages: [MailMessage]
+            if flagged {
+                if thread.messages.contains(where: \.isFlagged) {
+                    messages = []
+                } else {
+                    let ownEmail = own?.lowercased()
+                    let received = thread.messages.filter { !$0.isDraft && (ownEmail == nil || $0.from?.email?.lowercased() != ownEmail) }
+                    messages = Array((received.first ?? thread.messages.first).map { [$0] } ?? [])
+                }
+            } else {
+                messages = thread.messages.filter(\.isFlagged)
+            }
+            if messages.isEmpty {
+                unchanged.append(.string(threadID))
+                continue
+            }
+            plan += messages.map { (threadID, thread.id, MailItemTarget($0.ref, kind: $0.kind)) }
+        }
+
+        var failedThreads: Set<String> = []
+        var done: [String] = []
+        var doneMessages: [String] = []
+        var doneConversations: [String] = []
+        var stop: String?
+        let status: MailFlagStatus = flagged ? .flagged : .notFlagged
+        for chunk in plan.chunked(MailService.bulkPageSize) {
+            if let stop {
+                for entry in chunk where failedThreads.insert(entry.threadID).inserted { failed.append(Self.failure(entry.threadID, stop)) }
+                continue
+            }
+            do {
+                let targets = chunk.map(\.target)
+                let results = try await request(account, context: "mcp.mail.flag") { try await $0.mailUpdateEach(targets, .flag(status)) }
+                for (entry, result) in zip(chunk, results) {
+                    switch result {
+                    case .success:
+                        doneMessages.append(entry.target.ref.id)
+                        doneConversations.append(entry.conversationID)
+                    case .failure(let error):
+                        if failedThreads.insert(entry.threadID).inserted { failed.append(Self.failure(entry.threadID, Self.reason(error))) }
+                    }
+                }
+            } catch {
+                stop = Self.reason(error)
+                for entry in chunk where failedThreads.insert(entry.threadID).inserted { failed.append(Self.failure(entry.threadID, Self.reason(error))) }
+            }
+        }
+        for entry in plan where !failedThreads.contains(entry.threadID) && !done.contains(entry.threadID) { done.append(entry.threadID) }
+        arrangeObserver?.mailFlaggedByAssistant(conversationIDs: doneConversations, messageIDs: doneMessages, flagged: flagged, accountID: account.id)
+        MCPDebugLog.log("set_mail_flag flagged=\(flagged) asked=\(raw.count) updated=\(done.count) unchanged=\(unchanged.count) failed=\(failed.count)")
+        return .success(["updated": .int(Int64(done.count)), "unchanged": .array(unchanged), "failed": .array(failed)])
+    }
 }

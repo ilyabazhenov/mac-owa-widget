@@ -97,6 +97,7 @@ final class MCPServerService: ObservableObject {
             if !canReadMail {
                 canSendMail = false
                 canOrganizeMail = false
+                canArrangeMail = false
             }
             settingsChanged()
             MCPDebugLog.log("mailRead=\(canReadMail)")
@@ -115,6 +116,14 @@ final class MCPServerService: ObservableObject {
             guard canOrganizeMail != oldValue else { return }
             settingsChanged()
             MCPDebugLog.log("mailOrganize=\(canOrganizeMail)")
+        }
+    }
+    /// Moving and flagging conversations (`move_mail`, `set_mail_flag`); needs `canReadMail`.
+    @Published var canArrangeMail: Bool {
+        didSet {
+            guard canArrangeMail != oldValue else { return }
+            settingsChanged()
+            MCPDebugLog.log("mailArrange=\(canArrangeMail)")
         }
     }
     /// What the tool calls read. The gate (`authorize`) and the tools must see the same switches:
@@ -150,6 +159,7 @@ final class MCPServerService: ObservableObject {
         canReadMail = settings.mailRead
         canSendMail = settings.mailRead && settings.mailSend
         canOrganizeMail = settings.mailRead && settings.mailOrganize
+        canArrangeMail = settings.mailRead && settings.mailArrange
         settingsSnapshot = MCPSettingsSnapshot(settings)
     }
 
@@ -161,6 +171,7 @@ final class MCPServerService: ObservableObject {
             mailRead: canReadMail,
             mailSend: canReadMail && canSendMail,
             mailOrganize: canReadMail && canOrganizeMail,
+            mailArrange: canReadMail && canArrangeMail,
             cancelMeetings: canCancelMeetings
         )
         settingsSnapshot.update(settings)
@@ -190,7 +201,9 @@ final class MCPServerService: ObservableObject {
             isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled && settingsSnapshot.current.mailRead },
             canSend: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailSend },
             canOrganize: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailOrganize },
-            readMarker: mailService
+            canArrange: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailArrange },
+            readMarker: mailService,
+            arrangeObserver: mailService
         )
         let pollInterval: () -> TimeInterval = { [weak mailService] in
             TimeInterval((mailService?.settings.pollMinutes ?? 2) * 60)
@@ -493,6 +506,7 @@ final class MCPServerService: ObservableObject {
             request.forMail = true
             request.canSendMail = canSendMail
             request.canOrganizeMail = canOrganizeMail
+            request.canArrangeMail = canArrangeMail
             updateKnownClients(MCPKnownClientList.setMailAccess(.pending, forKey: identity.key, in: knownClients))
             switch await mailApproval.decision(for: request) {
             case .allowed: return nil

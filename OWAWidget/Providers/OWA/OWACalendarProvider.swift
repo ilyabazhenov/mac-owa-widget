@@ -324,6 +324,10 @@ extension OWACalendarProvider: MailProvider {
         try await client.mailUpdateEach(targets, update)
     }
 
+    func mailMoveEach(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [Result<MailItemRef, MailError>] {
+        try await client.mailMoveEach(refs, to: folder)
+    }
+
     func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef] {
         try await client.mailMove(refs, to: folder)
     }

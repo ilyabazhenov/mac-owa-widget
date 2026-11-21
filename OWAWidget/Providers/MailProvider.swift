@@ -40,6 +40,9 @@ protocol MailProvider: Actor {
     func mailUpdateEach(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [Result<MailItemRef, MailError>]
     /// Returns the new ids: a moved item gets a new one.
     func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef]
+    /// `mailMove` item by item, in request order: the id each message got in `folder` (a move
+    /// changes it), or why that one did not move.
+    func mailMoveEach(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [Result<MailItemRef, MailError>]
     func mailSearch(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage
     func mailEndSearch() async
     /// Sends (or saves to Drafts) through EWS. Returns the saved draft's id, if any.
@@ -65,6 +68,18 @@ extension MailProvider {
             }
         }
         return results
+    }
+
+    /// Without per-item answers a short reply cannot say which message moved where: then none
+    /// of them is reported moved, though some may have been.
+    func mailMoveEach(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [Result<MailItemRef, MailError>] {
+        do {
+            let moved = try await mailMove(refs, to: folder)
+            guard moved.count == refs.count else { return refs.map { _ in .failure(.serverError("PartialMove")) } }
+            return moved.map { .success($0) }
+        } catch let error as MailError {
+            return refs.map { _ in .failure(error) }
+        }
     }
 
     func mailUpdateEach(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [Result<MailItemRef, MailError>] {

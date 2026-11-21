@@ -20,6 +20,8 @@ struct MCPClientApprovalRequest: Equatable, Sendable {
     var canSendMail = false
     /// With `forMail`: the client may also mark conversations read or unread (`set_mail_read`).
     var canOrganizeMail = false
+    /// With `forMail`: the client may also move and flag conversations (`move_mail`, `set_mail_flag`).
+    var canArrangeMail = false
 }
 
 enum MCPClientApprovalOutcome: Equatable, Sendable {
