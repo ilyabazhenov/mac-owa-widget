@@ -65,6 +65,15 @@ final class MCPCalendarArchive {
         }
     }
 
+    /// Marks the account's blocks as out of date after this app changed its calendar (an answer
+    /// to a series, a cancellation, a new meeting), so the next question loads them again instead
+    /// of contradicting what the tool just did. Their events stay held for `allEvents`.
+    func expire(accountID: UUID) {
+        for (key, entry) in entries where key.accountID == accountID {
+            entries[key] = Entry(events: entry.events, loadedAt: .distantPast)
+        }
+    }
+
     /// Everything still held, expired blocks included: an `event_id` handed out from a block
     /// keeps resolving in get_event_details until the block is evicted.
     var allEvents: [CalendarEvent] {

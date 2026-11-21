@@ -1126,6 +1126,7 @@ final class MCPCalendarTools {
             )
         }
 
+        archive.expire(accountID: account.id)
         var result = commonFields(context)
         result["created"] = true
         result["title"] = .string(title)
@@ -1300,6 +1301,7 @@ final class MCPCalendarTools {
             )
         }
 
+        archive.expire(accountID: event.accountID)
         var result = commonFields(context)
         result["responded"] = true
         result["my_response"] = .string(Self.responseName(target))
@@ -1467,6 +1469,7 @@ final class MCPCalendarTools {
             )
         }
 
+        archive.expire(accountID: event.accountID)
         var result = commonFields(context)
         result["removed"] = true
         result["action"] = .string(Self.removalActionName(mode))
