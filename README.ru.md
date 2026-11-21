@@ -105,7 +105,7 @@ OWA Widget подключается к AI-ассистентам по прото
 <details>
 <summary>Инструменты MCP</summary>
 
-- **Календарь:** `get_status`, `get_current_and_next`, `list_events`, `get_schedule_stats`, `find_events_with_person`, `get_event_details`, `match_event`, `find_people`, `get_my_org`, `find_free_slots`; `create_meeting` и `cancel_meeting` (каждый за своим выключателем, с подтверждением в окне OWA Widget).
+- **Календарь:** `get_status`, `get_current_and_next`, `list_events`, `get_schedule_stats`, `find_events_with_person`, `get_event_details`, `match_event`, `find_people`, `get_my_org`, `get_person_profile`, `find_free_slots`; `create_meeting` и `cancel_meeting` (каждый за своим выключателем, с подтверждением в окне OWA Widget).
 - **Почта** (при включённом **«Давать AI-ассистентам читать почту»**): `get_mail_digest`, `list_mail_folders`, `list_mail`, `search_mail`, `get_mail_thread`, `get_mail_message` — чтение ничего не отмечает прочитанным; `prepare_mail` (за **«Разрешить готовить письма»**, письмо уходит только после **«Отправить»** в панели OWA Widget); `set_mail_read` (за **«Менять отметки писем: прочитано»**) — отмечает до 50 переписок прочитанными или непрочитанными за вызов и больше ничего не меняет.
 
 </details>

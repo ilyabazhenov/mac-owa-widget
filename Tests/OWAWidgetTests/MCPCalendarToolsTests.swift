@@ -32,6 +32,9 @@ final class MCPCalendarToolsTests: XCTestCase {
         private let org: [String: OrgHierarchy]
         private let failingOrg: Set<String>
         private(set) var orgCalls: [String] = []
+        private let profiles: [String: PersonProfile]
+        private let failingProfiles: Set<String>
+        private(set) var profileCalls: [String] = []
 
         init(
             account: CalendarAccount,
@@ -48,11 +51,15 @@ final class MCPCalendarToolsTests: XCTestCase {
             fetchDelay: Duration? = nil,
             removeError: Error? = nil,
             org: [String: OrgHierarchy] = [:],
-            failingOrg: Set<String> = []
+            failingOrg: Set<String> = [],
+            profiles: [String: PersonProfile] = [:],
+            failingProfiles: Set<String> = []
         ) {
             self.account = account
             self.org = org
             self.failingOrg = failingOrg
+            self.profiles = profiles
+            self.failingProfiles = failingProfiles
             self.removeError = removeError
             self.attendeesByID = attendeesByID
             self.uidByID = uidByID
@@ -86,6 +93,12 @@ final class MCPCalendarToolsTests: XCTestCase {
             orgCalls.append(email)
             if failingOrg.contains(email) { throw URLError(.badServerResponse) }
             return org[email.lowercased()]
+        }
+
+        func personProfile(email: String) async throws -> PersonProfile? {
+            profileCalls.append(email)
+            if failingProfiles.contains(email) { throw URLError(.badServerResponse) }
+            return profiles[email.lowercased()]
         }
 
         func resolveOrganizerSMTPEmail() async throws -> String? {
@@ -983,6 +996,63 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertTrue(bad.isError)
         let failed = await tools.call(name: "get_my_org", arguments: [:])
         XCTAssertTrue(failed.isError)
+    }
+
+
+    // MARK: - get_person_profile
+
+    private func profile(_ email: String, title: String? = "Архитектор", manager: OrgPerson? = nil) -> PersonProfile {
+        PersonProfile(
+            name: "Иванов И.", email: email, isDistributionList: false, title: title, department: "Дирекция",
+            office: "Г-502", city: "Москва", company: nil, manager: manager, directReportsCount: 1
+        )
+    }
+
+    func testPersonProfileGivesDepartmentOfficeAndManagerAndIsRemembered() async throws {
+        let boss = OrgPerson(name: "Петров П.", email: "boss@corp.ru", title: nil)
+        let provider = DetailsProvider(account: exchange, ownEmail: "me@corp.ru", profiles: ["me@corp.ru": profile("me@corp.ru", manager: boss)])
+        let (tools, _) = makeTools(events: [], provider: provider)
+
+        let firstCall = await tools.call(name: "get_person_profile", arguments: ["emails": ["me@corp.ru", "nobody@gmail.com"]]).structured
+        let first = try XCTUnwrap(firstCall?["profiles"]?.arrayValue)
+        XCTAssertEqual(first[0]["department"], "Дирекция")
+        XCTAssertEqual(first[0]["office"], "Г-502")
+        XCTAssertEqual(first[0]["city"], "Москва")
+        XCTAssertNil(first[0]["company"])
+        XCTAssertEqual(first[0]["manager"]?["email"], "boss@corp.ru")
+        XCTAssertEqual(first[0]["is_you"], true)
+        XCTAssertEqual(first[0]["in_directory"], true)
+        XCTAssertEqual(first[1]["in_directory"], false)
+
+        _ = await tools.call(name: "get_person_profile", arguments: ["emails": ["ME@corp.ru", "nobody@gmail.com"]])
+        let calls = await provider.profileCalls
+        XCTAssertEqual(calls, ["me@corp.ru", "nobody@gmail.com"])
+    }
+
+    func testPersonProfileStopsAtTheFirstFailure() async throws {
+        let provider = DetailsProvider(
+            account: exchange, ownEmail: "me@corp.ru",
+            profiles: ["a@corp.ru": profile("a@corp.ru"), "c@corp.ru": profile("c@corp.ru")], failingProfiles: ["b@corp.ru"]
+        )
+        let (tools, _) = makeTools(events: [], provider: provider)
+
+        let resultCall = await tools.call(name: "get_person_profile", arguments: ["emails": ["a@corp.ru", "b@corp.ru", "c@corp.ru"]]).structured
+        let profiles = try XCTUnwrap(resultCall?["profiles"]?.arrayValue)
+        XCTAssertEqual(profiles[0]["title"], "Архитектор")
+        XCTAssertNotNil(profiles[1]["error"])
+        XCTAssertNotNil(profiles[2]["error"])
+        let calls = await provider.profileCalls
+        XCTAssertEqual(calls, ["a@corp.ru", "b@corp.ru"])
+    }
+
+    func testPersonProfileNeedsAddresses() async {
+        let (tools, _) = makeTools(events: [])
+        let missing = await tools.call(name: "get_person_profile", arguments: [:])
+        XCTAssertTrue(missing.isError)
+        let name = await tools.call(name: "get_person_profile", arguments: ["emails": ["Иванов"]])
+        XCTAssertTrue(name.isError)
+        let tooMany = await tools.call(name: "get_person_profile", arguments: ["emails": .array((0..<11).map { .string("p\($0)@corp.ru") })])
+        XCTAssertTrue(tooMany.isError)
     }
 
     // MARK: - find_free_slots

@@ -8,6 +8,23 @@ struct OrgPerson: Sendable, Equatable {
     let title: String?
 }
 
+/// What the address book says about one person (EWS `ResolveNames` with the full contact).
+struct PersonProfile: Sendable, Equatable {
+    let name: String
+    /// The primary address, which may differ from the one asked about (an alias).
+    let email: String
+    let isDistributionList: Bool
+    let title: String?
+    let department: String?
+    let office: String?
+    /// From the business address.
+    let city: String?
+    let company: String?
+    /// Name and address only: `ResolveNames` does not give the manager's title.
+    let manager: OrgPerson?
+    let directReportsCount: Int
+}
+
 /// Someone's place in the organization chart: one `GetOrganizationHierarchyForPersona` answer.
 struct OrgHierarchy: Sendable, Equatable {
     /// The direct manager; `nil` at the top of the chart.

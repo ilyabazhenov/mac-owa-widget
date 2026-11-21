@@ -105,7 +105,7 @@ OWA Widget connects to AI assistants over MCP. The assistant sees your meetings,
 <details>
 <summary>MCP tools</summary>
 
-- **Calendar:** `get_status`, `get_current_and_next`, `list_events`, `get_schedule_stats`, `find_events_with_person`, `get_event_details`, `match_event`, `find_people`, `get_my_org`, `find_free_slots`; `create_meeting` and `cancel_meeting` (each behind its own switch, confirmed in OWA Widget's window).
+- **Calendar:** `get_status`, `get_current_and_next`, `list_events`, `get_schedule_stats`, `find_events_with_person`, `get_event_details`, `match_event`, `find_people`, `get_my_org`, `get_person_profile`, `find_free_slots`; `create_meeting` and `cancel_meeting` (each behind its own switch, confirmed in OWA Widget's window).
 - **Mail** (with **Let AI assistants read mail** on): `get_mail_digest`, `list_mail_folders`, `list_mail`, `search_mail`, `get_mail_thread`, `get_mail_message` — reading marks nothing as read; `prepare_mail` (behind **Let assistants prepare emails**, sent only after **Send** in OWA Widget's panel); `set_mail_read` (behind **Let assistants change mail marks: read**) — marks up to 50 conversations read or unread per call and changes nothing else.
 
 </details>

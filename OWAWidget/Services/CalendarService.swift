@@ -728,11 +728,22 @@ final class CalendarService: ObservableObject {
 
     /// Someone's place in the organization chart; `nil` when the address book does not know them.
     func organizationHierarchy(email: String, accountID: UUID) async throws -> OrgHierarchy? {
+        try await addressBookLookup(accountID: accountID) { try await $0.organizationHierarchy(email: email) }
+    }
+
+    /// Title, department, office and manager of one person; `nil` when the address book does not know them.
+    func personProfile(email: String, accountID: UUID) async throws -> PersonProfile? {
+        try await addressBookLookup(accountID: accountID) { try await $0.personProfile(email: email) }
+    }
+
+    /// One address book request with the same 40-second limit as a people search.
+    private func addressBookLookup<Value: Sendable>(
+        accountID: UUID,
+        _ request: @escaping @Sendable (any CalendarProvider) async throws -> Value?
+    ) async throws -> Value? {
         guard let provider = providers.first(where: { $0.account.id == accountID }) else { return nil }
-        return try await withThrowingTaskGroup(of: OrgHierarchy?.self) { group in
-            group.addTask {
-                try await provider.organizationHierarchy(email: email)
-            }
+        return try await withThrowingTaskGroup(of: Value?.self) { group in
+            group.addTask { try await request(provider) }
             group.addTask {
                 try await Task.sleep(for: .seconds(40))
                 throw FindPeopleTimeoutError()

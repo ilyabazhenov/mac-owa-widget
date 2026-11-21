@@ -391,7 +391,12 @@ extension OWAClient {
     ///   Only for requests whose repetition is harmless; a 401/440 is always retried once, as the
     ///   server answered it without acting on it.
     /// - Parameter area: what the call is for in the logs ("Mail", "Meeting").
-    func ewsCall(action: String, soap: String, mayRepeat: Bool, note: String, area: String = "Mail", attempt: Int = 0) async throws -> String {
+    /// - Parameter acceptedCodes: error codes that are an answer rather than a failure, returned
+    ///   with the body (`ErrorNameResolutionNoResults` for ResolveNames).
+    func ewsCall(
+        action: String, soap: String, mayRepeat: Bool, note: String, area: String = "Mail",
+        acceptedCodes: Set<String> = [], attempt: Int = 0
+    ) async throws -> String {
         // Pictures make a request megabytes long: time to upload them at a slow ~50 KB/s.
         var request = URLRequest(url: try url("/EWS/Exchange.asmx"), timeoutInterval: max(30, Double(soap.utf8.count) / 50_000))
         request.httpMethod = "POST"
@@ -407,7 +412,7 @@ extension OWAClient {
         } catch let urlErr as URLError where mayRepeat && urlErr.code == .networkConnectionLost && attempt < 1 {
             DiagnosticLog.event("\(area) \(action) URLError \(urlErr.code.rawValue), re-authenticating")
             try await authenticate()
-            return try await ewsCall(action: action, soap: soap, mayRepeat: mayRepeat, note: note, area: area, attempt: attempt + 1)
+            return try await ewsCall(action: action, soap: soap, mayRepeat: mayRepeat, note: note, area: area, acceptedCodes: acceptedCodes, attempt: attempt + 1)
         } catch let urlErr as URLError where !mayRepeat && Self.mayHaveReachedServer(urlErr) {
             DiagnosticLog.event("\(area) \(action) URLError \(urlErr.code.rawValue): outcome unknown, not repeated")
             throw MailError.sendUncertain
@@ -416,7 +421,7 @@ extension OWAClient {
         if OWAError.isSessionStaleStatus(http.statusCode) {
             guard attempt < 1 else { throw OWAError.httpError(http.statusCode, "EWS \(area) \(action) auth retry exhausted") }
             try await authenticate()
-            return try await ewsCall(action: action, soap: soap, mayRepeat: mayRepeat, note: note, area: area, attempt: attempt + 1)
+            return try await ewsCall(action: action, soap: soap, mayRepeat: mayRepeat, note: note, area: area, acceptedCodes: acceptedCodes, attempt: attempt + 1)
         }
         let body = String(data: data, encoding: .utf8) ?? ""
         guard (200..<300).contains(http.statusCode) else {
@@ -426,7 +431,7 @@ extension OWAClient {
         let code = Self.extractEWSResponseCode(from: body)
         log.info("EWS \(area, privacy: .public) \(action, privacy: .public) responseCode=\(code ?? "nil", privacy: .public)")
         DiagnosticLog.event("\(area) \(action) code=\(code ?? "nil")")
-        guard code == "NoError" else { throw OWAError.ewsError(code ?? "UnknownError") }
+        guard code == "NoError" || code.map(acceptedCodes.contains) == true else { throw OWAError.ewsError(code ?? "UnknownError") }
         return body
     }
 

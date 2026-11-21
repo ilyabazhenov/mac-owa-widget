@@ -54,6 +54,10 @@ actor OWACalendarProvider: CalendarProvider {
         try await client.organizationHierarchy(email: email)
     }
 
+    func personProfile(email: String) async throws -> PersonProfile? {
+        try await client.personProfile(email: email)
+    }
+
     func resolveOrganizerSMTPEmail() async throws -> String? {
         try await client.resolveOrganizerSMTPEmail()
     }

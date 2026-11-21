@@ -11,4 +11,18 @@ extension OWAClient {
         )
         return OWAOrgHierarchyParser.hierarchy(fromJSONData: data)
     }
+
+    /// One EWS `ResolveNames` request: title, department, office, city and manager.
+    /// `nil` when the address book has nobody with this address.
+    func personProfile(email: String) async throws -> PersonProfile? {
+        let body = try await ewsCall(
+            action: "ResolveNames",
+            soap: OWAResolveNamesPayload.soap(email: email),
+            mayRepeat: true,
+            note: "",
+            area: "People",
+            acceptedCodes: OWAResolveNamesPayload.acceptedCodes
+        )
+        return OWAResolveNamesParser.profile(fromXML: body, email: email)
+    }
 }
