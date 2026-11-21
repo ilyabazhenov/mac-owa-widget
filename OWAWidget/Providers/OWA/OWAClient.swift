@@ -1204,12 +1204,15 @@ actor OWAClient {
         if let arr = obj as? [Any] {
             return "[" + arr.map { serializeJSONTypeFirst($0) }.joined(separator: ",") + "]"
         }
+        if let n = obj as? NSNumber {
+            // Swift `Bool` bridges to a CFBoolean; any other NSNumber is a number. Asking `as? Bool`
+            // first would turn an NSNumber 0 or 1 (from `JSONSerialization`) into false/true, and
+            // the server cannot deserialize `"Offset":false`.
+            if CFGetTypeID(n) == CFBooleanGetTypeID() { return n.boolValue ? "true" : "false" }
+            return n.stringValue
+        }
         if let b = obj as? Bool {
             return b ? "true" : "false"
-        }
-        if let n = obj as? NSNumber {
-            // NSNumber may be wrapped Bool — handled above. Otherwise numeric.
-            return n.stringValue
         }
         if let i = obj as? Int { return String(i) }
         if let d = obj as? Double { return String(d) }
