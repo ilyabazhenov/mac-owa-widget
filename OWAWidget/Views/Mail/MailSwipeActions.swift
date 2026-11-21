@@ -473,6 +473,8 @@ struct MailListNoticeView: View {
         case .deleted: "mail.undo.deleted"
         case .failed: "mail.swipe.failed"
         case .undoFailed: "mail.undo.failed"
+        case .linkNotFound: "mail.link.notFound"
+        case .linkOtherAccount: "mail.link.otherAccount"
         }
     }
 }

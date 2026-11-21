@@ -1,18 +1,34 @@
 import Foundation
 import OWAWidgetMCPShared
 
-/// The MCP mail tools: reading folders, lists, threads and search results, and `prepare_mail`,
-/// which sends only after the user confirms in OWA Widget's own panel.
+/// What `set_mail_read` marks through: `MailService`, so the app's counts follow the mark.
+@MainActor
+protocol MCPMailReadMarking: AnyObject {
+    func setRead(
+        threads: [MailThread],
+        _ isRead: Bool,
+        accountID: UUID,
+        ownAddress: String?,
+        via run: (_ operation: @Sendable (any MailProvider) async throws -> [Result<MailItemRef, MailError>]) async throws -> [Result<MailItemRef, MailError>]
+    ) async -> [(any Error)?]
+}
+
+extension MailService: MCPMailReadMarking {}
+
+/// The MCP mail tools: reading folders, lists, threads and search results, `prepare_mail`,
+/// which sends only after the user confirms in OWA Widget's own panel, and `set_mail_read`.
 ///
 /// Every request goes through `MCPAccessGuard` (budget, concurrency, blocked sync, circuit
 /// breaker), straight to the account's provider: the mail window's switch does not gate these,
-/// the MCP mail switches do. Nothing here changes the mailbox — no read marks, no moves, no
-/// search history — except the message the user confirms.
+/// the MCP mail switches do. Nothing here changes the mailbox — no moves, no search history —
+/// except the message the user confirms and the read marks `set_mail_read` sets when its own
+/// switch is on.
 @MainActor
 final class MCPMailTools {
     nonisolated static let readToolNames: Set<String> = ["get_mail_digest", "list_mail_folders", "list_mail", "search_mail", "get_mail_thread", "get_mail_message"]
     nonisolated static let sendToolName = "prepare_mail"
-    nonisolated static var toolNames: Set<String> { readToolNames.union([sendToolName]) }
+    nonisolated static let organizeToolName = "set_mail_read"
+    nonisolated static var toolNames: Set<String> { readToolNames.union([sendToolName, organizeToolName]) }
 
     static let maxMessageCharacters = 8_000
     static let maxThreadCharacters = 40_000
@@ -28,9 +44,15 @@ final class MCPMailTools {
     /// Pause after the user declined or let a panel expire.
     static let pauseAfterDecline: TimeInterval = 20
     static let duplicateWindow: TimeInterval = 10 * 60
+    /// Conversations per `set_mail_read` call.
+    nonisolated static let maxThreadsPerMark = 50
+    /// Conversations per `GetConversationItems` of `set_mail_read`: 50 take five requests of the
+    /// budget, not fifty, and stay well inside the client's 60 seconds.
+    nonisolated static let threadsPerMarkRead = 10
 
     static let disabledMessage = "Mail access for AI assistants is turned off in OWA Widget (Settings → AI (MCP) → Mail). Ask the user to turn it on."
     static let sendDisabledMessage = "Preparing emails is turned off in OWA Widget (Settings → AI (MCP) → Mail). Nothing was sent. Ask the user to turn it on."
+    static let organizeDisabledMessage = "Marking mail is turned off: ask the user to turn on “Let assistants change mail marks: read” in OWA Widget settings → AI (MCP) → Mail. Nothing was changed."
 
     struct ToolError: Error {
         let message: String
@@ -44,9 +66,14 @@ final class MCPMailTools {
     private let canHandOff: () -> Bool
     private let isEnabled: () -> Bool
     private let canSend: () -> Bool
+    private let canOrganize: () -> Bool
+    private weak var readMarker: MCPMailReadMarking?
     private let clock: () -> Date
     private let timeZoneProvider: () -> TimeZone
     private let confirmationTimeout: TimeInterval
+    /// The scheme of `open_url` links: this copy's own, so a development build's links do not
+    /// open the release one.
+    private let linkScheme: String
 
     private var handles: [String: String] = [:]
     private var handleOrder: [String] = []
@@ -66,10 +93,14 @@ final class MCPMailTools {
         canHandOff: @escaping () -> Bool = { false },
         isEnabled: @escaping () -> Bool = { false },
         canSend: @escaping () -> Bool = { false },
+        canOrganize: @escaping () -> Bool = { false },
+        readMarker: MCPMailReadMarking? = nil,
         confirmationTimeout: TimeInterval = MCPCalendarTools.confirmationTimeout,
         clock: @escaping () -> Date = { Date() },
-        timeZone: @escaping () -> TimeZone = { AppTimeZone.zone }
+        timeZone: @escaping () -> TimeZone = { AppTimeZone.zone },
+        linkScheme: String = AppURLRoute.currentScheme
     ) {
+        self.linkScheme = linkScheme
         self.calendarService = calendarService
         self.accessGuard = accessGuard
         self.confirmer = confirmer ?? MCPMailConfirmationController()
@@ -77,6 +108,8 @@ final class MCPMailTools {
         self.canHandOff = canHandOff
         self.isEnabled = isEnabled
         self.canSend = canSend
+        self.canOrganize = canOrganize
+        self.readMarker = readMarker
         self.confirmationTimeout = confirmationTimeout
         self.clock = clock
         self.timeZoneProvider = timeZone
@@ -94,6 +127,7 @@ final class MCPMailTools {
             case "get_mail_thread": return try await getThread(arguments, coder)
             case "get_mail_message": return try await getMessage(arguments, coder)
             case "prepare_mail": return try await prepareMail(arguments, coder, client: client)
+            case "set_mail_read": return try await setMailRead(arguments)
             default: return .failure("Unknown tool: \(name)")
             }
         } catch let error as ToolError {
@@ -181,6 +215,18 @@ final class MCPMailTools {
         return short
     }
 
+    /// A link that opens this in OWA Widget's mail window (`owawidget://`), for a notification or
+    /// a note. It carries the full Exchange id, so it still works after the app restarts; lists
+    /// do not get one (a full id is about 170 characters a row), their short ids work in links too.
+    private func openURL(_ route: AppURLRoute) -> JSONValue {
+        .optional(route.url(scheme: linkScheme)?.absoluteString)
+    }
+
+    /// The account goes into a link only when there is a choice.
+    private func linkAccountID(_ account: CalendarAccount) -> UUID? {
+        calendarService.mailAccounts.count > 1 ? account.id : nil
+    }
+
     /// The full id behind a handle; a full id is accepted as is.
     func resolve(_ handle: String) -> String? {
         if handle.count > 20 { return handle }
@@ -195,6 +241,12 @@ final class MCPMailTools {
             throw ToolError("Unknown `\(key)` \(value). Ids are remembered only while OWA Widget runs: call \(from) again.")
         }
         return id
+    }
+
+    private func optionalBool(_ arguments: [String: JSONValue], _ key: String) throws -> Bool? {
+        guard let value = arguments[key], value != .null else { return nil }
+        guard let bool = value.boolValue else { throw ToolError("`\(key)` must be true or false") }
+        return bool
     }
 
     private func optionalInt(_ arguments: [String: JSONValue], _ key: String, range: ClosedRange<Int>) throws -> Int? {
@@ -334,7 +386,9 @@ final class MCPMailTools {
     }
 
     /// One message; `budget` is what is left of the characters this answer may still carry.
-    private func messageJSON(_ message: MailMessage, _ coder: MCPDateCoder, ownDomain: String?, characterLimit: Int, budget: inout Int) -> JSONValue {
+    /// With `includeHTML`, also `html`: the same part of the body as `text`, cleaned markup for a
+    /// client that draws the message itself. It is not limited: cutting markup would break it.
+    private func messageJSON(_ message: MailMessage, _ coder: MCPDateCoder, ownDomain: String?, characterLimit: Int, includeHTML: Bool, budget: inout Int) -> JSONValue {
         var fields: [String: JSONValue] = [
             "message_id": .string(handle(message.ref.id)),
             "subject": .string(message.subject),
@@ -374,12 +428,23 @@ final class MCPMailTools {
         }
         switch message.kind {
         case .protected:
+            let reason: JSONValue = "The message is encrypted (IRM or S/MIME); only OWA can open it."
             fields["text"] = .null
-            fields["text_unavailable"] = "The message is encrypted (IRM or S/MIME); only OWA can open it."
+            fields["text_unavailable"] = reason
+            if includeHTML {
+                fields["html"] = .null
+                fields["html_unavailable"] = reason
+            }
         case .archived:
+            let reason: JSONValue = "The message is in the Enterprise Vault archive; this is only its stub. The full text opens in OWA."
             fields["text"] = .string(String(MailHTMLDocument.plainText(message.bodyHTML).prefix(1_000)))
-            fields["text_unavailable"] = "The message is in the Enterprise Vault archive; this is only its stub. The full text opens in OWA."
+            fields["text_unavailable"] = reason
+            if includeHTML {
+                fields["html"] = .null
+                fields["html_unavailable"] = reason
+            }
         default:
+            if includeHTML { fields["html"] = .string(MailHTMLDocument.clientHTML(message.bodyHTML)) }
             let text = MailHTMLDocument.plainText(message.bodyHTML)
             let allowed = max(0, min(characterLimit, budget))
             if text.count > allowed {
@@ -576,15 +641,17 @@ final class MCPMailTools {
         let account = try mailAccount(arguments)
         let id = try requiredID(arguments, "thread_id", from: "list_mail or search_mail")
         let maxMessages = try optionalInt(arguments, "max_messages", range: 1...20) ?? 10
+        let includeHTML = try optionalBool(arguments, "include_html") ?? false
         let thread = try await request(account, context: "mcp.mail.thread") { try await $0.mailThread(conversationID: id, ignoringFolders: []) }
         let ownDomain = Self.domain(await ownAddress(account))
         var budget = Self.maxThreadCharacters
         var result = commonFields(coder, account)
         result["thread_id"] = .string(handle(thread.id))
+        result["open_url"] = openURL(.thread(id: thread.id, accountID: linkAccountID(account)))
         result["subject"] = .string(thread.topic)
         result["total_messages"] = .int(Int64(thread.totalMessageCount))
         result["messages"] = .array(thread.messages.prefix(maxMessages).map {
-            messageJSON($0, coder, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, budget: &budget)
+            messageJSON($0, coder, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, includeHTML: includeHTML, budget: &budget)
         })
         if thread.messages.count > maxMessages || thread.totalMessageCount > thread.messages.count {
             result["note"] = "Newest messages first; older ones are not included. Each message's `text` is only what it added, without the quoted history: get_mail_message returns the full text."
@@ -598,11 +665,13 @@ final class MCPMailTools {
     private func getMessage(_ arguments: [String: JSONValue], _ coder: MCPDateCoder) async throws -> MCPToolResult {
         let account = try mailAccount(arguments)
         let id = try requiredID(arguments, "message_id", from: "get_mail_thread")
+        let includeHTML = try optionalBool(arguments, "include_html") ?? false
         let message = try await request(account, context: "mcp.mail.message") { try await $0.mailMessage(MailItemRef(id: id, changeKey: nil)) }
         let ownDomain = Self.domain(await ownAddress(account))
         var budget = Self.maxFullMessageCharacters
         var result = commonFields(coder, account)
-        result["message"] = messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxFullMessageCharacters, budget: &budget)
+        result["message"] = messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxFullMessageCharacters, includeHTML: includeHTML, budget: &budget)
+        result["open_url"] = openURL(.message(id: message.ref.id, accountID: linkAccountID(account)))
         if let conversation = message.conversationID { result["thread_id"] = .string(handle(conversation)) }
         return .success(result)
     }
@@ -811,4 +880,103 @@ final class MCPMailTools {
         recentSends[key] = (now, result)
         return .success(result)
     }
+
+    // MARK: - set_mail_read
+
+    /// Marks conversations read or unread. The threads are read first, ten per request (their
+    /// messages as the server holds them now, Deleted Items left out as in the mail window: one
+    /// gone comes back in `failed`), then marked through `MailService`, so the app's counts
+    /// follow. Exchange marks the other messages when one fails, and `failed` names only the
+    /// conversations that were not marked in full.
+    private func setMailRead(_ arguments: [String: JSONValue]) async throws -> MCPToolResult {
+        guard canOrganize() else { return .failure(Self.organizeDisabledMessage) }
+        guard let isRead = arguments["read"]?.boolValue else {
+            throw ToolError("`read` is required: true marks the conversations read, false unread")
+        }
+        guard let items = arguments["thread_ids"]?.arrayValue else {
+            throw ToolError("`thread_ids` must be an array of thread_id values from list_mail, search_mail or get_mail_thread")
+        }
+        guard !items.isEmpty else { throw ToolError("`thread_ids` is empty") }
+        guard items.count <= Self.maxThreadsPerMark else {
+            throw ToolError("At most \(Self.maxThreadsPerMark) conversations per call, got \(items.count). Nothing was changed: split them into several calls.")
+        }
+        let raw = try items.map { item in
+            guard let text = item.stringValue?.trimmingCharacters(in: .whitespaces), !text.isEmpty else {
+                throw ToolError("`thread_ids` must contain thread_id strings")
+            }
+            return text
+        }
+        let account = try mailAccount(arguments)
+        guard let marker = readMarker else {
+            return .failure("OWA Widget cannot mark mail right now (it is still starting). Nothing was changed; try again in a minute.")
+        }
+        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) { return .failure(reason) }
+        // A conversation also holds its copies in Deleted Items: marking the newest one "unread"
+        // there would leave the inbox conversation read.
+        let ignored = try await folders(account, load: true)?
+            .filter { $0.distinguished == .deleteditems }.map(\.id) ?? []
+
+        var failed: [JSONValue] = []
+        func fail(_ threadID: String, _ reason: String) {
+            failed.append(["thread_id": .string(threadID), "reason": .string(reason)])
+        }
+        func reason(_ error: any Error) -> String {
+            if case MailError.notFound? = error as? MailError { return Self.goneReason }
+            return (error as? ToolError)?.message ?? error.localizedDescription
+        }
+
+        var wanted: [(threadID: String, id: String)] = []
+        var seen: Set<String> = []
+        for threadID in raw {
+            guard let id = resolve(threadID) else {
+                fail(threadID, "unknown thread_id: ids are remembered only while OWA Widget runs — list or search again")
+                continue
+            }
+            if seen.insert(id).inserted { wanted.append((threadID, id)) }
+        }
+
+        var threads: [(threadID: String, thread: MailThread)] = []
+        // The budget, a blocked sync or the connection: the next requests would fare no better,
+        // and each one sends the password again.
+        var stopReason: String?
+        for batch in wanted.chunked(Self.threadsPerMarkRead) {
+            if let stopReason {
+                for entry in batch { fail(entry.threadID, stopReason) }
+                continue
+            }
+            let ids = batch.map(\.id)
+            do {
+                let results = try await request(account, context: "mcp.mail.setRead") {
+                    try await $0.mailThreads(conversationIDs: ids, ignoringFolders: ignored)
+                }
+                for (entry, result) in zip(batch, results) {
+                    switch result {
+                    case .success(let thread) where !thread.messages.isEmpty: threads.append((entry.threadID, thread))
+                    case .success: fail(entry.threadID, Self.goneReason)
+                    case .failure(let error): fail(entry.threadID, reason(error))
+                    }
+                }
+            } catch {
+                stopReason = reason(error)
+                for entry in batch { fail(entry.threadID, reason(error)) }
+            }
+        }
+
+        var updated = 0
+        if let stopReason {
+            for entry in threads { fail(entry.threadID, stopReason) }
+        } else if !threads.isEmpty {
+            let own = isRead ? nil : await ownAddress(account)
+            let outcome = await marker.setRead(threads: threads.map(\.thread), isRead, accountID: account.id, ownAddress: own) { operation in
+                try await request(account, context: "mcp.mail.setRead", operation)
+            }
+            for (entry, error) in zip(threads, outcome) {
+                if let error { fail(entry.threadID, reason(error)) } else { updated += 1 }
+            }
+        }
+        MCPDebugLog.log("set_mail_read read=\(isRead) asked=\(raw.count) updated=\(updated) failed=\(failed.count)")
+        return .success(["updated": .int(Int64(updated)), "failed": .array(failed)])
+    }
+
+    private static let goneReason = "not found: the conversation was deleted or moved — list or search again"
 }

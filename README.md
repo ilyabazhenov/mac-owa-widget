@@ -89,6 +89,7 @@ OWA Widget connects to AI assistants over MCP. The assistant sees your meetings,
 </picture>
 
 - Read-only by default; creating meetings is a separate switch.
+- Mail is a separate decision: **Let AI assistants read mail** (each client is asked about mail again). Under it, two more switches, both off by default: **Let assistants prepare emails** — an email goes out only after you press **Send** in OWA Widget's panel; **Let assistants change mail marks: read** — the assistant marks conversations read or unread without asking each time, since a mark can be undone and nothing is sent. Moving, flagging and deleting mail are not available to assistants.
 - Every meeting goes through a confirmation window: **Send**, **Cancel**, or **Edit** in the regular New Meeting window.
 - The assistant knows who you are and tells you apart from namesakes.
 - Turn it on in **Settings → AI (MCP)** and copy the ready-made connection line for your MCP client. For example:
@@ -100,6 +101,14 @@ OWA Widget connects to AI assistants over MCP. The assistant sees your meetings,
 
   Any stdio MCP client works the same way: the command is the path to `owawidget-mcp`, with no arguments.
 - A new client reads nothing until you allow it in OWA Widget's window. Settings list every client with its name, path and access. OWA Widget works out who connected itself instead of taking the client's word for it.
+
+<details>
+<summary>MCP tools</summary>
+
+- **Calendar:** `get_status`, `get_current_and_next`, `list_events`, `get_schedule_stats`, `find_events_with_person`, `get_event_details`, `match_event`, `find_people`, `get_my_org`, `find_free_slots`; `create_meeting` and `cancel_meeting` (each behind its own switch, confirmed in OWA Widget's window).
+- **Mail** (with **Let AI assistants read mail** on): `get_mail_digest`, `list_mail_folders`, `list_mail`, `search_mail`, `get_mail_thread`, `get_mail_message` — reading marks nothing as read; `prepare_mail` (behind **Let assistants prepare emails**, sent only after **Send** in OWA Widget's panel); `set_mail_read` (behind **Let assistants change mail marks: read**) — marks up to 50 conversations read or unread per call and changes nothing else.
+
+</details>
 
 `16:00–16:15 · search`
 
@@ -208,6 +217,21 @@ The button appears when the online meeting field, location or description contai
 
 **Where does my data go if I connect an AI assistant?**
 The app itself sends it nowhere: the assistant reads it over a local connection on your Mac. What the assistant reads — meeting titles, descriptions and attendees — goes to the AI service you use. While access is off, the assistant sees nothing.
+
+**Can I open an email in OWA Widget from a link — in a notification or a note?**
+Yes, the app has `owawidget://` links:
+
+- `owawidget://mail` opens the mail window and brings it to the front;
+- `owawidget://thread?id=<id>` opens a conversation;
+- `owawidget://message?id=<id>` opens a conversation and scrolls to the message.
+
+MCP hands an AI assistant a ready link: the `open_url` field of `get_mail_thread` and `get_mail_message`. It carries the message's full id, so it keeps working after the app restarts. A short `thread_id` from `list_mail` works in a link too, but only until OWA Widget restarts. With several accounts the link also carries `account=<account_id>`. A notification that opens the email when clicked:
+
+```bash
+terminal-notifier -title "Important email" -message "Release 1.3" -open "owawidget://message?id=…"
+```
+
+Links only open the window: nothing can be sent, deleted or changed through them. An email opened from a link is marked as read just as when you open it yourself (the setting is in Mail). With mail turned off, a link does nothing.
 
 **Why does macOS ask for access to the Keychain?**
 The account passwords and the key that encrypts app data live in the Keychain. macOS asks when an app with a different signature reads them, for example the first time after updating from a version released before the app was signed with a Developer ID. Click **Always Allow**: plain **Allow** lets the app in for this launch only, and the question comes back next time.

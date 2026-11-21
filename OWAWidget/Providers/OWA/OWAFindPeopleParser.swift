@@ -57,8 +57,9 @@ enum OWAFindPeopleParser {
         guard !displayName.isEmpty else { return nil }
 
         let jobTitle = extractJobTitle(dict, attributionDepth: 0)
+        let office = extractOffice(dict, attributionDepth: 0)
 
-        return ResolvedAttendee(displayName: displayName, email: email, jobTitle: jobTitle)
+        return ResolvedAttendee(displayName: displayName, email: email, jobTitle: jobTitle, office: office)
     }
 
     private static func extractDisplayName(_ dict: [String: Any], attributionDepth: Int) -> String {
@@ -96,23 +97,29 @@ enum OWAFindPeopleParser {
     }
 
     /// Job title often lives on the persona root, but compose-style `PersonaAttributions` may carry it on child objects.
+    /// Only the title: a department or company in its place would read as someone's position.
     private static func extractJobTitle(_ dict: [String: Any], attributionDepth: Int) -> String? {
-        for key in ["JobTitle", "Title", "CompanyName", "Department"] {
+        firstString(in: dict, keys: ["JobTitle", "Title"], arrayKeys: ["TitlesArray", "Titles", "BusinessTitles"], attributionDepth: attributionDepth)
+    }
+
+    private static func extractOffice(_ dict: [String: Any], attributionDepth: Int) -> String? {
+        firstString(in: dict, keys: ["OfficeLocation"], arrayKeys: ["OfficeLocationsArray", "OfficeLocations"], attributionDepth: attributionDepth)
+    }
+
+    private static func firstString(in dict: [String: Any], keys: [String], arrayKeys: [String], attributionDepth: Int) -> String? {
+        for key in keys {
             if let s = dict[key] as? String {
                 let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !t.isEmpty { return t }
             }
         }
-        // Plural arrays returned by Exchange when requesting PersonaTitles/PersonaCompanyName/PersonaDepartments.
-        for key in ["Titles", "BusinessTitles", "CompanyNames", "Departments"] {
-            if let arr = dict[key] as? [Any] {
-                if let s = firstNonEmptyValue(in: arr) { return s }
-            }
+        for key in arrayKeys {
+            if let arr = dict[key] as? [Any], let s = firstNonEmptyValue(in: arr) { return s }
         }
         if attributionDepth < 4, let attr = dict["PersonaAttributions"] as? [Any] {
             for item in attr {
                 guard let eDict = item as? [String: Any] else { continue }
-                if let nested = extractJobTitle(eDict, attributionDepth: attributionDepth + 1) {
+                if let nested = firstString(in: eDict, keys: keys, arrayKeys: arrayKeys, attributionDepth: attributionDepth + 1) {
                     return nested
                 }
             }

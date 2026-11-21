@@ -74,6 +74,9 @@ bundle: build
 	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $$BUILD_NUMBER" "$(APP_PATH)/Contents/Info.plist" >/dev/null 2>&1 || \
 	  /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $$BUILD_NUMBER" "$(APP_PATH)/Contents/Info.plist"; \
 	/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $(APP_BUNDLE_ID)" "$(APP_PATH)/Contents/Info.plist"; \
+	if [ "$(APP_BUNDLE_ID)" = "$(APP_BUNDLE_ID_DEV)" ]; then \
+	  /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLSchemes:0 owawidget-dev" "$(APP_PATH)/Contents/Info.plist"; \
+	fi; \
 	if [ -d "$$RESOURCE_BUNDLE" ]; then cp -R "$$RESOURCE_BUNDLE" $(APP_PATH)/Contents/Resources/; fi
 	@if [ -d "$(SRC_DIR)/Resources" ]; then cp -R $(SRC_DIR)/Resources/*.lproj $(APP_PATH)/Contents/Resources/; fi
 	@if [ -f "$(SRC_DIR)/Resources/AppIcon.icns" ]; then cp "$(SRC_DIR)/Resources/AppIcon.icns" "$(APP_PATH)/Contents/Resources/AppIcon.icns"; fi

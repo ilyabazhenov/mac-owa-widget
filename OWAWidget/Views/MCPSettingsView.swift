@@ -66,6 +66,13 @@ struct MCPSettingsView: View {
                     isEnabled: !(!server.isEnabled || !server.canReadMail)
                 )
                 .padding(.leading, 16)
+                SettingsToggle(
+                    title: localization.tr("mcp.mail.organize"),
+                    info: localization.tr("mcp.mail.organize.description"),
+                    isOn: $server.canOrganizeMail,
+                    isEnabled: !(!server.isEnabled || !server.canReadMail)
+                )
+                .padding(.leading, 16)
                 if server.canReadMail {
                     Label {
                         Text(localization.tr("mcp.mail.warning")).font(.app(.footnote))

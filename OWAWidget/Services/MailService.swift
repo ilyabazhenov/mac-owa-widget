@@ -119,6 +119,11 @@ struct MailOpenRequest: Equatable {
     let conversationID: String
     /// The folder to show around it (the inbox panel's), when not the window's own.
     var folder: MailFolderRef? = nil
+    /// A link to one message (`owawidget://message`): its conversation opens with this message
+    /// unfolded and scrolled to. `conversationID` is then empty: the window looks it up.
+    var messageID: String? = nil
+    /// Shown in the window instead of opening anything: a link it could not follow.
+    var notice: MailListNotice? = nil
     let token = UUID()
 }
 
@@ -1072,6 +1077,104 @@ final class MailService: ObservableObject {
         changeGeneration += 1
     }
 
+    // MARK: - Read marks from AI assistants (MCP `set_mail_read`)
+
+    /// The messages a read mark touches in a thread, by the rule of `setRead(conversations:)`:
+    /// every message for "read"; for "unread" only the newest one, as Outlook does — the newest
+    /// one the user received, since a thread also holds their own replies and drafts.
+    nonisolated static func readMarkTargets(in thread: MailThread, _ isRead: Bool, ownAddress: String?) -> [MailItemTarget] {
+        let messages: [MailMessage]
+        if isRead {
+            messages = thread.messages
+        } else {
+            let own = ownAddress?.lowercased()
+            let received = thread.messages.filter { message in
+                !message.isDraft && (own == nil || message.from?.email?.lowercased() != own)
+            }
+            messages = Array((received.first ?? thread.messages.first).map { [$0] } ?? [])
+        }
+        // `IsRead` goes as `Message` whatever the item is, as in `setRead(conversations:)`.
+        return messages.map { MailItemTarget($0.ref, kind: .note) }
+    }
+
+    /// Marks whole threads read or unread for an MCP client: the same `UpdateItem` as the
+    /// window's marks (`readMarkTargets`), as few requests as `bulkPageSize` allows. It goes
+    /// through `run` — MCP's own budget and circuit breaker, to `accountID`'s mailbox — not
+    /// through `perform`, which serves the mail window's account and only while mail is on in
+    /// the app.
+    ///
+    /// Exchange marks the other items when one of them fails, so the answer is per thread, in
+    /// order: `nil` when every target was marked, else the first error of one of its targets.
+    /// A request that fails as a whole (budget, connection) stops the ones after it.
+    ///
+    /// When `accountID` is the account this service shows, the popover's unread lists, the inbox
+    /// panel, the folder counts and the menu bar count follow the messages that were marked, as
+    /// after a mark in the app. `threads` are as the server held them before the mark: what
+    /// changes is what was different.
+    func setRead(
+        threads: [MailThread],
+        _ isRead: Bool,
+        accountID: UUID,
+        ownAddress: String?,
+        via run: (_ operation: @Sendable (any MailProvider) async throws -> [Result<MailItemRef, MailError>]) async throws -> [Result<MailItemRef, MailError>]
+    ) async -> [(any Error)?] {
+        let targetsByThread = threads.map { Self.readMarkTargets(in: $0, isRead, ownAddress: ownAddress) }
+        var failedIDs: [String: any Error] = [:]
+        var stop: (any Error)?
+        for chunk in targetsByThread.flatMap({ $0 }).chunked(Self.bulkPageSize) {
+            if let stop {
+                for target in chunk { failedIDs[target.ref.id] = stop }
+                continue
+            }
+            do {
+                let results = try await run { try await $0.mailUpdateEach(chunk, .isRead(isRead)) }
+                for (target, result) in zip(chunk, results) {
+                    if case .failure(let error) = result { failedIDs[target.ref.id] = error }
+                }
+            } catch {
+                stop = error
+                for target in chunk { failedIDs[target.ref.id] = error }
+            }
+        }
+        let outcome = targetsByThread.map { targets in targets.lazy.compactMap { failedIDs[$0.ref.id] }.first }
+        guard accountID == account?.id else { return outcome }
+
+        var inboxDelta = 0
+        var folderDeltas: [String: Int] = [:]
+        var unreadListCounts: [String: Int] = [:]
+        for ((thread, threadTargets), failure) in zip(zip(threads, targetsByThread), outcome) {
+            let ids = Set(threadTargets.map(\.ref.id)).subtracting(failedIDs.keys)
+            let changed = thread.messages.filter { ids.contains($0.ref.id) && $0.isRead != isRead }
+            let step = isRead ? -1 : 1
+            evict(thread.id)
+            for message in thread.messages { evict(message.ref.id) }
+            guard !changed.isEmpty else { continue }
+            for message in changed {
+                if let folderID = message.parentFolderID { folderDeltas[folderID, default: 0] += step }
+                if message.parentFolderID == nil || message.parentFolderID == inboxFolderID { inboxDelta += step }
+            }
+            // A thread read through leaves the unread lists (they hold inbox conversations).
+            if isRead, failure == nil { unreadListCounts[thread.id] = Int.max }
+            // The panel's row counts only its folder's messages: a conversation row by the
+            // thread's id, a message row (grouping off) by its own.
+            for row in panelList {
+                if row.isSingleMessage {
+                    guard changed.contains(where: { $0.ref.id == row.id }) else { continue }
+                    replacePanelRow(row.with(unreadCount: isRead ? 0 : 1))
+                } else if row.id == thread.id {
+                    let inPanel = changed.filter(isInPanelFolder).count
+                    guard inPanel > 0 else { continue }
+                    replacePanelRow(row.with(unreadCount: max(0, row.unreadCount + step * inPanel)))
+                }
+            }
+        }
+        adjustFolderUnread(folderDeltas)
+        if let count = inboxUnreadCount { inboxUnreadCount = max(0, count + inboxDelta) }
+        if !unreadListCounts.isEmpty { reduceUnreadLists(unreadListCounts) }
+        changeGeneration += 1
+        return outcome
+    }
+
     func setFlag(conversations: [MailConversationSummary], _ flagged: Bool) async throws {
         var newest: [MailItemTarget] = []
         for conversation in conversations {
@@ -1351,6 +1454,16 @@ final class MailService: ObservableObject {
         openRequest = MailOpenRequest(conversationID: conversationID, folder: folder)
     }
 
+    /// Opens the conversation of one message, with that message unfolded and scrolled to.
+    func open(messageID: String) {
+        openRequest = MailOpenRequest(conversationID: "", messageID: messageID)
+    }
+
+    /// Opens the window with a notice instead of a conversation: a link it could not follow.
+    func openWindow(notice: MailListNotice) {
+        openRequest = MailOpenRequest(conversationID: "", notice: notice)
+    }
+
     func compose(_ request: MailComposeRequest) {
         composeRequest = request
     }
@@ -1493,12 +1606,18 @@ enum MailListNotice: Equatable, Sendable {
     case failed
     /// Undo did not get through: the conversation stays in Deleted Items.
     case undoFailed
+    /// A link (`owawidget://`) named a message this copy of the app no longer knows: an MCP
+    /// short id from before a restart, say.
+    case linkNotFound
+    /// A link named a message of another account than the one the window shows.
+    case linkOtherAccount
 
     /// Seconds on screen: long enough to reach Undo, short enough not to linger.
     var lifetime: Double {
         switch self {
         case .deleted: 6
         case .failed, .undoFailed: 4
+        case .linkNotFound, .linkOtherAccount: 8
         }
     }
 }

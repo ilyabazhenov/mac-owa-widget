@@ -12,6 +12,8 @@ enum OWAMailPayloads {
     static let maximumRecipientsForReview = 1000
     /// The server cuts bodies past this size (bytes).
     static let maximumBodySize = 2_097_152
+    /// The body a read mark's conversation request asks for: it needs the messages, not their text.
+    static let markingBodySize = 1_024
     /// One transparent pixel: the server swaps it in for every inline image it does not serve.
     static let blankInlineImage = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAEALAAAAAABAAEAAAIBTAA7"
     /// Scopes the server's CSS rewriting of a message body to our container.
@@ -215,17 +217,31 @@ enum OWAMailPayloads {
         maxItems: Int = 20,
         timeZoneID: String
     ) -> [String: Any] {
-        [
+        getConversationItems(conversationIDs: [conversationID], foldersToIgnore: foldersToIgnore, maxItems: maxItems, timeZoneID: timeZoneID)
+    }
+
+    /// Several conversations in one request; the response has one item per conversation, in
+    /// order. `maximumBodySize` caps the one body each conversation carries (its newest message).
+    static func getConversationItems(
+        conversationIDs: [String],
+        foldersToIgnore: [String],
+        maxItems: Int = 20,
+        maximumBodySize: Int = maximumBodySize,
+        timeZoneID: String
+    ) -> [String: Any] {
+        var shape = readingItemShape(forConversation: true)
+        shape["MaximumBodySize"] = maximumBodySize
+        return [
             "__type": "GetConversationItemsJsonRequest:#Exchange",
             "Header": header(version: "V2017_08_18", timeZoneID: timeZoneID),
             "Body": [
                 "__type": "GetConversationItemsRequest:#Exchange",
-                "Conversations": [[
+                "Conversations": conversationIDs.map { id in [
                     "__type": "ConversationRequestType:#Exchange",
-                    "ConversationId": ["__type": "ItemId:#Exchange", "Id": conversationID],
+                    "ConversationId": ["__type": "ItemId:#Exchange", "Id": id],
                     "SyncState": "",
-                ]],
-                "ItemShape": readingItemShape(forConversation: true),
+                ] as [String: Any] },
+                "ItemShape": shape,
                 "ShapeName": "ItemPart",
                 "SortOrder": "DateOrderDescending",
                 "MaxItemsToReturn": maxItems,

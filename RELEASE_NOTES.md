@@ -1,3 +1,13 @@
+## Unreleased
+
+### RU
+
+- **MCP: вёрстка письма по просьбе клиента.** У `get_mail_thread` и `get_mail_message` новый аргумент `include_html`: рядом с `text` приходит очищенная HTML-вёрстка письма (таблицы с пустыми ячейками, жирный, курсив, цвета, внешние картинки, ссылки; без скриптов, форм, стилей и скрытого текста). Нужен клиентам, которые сами рисуют письмо; без аргумента ответ прежний.
+
+### EN
+
+- **MCP: message markup on request.** `get_mail_thread` and `get_mail_message` take a new `include_html` argument: next to `text` comes the message's cleaned HTML (tables with their empty cells, bold, italics, colours, web images, links; no scripts, forms, style sheets or hidden text). For clients that draw the message themselves; without it the answer is unchanged.
+
 ## v1.0.62 - 2026-11-19
 
 ### RU

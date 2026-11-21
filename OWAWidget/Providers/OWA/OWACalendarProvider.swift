@@ -50,6 +50,10 @@ actor OWACalendarProvider: CalendarProvider {
         try await client.findPeople(query: query)
     }
 
+    func organizationHierarchy(email: String) async throws -> OrgHierarchy? {
+        try await client.organizationHierarchy(email: email)
+    }
+
     func resolveOrganizerSMTPEmail() async throws -> String? {
         try await client.resolveOrganizerSMTPEmail()
     }
@@ -298,6 +302,10 @@ extension OWACalendarProvider: MailProvider {
         try await client.mailThread(conversationID: conversationID, ignoringFolders: ignoringFolders)
     }
 
+    func mailThreads(conversationIDs: [String], ignoringFolders: [String]) async throws -> [Result<MailThread, MailError>] {
+        try await client.mailThreads(conversationIDs: conversationIDs, ignoringFolders: ignoringFolders)
+    }
+
     func mailMessage(_ ref: MailItemRef) async throws -> MailMessage { try await client.mailMessage(ref) }
 
     func mailAttachment(id: String, maxBytes: Int) async throws -> Data {
@@ -306,6 +314,10 @@ extension OWACalendarProvider: MailProvider {
 
     func mailUpdate(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [MailItemRef] {
         try await client.mailUpdate(targets, update)
+    }
+
+    func mailUpdateEach(_ targets: [MailItemTarget], _ update: MailItemUpdate) async throws -> [Result<MailItemRef, MailError>] {
+        try await client.mailUpdateEach(targets, update)
     }
 
     func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef] {

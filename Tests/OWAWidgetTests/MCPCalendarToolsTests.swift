@@ -28,6 +28,10 @@ final class MCPCalendarToolsTests: XCTestCase {
         private(set) var created: [(title: String, start: Date, required: [String], optional: [String])] = []
         private(set) var removed: [(id: String, mode: MeetingRemovalMode, message: String)] = []
         private let removeError: Error?
+        /// Organization charts by lowercased address; a missing address is "not in the address book".
+        private let org: [String: OrgHierarchy]
+        private let failingOrg: Set<String>
+        private(set) var orgCalls: [String] = []
 
         init(
             account: CalendarAccount,
@@ -42,9 +46,13 @@ final class MCPCalendarToolsTests: XCTestCase {
             archive: [CalendarEvent] = [],
             fetchError: Error? = nil,
             fetchDelay: Duration? = nil,
-            removeError: Error? = nil
+            removeError: Error? = nil,
+            org: [String: OrgHierarchy] = [:],
+            failingOrg: Set<String> = []
         ) {
             self.account = account
+            self.org = org
+            self.failingOrg = failingOrg
             self.removeError = removeError
             self.attendeesByID = attendeesByID
             self.uidByID = uidByID
@@ -72,6 +80,12 @@ final class MCPCalendarToolsTests: XCTestCase {
             peopleSearches.append(query)
             if failingSearches.contains(query) { throw URLError(.badServerResponse) }
             return people.filter { $0.displayName.localizedCaseInsensitiveContains(query) || $0.email.contains(query.lowercased()) }
+        }
+
+        func organizationHierarchy(email: String) async throws -> OrgHierarchy? {
+            orgCalls.append(email)
+            if failingOrg.contains(email) { throw URLError(.badServerResponse) }
+            return org[email.lowercased()]
         }
 
         func resolveOrganizerSMTPEmail() async throws -> String? {
@@ -853,7 +867,7 @@ final class MCPCalendarToolsTests: XCTestCase {
 
     // MARK: - find_people
 
-    private let ivanov = ResolvedAttendee(displayName: "Иванов Иван", email: "ivanov@corp.ru", jobTitle: "Разработчик")
+    private let ivanov = ResolvedAttendee(displayName: "Иванов Иван", email: "ivanov@corp.ru", jobTitle: "Разработчик", office: "Г-502")
     private let partner = ResolvedAttendee(displayName: "Partner Ivanov", email: "ivanov@partner.com", jobTitle: nil)
 
     func testFindPeopleMarksAddressesOutsideTheUsersDomain() async {
@@ -866,6 +880,8 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertEqual(people.map { $0["email"] }, ["ivanov@corp.ru", "ivanov@partner.com"])
         XCTAssertEqual(people.map { $0["external"] }, [false, true])
         XCTAssertEqual(people.first?["job_title"], "Разработчик")
+        XCTAssertEqual(people.first?["office"], "Г-502")
+        XCTAssertNil(people.last?["office"])
     }
 
     func testFindPeopleNeedsAQueryAndAnExchangeAccount() async {
@@ -874,6 +890,99 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertTrue(short.isError)
         let local = await tools.call(name: "find_people", arguments: ["query": "Ivanov", "account_id": .string(local.id.uuidString)])
         XCTAssertTrue(local.isError)
+    }
+
+
+    // MARK: - get_my_org
+
+    private func orgPerson(_ name: String, _ email: String, _ title: String? = "Инженер") -> OrgPerson {
+        OrgPerson(name: name, email: email, title: title)
+    }
+
+    private var myOrg: OrgHierarchy {
+        OrgHierarchy(
+            manager: orgPerson("Чернов М.", "boss@corp.ru", "Руководитель направления"),
+            managementChain: [orgPerson("Первый П.", "ceo@corp.ru", "Председатель"), orgPerson("Второй В.", "vp@corp.ru", "Директор")],
+            peers: [orgPerson("Баженов И.", "me@corp.ru", "Архитектор"), orgPerson("Петров П.", "petrov@corp.ru")],
+            directReports: [orgPerson("Сидоров С.", "sidorov@corp.ru"), orgPerson("Bot_AI", "bot_ai@corp.ru", nil)]
+        )
+    }
+
+    func testMyOrgDefaultsToTheUserAndLeavesThemOutOfPeers() async throws {
+        let provider = DetailsProvider(account: exchange, ownEmail: "me@corp.ru", org: ["me@corp.ru": myOrg])
+        let (tools, _) = makeTools(events: [], provider: provider)
+
+        let resultCall = await tools.call(name: "get_my_org", arguments: [:]).structured
+        let result = try XCTUnwrap(resultCall)
+
+        XCTAssertEqual(result["in_directory"], true)
+        XCTAssertEqual(result["person"]?["email"], "me@corp.ru")
+        XCTAssertEqual(result["person"]?["title"], "Архитектор")
+        XCTAssertEqual(result["person"]?["is_you"], true)
+        XCTAssertEqual(result["manager"]?["email"], "boss@corp.ru")
+        XCTAssertEqual(result["management_chain"]?.arrayValue?.map { $0["email"] }, ["ceo@corp.ru", "vp@corp.ru"])
+        XCTAssertEqual(result["peers"]?.arrayValue?.map { $0["email"] }, ["petrov@corp.ru"])
+        let reports = result["direct_reports"]?.arrayValue ?? []
+        XCTAssertEqual(reports.map { $0["email"] }, ["sidorov@corp.ru", "bot_ai@corp.ru"])
+        XCTAssertNil(reports[0]["likely_service_mailbox"])
+        XCTAssertEqual(reports[1]["likely_service_mailbox"], true)
+        XCTAssertNil(reports[1]["title"])
+        XCTAssertNil(result["skip_level"])
+        let calls = await provider.orgCalls
+        XCTAssertEqual(calls, ["me@corp.ru"])
+    }
+
+    func testMyOrgIsRememberedAndAnOutsideAddressIsNotInTheDirectory() async throws {
+        let provider = DetailsProvider(account: exchange, ownEmail: "me@corp.ru", org: ["me@corp.ru": myOrg])
+        let (tools, _) = makeTools(events: [], provider: provider)
+
+        _ = await tools.call(name: "get_my_org", arguments: [:])
+        let again = await tools.call(name: "get_my_org", arguments: ["email": "ME@corp.ru"]).structured
+        XCTAssertEqual(again?["manager"]?["email"], "boss@corp.ru")
+
+        let outsideCall = await tools.call(name: "get_my_org", arguments: ["email": "someone@gmail.com"]).structured
+        let outside = try XCTUnwrap(outsideCall)
+        XCTAssertEqual(outside["in_directory"], false)
+        XCTAssertEqual(outside["manager"], .null)
+        XCTAssertEqual(outside["direct_reports"]?.arrayValue?.count, 0)
+        _ = await tools.call(name: "get_my_org", arguments: ["email": "someone@gmail.com"])
+
+        let calls = await provider.orgCalls
+        XCTAssertEqual(calls, ["me@corp.ru", "someone@gmail.com"])
+    }
+
+    func testMyOrgSkipLevelLoadsEachDirectReportOnce() async throws {
+        let sidorovs = OrgHierarchy(
+            manager: orgPerson("Баженов И.", "me@corp.ru", "Архитектор"), managementChain: [],
+            peers: [], directReports: [orgPerson("Младший М.", "junior@corp.ru", "Разработчик")]
+        )
+        let provider = DetailsProvider(
+            account: exchange, ownEmail: "me@corp.ru",
+            org: ["me@corp.ru": myOrg, "sidorov@corp.ru": sidorovs], failingOrg: ["bot_ai@corp.ru"]
+        )
+        let (tools, _) = makeTools(events: [], provider: provider)
+
+        let resultCall = await tools.call(name: "get_my_org", arguments: ["include_skip_level": true]).structured
+        let result = try XCTUnwrap(resultCall)
+
+        let reports = result["direct_reports"]?.arrayValue ?? []
+        XCTAssertEqual(reports.first?["direct_reports"]?.arrayValue?.map { $0["email"] }, ["junior@corp.ru"])
+        XCTAssertNil(reports.last?["direct_reports"])
+        XCTAssertEqual(result["skip_level"]?["requested"], 2)
+        XCTAssertEqual(result["skip_level"]?["loaded"], 1)
+        XCTAssertNotNil(result["skip_level"]?["error"])
+        let calls = await provider.orgCalls
+        XCTAssertEqual(calls, ["me@corp.ru", "sidorov@corp.ru", "bot_ai@corp.ru"])
+    }
+
+    func testMyOrgRejectsANonAddressAndReportsAFailedRequest() async {
+        let provider = DetailsProvider(account: exchange, ownEmail: "me@corp.ru", failingOrg: ["me@corp.ru"])
+        let (tools, _) = makeTools(events: [], provider: provider)
+
+        let bad = await tools.call(name: "get_my_org", arguments: ["email": "Иванов"])
+        XCTAssertTrue(bad.isError)
+        let failed = await tools.call(name: "get_my_org", arguments: [:])
+        XCTAssertTrue(failed.isError)
     }
 
     // MARK: - find_free_slots

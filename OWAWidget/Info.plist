@@ -42,6 +42,23 @@
         If you have a legacy server that requires TLS < 1.2, add a scoped NSExceptionDomains
         entry for that specific hostname here.
     -->
+    <!--
+        Links into the app (AppURLRoute): owawidget://mail, owawidget://thread?id=…,
+        owawidget://message?id=… — they only show things, never send or change anything.
+        `make run` (bundle id ….dev) rewrites the scheme to owawidget-dev, so a Mac with both
+        copies does not hand links to a random one.
+    -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.owawidget.MacOwaWidget.links</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>owawidget</string>
+            </array>
+        </dict>
+    </array>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <!--
