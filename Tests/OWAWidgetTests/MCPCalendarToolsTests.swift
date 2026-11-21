@@ -523,6 +523,19 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertNotNil(archive.events(for: .init(accountID: other, block: 0), now: now))
     }
 
+    func testExpiredAccountBlocksLoadAgainButKeepTheirEventIDs() {
+        let archive = MCPCalendarArchive()
+        let other = UUID()
+        let held = event("august", day: 10, hour: 11, month: 8)
+        archive.store([held], for: .init(accountID: exchange.id, block: 0), now: now)
+        archive.store([], for: .init(accountID: other, block: 0), now: now)
+
+        archive.expire(accountID: exchange.id)
+        XCTAssertNil(archive.events(for: .init(accountID: exchange.id, block: 0), now: now), "loaded again on the next question")
+        XCTAssertNotNil(archive.events(for: .init(accountID: other, block: 0), now: now), "other accounts are untouched")
+        XCTAssertEqual(archive.allEvents.map(\.id), [held.id], "an event_id handed out still resolves")
+    }
+
     func testOnDemandLoadsStopWhileSyncIsBlocked() async {
         let provider = DetailsProvider(account: exchange, archive: [event("august", day: 10, hour: 11, month: 8)])
         let (tools, service) = makeTools(events: [], provider: provider)

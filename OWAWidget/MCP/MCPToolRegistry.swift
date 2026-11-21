@@ -309,7 +309,7 @@ enum MCPToolRegistry {
                 "properties": [
                     "event_id": ["type": "string", "description": "event_id from list_events, get_current_and_next, find_events_with_person or match_event."],
                     "response": ["type": "string", "enum": ["accept", "tentative", "decline"]],
-                    "scope": ["type": "string", "enum": ["occurrence", "series"], "description": "occurrence (default): only this meeting; series: every meeting of the series. Only for a repeating meeting (`is_recurring`)."],
+                    "scope": ["type": "string", "enum": ["occurrence", "series"], "description": "occurrence (default): only this meeting; series: every meeting of the series, except occurrences answered one by one before: Exchange keeps their own answer (answer those with scope occurrence). Only for a repeating meeting (`is_recurring`)."],
                     "comment": ["type": "string", "description": "Optional plain-text note for the organizer, up to 2000 characters; sent with the answer. Not allowed with send_response: false."],
                     "send_response": ["type": "boolean", "description": "true (default): the organizer gets the answer by email; false: only the user's calendar changes."],
                 ],
