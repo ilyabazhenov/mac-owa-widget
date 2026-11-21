@@ -95,6 +95,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             [
                 "preferences.invitations.enabled", "preferences.invitations.popoverSection",
                 "preferences.invitations.menuBarBadge", "preferences.invitations.hint",
+                "preferences.invitations.replySection", "preferences.invitations.notifyOrganizer",
+                "preferences.invitations.notifyOrganizer.hint",
             ]
         case .mail:
             [

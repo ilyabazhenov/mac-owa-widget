@@ -160,7 +160,17 @@ final class LocalizationService: ObservableObject {
             hideTitle: tr("invitations.action.hide"),
             closeTitle: tr("notification.action.dismiss"),
             sendFailed: tr("meeting.rsvp.error.send.failed"),
-            moreFormat: tr("invitations.more")
+            moreFormat: tr("invitations.more"),
+            notifyOnHelp: tr("invitations.notify.on.help"),
+            notifyOffHelp: tr("invitations.notify.off.help"),
+            seriesAllFormat: tr("invitations.series.all"),
+            seriesAllSilentFormat: tr("invitations.series.all.silent"),
+            doneAccept: tr("meeting.reply.done.accept"),
+            doneTentative: tr("meeting.reply.done.tentative"),
+            doneDecline: tr("meeting.reply.done.decline"),
+            doneSeries: tr("meeting.reply.done.series"),
+            doneSent: tr("meeting.reply.done.sent"),
+            doneSilent: tr("meeting.reply.done.silent")
         )
     }
 

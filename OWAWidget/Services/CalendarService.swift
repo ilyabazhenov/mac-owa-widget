@@ -166,6 +166,7 @@ final class CalendarService: ObservableObject {
     private let invitationAlertsEnabledKey = "invitationAlertsEnabled"
     private let invitationMenuBarBadgeEnabledKey = "invitationMenuBarBadgeEnabled"
     private let invitationPopoverSectionEnabledKey = "invitationPopoverSectionEnabled"
+    private let invitationNotifyOrganizerKey = "invitationNotifyOrganizerByDefault"
     private let colleaguesSectionEnabledKey = "colleaguesSectionEnabled"
     private let colleaguesRefreshOnPopoverOpenKey = "colleaguesRefreshOnPopoverOpen"
     private let colleaguesCacheMinutesKey = "colleaguesCacheMinutes"
@@ -320,6 +321,18 @@ final class CalendarService: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: invitationMenuBarBadgeEnabledKey) }
     }
 
+    /// Where "Tell the organizer" starts in the detail card and the invitation panel's bell. On by
+    /// default: answering without an email is a deliberate choice, made per answer or here.
+    var invitationNotifyOrganizerByDefault: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: invitationNotifyOrganizerKey) == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: invitationNotifyOrganizerKey)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: invitationNotifyOrganizerKey) }
+    }
+
     /// Count for the menu bar label; zero while any of the settings is off.
     var menuBarInvitationCount: Int {
         guard invitationMenuBarBadgeEnabled else { return 0 }
@@ -395,14 +408,20 @@ final class CalendarService: ObservableObject {
             }
         }
         if let invitationController = self.invitationAlerts as? MeetingInvitationAlertController {
-            invitationController.onRespond = { [weak self] eventID, action in
-                guard let self, let event = self.events.first(where: { $0.id == eventID }) else {
+            invitationController.onRespond = { [weak self] eventIDs, action, notify in
+                guard let self else { throw CalendarProviderError.notSupported }
+                let pending = eventIDs.compactMap { id in self.events.first(where: { $0.id == id }) }
+                    .filter { MeetingInvitationPolicy.isAwaitingResponse($0, now: self.clock()) }
+                guard !pending.isEmpty else {
                     #if DEBUG
                     DiagnosticLog.event("Invitation respond: event not in calendar")
                     #endif
                     throw CalendarProviderError.notSupported
                 }
-                try await self.respondToMeeting(event, action: action)
+                try await self.reply(toInvitation: pending, action: action, notifyOrganizer: notify)
+            }
+            invitationController.notifyOrganizerByDefault = { [weak self] in
+                self?.invitationNotifyOrganizerByDefault ?? true
             }
             invitationController.onOpen = { [weak self] eventID in
                 self?.requestEventFocus(eventID)
@@ -1034,6 +1053,47 @@ final class CalendarService: ObservableObject {
             throw error
         }
     }
+
+    /// An answer from the app's own interface. A plain answer to one occurrence keeps the EWS
+    /// request; a series answer, a silent one or one with a comment goes through
+    /// `RespondToCalendarEvent`. Either way the popover shows the new answer at once and goes
+    /// back to the old one if Exchange refuses; an auth or trust failure suspends sync as for any
+    /// other action.
+    func reply(to event: CalendarEvent, action: MeetingResponseAction, options: MeetingReplyOptions) async throws {
+        guard options.needsCalendarEventRequest else {
+            try await respondToMeeting(event, action: action)
+            return
+        }
+        do {
+            try await respondToCalendarEvent(
+                event,
+                action: action,
+                series: options.series,
+                notes: options.effectiveComment,
+                sendResponse: options.notifyOrganizer
+            )
+        } catch {
+            applyBlockingError(error, context: "reply")
+            throw error
+        }
+    }
+
+    /// Answers an invitation row that may fold several meetings: one series answer when they are
+    /// occurrences of one series, otherwise each meeting in turn (stopping at the first failure).
+    func reply(toInvitation events: [CalendarEvent], action: MeetingResponseAction, notifyOrganizer: Bool) async throws {
+        guard let first = events.first else { return }
+        if MeetingReplyScope.isSingleSeries(events) {
+            try await reply(to: first, action: action, options: MeetingReplyOptions(series: true, notifyOrganizer: notifyOrganizer))
+            return
+        }
+        for event in events {
+            try await reply(to: event, action: action, options: MeetingReplyOptions(notifyOrganizer: notifyOrganizer))
+        }
+    }
+
+    /// Asks the detail card of this meeting to open with the comment field ready ("With a
+    /// comment…" in the inbox column). The card clears it once it has taken it.
+    @Published var replyCommentRequestEventID: String?
 
     /// Accounts that have a provider now, in provider order: those whose calendar can be read.
     var readableAccounts: [CalendarAccount] {

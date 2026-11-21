@@ -58,7 +58,7 @@ The meeting card shows the description the way it was written: a timetable stays
   </picture>
 </p>
 
-- **Accept**, **Tentative** or **Decline** without opening Outlook; your current response is highlighted.
+- **Accept**, **Tentative** or **Decline** without opening Outlook; your current response is highlighted. Answer one occurrence or the whole series, add a comment, or answer without emailing the organizer.
 - Required and optional participants; long lists collapse so they don't push the agenda away.
 - Copy the title, the join link, or the title with time and link in one go.
 

@@ -29,6 +29,17 @@ struct MeetingInvitationLocalization: Sendable, Equatable {
     let sendFailed: String
     /// `%d` = rows that did not fit.
     let moreFormat: String
+    let notifyOnHelp: String
+    let notifyOffHelp: String
+    /// `%d` = occurrences answered at once.
+    let seriesAllFormat: String
+    let seriesAllSilentFormat: String
+    let doneAccept: String
+    let doneTentative: String
+    let doneDecline: String
+    let doneSeries: String
+    let doneSent: String
+    let doneSilent: String
 
     static let english = MeetingInvitationLocalization(
         localeIdentifier: "en",
@@ -51,8 +62,33 @@ struct MeetingInvitationLocalization: Sendable, Equatable {
         hideTitle: "Hide",
         closeTitle: "Close",
         sendFailed: "Failed to send response",
-        moreFormat: "%d more"
+        moreFormat: "%d more",
+        notifyOnHelp: "The organizer gets an email. Click to answer without one",
+        notifyOffHelp: "The organizer gets no email. Click to send one",
+        seriesAllFormat: "Answers all %d occurrences",
+        seriesAllSilentFormat: "Answers all %d occurrences · the organizer won't know",
+        doneAccept: "Accepted",
+        doneTentative: "Tentative",
+        doneDecline: "Declined",
+        doneSeries: "for the whole series",
+        doneSent: "response sent",
+        doneSilent: "organizer not notified"
     )
+
+    /// "Accepted for the whole series · organizer not notified" after an answer from the panel.
+    func summary(action: MeetingResponseAction, series: Bool, notify: Bool) -> String {
+        let strings = [
+            "meeting.reply.done.accept": doneAccept, "meeting.reply.done.tentative": doneTentative,
+            "meeting.reply.done.decline": doneDecline, "meeting.reply.done.series": doneSeries,
+            "meeting.reply.done.sent": doneSent, "meeting.reply.done.sentWithComment": doneSent,
+            "meeting.reply.done.silent": doneSilent,
+        ]
+        return MeetingReplySummary.text(
+            action: action,
+            options: MeetingReplyOptions(series: series, notifyOrganizer: notify),
+            tr: { strings[$0] ?? $0 }
+        )
+    }
 
     /// "Today · 14:00–15:00", "Tomorrow · 9:30–10:00", "Fri, 26 Sep · 14:00–15:00" in the
     /// display time zone (`calendar`) — the same day words as the popover's invitation section.
@@ -111,11 +147,21 @@ struct MeetingInvitationLocalization: Sendable, Equatable {
 /// One row of the panel as the controller sees it: the alert plus what the UI is doing with it.
 struct MeetingInvitationRow: Identifiable, Equatable {
     let alert: MeetingInvitationAlert
-    /// RSVP buttons are shown only for a single meeting that still awaits an answer. A folded
-    /// series is left to the detail card: answering one occurrence would not answer the others.
+    /// What the row says after its answer went through, for the moment before it leaves.
+    struct Result: Equatable {
+        let text: String
+        /// Answered without telling the organizer: drawn with a crossed-out bell.
+        let isSilent: Bool
+    }
+
+    /// RSVP buttons are shown while any meeting of the row still awaits an answer. A folded
+    /// series is answered as a whole.
     var canRespond: Bool
     var sendingAction: MeetingResponseAction?
     var errorMessage: String?
+    /// The bell: whether the answer from this row emails the organizer.
+    var notifyOrganizer = true
+    var result: Result?
 
     var id: String { alert.id }
 }
@@ -128,6 +174,7 @@ struct MeetingInvitationBannerView: View {
     /// What "today" and "tomorrow" are measured against.
     let now: Date
     let onRespond: (MeetingInvitationRow, MeetingResponseAction) -> Void
+    let onToggleNotify: (MeetingInvitationRow) -> Void
     let onOpen: (MeetingInvitationRow) -> Void
     let onHide: (MeetingInvitationRow) -> Void
     let onClose: () -> Void
@@ -225,28 +272,43 @@ struct MeetingInvitationBannerView: View {
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // Without RSVP buttons "Open" shares the date line instead of taking a row of its own.
-            HStack(alignment: .lastTextBaseline, spacing: 6) {
-                Text(localization.detailLine(for: alert, now: now))
+            if let result = row.result {
+                Label(result.text, systemImage: result.isSilent ? "bell.slash" : "checkmark.circle.fill")
                     .font(.app(.footnote))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.green)
                     .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if !row.canRespond {
+            } else {
+                // "Open" shares the date line: next to the answer buttons and the bell it would
+                // not fit in the panel's 360 pt.
+                HStack(alignment: .lastTextBaseline, spacing: 6) {
+                    Text(localization.detailLine(for: alert, now: now))
+                        .font(.app(.footnote))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     openButton(row)
                 }
-            }
 
-            if row.canRespond {
-                HStack(spacing: 6) {
-                    responseButton(row, .accept, localization.acceptTitle, "checkmark", .green)
-                    responseButton(row, .tentative, localization.tentativeTitle, "questionmark", .orange)
-                    responseButton(row, .decline, localization.declineTitle, "xmark", .red)
-                    Spacer(minLength: 0)
-                    openButton(row)
+                if row.canRespond {
+                    HStack(spacing: 6) {
+                        responseButton(row, .accept, localization.acceptTitle, "checkmark", .green)
+                        responseButton(row, .tentative, localization.tentativeTitle, "questionmark", .orange)
+                        responseButton(row, .decline, localization.declineTitle, "xmark", .red)
+                        bellButton(row)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.top, 2)
+
+                    if alert.occurrenceCount > 1 {
+                        Text(String(
+                            format: row.notifyOrganizer ? localization.seriesAllFormat : localization.seriesAllSilentFormat,
+                            alert.occurrenceCount
+                        ))
+                        .font(.app(.caption))
+                        .foregroundStyle(.secondary)
+                    }
                 }
-                .padding(.top, 2)
             }
 
             if let error = row.errorMessage {
@@ -258,6 +320,33 @@ struct MeetingInvitationBannerView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    /// Whether the answer emails the organizer. Off is tinted orange so a silent answer is never
+    /// sent by accident.
+    private func bellButton(_ row: MeetingInvitationRow) -> some View {
+        let help = row.notifyOrganizer ? localization.notifyOnHelp : localization.notifyOffHelp
+        return Button { onToggleNotify(row) } label: {
+            Image(systemName: row.notifyOrganizer ? "bell" : "bell.slash")
+                .font(.app(.footnote))
+                .foregroundStyle(row.notifyOrganizer ? Color.secondary : Color.orange)
+                .frame(width: 24, height: 22)
+                .background {
+                    if !row.notifyOrganizer {
+                        RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.18))
+                    }
+                }
+                .overlay {
+                    if !row.notifyOrganizer {
+                        RoundedRectangle(cornerRadius: 6).strokeBorder(Color.orange.opacity(0.45), lineWidth: 1)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(row.sendingAction != nil)
+        .help(help)
+        .accessibilityLabel(help)
     }
 
     private func openButton(_ row: MeetingInvitationRow) -> some View {

@@ -12,6 +12,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var invitationAlertsEnabled: Bool { didSet { updateUnsavedChanges() } }
     @Published var invitationMenuBarBadgeEnabled: Bool { didSet { updateUnsavedChanges() } }
     @Published var invitationPopoverSectionEnabled: Bool { didSet { updateUnsavedChanges() } }
+    @Published var invitationNotifyOrganizerByDefault: Bool { didSet { updateUnsavedChanges() } }
     @Published var menuBarDisplayMode: MenuBarDisplayMode { didSet { updateUnsavedChanges() } }
     @Published var popoverSizePreset: PopoverSize.Preset { didSet { updateUnsavedChanges() } }
     @Published var dimPastMeetingsOnTimeline: Bool { didSet { updateUnsavedChanges() } }
@@ -101,6 +102,7 @@ final class SettingsViewModel: ObservableObject {
         self.invitationAlertsEnabled = calendarService.invitationAlertsEnabled
         self.invitationMenuBarBadgeEnabled = calendarService.invitationMenuBarBadgeEnabled
         self.invitationPopoverSectionEnabled = calendarService.invitationPopoverSectionEnabled
+        self.invitationNotifyOrganizerByDefault = calendarService.invitationNotifyOrganizerByDefault
         self.menuBarDisplayMode = calendarService.menuBarDisplayMode
         self.popoverSizePreset = calendarService.popoverSizePreset
         self.dimPastMeetingsOnTimeline = calendarService.dimPastMeetingsOnTimeline
@@ -121,6 +123,7 @@ final class SettingsViewModel: ObservableObject {
             invitationAlertsEnabled: calendarService.invitationAlertsEnabled,
             invitationMenuBarBadgeEnabled: calendarService.invitationMenuBarBadgeEnabled,
             invitationPopoverSectionEnabled: calendarService.invitationPopoverSectionEnabled,
+            invitationNotifyOrganizerByDefault: calendarService.invitationNotifyOrganizerByDefault,
             menuBarDisplayMode: calendarService.menuBarDisplayMode,
             popoverSizePreset: calendarService.popoverSizePreset,
             dimPastMeetingsOnTimeline: calendarService.dimPastMeetingsOnTimeline,
@@ -472,6 +475,7 @@ final class SettingsViewModel: ObservableObject {
         service.invitationAlertsEnabled = invitationAlertsEnabled
         service.invitationMenuBarBadgeEnabled = invitationMenuBarBadgeEnabled
         service.invitationPopoverSectionEnabled = invitationPopoverSectionEnabled
+        service.invitationNotifyOrganizerByDefault = invitationNotifyOrganizerByDefault
         service.menuBarDisplayMode = menuBarDisplayMode
         // Only write the popover preset if the user actually changed it here. The footer
         // quick-switcher can change `service.popoverSizePreset` while this
@@ -529,6 +533,7 @@ final class SettingsViewModel: ObservableObject {
         let invitationAlertsEnabled: Bool
         let invitationMenuBarBadgeEnabled: Bool
         let invitationPopoverSectionEnabled: Bool
+        let invitationNotifyOrganizerByDefault: Bool
         let menuBarDisplayMode: MenuBarDisplayMode
         let popoverSizePreset: PopoverSize.Preset
         let dimPastMeetingsOnTimeline: Bool
@@ -550,6 +555,7 @@ final class SettingsViewModel: ObservableObject {
             invitationAlertsEnabled: invitationAlertsEnabled,
             invitationMenuBarBadgeEnabled: invitationMenuBarBadgeEnabled,
             invitationPopoverSectionEnabled: invitationPopoverSectionEnabled,
+            invitationNotifyOrganizerByDefault: invitationNotifyOrganizerByDefault,
             menuBarDisplayMode: menuBarDisplayMode,
             popoverSizePreset: popoverSizePreset,
             dimPastMeetingsOnTimeline: dimPastMeetingsOnTimeline,

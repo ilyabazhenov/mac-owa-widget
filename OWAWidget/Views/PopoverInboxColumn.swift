@@ -556,6 +556,16 @@ struct PopoverInboxColumn: View {
                     Button(localization.tr("popover.inbox.tentative")) { respond(group, .tentative) }
                     Button(localization.tr("popover.inbox.decline")) { respond(group, .decline) }
                     Divider()
+                    Menu(localization.tr("popover.inbox.silent")) {
+                        Button(localization.tr("popover.inbox.accept")) { respond(group, .accept, notify: false) }
+                        Button(localization.tr("popover.inbox.tentative")) { respond(group, .tentative, notify: false) }
+                        Button(localization.tr("popover.inbox.decline")) { respond(group, .decline, notify: false) }
+                    }
+                    Button(localization.tr("popover.inbox.withComment")) {
+                        calendar.replyCommentRequestEventID = event.id
+                        onSelectEvent(event)
+                    }
+                    Divider()
                     Button(localization.tr("invitations.action.hide")) {
                         calendar.dismissInvitations(eventIDs: group.events.map(\.id))
                     }
@@ -572,13 +582,16 @@ struct PopoverInboxColumn: View {
         .padding(.vertical, 4)
     }
 
-    private func respond(_ group: MeetingInvitationGroup, _ action: MeetingResponseAction) {
+    /// A folded series is answered as a whole; "Accept" and the first two menu items tell the
+    /// organizer as the setting says, "Without notifying" never does.
+    private func respond(_ group: MeetingInvitationGroup, _ action: MeetingResponseAction, notify: Bool? = nil) {
         guard sending[group.id] == nil else { return }
         sending[group.id] = action
         failed.remove(group.id)
+        let notifyOrganizer = notify ?? calendar.invitationNotifyOrganizerByDefault
         Task { @MainActor in
             do {
-                try await calendar.respondToMeeting(group.representative, action: action)
+                try await calendar.reply(toInvitation: group.events, action: action, notifyOrganizer: notifyOrganizer)
             } catch {
                 failed.insert(group.id)
             }

@@ -869,7 +869,7 @@
 "settings.search.keywords.accounts" = "аккаунт учетная запись exchange owa google icloud календарь пароль сервер сертификат вход синхронизация интервал";
 "settings.search.keywords.menuBar" = "строка меню отсчет обратный статус умный значок поповер окно размер таймлайн прошедшие приглушать счетчик";
 "settings.search.keywords.reminders" = "напоминания уведомления оповещения баннер звук экран позиция перед встречей";
-"settings.search.keywords.invitations" = "приглашения уведомления переносы отмены панель rsvp ответ счетчик конверт";
+"settings.search.keywords.invitations" = "приглашения уведомления переносы отмены панель rsvp ответ счетчик конверт организатор комментарий серия без уведомления";
 "settings.search.keywords.mail" = "почта письма входящие уведомления счетчик непрочитанные рассылки беседы свайпы прочитанным проверка";
 "settings.search.keywords.colleagues" = "коллеги занятость свободен занят комната кэш строки";
 "settings.search.keywords.mcp" = "ai ии mcp claude cursor codex vs code ассистент клиенты журнал запросы подключение";
@@ -939,3 +939,30 @@
 "popover.day.done" = "Сегодня встреч больше нет";
 "popover.day.free" = "Сегодня встреч нет";
 "a11y.popover.day.next.hint" = "Открыть день этой встречи";
+
+/* Answering invitations from the app */
+"meeting.reply.scope.series" = "Вся серия";
+"meeting.reply.scope.one" = "Это событие";
+"meeting.reply.scope.label" = "На что ответить";
+"meeting.reply.notify" = "Сообщить организатору";
+"meeting.reply.comment.add" = "Комментарий";
+"meeting.reply.comment.remove" = "Убрать комментарий";
+"meeting.reply.comment.placeholder" = "Комментарий для организатора";
+"meeting.reply.comment.hint" = "Уйдёт вместе с ответом";
+"meeting.reply.silent.hint" = "Ответ сохранится только у вас: организатор увидит «нет ответа», письма не будет.";
+"meeting.reply.done.accept" = "Принято";
+"meeting.reply.done.tentative" = "Под вопросом";
+"meeting.reply.done.decline" = "Отклонено";
+"meeting.reply.done.series" = "для всей серии";
+"meeting.reply.done.sent" = "ответ отправлен";
+"meeting.reply.done.sentWithComment" = "ответ отправлен с комментарием";
+"meeting.reply.done.silent" = "организатор не уведомлён";
+"invitations.notify.on.help" = "Организатор получит письмо. Нажмите, чтобы ответить без него";
+"invitations.notify.off.help" = "Организатор не получит письма. Нажмите, чтобы сообщить ему";
+"invitations.series.all" = "Ответ на всю серию (%d)";
+"invitations.series.all.silent" = "Ответ на всю серию (%d) · организатор не узнает";
+"popover.inbox.silent" = "Без уведомления";
+"popover.inbox.withComment" = "С комментарием…";
+"preferences.invitations.replySection" = "Ответ на приглашение";
+"preferences.invitations.notifyOrganizer" = "Сообщать организатору об ответе";
+"preferences.invitations.notifyOrganizer.hint" = "Начальное положение флажка «Сообщить организатору» в карточке встречи и колокольчика в панели приглашений; перед каждым ответом его можно поменять. Без уведомления ответ сохраняется только у вас, а организатор видит «нет ответа».";
