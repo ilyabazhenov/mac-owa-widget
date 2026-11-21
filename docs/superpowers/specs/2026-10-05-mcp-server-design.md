@@ -103,12 +103,14 @@
 
 | Сообщение | Поведение |
 |---|---|
-| `server/discover` | `resultType: "complete"`, `supportedVersions: ["2026-07-28"]`, `capabilities: { tools: {} }`, `instructions`, `ttlMs`, `cacheScope: "private"`, `_meta["io.modelcontextprotocol/serverInfo"]`. Невалидный ответ здесь опасен: Python SDK при этом молча уходит на старый протокол. |
+| `server/discover` | `resultType: "complete"`, `supportedVersions: ["2026-07-28"]`, `capabilities: { tools: {}, resources: { subscribe: true } }`, `instructions`, `ttlMs`, `cacheScope: "private"`, `_meta["io.modelcontextprotocol/serverInfo"]`. Невалидный ответ здесь опасен: Python SDK при этом молча уходит на старый протокол. |
 | Запрос без `protocolVersion` или `clientCapabilities` в `_meta` | `-32602` (Invalid Params). |
 | Запрос с неподдерживаемой версией | `-32022` `UnsupportedProtocolVersionError` с `data: { supported, requested }`. |
 | `tools/list` | Детерминированный порядок, `ttlMs` (3 600 000 — набор постоянный), `cacheScope: "private"`, `resultType`. |
 | `tools/call` | Ошибка выполнения инструмента (в том числе невалидные аргументы) — результат с `isError: true`; неизвестный инструмент или битый запрос — JSON-RPC error. `resultType: "complete"`. |
 | `notifications/cancelled` | Отменяем `Task` и больше ничего не пишем по этому `id`. |
+| `resources/list`, `resources/read` | Один ресурс `owawidget://changes` («звонок» для `get_changes`), с `ttlMs`/`cacheScope`/`resultType`; чтение отдаёт только подсказку. Неизвестный URI — `-32602` (`-32002` новой ревизии запрещён). |
+| `subscriptions/listen` | Только с `owawidget://changes` в `notifications.resourceSubscriptions`, иначе `-32602`. Проверка доступа клиента как у `tools/call`; затем `notifications/subscriptions/acknowledged` с `_meta["io.modelcontextprotocol/subscriptionId"]` = id запроса и принятым подмножеством (только `resourceSubscriptions`), дальше `notifications/resources/updated` с тем же `subscriptionId`. Ответа на сам запрос нет, пока клиент не отменит его (`notifications/cancelled` — дальше по нему ничего) или не оборвётся соединение. `resources/subscribe` в этой эпохе — «метод не найден». |
 | Любой ответ | `_meta["io.modelcontextprotocol/serverInfo"]`. Никаких JSON-RPC-запросов от сервера в stdout. `notifications/message` — только если запрос передал `logLevel`. |
 
 **Legacy (`2025-06-18`, `2025-11-25`):**
@@ -119,12 +121,17 @@
 | `notifications/initialized` | Принимаем. |
 | `ping` | Пустой результат. |
 | `tools/list`, `tools/call`, `notifications/cancelled` | Как в modern, но без `resultType`/`ttlMs`. |
+| `initialize` → `capabilities` | `{ tools: {}, resources: { subscribe: true } }`. |
+| `resources/list`, `resources/read` | Как в modern, без `resultType`/`ttlMs`; неизвестный URI — `-32002`. |
+| `resources/subscribe`, `resources/unsubscribe` | Только `owawidget://changes`; подписка после проверки доступа, ответ `{}`. Обновление — `notifications/resources/updated` с `uri`. `subscriptions/listen` в этой эпохе — «метод не найден». |
 
 `2025-03-26` и старше не заявляем: `2025-03-26` обязывает принимать JSON-RPC-пакеты, а таких клиентов в 2026 году практически нет.
 
 **Сообщение без `_meta` и без предшествующего `initialize`** (например, `tools/call` первым сообщением) — JSON-RPC error `-32602` с текстом, перечисляющим поддерживаемые версии.
 
 **Набор инструментов постоянный** — `listChanged` не заявляем, уведомлений о смене списка нет.
+
+**Толчок для `get_changes`.** Журнал изменений (`MCPChangeFeed.onAppend`) зовёт `MCPServerService.changesRecorded`; уведомления склеиваются за 2 секунды и уходят каждой подписке соединения. Почтовые изменения звонят только клиентам с согласием на почту, а клиенту, у которого доступ отобрали после подписки, не звонят вовсе: сам звонок говорит, когда у пользователя что-то сдвинулось. Содержимого в уведомлении нет — его клиент забирает курсором. Мост после перезапуска приложения повторяет не только `initialize`, но и legacy-`resources/subscribe` (ответы глотает); открытый `subscriptions/listen` он, как любой запрос в полёте, закрывает ошибкой, и клиент по спецификации слушает заново.
 
 **Формат результатов.** `structuredContent` всегда JSON-**объект**, `outputSchema` — с `type: "object"` в корне (требование legacy-эпох). Тот же JSON дублируется текстом в `content`.
 
@@ -548,7 +555,7 @@
 
 ## История изменений
 
-**v10 (2026-11-21):** добавлен `get_changes`: журнал изменений календаря (по синку, без запросов) и «Входящих» (наблюдатель, пока клиент спрашивает) с курсором и честным `reset`.
+**v10 (2026-11-21):** добавлен `get_changes`: журнал изменений календаря (по синку, без запросов) и «Входящих» (наблюдатель, пока клиент спрашивает) с курсором и честным `reset`; толчок — ресурс `owawidget://changes` с `resources/subscribe` (legacy) и `subscriptions/listen` (2026-07-28).
 
 **v9 (2026-10-22):** добавлен `cancel_meeting`: отмена своей встречи, отказ или удаление приглашения — по роли пользователя, с подтверждением в окне приложения и отдельной настройкой `cancelMeetings` (по умолчанию выключена); у аннотаций появился `destructiveHint: true`.
 

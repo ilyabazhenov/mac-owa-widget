@@ -31,6 +31,12 @@ actor MCPConnection {
     /// Running tool calls by the canonical JSON of their request id. Removing an entry is what
     /// cancels a call's answer: `finish` only replies for ids still present.
     private var running: [String: Task<Void, Never>] = [:]
+    /// Legacy `resources/subscribe` to the change resource.
+    private var legacySubscribed = false
+    /// Open `subscriptions/listen` requests, by the canonical JSON of their id.
+    private var listens: [String: JSONValue] = [:]
+
+    var hasSubscriptions: Bool { legacySubscribed || !listens.isEmpty }
 
     init(
         channel: MCPSocketChannel,
@@ -87,6 +93,26 @@ actor MCPConnection {
         case .cancel(let requestID):
             let key = JSONLine.encodeString(requestID)
             running.removeValue(forKey: key)?.cancel()
+            // A cancelled listen gets no answer and no further message.
+            listens.removeValue(forKey: key)
+        case .subscribe(let id):
+            let tools = self.tools
+            Task { [weak self] in
+                let refusal = await tools.authorizeSubscription()
+                await self?.subscribed(id: id, refusal: refusal)
+            }
+        case .unsubscribe(let id):
+            legacySubscribed = false
+            channel.send(JSONLine.encode(handler.subscribeResponse(id: id)))
+        case .listen(let id):
+            let key = JSONLine.encodeString(id)
+            let tools = self.tools
+            // Held like a running call, so a cancel that races the check still wins.
+            running[key] = Task { [weak self] in
+                let refusal = await tools.authorizeSubscription()
+                guard !Task.isCancelled else { return }
+                await self?.listening(id: id, key: key, refusal: refusal)
+            }
         case .callTool(let id, let name, let arguments, let modern):
             let key = JSONLine.encodeString(id)
             let tools = self.tools
@@ -97,6 +123,36 @@ actor MCPConnection {
                 guard !Task.isCancelled else { return }
                 await self?.finish(key: key, response: handler.toolCallResponse(id: id, result: result, modern: modern))
             }
+        }
+    }
+
+    private func subscribed(id: JSONValue, refusal: String?) {
+        if let refusal {
+            channel.send(JSONLine.encode(JSONRPC.error(id: id, code: JSONRPCErrorCode.invalidRequest, message: refusal)))
+            return
+        }
+        legacySubscribed = true
+        channel.send(JSONLine.encode(handler.subscribeResponse(id: id)))
+    }
+
+    private func listening(id: JSONValue, key: String, refusal: String?) {
+        guard running.removeValue(forKey: key) != nil else { return }
+        if let refusal {
+            channel.send(JSONLine.encode(handler.listenRefused(id: id, message: refusal)))
+            return
+        }
+        listens[key] = id
+        channel.send(JSONLine.encode(handler.listenAcknowledgment(id: id)))
+    }
+
+    /// Something changed: one `notifications/resources/updated` per subscription. What changed
+    /// the client reads with `get_changes`.
+    func notifyChanged() {
+        if legacySubscribed {
+            channel.send(JSONLine.encode(handler.resourceUpdated(subscriptionID: nil)))
+        }
+        for id in listens.values.sorted(by: { JSONLine.encodeString($0) < JSONLine.encodeString($1) }) {
+            channel.send(JSONLine.encode(handler.resourceUpdated(subscriptionID: id)))
         }
     }
 

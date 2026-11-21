@@ -45,6 +45,12 @@ final class MCPServerService: ObservableObject {
 
     @Published private(set) var status: Status = .stopped
     @Published private(set) var clients: [Client] = []
+    /// Live connections, for change notifications.
+    private var connections: [UUID: MCPConnection] = [:]
+    private var pendingPush: (calendar: Bool, mail: Bool) = (false, false)
+    private var pushTask: Task<Void, Never>?
+    /// Changes arrive in bursts (a sync, an inbox page): one notification per burst.
+    static let pushDelay: Duration = .seconds(2)
     /// Every client that has talked to the server while it was on, newest first. Persisted.
     @Published private(set) var knownClients: [MCPKnownClient] = []
     /// In memory only: who called which tool, never arguments or results.
@@ -206,6 +212,9 @@ final class MCPServerService: ObservableObject {
             isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled },
             checkInterval: pollInterval
         )
+        calendarService.changeFeed.onAppend = { calendar, mail in
+            MCPServerService.shared.changesRecorded(calendar: calendar, mail: mail)
+        }
         let toolbox = MCPToolbox(calendarTools: calendarTools, mailTools: mailTools, changeTools: changeTools, settings: settingsSnapshot) { tool, client, isError in
             MCPServerService.shared.record(tool: tool, client: client, isError: isError)
         }
@@ -347,9 +356,37 @@ final class MCPServerService: ObservableObject {
         ) { event in
             Task { @MainActor in MCPServerService.shared.handle(event, clientID: clientID) }
         }
+        connections[clientID] = connection
         Task {
             await connection.run()
             await MainActor.run { MCPServerService.shared.disconnected(clientID) }
+        }
+    }
+
+    // MARK: - Change notifications
+
+    private func changesRecorded(calendar: Bool, mail: Bool) {
+        pendingPush.calendar = pendingPush.calendar || calendar
+        pendingPush.mail = pendingPush.mail || mail
+        guard pushTask == nil else { return }
+        pushTask = Task { @MainActor in
+            try? await Task.sleep(for: Self.pushDelay)
+            MCPServerService.shared.pushChanges()
+        }
+    }
+
+    /// Mail changes ring only for clients allowed to read mail: for the rest there is nothing new
+    /// in `get_changes`, and the ring alone would say when mail arrived.
+    private func pushChanges() {
+        let pending = pendingPush
+        pendingPush = (false, false)
+        pushTask = nil
+        guard isEnabled else { return }
+        for (clientID, connection) in connections {
+            // Access taken away after subscribing: the subscription stays, the ringing stops.
+            guard mayReadQuietly(clientID) else { continue }
+            guard pending.calendar || (pending.mail && changesMailAccess(clientID) == .allowed) else { continue }
+            Task { await connection.notifyChanged() }
         }
     }
 
@@ -465,6 +502,14 @@ final class MCPServerService: ObservableObject {
         }
     }
 
+    /// `authorize` without the question: whether this client may read right now.
+    private func mayReadQuietly(_ clientID: UUID) -> Bool {
+        guard isEnabled, let identity = clients.first(where: { $0.id == clientID })?.identity else { return false }
+        guard identity.isResolved else { return !askNewClients }
+        let access = knownClients.first { $0.key == identity.key }?.access
+        return MCPClientAccessPolicy.verdict(for: access, askNewClients: askNewClients) == .allow
+    }
+
     /// Whether `get_changes` may give this client mail. Never asks: a question popping up from a
     /// background refresh would be a surprise; the mail tools ask.
     func changesMailAccess(_ clientID: UUID) -> MCPChangeTools.MailAccess {
@@ -564,6 +609,7 @@ final class MCPServerService: ObservableObject {
 
     private func disconnected(_ id: UUID) {
         clients.removeAll { $0.id == id }
+        connections[id] = nil
         MCPDebugLog.log("client disconnected (\(clients.count) active)")
     }
 
@@ -584,6 +630,10 @@ struct MCPGatedToolbox: MCPToolProviding {
     let clientID: UUID
 
     var tools: [MCPToolDefinition] { base.tools }
+
+    func authorizeSubscription() async -> String? {
+        await MCPServerService.shared.authorize(clientID)
+    }
 
     func callTool(name: String, arguments: [String: JSONValue], client: String?) async -> MCPToolResult {
         if let refusal = await MCPServerService.shared.authorize(clientID) {

@@ -90,8 +90,9 @@ final class MCPChangeFeed {
     private var droppedThrough = 0
     private var calendarBaseline: Int?
     private var mailBaselines: [UUID: Int] = [:]
-    /// Called after anything was appended: the push to subscribed clients.
-    var onAppend: (() -> Void)?
+    /// Called after anything was recorded (a baseline too: the client's cursor is about to reset),
+    /// saying whether it concerns the calendar, the mail or both: the push to subscribed clients.
+    var onAppend: ((_ calendar: Bool, _ mail: Bool) -> Void)?
 
     init(epoch: String = MCPChangeFeed.makeEpoch(), capacity: Int = MCPChangeFeed.capacity, clock: @escaping () -> Date = { Date() }) {
         self.epoch = epoch
@@ -113,11 +114,13 @@ final class MCPChangeFeed {
     func markCalendarBaseline() {
         lastSeq += 1
         calendarBaseline = lastSeq
+        onAppend?(true, false)
     }
 
     func markMailBaseline(_ accountID: UUID) {
         lastSeq += 1
         mailBaselines[accountID] = lastSeq
+        onAppend?(false, true)
     }
 
     /// The watcher stopped looking: until it looks again, nobody may think the inbox is quiet.
@@ -137,7 +140,7 @@ final class MCPChangeFeed {
             droppedThrough = entries[overflow - 1].seq
             entries.removeFirst(overflow)
         }
-        onAppend?()
+        onAppend?(changes.contains { !$0.isMail }, changes.contains(where: \.isMail))
     }
 
     // MARK: - Reading

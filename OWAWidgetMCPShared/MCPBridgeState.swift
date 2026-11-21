@@ -40,8 +40,10 @@ public struct MCPBridgeHello: Codable, Equatable, Sendable {
 ///   instead, so the model can retry at once.
 /// - **Legacy `initialize`.** A handshake-era client initialises once per process. After the app
 ///   restarts, its new connection knows nothing about that, so the bridge replays the original
-///   `initialize` under a private id and swallows the answer. Stateless (2026-07-28) clients need
-///   nothing of the kind.
+///   `initialize` under a private id and swallows the answer — and the client's legacy
+///   `resources/subscribe`, which the new connection does not know either. Stateless (2026-07-28)
+///   clients need nothing of the kind: their open `subscriptions/listen` is a request in flight,
+///   answered with an error like any other, and the spec has them listen again.
 public struct MCPBridgeState: Sendable {
     public static let replayIDPrefix = "owawidget-bridge-replay-"
     public static let connectionLostCode = -32000
@@ -49,6 +51,8 @@ public struct MCPBridgeState: Sendable {
     /// Pending client request ids, keyed by their raw JSON form (`5`, `"abc"`).
     public private(set) var inFlight: Set<String> = []
     public private(set) var legacyInitialize: Data?
+    /// Legacy `resources/subscribe` lines still in force, by resource URI.
+    public private(set) var legacySubscriptions: [String: Data] = [:]
     private var replayCounter = 0
     private var pendingReplayIDs: Set<String> = []
 
@@ -60,6 +64,10 @@ public struct MCPBridgeState: Sendable {
         let method = object["method"] as? String
         if method == "initialize" {
             legacyInitialize = line
+        }
+        if method == "resources/subscribe" || method == "resources/unsubscribe",
+           let uri = (object["params"] as? [String: Any])?["uri"] as? String {
+            legacySubscriptions[uri] = method == "resources/subscribe" ? line : nil
         }
         if method == "notifications/cancelled",
            let params = object["params"] as? [String: Any],
@@ -94,13 +102,24 @@ public struct MCPBridgeState: Sendable {
 
     /// Lines to send first on a fresh connection. Empty for stateless clients.
     public mutating func replayLinesForNewConnection() -> [Data] {
-        guard let original = legacyInitialize, var initialize = Self.object(original) else { return [] }
+        guard let original = legacyInitialize, let initialize = replayed(original) else { return [] }
+        // The handshake first: the app answers nothing else on a legacy connection before it.
+        var lines = [initialize]
+        for uri in legacySubscriptions.keys.sorted() {
+            if let line = legacySubscriptions[uri], let subscribe = replayed(line) { lines.append(subscribe) }
+        }
+        return lines
+    }
+
+    /// A client line under a private id whose answer the bridge swallows.
+    private mutating func replayed(_ line: Data) -> Data? {
+        guard var object = Self.object(line) else { return nil }
         replayCounter += 1
         let id = Self.replayIDPrefix + String(replayCounter)
-        initialize["id"] = id
-        guard let data = try? JSONSerialization.data(withJSONObject: initialize) else { return [] }
+        object["id"] = id
+        guard let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
         pendingReplayIDs.insert(Self.rawID(id) ?? "\"\(id)\"")
-        return [data]
+        return data
     }
 
     /// Error answer to one request, for when the app cannot be reached at all.
