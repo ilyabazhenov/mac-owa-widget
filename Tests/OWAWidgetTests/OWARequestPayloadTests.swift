@@ -25,6 +25,19 @@ final class OWARequestPayloadTests: XCTestCase {
         XCTAssertTrue(OWAClient.serializeJSONTypeFirst(payloads[2]).contains("\"MergedFreeBusyIntervalInMinutes\":30"), "a number stays a number")
     }
 
+    /// A payload read back with `JSONSerialization` holds NSNumbers: 0 and 1 must stay numbers.
+    /// They used to come out as `false`/`true`, and Exchange failed the whole request with
+    /// "Cannot deserialize object" (seen on FindPeople with `"Offset":0`).
+    func testNumbersFromJSONSerializationStayNumbers() throws {
+        let parsed = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(#"{"Offset":0,"One":1,"Ratio":1.5,"Flag":true,"Off":false}"#.utf8)
+        ) as? [String: Any])
+        XCTAssertEqual(OWAClient.serializeJSONTypeFirst(parsed), #"{"Flag":true,"Off":false,"Offset":0,"One":1,"Ratio":1.5}"#)
+
+        let native: [String: Any] = ["Offset": 0, "One": 1, "Flag": true, "Off": false]
+        XCTAssertEqual(OWAClient.serializeJSONTypeFirst(native), #"{"Flag":true,"Off":false,"Offset":0,"One":1}"#)
+    }
+
     func testCalendarViewRequestUsesOWAContractVersion() throws {
         let payload = OWACalendarViewRequestPayload.make(
             start: Date(timeIntervalSince1970: 0),

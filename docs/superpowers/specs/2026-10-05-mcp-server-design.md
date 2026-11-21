@@ -345,6 +345,16 @@
 
 Формат снят с HAR веб-OWA и проверен на живом Exchange 2019 (2026-11-21): тело в POST вместо `X-OWA-UrlPostData` и адрес без `GalObjectGuid` работают. Отдела, офиса и фото в ответе нет.
 
+### 7b. `get_person_profile`
+
+Сеть: да (EWS `ResolveNames` с `ReturnFullContactData="true"`, `SearchScope="ActiveDirectory"`, `ContactDataShape="AllProperties"`), через `MCPAccessGuard`. Только читает адресную книгу, поэтому правило «EWS — для того, что уходит наружу» его не касается: EWS здесь потому, что отдел FindPeople не отдаёт (`PersonaDepartment` сервер отвергает), а в иерархии OWA отдела и офиса нет.
+
+**Вход:** `emails[]` (1–10 адресов), `account_id`.
+
+**Выход:** `profiles[]` в порядке запроса: `email`, `in_directory`, `name`, `title`, `department`, `office`, `city` (из рабочего адреса), `company`, `manager` (имя и адрес, без должности), `direct_reports_count`, `is_distribution_list`, `primary_email` (если спросили по второму адресу), `is_you`, `as_of`. Пустые поля не выводятся. Внешний адрес — `ErrorNameResolutionNoResults` → `in_directory: false`; этот код и `ErrorNameResolutionMultipleResults` — ответ, а не ошибка (`ewsCall(acceptedCodes:)`). Кандидат засчитывается, только если у него ровно этот адрес (основной или из `EmailAddresses`).
+
+**Бюджет.** Запрос на каждый адрес, которого нет в кэше; вся пачка оплачивается заранее, первая ошибка останавливает остальные (у них `error`). Кэш в памяти на сутки (`MCPProfileCache`, общий тип с кэшем `get_my_org`), «нет в адресной книге» тоже запоминается.
+
 ### 8. `find_free_slots`
 
 Сеть: да (`GetUserAvailabilityInternal`), через `MCPAccessGuard`; списывает 2 запроса — занятость и, при первом поиске, собственный адрес.

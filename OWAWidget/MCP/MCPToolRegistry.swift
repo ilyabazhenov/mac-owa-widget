@@ -156,6 +156,26 @@ enum MCPToolRegistry {
             ]
         ),
         MCPToolDefinition(
+            name: "get_person_profile",
+            title: "Person profile",
+            description: "What the Exchange address book says about people, by email address (from find_people or get_my_org): `name`, `title`, `department`, `office`, `city`, `company`, `manager` (name and email, no title) and `direct_reports_count`, each field only when filled in. `in_directory: false` means nobody in the address book has that address (an outside address); `is_distribution_list: true` marks a mailing list; `primary_email` appears when the address asked about is an alias. For who reports to whom, use get_my_org. Up to 10 addresses per call, one request to Exchange per address not remembered (profiles are remembered for a day, `as_of`); a failed request stops the rest, which get `error`.",
+            inputSchema: [
+                "type": "object",
+                "properties": [
+                    "emails": [
+                        "type": "array",
+                        "items": ["type": "string"],
+                        "minItems": 1,
+                        "maxItems": 10,
+                        "description": "Email addresses, from find_people or get_my_org.",
+                    ],
+                    "account_id": ["type": "string", "description": .string(exchangeAccountDescription)],
+                ],
+                "required": ["emails"],
+                "additionalProperties": false,
+            ]
+        ),
+        MCPToolDefinition(
             name: "find_free_slots",
             title: "Find free time",
             description: "Times when all required attendees and the user are free, in chronological order. Uses Exchange free/busy for the attendees and the user's own calendar (meetings the user has not answered count as busy). Slots start on the hour or half hour, inside working hours (default 09:00–18:00, Monday to Friday). Optional attendees do not limit the slots: `optional_busy` lists who of them is busy in each slot. Attendees with `availability: no_data` (outside the organization, no access) are not taken into account: tell the user. Only within `coverage` (the next 30 days). Makes a request to Exchange.",

@@ -1,7 +1,7 @@
 import Foundation
 
 /// The MCP tools, implemented over `CalendarService`: those that read the calendar (including
-/// `match_event`, which tells which meeting a time was), `find_people`, `get_my_org`, `find_free_slots` and
+/// `match_event`, which tells which meeting a time was), `find_people`, `get_my_org`, `get_person_profile`, `find_free_slots` and
 /// `create_meeting` and `cancel_meeting`.
 ///
 /// The calendar tools read the in-memory calendar: no network, no load on Exchange, except for
@@ -72,6 +72,7 @@ final class MCPCalendarTools {
     private var ownAddresses: [UUID: (email: String?, retryAfter: Date)] = [:]
     private var ownAddressLookups: [UUID: Task<String?, Never>] = [:]
     private var orgCache = MCPOrgCache()
+    private var profileCache = MCPProfileCache()
     private var isCreatingMeeting = false
     private var isRemovingMeeting = false
 
@@ -124,6 +125,7 @@ final class MCPCalendarTools {
             case "get_event_details": return try await getEventDetails(arguments, context)
             case "find_people": return try await findPeople(arguments, context)
             case "get_my_org": return try await getMyOrg(arguments, context)
+            case "get_person_profile": return try await getPersonProfile(arguments, context)
             case "find_free_slots": return try await findFreeSlots(arguments, context)
             case "match_event": return try await matchEvent(arguments, context)
             case "create_meeting": return try await createMeeting(arguments, context, client: client)
@@ -888,7 +890,7 @@ final class MCPCalendarTools {
     /// From the cache, else one request through the guard (`prepaid`: the budget is already taken).
     private func loadOrgHierarchy(_ email: String, account: CalendarAccount, prepaid: Bool = false) async -> OrgLoad {
         if let cached = orgCache.lookup(email, account: account.id, now: clock()) {
-            return .loaded(cached.hierarchy, asOf: cached.date)
+            return .loaded(cached.value, asOf: cached.date)
         }
         if !prepaid, let denial = accessGuard.permitRequest() {
             return .failed(denial.message)
@@ -907,6 +909,78 @@ final class MCPCalendarTools {
             }
             return .failed("Organization chart request failed: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - get_person_profile
+
+    static let maxProfiles = 10
+
+    private func getPersonProfile(_ arguments: [String: JSONValue], _ context: CallContext) async throws -> MCPToolResult {
+        let account = try exchangeAccount(arguments)
+        guard let items = arguments["emails"]?.arrayValue, !items.isEmpty else {
+            throw ArgumentError("`emails` is required: an array of email addresses (find them with find_people)")
+        }
+        var emails: [String] = []
+        var seen = Set<String>()
+        for item in items {
+            guard let text = item.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), Self.isEmailAddress(text) else {
+                throw ArgumentError("Every item of `emails` must be an email address (find them with find_people), got \(item)")
+            }
+            if seen.insert(text.lowercased()).inserted { emails.append(text) }
+        }
+        guard emails.count <= Self.maxProfiles else {
+            throw ArgumentError("At most \(Self.maxProfiles) addresses per call, got \(emails.count)")
+        }
+
+        // Paid for up front, like a find_people batch; the first failure stops the rest, as every
+        // request sends the password again.
+        let uncached = emails.filter { profileCache.lookup($0, account: account.id, now: clock()) == nil }.count
+        if uncached > 0, let denial = accessGuard.permitRequest(count: uncached) {
+            return .failure(denial.message)
+        }
+        let own = await ownAddress(account, wait: Self.ownDomainWaitForSearch)
+        var stopped: String?
+        var profiles: [JSONValue] = []
+        for email in emails {
+            if let stopped {
+                profiles.append(["email": .string(email), "error": .string("Not looked up: \(stopped)")])
+                continue
+            }
+            var asOf: Date
+            var found: PersonProfile?
+            if let cached = profileCache.lookup(email, account: account.id, now: clock()) {
+                (asOf, found) = (cached.date, cached.value)
+            } else {
+                await accessGuard.acquireSlot()
+                do {
+                    found = try await calendarService.personProfile(email: email, accountID: account.id)
+                    asOf = clock()
+                    profileCache.store(found, for: email, account: account.id, now: asOf)
+                    accessGuard.releaseSlot()
+                } catch {
+                    accessGuard.releaseSlot()
+                    accessGuard.report(error, context: "mcp.personProfile")
+                    if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
+                        return .failure(reason)
+                    }
+                    let message = "Address book request failed: \(error.localizedDescription)"
+                    stopped = message
+                    profiles.append(["email": .string(email), "error": .string(message)])
+                    continue
+                }
+            }
+            let stamp = context.coder.string(asOf)
+            guard let found else {
+                profiles.append(["email": .string(email), "in_directory": false, "as_of": .string(stamp)])
+                continue
+            }
+            namesByEmail[email.lowercased()] = found.name
+            profiles.append(.object(MCPOrgChartFormat.profile(found, asked: email, asOf: stamp, ownEmail: own)))
+        }
+
+        var result = commonFields(context)
+        result["profiles"] = .array(profiles)
+        return .success(result)
     }
 
     // MARK: - create_meeting

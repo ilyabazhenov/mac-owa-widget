@@ -11,6 +11,8 @@ protocol CalendarProvider: Actor {
     func findPeople(query: String) async throws -> [ResolvedAttendee]
     /// `nil` when the address is not in the address book.
     func organizationHierarchy(email: String) async throws -> OrgHierarchy?
+    /// `nil` when the address book has nobody with this address.
+    func personProfile(email: String) async throws -> PersonProfile?
     func resolveOrganizerSMTPEmail() async throws -> String?
     func getUserAvailability(emails: [String], from start: Date, to end: Date) async throws -> [AttendeeAvailability]
     func createMeeting(
@@ -43,6 +45,10 @@ extension CalendarProvider {
     }
 
     func organizationHierarchy(email: String) async throws -> OrgHierarchy? {
+        throw CalendarProviderError.notSupported
+    }
+
+    func personProfile(email: String) async throws -> PersonProfile? {
         throw CalendarProviderError.notSupported
     }
 
