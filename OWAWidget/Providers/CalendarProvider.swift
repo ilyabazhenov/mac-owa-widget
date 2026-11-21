@@ -9,6 +9,8 @@ protocol CalendarProvider: Actor {
     func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws
     func fetchDetails(for event: CalendarEvent) async throws -> CalendarEventDetails
     func findPeople(query: String) async throws -> [ResolvedAttendee]
+    /// `nil` when the address is not in the address book.
+    func organizationHierarchy(email: String) async throws -> OrgHierarchy?
     func resolveOrganizerSMTPEmail() async throws -> String?
     func getUserAvailability(emails: [String], from start: Date, to end: Date) async throws -> [AttendeeAvailability]
     func createMeeting(
@@ -37,6 +39,10 @@ extension CalendarProvider {
     }
 
     func findPeople(query: String) async throws -> [ResolvedAttendee] {
+        throw CalendarProviderError.notSupported
+    }
+
+    func organizationHierarchy(email: String) async throws -> OrgHierarchy? {
         throw CalendarProviderError.notSupported
     }
 

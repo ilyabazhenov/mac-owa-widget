@@ -726,6 +726,23 @@ final class CalendarService: ObservableObject {
         }
     }
 
+    /// Someone's place in the organization chart; `nil` when the address book does not know them.
+    func organizationHierarchy(email: String, accountID: UUID) async throws -> OrgHierarchy? {
+        guard let provider = providers.first(where: { $0.account.id == accountID }) else { return nil }
+        return try await withThrowingTaskGroup(of: OrgHierarchy?.self) { group in
+            group.addTask {
+                try await provider.organizationHierarchy(email: email)
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(40))
+                throw FindPeopleTimeoutError()
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next() else { return nil }
+            return first
+        }
+    }
+
     /// Free/busy for arbitrary mailboxes, used by the colleagues section.
     ///
     /// One call carries every address, so watching five people costs one request rather than five.

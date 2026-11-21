@@ -142,6 +142,20 @@ enum MCPToolRegistry {
             ]
         ),
         MCPToolDefinition(
+            name: "get_my_org",
+            title: "Organization chart",
+            description: "Someone's place in the organization chart, from the Exchange address book: `manager`, `management_chain` (the managers above the manager, from the top of the organization down), `peers` (others reporting to the same manager) and `direct_reports`. Every person has `name`, `email` and `title`; `likely_service_mailbox: true` marks entries without a title (usually a service or shared mailbox, sometimes a person whose title is not filled in) and `is_you: true` the user. Defaults to the user; pass `email` (from find_people) for someone else. `in_directory: false` means the address is not in the address book (an outside address, a distribution list). With `include_skip_level`, each direct report also gets their own `direct_reports` (one more request per direct report, at most 25; `skip_level` says how many were loaded and why it stopped). Charts are remembered for a day (`org_as_of`). One request to Exchange per person not remembered.",
+            inputSchema: [
+                "type": "object",
+                "properties": [
+                    "email": ["type": "string", "description": "Whose chart: an email address from find_people. Default: the user."],
+                    "include_skip_level": ["type": "boolean", "description": "Also load the direct reports of each direct report. Default false."],
+                    "account_id": ["type": "string", "description": .string(exchangeAccountDescription)],
+                ],
+                "additionalProperties": false,
+            ]
+        ),
+        MCPToolDefinition(
             name: "find_free_slots",
             title: "Find free time",
             description: "Times when all required attendees and the user are free, in chronological order. Uses Exchange free/busy for the attendees and the user's own calendar (meetings the user has not answered count as busy). Slots start on the hour or half hour, inside working hours (default 09:00–18:00, Monday to Friday). Optional attendees do not limit the slots: `optional_busy` lists who of them is busy in each slot. Attendees with `availability: no_data` (outside the organization, no access) are not taken into account: tell the user. Only within `coverage` (the next 30 days). Makes a request to Exchange.",

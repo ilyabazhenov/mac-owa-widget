@@ -1,7 +1,7 @@
 import Foundation
 
 /// The MCP tools, implemented over `CalendarService`: those that read the calendar (including
-/// `match_event`, which tells which meeting a time was), `find_people`, `find_free_slots` and
+/// `match_event`, which tells which meeting a time was), `find_people`, `get_my_org`, `find_free_slots` and
 /// `create_meeting` and `cancel_meeting`.
 ///
 /// The calendar tools read the in-memory calendar: no network, no load on Exchange, except for
@@ -71,6 +71,7 @@ final class MCPCalendarTools {
     /// not tell it. A `nil` address is a failed lookup, not repeated before `retryAfter`.
     private var ownAddresses: [UUID: (email: String?, retryAfter: Date)] = [:]
     private var ownAddressLookups: [UUID: Task<String?, Never>] = [:]
+    private var orgCache = MCPOrgCache()
     private var isCreatingMeeting = false
     private var isRemovingMeeting = false
 
@@ -122,6 +123,7 @@ final class MCPCalendarTools {
             case "find_events_with_person": return try await findEventsWithPerson(arguments, context)
             case "get_event_details": return try await getEventDetails(arguments, context)
             case "find_people": return try await findPeople(arguments, context)
+            case "get_my_org": return try await getMyOrg(arguments, context)
             case "find_free_slots": return try await findFreeSlots(arguments, context)
             case "match_event": return try await matchEvent(arguments, context)
             case "create_meeting": return try await createMeeting(arguments, context, client: client)
@@ -795,6 +797,116 @@ final class MCPCalendarTools {
             throw ArgumentError("At most \(Self.maxPeopleQueries) names per call, got \(queries.count)")
         }
         return (queries, true)
+    }
+
+    // MARK: - get_my_org
+
+    /// Direct reports whose own reports `include_skip_level` loads, at most: one request each.
+    static let maxSkipLevelLookups = 25
+
+    private enum OrgLoad {
+        case loaded(OrgHierarchy?, asOf: Date)
+        case failed(String)
+    }
+
+    private func getMyOrg(_ arguments: [String: JSONValue], _ context: CallContext) async throws -> MCPToolResult {
+        let account = try exchangeAccount(arguments)
+        let includeSkipLevel = try optionalBool(arguments, "include_skip_level") ?? false
+        let given = arguments["email"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !given.isEmpty, !Self.isEmailAddress(given) {
+            throw ArgumentError("`email` must be an email address (find it with find_people)")
+        }
+        let own = await ownAddress(account, wait: Self.ownDomainWaitForSearch)
+        guard let target = given.isEmpty ? own : given else {
+            return .failure("The user's own address is not known yet (Exchange did not answer). Retry in a minute, or pass `email`.")
+        }
+
+        let hierarchy: OrgHierarchy?
+        let asOf: Date
+        switch await loadOrgHierarchy(target, account: account) {
+        case .failed(let message): return .failure(message)
+        case .loaded(let found, let date): (hierarchy, asOf) = (found, date)
+        }
+
+        var result = commonFields(context)
+        result["person"] = .object(MCPOrgChartFormat.subject(target, in: hierarchy, ownEmail: own))
+        result["in_directory"] = .bool(hierarchy != nil)
+        result["org_as_of"] = .string(context.coder.string(asOf))
+        guard let hierarchy else {
+            result["manager"] = .null
+            result["management_chain"] = []
+            result["peers"] = []
+            result["direct_reports"] = []
+            return .success(result)
+        }
+        for person in [hierarchy.manager].compactMap({ $0 }) + hierarchy.managementChain + hierarchy.peers + hierarchy.directReports {
+            namesByEmail[person.email.lowercased()] = person.name
+        }
+        result["manager"] = hierarchy.manager.map { .object(MCPOrgChartFormat.person($0, ownEmail: own)) } ?? .null
+        result["management_chain"] = MCPOrgChartFormat.people(hierarchy.managementChain, ownEmail: own)
+        result["peers"] = MCPOrgChartFormat.people(MCPOrgChartFormat.peers(of: target, in: hierarchy), ownEmail: own)
+
+        guard includeSkipLevel, !hierarchy.directReports.isEmpty else {
+            result["direct_reports"] = MCPOrgChartFormat.people(hierarchy.directReports, ownEmail: own)
+            return .success(result)
+        }
+        // One request per direct report, paid for up front; the first failure stops the rest,
+        // as every request sends the password again.
+        let lookups = Array(hierarchy.directReports.prefix(Self.maxSkipLevelLookups))
+        let uncached = lookups.filter { orgCache.lookup($0.email, account: account.id, now: clock()) == nil }.count
+        var skipLevel: [String: JSONValue] = [
+            "requested": .int(Int64(lookups.count)),
+            "truncated": .bool(hierarchy.directReports.count > lookups.count),
+        ]
+        var stopped: String?
+        if uncached > 0, let denial = accessGuard.permitRequest(count: uncached) {
+            stopped = denial.message
+        }
+        var reports: [JSONValue] = []
+        var loaded = 0
+        for report in hierarchy.directReports {
+            var fields = MCPOrgChartFormat.person(report, ownEmail: own)
+            if stopped == nil, lookups.contains(report) {
+                switch await loadOrgHierarchy(report.email, account: account, prepaid: true) {
+                case .failed(let message):
+                    stopped = message
+                case .loaded(let theirs, _):
+                    loaded += 1
+                    fields["direct_reports"] = MCPOrgChartFormat.people(theirs?.directReports ?? [], ownEmail: own)
+                    for person in theirs?.directReports ?? [] { namesByEmail[person.email.lowercased()] = person.name }
+                }
+            }
+            reports.append(.object(fields))
+        }
+        skipLevel["loaded"] = .int(Int64(loaded))
+        if let stopped { skipLevel["error"] = .string(stopped) }
+        result["direct_reports"] = .array(reports)
+        result["skip_level"] = .object(skipLevel)
+        return .success(result)
+    }
+
+    /// From the cache, else one request through the guard (`prepaid`: the budget is already taken).
+    private func loadOrgHierarchy(_ email: String, account: CalendarAccount, prepaid: Bool = false) async -> OrgLoad {
+        if let cached = orgCache.lookup(email, account: account.id, now: clock()) {
+            return .loaded(cached.hierarchy, asOf: cached.date)
+        }
+        if !prepaid, let denial = accessGuard.permitRequest() {
+            return .failed(denial.message)
+        }
+        await accessGuard.acquireSlot()
+        defer { accessGuard.releaseSlot() }
+        do {
+            let hierarchy = try await calendarService.organizationHierarchy(email: email, accountID: account.id)
+            let now = clock()
+            orgCache.store(hierarchy, for: email, account: account.id, now: now)
+            return .loaded(hierarchy, asOf: now)
+        } catch {
+            accessGuard.report(error, context: "mcp.orgHierarchy")
+            if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
+                return .failed(reason)
+            }
+            return .failed("Organization chart request failed: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - create_meeting

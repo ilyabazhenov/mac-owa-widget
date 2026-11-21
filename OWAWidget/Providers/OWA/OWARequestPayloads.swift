@@ -187,6 +187,25 @@ enum OWAFindPeoplePayload {
     }
 }
 
+// MARK: - GetOrganizationHierarchyForPersona
+
+enum OWAOrgHierarchyPayload {
+    /// The person card's "Organization" tab, from a browser HAR (2026-11-21). The browser sends it
+    /// in the `X-OWA-UrlPostData` header with `GalObjectGuid`; the POST body and the address alone
+    /// work as well (checked on a live server). No `Header`: the request is wrapped as below.
+    static func make(email: String) -> [String: Any] {
+        [
+            "getOrganizationHierarchyForPersonaRequest": [
+                "__type": "GetOrganizationHierarchyForPersonaRequest:#Exchange",
+                "EmailAddress": [
+                    "__type": "EmailAddress:#Exchange",
+                    "EmailAddress": email,
+                ] as [String: Any],
+            ] as [String: Any],
+        ]
+    }
+}
+
 // MARK: - GetUserAvailabilityInternal
 
 enum OWAUserAvailabilityPayload {
