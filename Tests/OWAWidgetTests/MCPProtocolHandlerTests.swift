@@ -149,6 +149,22 @@ final class MCPProtocolHandlerTests: XCTestCase {
         XCTAssertEqual(discover["result"]?["capabilities"]?["resources"]?["subscribe"], true)
     }
 
+    func testEveryLegacyVersionSubscribes() {
+        for version in MCPProtocolHandler.legacyVersions {
+            var session = MCPSessionState()
+            let initialize = reply(handler.handle(request(1, "initialize", ["protocolVersion": .string(version)]), session: &session))
+            XCTAssertEqual(initialize["result"]?["protocolVersion"], .string(version))
+            XCTAssertEqual(initialize["result"]?["capabilities"]?["resources"]?["subscribe"], true, version)
+            XCTAssertEqual(handler.handle(request(2, "resources/subscribe", ["uri": .string(MCPChangeResource.uri)]), session: &session), .subscribe(id: 2), version)
+            XCTAssertEqual(handler.handle(request(3, "resources/unsubscribe", ["uri": .string(MCPChangeResource.uri)]), session: &session), .unsubscribe(id: 3), version)
+            let unknown = reply(handler.handle(request(4, "resources/subscribe", ["uri": "x://y"]), session: &session))["error"]
+            XCTAssertEqual(unknown?["code"], .int(Int64(JSONRPCErrorCode.resourceNotFound)), version)
+        }
+        XCTAssertTrue(MCPProtocolHandler.legacyVersions.contains("2025-06-18"))
+        let ring = handler.resourceUpdated(subscriptionID: nil)
+        XCTAssertEqual(ring["params"], ["uri": .string(MCPChangeResource.uri)])
+    }
+
     func testResourcesListAndRead() {
         var legacy = MCPSessionState(era: .legacy(version: "2025-11-25"))
         let list = reply(handler.handle(request(2, "resources/list"), session: &legacy))["result"]
@@ -214,9 +230,14 @@ final class MCPProtocolHandlerTests: XCTestCase {
         XCTAssertEqual(modern?["isError"], false)
         XCTAssertEqual(modern?["resultType"], "complete")
 
-        let legacy = handler.toolCallResponse(id: 1, result: .failure("nope"), modern: false)["result"]
+        let legacy = handler.toolCallResponse(id: 1, result: .failure(.stale, "nope"), modern: false)["result"]
         XCTAssertEqual(legacy?["isError"], true)
-        XCTAssertNil(legacy?["structuredContent"])
+        XCTAssertEqual(legacy?["content"]?.arrayValue?.first?["text"], "nope", "the text stays what the model reads")
+        XCTAssertEqual(legacy?["structuredContent"], ["error_code": "stale", "message": "nope"])
         XCTAssertNil(legacy?["resultType"])
+
+        let modernFailure = handler.toolCallResponse(id: 1, result: .failure(.invalidArgument, "bad"), modern: true)["result"]
+        XCTAssertEqual(modernFailure?["structuredContent"]?["error_code"], "invalid_argument")
+        XCTAssertEqual(modernFailure?["isError"], true)
     }
 }

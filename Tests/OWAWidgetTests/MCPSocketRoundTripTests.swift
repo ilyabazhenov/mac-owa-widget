@@ -17,6 +17,15 @@ final class MCPSocketRoundTripTests: XCTestCase {
 
     private var directory: URL!
     private var listener: MCPSocketListener?
+    /// Connections the listener made, so a test can ring them.
+    private let connections = ConnectionBox()
+
+    private final class ConnectionBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var items: [MCPConnection] = []
+        func add(_ connection: MCPConnection) { lock.withLock { items.append(connection) } }
+        var all: [MCPConnection] { lock.withLock { items } }
+    }
 
     override func setUpWithError() throws {
         // Short on purpose: sun_path holds 103 bytes.
@@ -33,8 +42,10 @@ final class MCPSocketRoundTripTests: XCTestCase {
         let path = directory.appendingPathComponent("t.sock").path
         let handler = MCPProtocolHandler(serverName: "owa-widget", serverTitle: "OWA Widget", serverVersion: "test",
                                          instructions: "", tools: EchoToolbox().tools)
+        let box = connections
         let listener = MCPSocketListener(path: path) { channel in
             let connection = MCPConnection(channel: channel, handler: handler, tools: EchoToolbox(), clientLabel: "Verified client") { _ in }
+            box.add(connection)
             Task { await connection.run() }
         }
         try listener.start()
@@ -83,6 +94,39 @@ final class MCPSocketRoundTripTests: XCTestCase {
         XCTAssertEqual(call?["result"]?["structuredContent"]?["arguments"], ["x": 1])
         // The hello names Claude, but only the server's own lookup labels the connection.
         XCTAssertEqual(call?["result"]?["structuredContent"]?["client"], "Verified client")
+    }
+
+    /// Adjutant's client speaks 2025-06-18: the subscription and its ring work there exactly as
+    /// in 2025-11-25, and the capability that says so is in the handshake.
+    func testSubscriptionRingsInEveryLegacyVersion() async throws {
+        let path = try startListener()
+        for (index, version) in MCPProtocolHandler.legacyVersions.enumerated() {
+            let fd = try connect(path)
+            defer { close(fd) }
+            let hello = String(data: MCPBridgeHello(parentPID: 1, parentPath: "/usr/bin/python3").encodedLine(), encoding: .utf8)!
+            send(fd, hello)
+            send(fd, #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"\#(version)"}}"#)
+            let initialize = readLine(fd)
+            XCTAssertEqual(initialize?["result"]?["protocolVersion"], .string(version))
+            XCTAssertEqual(initialize?["result"]?["capabilities"]?["resources"]?["subscribe"], true, version)
+            send(fd, #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+
+            send(fd, #"{"jsonrpc":"2.0","id":2,"method":"resources/subscribe","params":{"uri":"owawidget://changes"}}"#)
+            let subscribed = readLine(fd)
+            XCTAssertEqual(subscribed?["id"], 2, version)
+            XCTAssertNotNil(subscribed?["result"], version)
+
+            let connection = try XCTUnwrap(connections.all.dropFirst(index).first)
+            await connection.notifyChanged()
+            let ring = readLine(fd)
+            XCTAssertEqual(ring?["method"], "notifications/resources/updated", version)
+            XCTAssertEqual(ring?["params"]?["uri"], "owawidget://changes", version)
+            XCTAssertNil(ring?["params"]?["_meta"], "no subscription id outside 2026-07-28")
+            XCTAssertNil(ring?["id"], "a notification, not a request")
+
+            send(fd, #"{"jsonrpc":"2.0","id":3,"method":"resources/unsubscribe","params":{"uri":"owawidget://changes"}}"#)
+            XCTAssertEqual(readLine(fd)?["id"], 3, version)
+        }
     }
 
     func testPeerCredentialsNameTheConnectingProcess() throws {

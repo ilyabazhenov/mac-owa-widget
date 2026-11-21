@@ -470,15 +470,27 @@ final class MCPServerService: ObservableObject {
 
     // MARK: - Access
 
-    /// `nil` when the client may call tools; otherwise the error text it gets instead.
-    func authorize(_ clientID: UUID) async -> String? {
+    /// The gate's refusals, each with its code. Mail switched off is `MCPToolError.settingOff`
+    /// (`mail_not_allowed` with the setting named), made where the app's language is known.
+    @MainActor
+    enum Refusal {
+        static let serverDisabled = MCPToolError(.serverDisabled, MCPCalendarTools.disabledMessage)
+        static let unidentified = MCPToolError(.clientNotApproved, MCPServerService.unidentifiedMessage)
+        static let denied = MCPToolError(.clientNotApproved, MCPServerService.deniedMessage)
+        static let waiting = MCPToolError(.approvalPending, MCPServerService.waitingMessage)
+        static let mailDenied = MCPToolError(.mailNotAllowed, MCPServerService.mailDeniedMessage)
+        static let mailWaiting = MCPToolError(.approvalPending, MCPServerService.mailWaitingMessage)
+    }
+
+    /// `nil` when the client may call tools; otherwise the refusal it gets instead.
+    func authorize(_ clientID: UUID) async -> MCPToolError? {
         // Fails closed: a disabled server refuses here too, not only inside the tools, so no
         // single switch can open the tools behind the gate's back.
-        guard isEnabled else { return MCPCalendarTools.disabledMessage }
+        guard isEnabled else { return Refusal.serverDisabled }
         // Gone already: no reply can reach it, and a call nobody can attribute is not allowed.
-        guard let index = clients.firstIndex(where: { $0.id == clientID }) else { return Self.unidentifiedMessage }
+        guard let index = clients.firstIndex(where: { $0.id == clientID }) else { return Refusal.unidentified }
         guard let identity = clients[index].identity, identity.isResolved else {
-            return askNewClients ? Self.unidentifiedMessage : nil
+            return askNewClients ? Refusal.unidentified : nil
         }
         if !clients[index].isRecorded { recordKnownClient(clientID) }
         let access = knownClients.first { $0.key == identity.key }?.access
@@ -486,34 +498,34 @@ final class MCPServerService: ObservableObject {
         case .allow:
             return nil
         case .deny:
-            return Self.deniedMessage
+            return Refusal.denied
         case .ask:
             guard !isCoolingDown(identity.key), let approval, let request = approvalRequest(clientID) else {
-                return Self.waitingMessage
+                return Refusal.waiting
             }
             switch await approval.decision(for: request) {
             case .allowed: return nil
-            case .denied: return Self.deniedMessage
-            case .timedOut, .cancelled: return Self.waitingMessage
+            case .denied: return Refusal.denied
+            case .timedOut, .cancelled: return Refusal.waiting
             }
         }
     }
 
-    /// `nil` when the client may use the mail tools; otherwise the error text it gets instead.
+    /// `nil` when the client may use the mail tools; otherwise the refusal it gets instead.
     /// Asked after `authorize` let the call through: mail is a separate decision for every
     /// client, whatever the "ask new clients" setting says.
-    func authorizeMail(_ clientID: UUID, tool: String) async -> String? {
-        guard canReadMail else { return MCPMailTools.disabledMessage }
+    func authorizeMail(_ clientID: UUID, tool: String) async -> MCPToolError? {
+        guard canReadMail else { return MCPToolError.settingOff(.readMail, MCPMailTools.disabledMessage, code: .mailNotAllowed) }
         guard let client = clients.first(where: { $0.id == clientID }),
-              let identity = client.identity, identity.isResolved else { return Self.unidentifiedMessage }
+              let identity = client.identity, identity.isResolved else { return Refusal.unidentified }
         switch knownClients.first(where: { $0.key == identity.key })?.mailAccess {
         case .allowed?:
             return nil
         case .denied?:
-            return Self.mailDeniedMessage
+            return Refusal.mailDenied
         case .pending?, nil:
-            if let until = mailUnansweredUntil[identity.key], until > Date() { return Self.mailWaitingMessage }
-            guard let mailApproval, var request = approvalRequest(clientID) else { return Self.mailWaitingMessage }
+            if let until = mailUnansweredUntil[identity.key], until > Date() { return Refusal.mailWaiting }
+            guard let mailApproval, var request = approvalRequest(clientID) else { return Refusal.mailWaiting }
             request.forMail = true
             request.canSendMail = canSendMail
             request.canOrganizeMail = canOrganizeMail
@@ -521,8 +533,8 @@ final class MCPServerService: ObservableObject {
             updateKnownClients(MCPKnownClientList.setMailAccess(.pending, forKey: identity.key, in: knownClients))
             switch await mailApproval.decision(for: request) {
             case .allowed: return nil
-            case .denied: return Self.mailDeniedMessage
-            case .timedOut, .cancelled: return Self.mailWaitingMessage
+            case .denied: return Refusal.mailDenied
+            case .timedOut, .cancelled: return Refusal.mailWaiting
             }
         }
     }
@@ -658,7 +670,7 @@ struct MCPGatedToolbox: MCPToolProviding {
     var tools: [MCPToolDefinition] { base.tools }
 
     func authorizeSubscription() async -> String? {
-        await MCPServerService.shared.authorize(clientID)
+        await MCPServerService.shared.authorize(clientID)?.message
     }
 
     func callTool(name: String, arguments: [String: JSONValue], client: String?) async -> MCPToolResult {

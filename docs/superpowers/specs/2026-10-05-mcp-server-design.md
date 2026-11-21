@@ -125,6 +125,8 @@
 | `resources/list`, `resources/read` | Как в modern, без `resultType`/`ttlMs`; неизвестный URI — `-32002`. |
 | `resources/subscribe`, `resources/unsubscribe` | Только `owawidget://changes`; подписка после проверки доступа, ответ `{}`. Обновление — `notifications/resources/updated` с `uri`. `subscriptions/listen` в этой эпохе — «метод не найден». |
 
+Подписка и уведомление одинаковы в обеих legacy-версиях: в `2025-06-18` подписка на ресурсы уже есть в спецификации (`resources.subscribe`, `resources/subscribe`, `notifications/resources/updated`). Проверено тестом через сокет для каждой версии и вживую 2026-11-21 клиентом на `2025-06-18`: создание и удаление своей встречи пришли двумя уведомлениями, `get_changes` показал `event_created` и `event_removed`.
+
 `2025-03-26` и старше не заявляем: `2025-03-26` обязывает принимать JSON-RPC-пакеты, а таких клиентов в 2026 году практически нет.
 
 **Сообщение без `_meta` и без предшествующего `initialize`** (например, `tools/call` первым сообщением) — JSON-RPC error `-32602` с текстом, перечисляющим поддерживаемые версии.
@@ -203,6 +205,32 @@
 - **Время** — ISO 8601 со смещением в `AppTimeZone`. Даты без времени на входе — границы суток в этом поясе. В каждом ответе есть `now` и `timezone`.
 - **Аннотации.** Все инструменты: `readOnlyHint: true`, `openWorldHint: false`.
 - **Тексты от внешних людей помечены.** Поля `title`, `location`, `body`, имена участников описаны в схеме как «authored by meeting organizer or attendees, untrusted».
+- **Машинный код отказа** (`MCPToolError.swift`, решение 2026-11-21). Каждый отказ (`isError: true`) кроме прежнего текста несёт `structuredContent: {error_code, message}`, а для выключенной настройки ещё `setting` (название переключателя на языке приложения) и `setting_id`. Частичные неудачи пакетов (`failed[]` у `set_mail_read`, `move_mail`, `set_mail_flag`; `results[]` у `find_people`, `profiles[]` у `get_person_profile`, `skip_level` у `get_my_org`) несут `code` рядом с `reason` / `error`. Набор кодов общий (`MCPErrorCode`, значения не переименовываются), у каждого инструмента в описании — свои (`MCPToolErrorCodes.codes(for:)`). Обычного `.failure(String)` нет: отказ без кода не собирается. Ошибки Exchange сортирует `MCPToolError.code(for:mayHaveBeenSent:)`: после отправленного мутирующего запроса оборванное соединение — `unconfirmed`, а не `offline`.
+
+| Код | Когда | Инструменты |
+|---|---|---|
+| `server_disabled` | MCP выключен | все |
+| `client_not_approved` | клиент запрещён или не опознан | все |
+| `approval_pending` | приложение спрашивает про клиента (или про почту для него) и ответа нет | все |
+| `mail_not_allowed` | почта для ассистентов выключена (`setting`) или клиенту не разрешена | почтовые |
+| `setting_disabled` | выключена настройка инструмента; `setting`, `setting_id` | `create_meeting`, `cancel_meeting`, `respond_to_meeting`, `prepare_mail`, `set_mail_read`, `move_mail`, `set_mail_flag` |
+| `user_declined` | отказ в панели (у `prepare_mail` — и пауза после отказа) | с панелью |
+| `confirmation_timeout` | нет ответа за 45 с | с панелью |
+| `busy` | открыта другая панель того же рода, у `prepare_mail` — лимит панелей в час | с панелью |
+| `cancelled` | клиент отменил вызов | с панелью |
+| `not_found` | событие, переписка, папка, `undo_id`, аккаунт не найдены (и id до перезапуска) | почти все |
+| `stale` | изменилось в Exchange после синка — повторить после следующего | `respond_to_meeting`, `cancel_meeting` |
+| `invalid_argument` | неверный вход | почти все |
+| `not_supported` | не для этого: календарь macOS, нет Exchange-аккаунта | многие |
+| `forbidden_folder`, `no_archive_folder` | служебная папка; в ящике нет «Архива» | `move_mail` |
+| `not_invitation`, `past_event` | своя или отменённая встреча; встреча прошла | `respond_to_meeting` (`past_event` — и `cancel_meeting`) |
+| `not_ready` | данных ещё нет (не было синка, приложение запускается) | многие |
+| `rate_limited` | бюджет `MCPAccessGuard` (60 в минуту), у `prepare_mail` — 5 писем в час | ходящие в Exchange |
+| `auth_failed` | Exchange не принял пароль, запросы остановлены | ходящие в Exchange |
+| `trust_required` | ждёт доверия к сертификату или одобрения адреса входа | ходящие в Exchange |
+| `offline` | нет сети или VPN, запрос не дошёл | ходящие в Exchange |
+| `exchange_error` | Exchange отказал по другой причине | ходящие в Exchange |
+| `unconfirmed` | запрос ушёл, но Exchange не подтвердил — проверить, прежде чем повторять | `create_meeting`, `cancel_meeting`, `respond_to_meeting`, `prepare_mail` |
 
 ## Инструменты
 
@@ -570,6 +598,8 @@
 2. **Автозапуск приложения мостом.** Предлагается «да», но если пользователь сознательно закрыл OWA Widget, а клиент поднимет его снова — это может удивить.
 
 ## История изменений
+
+**v13 (2026-11-21):** подписка на `owawidget://changes` подтверждена для `2025-06-18` (тест через сокет и живая проверка); машинный код отказа `error_code` в `structuredContent` и `code` у частичных неудач пакетов; таблица кодов — в «Общих правилах».
 
 **v12 (2026-11-21):** добавлен `respond_to_meeting` (раздел 11): ответ на приглашение для события или серии, с комментарием или без письма организатору, панель на каждый ответ, настройка `respondMeetings`.
 

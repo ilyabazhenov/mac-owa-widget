@@ -274,7 +274,7 @@ final class MCPMailToolsTests: XCTestCase {
 
     func testDisabledMailReadsNothing() async {
         let result = await makeTools(read: false).call(name: "list_mail", arguments: [:], client: nil)
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .mailNotAllowed)
         let calls = await provider.calls
         XCTAssertTrue(calls.isEmpty)
     }
@@ -321,15 +321,15 @@ final class MCPMailToolsTests: XCTestCase {
 
     func testUnknownHandleAsksToListAgain() async {
         let result = await makeTools().call(name: "get_mail_thread", arguments: ["thread_id": "0123456789ab"], client: nil)
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .notFound)
     }
 
     func testSearchNeedsQueryOrFilterAndPassesSenders() async throws {
         let tools = makeTools()
         let empty = await tools.call(name: "search_mail", arguments: [:], client: nil)
-        XCTAssertTrue(empty.isError)
+        XCTAssertRefusal(empty, .invalidArgument)
         let bad = await tools.call(name: "search_mail", arguments: ["from": ["Grace Miller"]], client: nil)
-        XCTAssertTrue(bad.isError, "names go through find_people first")
+        XCTAssertRefusal(bad, .invalidArgument, "names go through find_people first")
 
         let found = try object(await tools.call(name: "search_mail", arguments: ["query": "release", "from": ["g.miller@example.com"], "since": "2026-10-01"], client: nil))
         XCTAssertEqual(found["threads"]?.arrayValue?.count, 1)
@@ -376,7 +376,7 @@ final class MCPMailToolsTests: XCTestCase {
         for outcome in [MCPConfirmationOutcome.rejected, .timedOut, .cancelled] {
             confirmer.outcome = outcome
             let result = await tools.call(name: "prepare_mail", arguments: ["kind": "reply", "message_id": .string(id), "body": .string("Text \(outcome)")], client: nil)
-            XCTAssertTrue(result.isError)
+            XCTAssertRefusal(result, .userDeclined)
         }
         let sent = await provider.sent
         XCTAssertTrue(sent.isEmpty)
@@ -418,7 +418,7 @@ final class MCPMailToolsTests: XCTestCase {
         _ = await tools.call(name: "prepare_mail", arguments: ["kind": "new", "to": ["g.miller@example.com"], "subject": "A", "body": "One"], client: nil)
         confirmer.outcome = .confirmed
         let again = await tools.call(name: "prepare_mail", arguments: ["kind": "new", "to": ["g.miller@example.com"], "subject": "B", "body": "Two"], client: nil)
-        XCTAssertTrue(again.isError)
+        XCTAssertRefusal(again, .userDeclined)
         XCTAssertEqual(confirmer.proposals.count, 1, "no second panel during the pause")
         let sent = await provider.sent
         XCTAssertTrue(sent.isEmpty)
@@ -449,7 +449,7 @@ final class MCPMailToolsTests: XCTestCase {
     func testNoDraftButtonWithoutTheMailWindow() async {
         confirmer.outcome = .handedOff
         let result = await makeTools(draftWindow: false).call(name: "prepare_mail", arguments: ["kind": "new", "to": ["g.miller@example.com"], "subject": "Plan", "body": "Draft"], client: nil)
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .userDeclined)
         XCTAssertEqual(confirmer.proposals.first?.canOpenDraft, false)
         XCTAssertTrue(handedOff.isEmpty)
     }
@@ -457,19 +457,19 @@ final class MCPMailToolsTests: XCTestCase {
     func testSendValidation() async {
         let tools = makeTools()
         let off = await makeTools(send: false).call(name: "prepare_mail", arguments: ["kind": "new", "to": ["a@example.com"], "subject": "x", "body": "y"], client: nil)
-        XCTAssertTrue(off.isError)
+        XCTAssertRefusal(off, .settingDisabled)
         let bidi = await tools.call(name: "prepare_mail", arguments: ["kind": "new", "to": ["a@example.com"], "subject": "x", "body": "a\u{202E}b"], client: nil)
-        XCTAssertTrue(bidi.isError)
+        XCTAssertRefusal(bidi, .invalidArgument)
         let tagged = await tools.call(name: "prepare_mail", arguments: ["kind": "new", "to": ["a@example.com"], "subject": "x", "body": "Thanks!\u{E0073}\u{E0065}\u{E0063}"], client: nil)
-        XCTAssertTrue(tagged.isError, "Unicode tags carry hidden ASCII")
+        XCTAssertRefusal(tagged, .invalidArgument, "Unicode tags carry hidden ASCII")
         let selectors = await tools.call(name: "prepare_mail", arguments: ["kind": "new", "to": ["a@example.com"], "subject": "x", "body": "OK\u{FE00}\u{E0100}"], client: nil)
-        XCTAssertTrue(selectors.isError, "variation selectors carry hidden bytes")
+        XCTAssertRefusal(selectors, .invalidArgument, "variation selectors carry hidden bytes")
         let hiddenSubject = await tools.call(name: "prepare_mail", arguments: ["kind": "new", "to": ["a@example.com"], "subject": "Pl\u{200B}an", "body": "y"], client: nil)
-        XCTAssertTrue(hiddenSubject.isError)
+        XCTAssertRefusal(hiddenSubject, .invalidArgument)
         let notAddress = await tools.call(name: "prepare_mail", arguments: ["kind": "new", "to": ["Grace <g@example.com>"], "subject": "x", "body": "y"], client: nil)
-        XCTAssertTrue(notAddress.isError)
+        XCTAssertRefusal(notAddress, .invalidArgument)
         let noSubject = await tools.call(name: "prepare_mail", arguments: ["kind": "new", "to": ["a@example.com"], "body": "y"], client: nil)
-        XCTAssertTrue(noSubject.isError)
+        XCTAssertRefusal(noSubject, .invalidArgument)
         XCTAssertTrue(confirmer.proposals.isEmpty)
     }
 
@@ -483,7 +483,7 @@ final class MCPMailToolsTests: XCTestCase {
             _ = try object(await tools.call(name: "prepare_mail", arguments: ["kind": "new", "to": ["g.miller@example.com"], "subject": "Plan", "body": .string("Text \(index)")], client: nil))
         }
         let limited = await tools.call(name: "prepare_mail", arguments: ["kind": "new", "to": ["g.miller@example.com"], "subject": "Plan", "body": "Sixth"], client: nil)
-        XCTAssertTrue(limited.isError)
+        XCTAssertRefusal(limited, .rateLimited)
         let sent = await provider.sent
         XCTAssertEqual(sent.count, 5)
     }
@@ -496,7 +496,7 @@ final class MCPMailToolsTests: XCTestCase {
         _ = try object(await tools.call(name: "list_mail", arguments: ["folder": "jira"], client: nil))
         _ = try object(await tools.call(name: "list_mail", arguments: ["folder": .string(jira["folder_id"]!.stringValue!)], client: nil))
         let unknown = await tools.call(name: "list_mail", arguments: ["folder": "nonexistent"], client: nil)
-        XCTAssertTrue(unknown.isError)
+        XCTAssertRefusal(unknown, .notFound)
         let calls = await provider.calls
         XCTAssertEqual(calls.filter { $0 == "folders" }.count, 1, "the folder list is reused")
     }
@@ -510,7 +510,7 @@ final class MCPMailToolsTests: XCTestCase {
         let people = try object(await makeTools().call(name: "list_mail", arguments: ["only": "awaiting_reply"], client: nil))
         XCTAssertEqual(people["threads"]?.arrayValue?.count, 1)
         let bad = await makeTools().call(name: "list_mail", arguments: ["only": "robots"], client: nil)
-        XCTAssertTrue(bad.isError)
+        XCTAssertRefusal(bad, .invalidArgument)
     }
 
     func testToolListFollowsSwitches() {
@@ -611,6 +611,7 @@ final class MCPMailToolsTests: XCTestCase {
         let failed = try XCTUnwrap(result["failed"]?.arrayValue)
         XCTAssertEqual(failed.compactMap { $0["thread_id"]?.stringValue }, ["0123456789ab", "CONV-GONE-FULL-ID-00000000000"])
         XCTAssertTrue(failed.allSatisfy { !($0["reason"]?.stringValue ?? "").isEmpty })
+        XCTAssertEqual(failed.map { $0["code"] }, ["not_found", "not_found"], "an unknown id and a vanished conversation")
         let updates = await provider.updates
         XCTAssertEqual(updates.map(\.ids), [["MSG-ORIGINAL-FULL-ID-000000000"]])
     }
@@ -657,6 +658,19 @@ final class MCPMailToolsTests: XCTestCase {
         let result = try object(await tools.call(name: "set_mail_read", arguments: ["thread_ids": .array(ids.map(JSONValue.string)), "read": true], client: nil))
         XCTAssertEqual(result["updated"], 0)
         XCTAssertEqual(result["failed"]?.arrayValue?.count, 2)
+        XCTAssertEqual(result["failed"]?.arrayValue?.map { $0["code"] }, ["exchange_error", "exchange_error"])
+    }
+
+    func testBatchFailuresCarryTheCodeOfTheirError() async throws {
+        await addBudgetThread()
+        await provider.setUpdateFailure(URLError(.notConnectedToInternet))
+        let tools = makeTools()
+        let ids = try await threadIDs(tools)
+        let result = try object(await tools.call(name: "set_mail_flag", arguments: ["thread_ids": .array(ids.map(JSONValue.string)), "flagged": true], client: nil))
+        XCTAssertEqual(result["updated"], 0)
+        let codes = result["failed"]?.arrayValue?.map { $0["code"] } ?? []
+        XCTAssertFalse(codes.isEmpty)
+        XCTAssertTrue(codes.allSatisfy { $0 == "offline" }, "\(codes)")
     }
 
     /// Deleted Items stay out, as in the mail window: the newest received copy there is not the
@@ -685,7 +699,7 @@ final class MCPMailToolsTests: XCTestCase {
     func testSetMailReadTakesAtMostFiftyThreads() async {
         let ids = (0...MCPMailTools.maxThreadsPerMark).map { JSONValue.string(String(format: "%012x", $0)) }
         let result = await makeTools().call(name: "set_mail_read", arguments: ["thread_ids": .array(ids), "read": true], client: nil)
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .invalidArgument)
         XCTAssertTrue("\(result)".contains("At most 50"), "\(result)")
         let calls = await provider.calls
         XCTAssertTrue(calls.isEmpty)
@@ -695,14 +709,14 @@ final class MCPMailToolsTests: XCTestCase {
         let marker = RecordingReadMarker()
         let tools = makeTools(organize: false, marker: marker)
         let result = await tools.call(name: "set_mail_read", arguments: ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "read": true], client: nil)
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .settingDisabled)
         XCTAssertTrue("\(result)".contains("Marking mail is turned off"), "\(result)")
         XCTAssertEqual(marker.calls, 0)
         let calls = await provider.calls
         XCTAssertTrue(calls.isEmpty)
         // Mail reading off turns it off too.
         let unread = await makeTools(read: false, marker: marker).call(name: "set_mail_read", arguments: ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "read": true], client: nil)
-        XCTAssertTrue(unread.isError)
+        XCTAssertRefusal(unread, .mailNotAllowed)
         XCTAssertEqual(marker.calls, 0)
     }
 
@@ -793,17 +807,18 @@ final class MCPMailToolsTests: XCTestCase {
     func testMoveMailRefusesDeletedItemsSystemFoldersAndAMissingArchive() async throws {
         await provider.setExtraFolders([Self.sentFolder])
         let tools = makeTools()
-        for folder in ["deleted", "Deleted Items", "sent", "drafts", "junk"] {
+        // Drafts and Junk are not in this test mailbox at all: unknown, rather than refused.
+        for (folder, code) in [("deleted", MCPErrorCode.forbiddenFolder), ("Deleted Items", .forbiddenFolder), ("sent", .forbiddenFolder), ("drafts", .notFound), ("junk", .notFound)] {
             let result = await tools.call(name: "move_mail", arguments: ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "folder": .string(folder)], client: nil)
-            XCTAssertTrue(result.isError, folder)
+            XCTAssertRefusal(result, code, folder)
         }
         let archive = await tools.call(name: "move_mail", arguments: ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "folder": "archive"], client: nil)
-        XCTAssertTrue(archive.isError)
+        XCTAssertRefusal(archive, .noArchiveFolder)
         XCTAssertTrue("\(archive)".contains("no Archive folder"), "\(archive)")
         let same = await tools.call(name: "move_mail", arguments: ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "folder": "inbox"], client: nil)
-        XCTAssertTrue(same.isError)
+        XCTAssertRefusal(same, .invalidArgument)
         let fromDeleted = await tools.call(name: "move_mail", arguments: ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "folder": "Jira", "from_folder": "deleted"], client: nil)
-        XCTAssertTrue(fromDeleted.isError)
+        XCTAssertRefusal(fromDeleted, .forbiddenFolder)
         let moves = await provider.moves.count
         XCTAssertEqual(moves, 0)
         // A folder of the user's own is fine.
@@ -838,9 +853,9 @@ final class MCPMailToolsTests: XCTestCase {
 
     func testUnknownUndoIDMovesNothing() async throws {
         let result = await makeTools().call(name: "move_mail", arguments: ["undo_id": "u0123456789"], client: nil)
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .notFound)
         let mixed = await makeTools().call(name: "move_mail", arguments: ["undo_id": "u0123456789", "folder": "archive"], client: nil)
-        XCTAssertTrue(mixed.isError)
+        XCTAssertRefusal(mixed, .invalidArgument)
         let calls = await provider.calls
         XCTAssertTrue(calls.isEmpty)
     }
@@ -875,7 +890,7 @@ final class MCPMailToolsTests: XCTestCase {
         for (name, args) in [("move_mail", ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "folder": "archive"] as [String: JSONValue]),
                              ("set_mail_flag", ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "flagged": true])] {
             let result = await tools.call(name: name, arguments: args, client: nil)
-            XCTAssertTrue(result.isError, name)
+            XCTAssertRefusal(result, .settingDisabled, name)
             XCTAssertTrue("\(result)".contains("Moving and flagging mail is turned off"), "\(result)")
         }
         let calls = await provider.calls
@@ -975,7 +990,7 @@ final class MCPMailToolsTests: XCTestCase {
         await addPlanThread()
         let before = await provider.calls.count
         let result = await makeTools().call(name: "get_mail_thread", arguments: ["thread_id": "CONV-3-FULL-ID-0000000000000", "include_html": "yes"], client: nil)
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .invalidArgument)
         let after = await provider.calls.count
         XCTAssertEqual(after, before, "a bad argument asks nothing of Exchange")
     }

@@ -335,9 +335,9 @@ final class MCPChangesTests: XCTestCase {
         XCTAssertEqual(withMail["changes"]?.arrayValue?.count, 1)
         XCTAssertTrue(watcher.isActive)
 
-        XCTAssertTrue(tools.call(arguments: ["limit": 0], mail: .allowed).isError)
-        XCTAssertTrue(tools.call(arguments: ["since_cursor": 5], mail: .allowed).isError)
+        XCTAssertRefusal(tools.call(arguments: ["limit": 0], mail: .allowed), .invalidArgument)
+        XCTAssertRefusal(tools.call(arguments: ["since_cursor": 5], mail: .allowed), .invalidArgument)
         let off = MCPChangeTools(calendarService: service, calendarTools: calendarTools, mailTools: mailTools, watcher: watcher, isEnabled: { false })
-        XCTAssertTrue(off.call(arguments: [:], mail: .allowed).isError)
+        XCTAssertRefusal(off.call(arguments: [:], mail: .allowed), .serverDisabled)
     }
 }

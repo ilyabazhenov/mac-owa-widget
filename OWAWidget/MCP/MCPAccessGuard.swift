@@ -14,15 +14,17 @@ import Foundation
 @MainActor
 final class MCPAccessGuard {
     enum Denial: Equatable {
-        case blocked(String)
+        case blocked(MCPToolError)
         case rateLimited
 
-        var message: String {
+        var error: MCPToolError {
             switch self {
-            case .blocked(let reason): reason
-            case .rateLimited: "Too many requests to Exchange in the last minute. Wait a minute and retry, or narrow the request."
+            case .blocked(let error): error
+            case .rateLimited: MCPToolError(.rateLimited, "Too many requests to Exchange in the last minute. Wait a minute and retry, or narrow the request.")
             }
         }
+
+        var message: String { error.message }
     }
 
     static let requestsPerMinute = 60
@@ -43,8 +45,8 @@ final class MCPAccessGuard {
     /// Takes `count` requests from the budget, or says why not. An operation that may fan out
     /// into several Exchange requests takes them all up front.
     func permitRequest(count: Int = 1) -> Denial? {
-        if let reason = Self.blockReason(calendarService.syncStatus) {
-            return .blocked(reason)
+        if let block = Self.blockError(calendarService.syncStatus) {
+            return .blocked(block)
         }
         return bucket.take(count, now: clock()) ? nil : .rateLimited
     }
@@ -72,13 +74,18 @@ final class MCPAccessGuard {
     var isBlocked: Bool { calendarService.syncStatus.blocksSync }
 
     static func blockReason(_ status: SyncStatus) -> String? {
+        blockError(status)?.message
+    }
+
+    /// Why no request may go to Exchange now, with its code; `nil` when requests may go.
+    static func blockError(_ status: SyncStatus) -> MCPToolError? {
         switch status {
         case .authenticationRequired:
-            "OWA Widget needs the Exchange password re-entered (sync is paused to avoid locking the account). Ask the user to open OWA Widget."
+            MCPToolError(.authFailed, "OWA Widget needs the Exchange password re-entered (sync is paused to avoid locking the account). Ask the user to open OWA Widget.")
         case .certificateTrustRequired:
-            "OWA Widget is waiting for the user to trust the Exchange server certificate. Ask the user to open OWA Widget."
+            MCPToolError(.trustRequired, "OWA Widget is waiting for the user to trust the Exchange server certificate. Ask the user to open OWA Widget.")
         case .loginHostApprovalRequired:
-            "OWA Widget is waiting for the user to approve the Exchange login host. Ask the user to open OWA Widget."
+            MCPToolError(.trustRequired, "OWA Widget is waiting for the user to approve the Exchange login host. Ask the user to open OWA Widget.")
         default:
             nil
         }
