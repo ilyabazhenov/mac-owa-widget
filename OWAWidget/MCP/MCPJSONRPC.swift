@@ -119,6 +119,8 @@ enum JSONRPCErrorCode {
     static let methodNotFound = -32601
     static let invalidParams = -32602
     static let internalError = -32603
+    /// Resource not found, before 2026-07-28 (which uses `invalidParams`).
+    static let resourceNotFound = -32002
     /// MCP 2026-07-28 `UnsupportedProtocolVersionError`.
     static let unsupportedProtocolVersion = -32022
 }

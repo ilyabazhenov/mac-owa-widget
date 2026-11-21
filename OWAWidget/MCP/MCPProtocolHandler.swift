@@ -69,6 +69,13 @@ struct MCPToolResult: Sendable, Equatable {
 protocol MCPToolProviding: Sendable {
     var tools: [MCPToolDefinition] { get }
     func callTool(name: String, arguments: [String: JSONValue], client: String?) async -> MCPToolResult
+    /// `nil` when the client may subscribe to the change resource; otherwise why not. Gated like
+    /// a tool call: even "something changed" says when the user's mail or calendar moved.
+    func authorizeSubscription() async -> String?
+}
+
+extension MCPToolProviding {
+    func authorizeSubscription() async -> String? { nil }
 }
 
 /// Which MCP era a connection speaks. Decided by how the client opens: an `initialize` handshake
@@ -87,6 +94,36 @@ enum MCPDispatch: Equatable, Sendable {
     case none
     case cancel(requestID: JSONValue)
     case callTool(id: JSONValue, name: String, arguments: [String: JSONValue], modern: Bool)
+    /// Legacy `resources/subscribe` / `resources/unsubscribe` to the change resource; the
+    /// connection answers once it knows whether the client may subscribe.
+    case subscribe(id: JSONValue)
+    case unsubscribe(id: JSONValue)
+    /// Modern `subscriptions/listen` asking for the change resource. The request stays open: the
+    /// connection acknowledges it and sends `notifications/resources/updated` on it.
+    case listen(id: JSONValue)
+}
+
+/// The one resource: a doorbell for `get_changes`. Subscribing to it is how a client hears that
+/// something changed; what changed it reads with the tool and its cursor.
+enum MCPChangeResource {
+    static let uri = "owawidget://changes"
+    static let name = "changes"
+    static let title = "Calendar and inbox changes"
+    static let description = "Subscribe to hear when meetings or the inbox changed; read what changed with get_changes and your cursor. Reading this resource returns only that hint."
+    /// How long a client may cache `resources/list` and `resources/read` (modern era).
+    static let listTTLMilliseconds: Int64 = 3_600_000
+
+    static var listing: JSONValue {
+        ["uri": .string(uri), "name": .string(name), "title": .string(title), "description": .string(description), "mimeType": "application/json"]
+    }
+
+    static var contents: JSONValue {
+        [[
+            "uri": .string(uri),
+            "mimeType": "application/json",
+            "text": .string(JSONLine.encodeString(["hint": "Call get_changes with the cursor of your previous answer."])),
+        ]]
+    }
 }
 
 /// Pure JSON-RPC/MCP dispatch for both protocol eras. No I/O: `MCPConnection` feeds it one
@@ -101,6 +138,8 @@ struct MCPProtocolHandler: Sendable {
     static let metaServerInfoKey = "io.modelcontextprotocol/serverInfo"
     /// The tool set never changes at runtime, so clients may cache it for an hour.
     static let toolsListTTLMilliseconds: Int64 = 3_600_000
+    /// One resource and its updates: the push for `get_changes`.
+    static let capabilities: JSONValue = ["tools": [:], "resources": ["subscribe": true]]
 
     let serverName: String
     let serverTitle: String
@@ -156,7 +195,7 @@ struct MCPProtocolHandler: Sendable {
             session.era = .legacy(version: negotiated)
             return .reply(JSONRPC.result(id: id, [
                 "protocolVersion": .string(negotiated),
-                "capabilities": ["tools": [:]],
+                "capabilities": Self.capabilities,
                 "serverInfo": serverInfo,
                 "instructions": .string(instructions),
             ]))
@@ -168,7 +207,7 @@ struct MCPProtocolHandler: Sendable {
             }
             return .reply(JSONRPC.result(id: id, modern([
                 "supportedVersions": [.string(Self.modernVersion)],
-                "capabilities": ["tools": [:]],
+                "capabilities": Self.capabilities,
                 "instructions": .string(instructions),
                 "ttlMs": .int(Self.toolsListTTLMilliseconds),
                 "cacheScope": "private",
@@ -227,9 +266,90 @@ struct MCPProtocolHandler: Sendable {
                 return .reply(JSONRPC.error(id: id, code: JSONRPCErrorCode.invalidParams, message: "`arguments` must be an object"))
             }
             return .callTool(id: id, name: name, arguments: arguments, modern: isModern)
+        case "resources/list":
+            var result: [String: JSONValue] = ["resources": [MCPChangeResource.listing]]
+            if isModern {
+                result["ttlMs"] = .int(MCPChangeResource.listTTLMilliseconds)
+                result["cacheScope"] = "private"
+                return .reply(JSONRPC.result(id: id, modern(result)))
+            }
+            return .reply(JSONRPC.result(id: id, .object(result)))
+        case "resources/read":
+            guard params["uri"]?.stringValue == MCPChangeResource.uri else {
+                return .reply(unknownResource(id: id, params: params, modern: isModern))
+            }
+            var result: [String: JSONValue] = ["contents": MCPChangeResource.contents]
+            if isModern {
+                result["ttlMs"] = .int(MCPChangeResource.listTTLMilliseconds)
+                result["cacheScope"] = "private"
+                return .reply(JSONRPC.result(id: id, modern(result)))
+            }
+            return .reply(JSONRPC.result(id: id, .object(result)))
+        case "resources/subscribe" where !isModern, "resources/unsubscribe" where !isModern:
+            guard params["uri"]?.stringValue == MCPChangeResource.uri else {
+                return .reply(unknownResource(id: id, params: params, modern: false))
+            }
+            return method == "resources/subscribe" ? .subscribe(id: id) : .unsubscribe(id: id)
+        case "subscriptions/listen" where isModern:
+            let filter = params["notifications"]?.objectValue ?? [:]
+            let uris = filter["resourceSubscriptions"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            // Nothing this server can send was asked for: an empty acknowledgment would leave the
+            // client holding a stream that never speaks.
+            guard uris.contains(MCPChangeResource.uri) else {
+                return .reply(JSONRPC.error(
+                    id: id,
+                    code: JSONRPCErrorCode.invalidParams,
+                    message: "This server sends only resource updates for \(MCPChangeResource.uri): put it in notifications.resourceSubscriptions"
+                ))
+            }
+            return .listen(id: id)
         default:
             return .reply(JSONRPC.error(id: id, code: JSONRPCErrorCode.methodNotFound, message: "Method not found: \(method)"))
         }
+    }
+
+    // MARK: - Change notifications
+
+    /// Legacy: the answer to `resources/subscribe` / `resources/unsubscribe`.
+    func subscribeResponse(id: JSONValue) -> JSONValue {
+        JSONRPC.result(id: id, [:])
+    }
+
+    /// Modern: the first message on a `subscriptions/listen` stream.
+    func listenAcknowledgment(id: JSONValue) -> JSONValue {
+        [
+            "jsonrpc": "2.0",
+            "method": "notifications/subscriptions/acknowledged",
+            "params": [
+                "_meta": .object([Self.subscriptionIDKey: id]),
+                "notifications": ["resourceSubscriptions": [.string(MCPChangeResource.uri)]],
+            ],
+        ]
+    }
+
+    /// `subscriptionID`: the `subscriptions/listen` request id (modern); `nil` for a legacy
+    /// subscription.
+    func resourceUpdated(subscriptionID: JSONValue?) -> JSONValue {
+        var params: [String: JSONValue] = ["uri": .string(MCPChangeResource.uri)]
+        if let subscriptionID { params["_meta"] = .object([Self.subscriptionIDKey: subscriptionID]) }
+        return ["jsonrpc": "2.0", "method": "notifications/resources/updated", "params": .object(params)]
+    }
+
+    /// Modern: a refused `subscriptions/listen` (the client is not allowed to read).
+    func listenRefused(id: JSONValue, message: String) -> JSONValue {
+        JSONRPC.error(id: id, code: JSONRPCErrorCode.invalidRequest, message: message)
+    }
+
+    static let subscriptionIDKey = "io.modelcontextprotocol/subscriptionId"
+
+    private func unknownResource(id: JSONValue, params: [String: JSONValue], modern isModern: Bool) -> JSONValue {
+        let uri = params["uri"]?.stringValue ?? ""
+        // 2026-07-28 answers an unknown resource with Invalid Params; earlier revisions used -32002.
+        return JSONRPC.error(
+            id: id,
+            code: isModern ? JSONRPCErrorCode.invalidParams : JSONRPCErrorCode.resourceNotFound,
+            message: "Unknown resource: \(uri). The only resource is \(MCPChangeResource.uri)."
+        )
     }
 
     func toolCallResponse(id: JSONValue, result: MCPToolResult, modern isModern: Bool) -> JSONValue {

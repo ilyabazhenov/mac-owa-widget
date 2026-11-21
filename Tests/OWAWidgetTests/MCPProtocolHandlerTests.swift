@@ -134,8 +134,70 @@ final class MCPProtocolHandlerTests: XCTestCase {
 
     func testUnknownMethod() {
         var session = MCPSessionState(era: .legacy(version: "2025-11-25"))
-        let error = reply(handler.handle(request(10, "resources/list"), session: &session))["error"]
+        let error = reply(handler.handle(request(10, "prompts/list"), session: &session))["error"]
         XCTAssertEqual(error?["code"], .int(Int64(JSONRPCErrorCode.methodNotFound)))
+    }
+
+    // MARK: - Change resource
+
+    func testBothErasAdvertiseTheSubscribableResource() {
+        var legacy = MCPSessionState()
+        let initialize = reply(handler.handle(request(1, "initialize", ["protocolVersion": "2025-11-25"]), session: &legacy))
+        XCTAssertEqual(initialize["result"]?["capabilities"]?["resources"]?["subscribe"], true)
+        var modern = MCPSessionState()
+        let discover = reply(handler.handle(request(1, "server/discover", ["_meta": modernMeta]), session: &modern))
+        XCTAssertEqual(discover["result"]?["capabilities"]?["resources"]?["subscribe"], true)
+    }
+
+    func testResourcesListAndRead() {
+        var legacy = MCPSessionState(era: .legacy(version: "2025-11-25"))
+        let list = reply(handler.handle(request(2, "resources/list"), session: &legacy))["result"]
+        XCTAssertEqual(list?["resources"]?.arrayValue?.first?["uri"]?.stringValue, MCPChangeResource.uri)
+        XCTAssertNil(list?["ttlMs"])
+        let read = reply(handler.handle(request(3, "resources/read", ["uri": .string(MCPChangeResource.uri)]), session: &legacy))["result"]
+        XCTAssertEqual(read?["contents"]?.arrayValue?.first?["uri"]?.stringValue, MCPChangeResource.uri)
+        let unknown = reply(handler.handle(request(4, "resources/read", ["uri": "file:///etc/passwd"]), session: &legacy))["error"]
+        XCTAssertEqual(unknown?["code"], .int(Int64(JSONRPCErrorCode.resourceNotFound)))
+
+        var modern = MCPSessionState()
+        let modernList = reply(handler.handle(request(5, "resources/list", ["_meta": modernMeta]), session: &modern))["result"]
+        XCTAssertEqual(modernList?["resultType"], "complete")
+        XCTAssertNotNil(modernList?["ttlMs"])
+        XCTAssertEqual(modernList?["cacheScope"], "private")
+        let modernUnknown = reply(handler.handle(request(6, "resources/read", ["_meta": modernMeta, "uri": "x://y"]), session: &modern))["error"]
+        XCTAssertEqual(modernUnknown?["code"], .int(Int64(JSONRPCErrorCode.invalidParams)), "2026-07-28 must not emit -32002")
+    }
+
+    func testLegacySubscribeAndModernListen() {
+        var legacy = MCPSessionState(era: .legacy(version: "2025-11-25"))
+        XCTAssertEqual(handler.handle(request(7, "resources/subscribe", ["uri": .string(MCPChangeResource.uri)]), session: &legacy), .subscribe(id: 7))
+        XCTAssertEqual(handler.handle(request(8, "resources/unsubscribe", ["uri": .string(MCPChangeResource.uri)]), session: &legacy), .unsubscribe(id: 8))
+        XCTAssertEqual(reply(handler.handle(request(9, "subscriptions/listen", ["notifications": [:]]), session: &legacy))["error"]?["code"],
+                       .int(Int64(JSONRPCErrorCode.methodNotFound)))
+
+        var modern = MCPSessionState()
+        let listen = request(10, "subscriptions/listen", ["_meta": modernMeta, "notifications": ["resourceSubscriptions": [.string(MCPChangeResource.uri)], "toolsListChanged": true]])
+        XCTAssertEqual(handler.handle(listen, session: &modern), .listen(id: 10))
+        let nothingOurs = request(11, "subscriptions/listen", ["_meta": modernMeta, "notifications": ["toolsListChanged": true]])
+        XCTAssertEqual(reply(handler.handle(nothingOurs, session: &modern))["error"]?["code"], .int(Int64(JSONRPCErrorCode.invalidParams)))
+        let removed = request(12, "resources/subscribe", ["_meta": modernMeta, "uri": .string(MCPChangeResource.uri)])
+        XCTAssertEqual(reply(handler.handle(removed, session: &modern))["error"]?["code"], .int(Int64(JSONRPCErrorCode.methodNotFound)),
+                       "2026-07-28 replaced resources/subscribe with subscriptions/listen")
+    }
+
+    func testListenAcknowledgmentAndUpdatesCarryTheSubscriptionID() {
+        let ack = handler.listenAcknowledgment(id: 10)
+        XCTAssertEqual(ack["method"], "notifications/subscriptions/acknowledged")
+        XCTAssertNil(ack["id"], "a notification, not the answer")
+        XCTAssertEqual(ack["params"]?["_meta"]?[MCPProtocolHandler.subscriptionIDKey], 10)
+        XCTAssertEqual(ack["params"]?["notifications"]?["resourceSubscriptions"], [.string(MCPChangeResource.uri)],
+                       "only what this server honours: no toolsListChanged")
+
+        let modern = handler.resourceUpdated(subscriptionID: 10)
+        XCTAssertEqual(modern["method"], "notifications/resources/updated")
+        XCTAssertEqual(modern["params"]?["uri"]?.stringValue, MCPChangeResource.uri)
+        XCTAssertEqual(modern["params"]?["_meta"]?[MCPProtocolHandler.subscriptionIDKey], 10)
+        XCTAssertNil(handler.resourceUpdated(subscriptionID: nil)["params"]?["_meta"])
     }
 
     func testCancellationNotification() {

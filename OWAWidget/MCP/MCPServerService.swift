@@ -45,6 +45,12 @@ final class MCPServerService: ObservableObject {
 
     @Published private(set) var status: Status = .stopped
     @Published private(set) var clients: [Client] = []
+    /// Live connections, for change notifications.
+    private var connections: [UUID: MCPConnection] = [:]
+    private var pendingPush: (calendar: Bool, mail: Bool) = (false, false)
+    private var pushTask: Task<Void, Never>?
+    /// Changes arrive in bursts (a sync, an inbox page): one notification per burst.
+    static let pushDelay: Duration = .seconds(2)
     /// Every client that has talked to the server while it was on, newest first. Persisted.
     @Published private(set) var knownClients: [MCPKnownClient] = []
     /// In memory only: who called which tool, never arguments or results.
@@ -84,6 +90,14 @@ final class MCPServerService: ObservableObject {
             MCPDebugLog.log("cancelMeetings=\(canCancelMeetings)")
         }
     }
+    /// Answering invitations (`respond_to_meeting`), each answer confirmed in a panel.
+    @Published var canRespondMeetings: Bool {
+        didSet {
+            guard canRespondMeetings != oldValue else { return }
+            settingsChanged()
+            MCPDebugLog.log("respondMeetings=\(canRespondMeetings)")
+        }
+    }
     /// Mail tools in `tools/list` at all; each client is still asked separately.
     @Published var canReadMail: Bool {
         didSet {
@@ -91,6 +105,7 @@ final class MCPServerService: ObservableObject {
             if !canReadMail {
                 canSendMail = false
                 canOrganizeMail = false
+                canArrangeMail = false
             }
             settingsChanged()
             MCPDebugLog.log("mailRead=\(canReadMail)")
@@ -109,6 +124,14 @@ final class MCPServerService: ObservableObject {
             guard canOrganizeMail != oldValue else { return }
             settingsChanged()
             MCPDebugLog.log("mailOrganize=\(canOrganizeMail)")
+        }
+    }
+    /// Moving and flagging conversations (`move_mail`, `set_mail_flag`); needs `canReadMail`.
+    @Published var canArrangeMail: Bool {
+        didSet {
+            guard canArrangeMail != oldValue else { return }
+            settingsChanged()
+            MCPDebugLog.log("mailArrange=\(canArrangeMail)")
         }
     }
     /// What the tool calls read. The gate (`authorize`) and the tools must see the same switches:
@@ -141,9 +164,11 @@ final class MCPServerService: ObservableObject {
         askNewClients = settings.askNewClients
         canCreateMeetings = settings.createMeetings
         canCancelMeetings = settings.cancelMeetings
+        canRespondMeetings = settings.respondMeetings
         canReadMail = settings.mailRead
         canSendMail = settings.mailRead && settings.mailSend
         canOrganizeMail = settings.mailRead && settings.mailOrganize
+        canArrangeMail = settings.mailRead && settings.mailArrange
         settingsSnapshot = MCPSettingsSnapshot(settings)
     }
 
@@ -155,7 +180,9 @@ final class MCPServerService: ObservableObject {
             mailRead: canReadMail,
             mailSend: canReadMail && canSendMail,
             mailOrganize: canReadMail && canOrganizeMail,
-            cancelMeetings: canCancelMeetings
+            mailArrange: canReadMail && canArrangeMail,
+            cancelMeetings: canCancelMeetings,
+            respondMeetings: canRespondMeetings
         )
         settingsSnapshot.update(settings)
         _ = MCPSettingsStore.shared.save(settings)
@@ -174,7 +201,8 @@ final class MCPServerService: ObservableObject {
             accessGuard: accessGuard,
             isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled },
             canCreateMeetings: { [settingsSnapshot] in settingsSnapshot.current.createMeetings },
-            canRemoveMeetings: { [settingsSnapshot] in settingsSnapshot.current.cancelMeetings }
+            canRemoveMeetings: { [settingsSnapshot] in settingsSnapshot.current.cancelMeetings },
+            canRespondMeetings: { [settingsSnapshot] in settingsSnapshot.current.respondMeetings }
         )
         let mailTools = MCPMailTools(
             calendarService: calendarService,
@@ -184,9 +212,34 @@ final class MCPServerService: ObservableObject {
             isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled && settingsSnapshot.current.mailRead },
             canSend: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailSend },
             canOrganize: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailOrganize },
-            readMarker: mailService
+            canArrange: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailArrange },
+            readMarker: mailService,
+            arrangeObserver: mailService
         )
-        let toolbox = MCPToolbox(calendarTools: calendarTools, mailTools: mailTools, settings: settingsSnapshot) { tool, client, isError in
+        let pollInterval: () -> TimeInterval = { [weak mailService] in
+            TimeInterval((mailService?.settings.pollMinutes ?? 2) * 60)
+        }
+        let inboxWatcher = MCPInboxWatcher(
+            calendarService: calendarService,
+            accessGuard: accessGuard,
+            feed: calendarService.changeFeed,
+            interval: pollInterval
+        )
+        mailService?.inboxCountsObserver = { [weak inboxWatcher] accountID, unread, total in
+            inboxWatcher?.countsObserved(accountID: accountID, unread: unread, total: total)
+        }
+        let changeTools = MCPChangeTools(
+            calendarService: calendarService,
+            calendarTools: calendarTools,
+            mailTools: mailTools,
+            watcher: inboxWatcher,
+            isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled },
+            checkInterval: pollInterval
+        )
+        calendarService.changeFeed.onAppend = { calendar, mail in
+            MCPServerService.shared.changesRecorded(calendar: calendar, mail: mail)
+        }
+        let toolbox = MCPToolbox(calendarTools: calendarTools, mailTools: mailTools, changeTools: changeTools, settings: settingsSnapshot) { tool, client, isError in
             MCPServerService.shared.record(tool: tool, client: client, isError: isError)
         }
         self.toolbox = toolbox
@@ -327,9 +380,37 @@ final class MCPServerService: ObservableObject {
         ) { event in
             Task { @MainActor in MCPServerService.shared.handle(event, clientID: clientID) }
         }
+        connections[clientID] = connection
         Task {
             await connection.run()
             await MainActor.run { MCPServerService.shared.disconnected(clientID) }
+        }
+    }
+
+    // MARK: - Change notifications
+
+    private func changesRecorded(calendar: Bool, mail: Bool) {
+        pendingPush.calendar = pendingPush.calendar || calendar
+        pendingPush.mail = pendingPush.mail || mail
+        guard pushTask == nil else { return }
+        pushTask = Task { @MainActor in
+            try? await Task.sleep(for: Self.pushDelay)
+            MCPServerService.shared.pushChanges()
+        }
+    }
+
+    /// Mail changes ring only for clients allowed to read mail: for the rest there is nothing new
+    /// in `get_changes`, and the ring alone would say when mail arrived.
+    private func pushChanges() {
+        let pending = pendingPush
+        pendingPush = (false, false)
+        pushTask = nil
+        guard isEnabled else { return }
+        for (clientID, connection) in connections {
+            // Access taken away after subscribing: the subscription stays, the ringing stops.
+            guard mayReadQuietly(clientID) else { continue }
+            guard pending.calendar || (pending.mail && changesMailAccess(clientID) == .allowed) else { continue }
+            Task { await connection.notifyChanged() }
         }
     }
 
@@ -436,6 +517,7 @@ final class MCPServerService: ObservableObject {
             request.forMail = true
             request.canSendMail = canSendMail
             request.canOrganizeMail = canOrganizeMail
+            request.canArrangeMail = canArrangeMail
             updateKnownClients(MCPKnownClientList.setMailAccess(.pending, forKey: identity.key, in: knownClients))
             switch await mailApproval.decision(for: request) {
             case .allowed: return nil
@@ -443,6 +525,23 @@ final class MCPServerService: ObservableObject {
             case .timedOut, .cancelled: return Self.mailWaitingMessage
             }
         }
+    }
+
+    /// `authorize` without the question: whether this client may read right now.
+    private func mayReadQuietly(_ clientID: UUID) -> Bool {
+        guard isEnabled, let identity = clients.first(where: { $0.id == clientID })?.identity else { return false }
+        guard identity.isResolved else { return !askNewClients }
+        let access = knownClients.first { $0.key == identity.key }?.access
+        return MCPClientAccessPolicy.verdict(for: access, askNewClients: askNewClients) == .allow
+    }
+
+    /// Whether `get_changes` may give this client mail. Never asks: a question popping up from a
+    /// background refresh would be a surprise; the mail tools ask.
+    func changesMailAccess(_ clientID: UUID) -> MCPChangeTools.MailAccess {
+        guard canReadMail else { return .off }
+        guard let identity = clients.first(where: { $0.id == clientID })?.identity, identity.isResolved,
+              knownClients.first(where: { $0.key == identity.key })?.mailAccess == .allowed else { return .notAllowed }
+        return .allowed
     }
 
     func setMailAccess(_ access: MCPClientAccess?, forKey key: String) {
@@ -487,7 +586,8 @@ final class MCPServerService: ObservableObject {
             kind: identity.kind,
             declaredName: client.declaredName,
             canCreateMeetings: canCreateMeetings,
-            canCancelMeetings: canCancelMeetings
+            canCancelMeetings: canCancelMeetings,
+            canRespondMeetings: canRespondMeetings
         )
     }
 
@@ -535,6 +635,7 @@ final class MCPServerService: ObservableObject {
 
     private func disconnected(_ id: UUID) {
         clients.removeAll { $0.id == id }
+        connections[id] = nil
         MCPDebugLog.log("client disconnected (\(clients.count) active)")
     }
 
@@ -556,6 +657,10 @@ struct MCPGatedToolbox: MCPToolProviding {
 
     var tools: [MCPToolDefinition] { base.tools }
 
+    func authorizeSubscription() async -> String? {
+        await MCPServerService.shared.authorize(clientID)
+    }
+
     func callTool(name: String, arguments: [String: JSONValue], client: String?) async -> MCPToolResult {
         if let refusal = await MCPServerService.shared.authorize(clientID) {
             await base.recordCall(name, client, true)
@@ -564,6 +669,10 @@ struct MCPGatedToolbox: MCPToolProviding {
         if MCPMailTools.toolNames.contains(name), let refusal = await MCPServerService.shared.authorizeMail(clientID, tool: name) {
             await base.recordCall(name, client, true)
             return .failure(refusal)
+        }
+        if name == MCPChangeTools.toolName {
+            let access = await MCPServerService.shared.changesMailAccess(clientID)
+            return await base.callTool(name: name, arguments: arguments, client: client, mailAccess: access)
         }
         return await base.callTool(name: name, arguments: arguments, client: client)
     }

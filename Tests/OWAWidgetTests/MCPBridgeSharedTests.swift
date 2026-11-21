@@ -83,6 +83,19 @@ final class MCPBridgeStateTests: XCTestCase {
         XCTAssertFalse(state.noteServerMessage(line(answer)))
     }
 
+    func testLegacySubscriptionIsReplayedAfterTheHandshake() {
+        var state = MCPBridgeState()
+        state.noteClientMessage(line(#"{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}"#))
+        state.noteClientMessage(line(#"{"jsonrpc":"2.0","id":1,"method":"resources/subscribe","params":{"uri":"owawidget://changes"}}"#))
+        let replay = state.replayLinesForNewConnection().map(object)
+        XCTAssertEqual(replay.compactMap { $0["method"] as? String }, ["initialize", "resources/subscribe"])
+        let subscribeID = replay[1]["id"] as? String
+        XCTAssertFalse(state.noteServerMessage(line(#"{"jsonrpc":"2.0","id":"\#(subscribeID ?? "")","result":{}}"#)))
+
+        state.noteClientMessage(line(#"{"jsonrpc":"2.0","id":2,"method":"resources/unsubscribe","params":{"uri":"owawidget://changes"}}"#))
+        XCTAssertEqual(state.replayLinesForNewConnection().count, 1, "unsubscribed: only the handshake")
+    }
+
     func testStatelessClientsNeedNoReplay() {
         var state = MCPBridgeState()
         state.noteClientMessage(line(#"{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{}}"#))

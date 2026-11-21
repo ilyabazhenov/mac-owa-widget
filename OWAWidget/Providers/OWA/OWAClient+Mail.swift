@@ -264,6 +264,12 @@ extension OWAClient {
         return try OWAMailParsers.updateResults(data, targets: targets.map(\.ref))
     }
 
+    func mailMoveEach(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [Result<MailItemRef, MailError>] {
+        guard !refs.isEmpty else { return [] }
+        let data = try await mailServiceCall(action: "MoveItem", payload: OWAMailPayloads.moveItems(refs, to: folderJSON(folder), timeZoneID: windowsTimezoneID()))
+        return try OWAMailParsers.moveResults(data, count: refs.count)
+    }
+
     func mailMove(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [MailItemRef] {
         guard !refs.isEmpty else { return [] }
         let data = try await mailServiceCall(action: "MoveItem", payload: OWAMailPayloads.moveItems(refs, to: folderJSON(folder), timeZoneID: windowsTimezoneID()))

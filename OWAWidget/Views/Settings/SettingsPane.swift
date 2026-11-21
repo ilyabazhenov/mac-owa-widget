@@ -116,9 +116,9 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             [
                 "mcp.access.section", "mcp.enabled", "mcp.description", "mcp.privacy.warning", "mcp.status",
                 "mcp.createMeetings", "mcp.createMeetings.description",
-                "mcp.cancelMeetings", "mcp.cancelMeetings.description",
+                "mcp.cancelMeetings", "mcp.cancelMeetings.description", "mcp.respondMeetings", "mcp.respondMeetings.description",
                 "mcp.mail.section", "mcp.mail.needsMail", "mcp.mail.read", "mcp.mail.read.description",
-                "mcp.mail.send", "mcp.mail.send.description", "mcp.mail.organize", "mcp.mail.organize.description", "mcp.mail.warning", "mcp.connect.section",
+                "mcp.mail.send", "mcp.mail.send.description", "mcp.mail.organize", "mcp.mail.organize.description", "mcp.mail.arrange", "mcp.mail.arrange.description", "mcp.mail.warning", "mcp.connect.section",
                 "mcp.clients.section", "mcp.clients.ask", "mcp.journal.section",
             ]
         case .about:

@@ -312,6 +312,9 @@ final class MailService: ObservableObject {
     /// Posts a system notification; replaced in tests. The second argument is the "external"
     /// label when the sender is outside the organization, `nil` otherwise.
     var notifier: (MailConversationSummary, String?) -> Void = { MailService.postNotification($0, externalLabel: $1) }
+    /// Inbox counts from every successful check (account, unread, total): the MCP inbox watcher
+    /// takes them instead of asking Exchange again.
+    var inboxCountsObserver: ((UUID, Int, Int) -> Void)?
     /// For the words notifications carry; set by the app.
     weak var localization: LocalizationService?
 
@@ -497,6 +500,7 @@ final class MailService: ObservableObject {
             let counts = try await provider.mailFolderCounts([.distinguished(.inbox)])
             let unread = counts.first?.unreadCount ?? 0
             if let id = counts.first?.id { inboxFolderID = id }
+            if let inbox = counts.first { inboxCountsObserver?(account.id, inbox.unreadCount, inbox.totalCount) }
             let changed = unread != inboxUnreadCount
             inboxUnreadCount = unread
             lastChecked = Date()
@@ -1309,6 +1313,55 @@ final class MailService: ObservableObject {
             }
         }
         return counts
+    }
+
+    // MARK: - Moves and flags from AI assistants (MCP `move_mail`, `set_mail_flag`)
+
+    /// What an MCP client moved, as the popover, the inbox panel and the folder counts show it:
+    /// the moved messages leave the source folder's rows and counts and join the destination's
+    /// count. The cached threads go (the messages have new ids). Nothing is read from the server:
+    /// the next check of the inbox corrects what this guessed. Only for the account this service
+    /// shows.
+    func mailMovedByAssistant(_ moves: [MCPMailMove], accountID: UUID) {
+        guard accountID == account?.id, !moves.isEmpty else { return }
+        let inboxID = inboxFolderID ?? folders.first { $0.distinguished == .inbox }?.id
+        var folderDeltas: [String: Int] = [:]
+        var inboxDelta = 0
+        var unreadLeaving: [String: Int] = [:]
+        for move in moves {
+            evict(move.conversationID)
+            evict(move.oldID)
+            guard !move.isRead else { continue }
+            folderDeltas[move.fromFolderID, default: 0] -= 1
+            folderDeltas[move.toFolderID, default: 0] += 1
+            if move.fromFolderID == inboxID {
+                inboxDelta -= 1
+                unreadLeaving[move.conversationID, default: 0] += 1
+            }
+            if move.toFolderID == inboxID { inboxDelta += 1 }
+        }
+        let panelFolderID = panelFolderInfo?.id ?? (panelFolder == .distinguished(.inbox) ? inboxID : nil)
+        let movedIDs = Set(moves.map(\.oldID))
+        let leftPanel = Set(moves.filter { $0.fromFolderID == panelFolderID }.map(\.conversationID))
+        let rowsBefore = panelList.count
+        panelList.removeAll { row in row.isSingleMessage ? movedIDs.contains(row.id) : leftPanel.contains(row.id) }
+        if panelList.count != rowsBefore { panelRowsRevision += 1 }
+        adjustFolderUnread(folderDeltas)
+        if let count = inboxUnreadCount { inboxUnreadCount = max(0, count + inboxDelta) }
+        if !unreadLeaving.isEmpty { reduceUnreadLists(unreadLeaving) }
+        changeGeneration += 1
+    }
+
+    /// What an MCP client flagged or unflagged: the panel's rows show it, the cached threads go.
+    func mailFlaggedByAssistant(conversationIDs: [String], messageIDs: [String], flagged: Bool, accountID: UUID) {
+        guard accountID == account?.id else { return }
+        let conversations = Set(conversationIDs)
+        let messages = Set(messageIDs)
+        for id in conversations.union(messages) { evict(id) }
+        for row in panelList where row.isSingleMessage ? messages.contains(row.id) : conversations.contains(row.id) {
+            replacePanelRow(row.with(isFlagged: flagged))
+        }
+        changeGeneration += 1
     }
 
     // MARK: - Meetings

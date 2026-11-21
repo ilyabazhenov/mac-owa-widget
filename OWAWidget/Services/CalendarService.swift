@@ -147,6 +147,13 @@ final class CalendarService: ObservableObject {
         )
     }
 
+    /// What changed between syncs, for the MCP `get_changes` tool. Memory only.
+    let changeFeed = MCPChangeFeed()
+    /// Each account's meetings and window as its last sync fetched them — not `events`, which
+    /// also carries what the app changed itself in between (an optimistic RSVP, loaded details),
+    /// and would hide those changes from the comparison.
+    private var lastFetched: [UUID: (events: [CalendarEvent], window: DateInterval)] = [:]
+
     private let syncIntervalKey = "syncInterval"
     private let notificationLeadKey = "notificationLeadMinutes"
     private let meetingReminderStyleKey = "meetingReminderStyle"
@@ -701,6 +708,10 @@ final class CalendarService: ObservableObject {
         self.events = events
     }
 
+    func applyResponseTypeForTests(_ type: MeetingResponseType, to eventID: String) {
+        applyResponseType(type, to: eventID)
+    }
+
     /// Sets the account list without touching the Keychain or the encrypted store.
     func replaceAccountsForTests(_ accounts: [CalendarAccount]) {
         self.accounts = accounts
@@ -927,6 +938,32 @@ final class CalendarService: ObservableObject {
         syncNow()
     }
 
+    // MARK: - Changes for MCP
+
+    /// Compares each fetched account with its previous fetch. An account fetched for the first
+    /// time in this run is a baseline: nothing is known about what changed before it.
+    private func recordChanges(_ fetched: [UUID: [CalendarEvent]], window: DateInterval) {
+        var changes: [MCPChange] = []
+        var baseline = false
+        for (accountID, batch) in fetched.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+            if let previous = lastFetched[accountID] {
+                changes += CalendarChangeDetector.changes(
+                    old: previous.events,
+                    oldWindow: previous.window,
+                    new: batch,
+                    newWindow: window
+                ).map(MCPChange.calendar)
+            } else {
+                baseline = true
+            }
+            lastFetched[accountID] = (batch, window)
+        }
+        let known = Set(providers.map(\.account.id))
+        lastFetched = lastFetched.filter { known.contains($0.key) }
+        if baseline { changeFeed.markCalendarBaseline() }
+        changeFeed.append(changes)
+    }
+
     // MARK: - Meeting response
 
     func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {
@@ -964,6 +1001,36 @@ final class CalendarService: ObservableObject {
             applyResponseType(event.responseType, to: event.id)
             applyBlockingError(error, context: "respondToMeeting")
             log.error("respondToMeeting failed eventID=\(event.id, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
+            throw error
+        }
+    }
+
+    /// The answer of MCP `respond_to_meeting`: `RespondToCalendarEvent` with a scope, a note and
+    /// the choice of telling the organizer. The popover shows the new answer at once — on every
+    /// occurrence of the series in memory for a series answer — and goes back to the old one if
+    /// Exchange refuses. The caller (the MCP tool) counts the request against its own budget and
+    /// reports failures to the circuit breaker.
+    func respondToCalendarEvent(_ event: CalendarEvent, action: MeetingResponseAction, series: Bool, notes: String, sendResponse: Bool) async throws {
+        guard let provider = providers.first(where: { $0.account.id == event.accountID }) else {
+            throw CalendarProviderError.notSupported
+        }
+        let type: MeetingResponseType
+        switch action {
+        case .accept: type = .accepted
+        case .tentative: type = .tentative
+        case .decline: type = .declined
+        }
+        let affected = series
+            ? events.filter { $0.accountID == event.accountID && $0.seriesID != nil && $0.seriesID == event.seriesID }
+            : events.filter { $0.id == event.id }
+        let previous = affected.map { ($0.id, $0.responseType) }
+        for item in affected { applyResponseType(type, to: item.id) }
+        do {
+            try await provider.respondToCalendarEvent(event, action: action, series: series, notes: notes, sendResponse: sendResponse)
+            log.info("respondToCalendarEvent succeeded eventID=\(event.id, privacy: .public) series=\(series, privacy: .public) send=\(sendResponse, privacy: .public)")
+        } catch {
+            for (id, old) in previous { applyResponseType(old, to: id) }
+            log.error("respondToCalendarEvent failed eventID=\(event.id, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
             throw error
         }
     }
@@ -1422,6 +1489,7 @@ final class CalendarService: ObservableObject {
                 }
 
                 processInvitationChanges(refreshedAccountIDs: Set(fetchedByAccount.keys), windowEnd: end)
+                recordChanges(fetchedByAccount, window: DateInterval(start: start, end: end))
             }
 
             if let failure = failures.first {

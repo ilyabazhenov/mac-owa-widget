@@ -431,6 +431,22 @@ enum OWAMailParsers {
         }
     }
 
+    /// `MoveItem` item by item, in request order: the moved message's new id, or why it did not
+    /// move. An answer with fewer items than asked leaves the rest unknown, reported as failed:
+    /// a guess would hand out an undo that moves the wrong message.
+    static func moveResults(_ data: Data, count: Int) throws -> [Result<MailItemRef, MailError>] {
+        let items = responseItems(try jsonWithItemErrors(data))
+        return (0..<count).map { index in
+            guard index < items.count else { return .failure(.serverError("NoAnswer")) }
+            let item = items[index]
+            if let error = itemError(item) { return .failure(error) }
+            guard let ref = ((item["Items"] as? [[String: Any]])?.first).flatMap({ itemRef($0["ItemId"]) }) else {
+                return .failure(.serverError("NoNewId"))
+            }
+            return .success(ref)
+        }
+    }
+
     /// `UpdateItem` item by item, in request order: the new id and change key, or why that item
     /// was not updated. An item the response leaves out keeps its old ref.
     static func updateResults(_ data: Data, targets: [MailItemRef]) throws -> [Result<MailItemRef, MailError>] {

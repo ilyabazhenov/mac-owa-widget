@@ -44,6 +44,13 @@ struct MCPSettingsView: View {
                     isEnabled: !(!server.isEnabled)
                 )
                 .padding(.leading, 16)
+                SettingsToggle(
+                    title: localization.tr("mcp.respondMeetings"),
+                    info: localization.tr("mcp.respondMeetings.description"),
+                    isOn: $server.canRespondMeetings,
+                    isEnabled: !(!server.isEnabled)
+                )
+                .padding(.leading, 16)
             }
 
             Section(localization.tr("mcp.mail.section")) {
@@ -70,6 +77,13 @@ struct MCPSettingsView: View {
                     title: localization.tr("mcp.mail.organize"),
                     info: localization.tr("mcp.mail.organize.description"),
                     isOn: $server.canOrganizeMail,
+                    isEnabled: !(!server.isEnabled || !server.canReadMail)
+                )
+                .padding(.leading, 16)
+                SettingsToggle(
+                    title: localization.tr("mcp.mail.arrange"),
+                    info: localization.tr("mcp.mail.arrange.description"),
+                    isOn: $server.canArrangeMail,
                     isEnabled: !(!server.isEnabled || !server.canReadMail)
                 )
                 .padding(.leading, 16)

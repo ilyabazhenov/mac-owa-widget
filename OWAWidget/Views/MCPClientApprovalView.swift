@@ -23,7 +23,7 @@ struct MCPClientApprovalView: View {
             VStack(alignment: .leading, spacing: 12) {
                 header
                 client
-                Text(localization.tr(scopeKey))
+                Text(scopeText)
                     .font(.app(.body))
                     .fixedSize(horizontal: false, vertical: true)
                 Text(localization.tr("mcp.approve.hint"))
@@ -110,13 +110,23 @@ struct MCPClientApprovalView: View {
         }
     }
 
+    private var scopeText: String {
+        let text = localization.tr(scopeKey)
+        guard !request.forMail, request.canRespondMeetings else { return text }
+        return text + " " + localization.tr("mcp.approve.scopeRespondSuffix")
+    }
+
     private var scopeKey: String {
         if request.forMail {
-            switch (request.canSendMail, request.canOrganizeMail) {
-            case (true, true): return "mcp.approve.mail.scopeWithSendAndMarks"
-            case (true, false): return "mcp.approve.mail.scopeWithSend"
-            case (false, true): return "mcp.approve.mail.scopeWithMarks"
-            case (false, false): return "mcp.approve.mail.scope"
+            switch (request.canSendMail, request.canOrganizeMail, request.canArrangeMail) {
+            case (true, true, false): return "mcp.approve.mail.scopeWithSendAndMarks"
+            case (true, false, false): return "mcp.approve.mail.scopeWithSend"
+            case (false, true, false): return "mcp.approve.mail.scopeWithMarks"
+            case (false, false, false): return "mcp.approve.mail.scope"
+            case (true, true, true): return "mcp.approve.mail.scopeWithSendMarksAndArrange"
+            case (true, false, true): return "mcp.approve.mail.scopeWithSendAndArrange"
+            case (false, true, true): return "mcp.approve.mail.scopeWithMarksAndArrange"
+            case (false, false, true): return "mcp.approve.mail.scopeWithArrange"
             }
         }
         switch (request.canCreateMeetings, request.canCancelMeetings) {

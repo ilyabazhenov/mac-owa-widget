@@ -7,6 +7,8 @@ protocol CalendarProvider: Actor {
     func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent]
     func validateCredentials() async throws
     func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws
+    /// An answer with a scope, a note and the choice not to tell the organizer (MCP `respond_to_meeting`).
+    func respondToCalendarEvent(_ event: CalendarEvent, action: MeetingResponseAction, series: Bool, notes: String, sendResponse: Bool) async throws
     func fetchDetails(for event: CalendarEvent) async throws -> CalendarEventDetails
     func findPeople(query: String) async throws -> [ResolvedAttendee]
     /// `nil` when the address is not in the address book.
@@ -33,6 +35,10 @@ extension CalendarProvider {
     }
 
     func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {
+        throw CalendarProviderError.notSupported
+    }
+
+    func respondToCalendarEvent(_ event: CalendarEvent, action: MeetingResponseAction, series: Bool, notes: String, sendResponse: Bool) async throws {
         throw CalendarProviderError.notSupported
     }
 

@@ -387,6 +387,21 @@ final class OWAMailParsersTests: XCTestCase {
         XCTAssertThrowsError(try OWAMailParsers.updateResults(data(json), targets: [MailItemRef(id: "I1", changeKey: nil)]))
     }
 
+    /// `MoveItem` item by item: the new id (as OWA's own Archive gets it), the error, or a
+    /// message the answer left out.
+    func testMoveResultsItemByItem() throws {
+        let json = """
+        {"Body":{"ResponseMessages":{"Items":[
+         {"__type":"ItemInfoResponseMessage:#Exchange","ResponseCode":"NoError","ResponseClass":"Success","Items":[{"__type":"Message:#Exchange","ItemId":{"ChangeKey":"CK9","Id":"NEW1"}}]},
+         {"ResponseCode":"ErrorItemNotFound","ResponseClass":"Error","MessageText":"The specified object was not found in the store."}]}}}
+        """
+        let results = try OWAMailParsers.moveResults(data(json), count: 3)
+        XCTAssertEqual(try results[0].get(), MailItemRef(id: "NEW1", changeKey: "CK9"))
+        XCTAssertEqual(results[1], .failure(.notFound))
+        XCTAssertEqual(results[2], .failure(.serverError("NoAnswer")))
+        XCTAssertThrowsError(try OWAMailParsers.moveResults(data(#"{"Body":{"ResponseCode":"ErrorServerBusy","ResponseClass":"Error"}}"#), count: 1))
+    }
+
     func testThreadsOneByOne() throws {
         let json = """
         {"Body":{"ResponseMessages":{"Items":[
