@@ -134,4 +134,55 @@ final class OWAFindPeopleParserTests: XCTestCase {
         let list = OWAFindPeopleParser.attendees(fromJSONData: data)
         XCTAssertTrue(list.isEmpty)
     }
+
+    /// The shape a live Exchange 2019 returns for `PersonaTitle` + `PersonaOfficeLocations` (anonymized).
+    func testParsesTitleAndOfficeFromPersonaFields() throws {
+        let data = Data(
+            """
+            {
+              "Body": {
+                "ResponseCode": "NoError",
+                "ResultSet": [
+                  {
+                    "PersonaTypeString": "Person",
+                    "DisplayName": "Иванов Иван",
+                    "EmailAddress": { "EmailAddress": "ivanov@corp.ru", "RoutingType": "SMTP" },
+                    "Title": "Системный архитектор",
+                    "WorkCity": "Москва",
+                    "OfficeLocationsArray": [{ "Value": "Г-502", "Attributions": ["0"] }]
+                  }
+                ]
+              }
+            }
+            """.utf8
+        )
+
+        let list = OWAFindPeopleParser.attendees(fromJSONData: data)
+        XCTAssertEqual(list.count, 1)
+        XCTAssertEqual(list[0].jobTitle, "Системный архитектор")
+        XCTAssertEqual(list[0].office, "Г-502")
+    }
+
+    func testDepartmentOrCompanyIsNotPassedOffAsJobTitle() throws {
+        let data = Data(
+            """
+            {
+              "hits": [
+                {
+                  "DisplayName": "Petr Petrov",
+                  "EmailAddress": "petrov@example.com",
+                  "CompanyName": "Example LLC",
+                  "Department": "Sales",
+                  "Departments": [{ "Value": "Sales" }]
+                }
+              ]
+            }
+            """.utf8
+        )
+
+        let list = OWAFindPeopleParser.attendees(fromJSONData: data)
+        XCTAssertEqual(list.count, 1)
+        XCTAssertNil(list[0].jobTitle)
+        XCTAssertNil(list[0].office)
+    }
 }

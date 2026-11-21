@@ -172,6 +172,11 @@ enum OWAFindPeoplePayload {
                     "AdditionalProperties": [
                         ["__type": "PropertyUri:#Exchange", "FieldURI": "PersonaAttributions"],
                         ["__type": "PropertyUri:#Exchange", "FieldURI": "PersonaCompanyName"],
+                        // Checked on a live server (2026-11-21): accepted here, `Title` and
+                        // `OfficeLocationsArray` come back. `PersonaDepartment` is rejected with
+                        // ErrorInvalidArgument and fails the whole search: do not add it.
+                        ["__type": "PropertyUri:#Exchange", "FieldURI": "PersonaTitle"],
+                        ["__type": "PropertyUri:#Exchange", "FieldURI": "PersonaOfficeLocations"],
                     ],
                 ] as [String: Any],
                 "ShouldResolveOneOffEmailAddress": true,

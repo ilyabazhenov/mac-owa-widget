@@ -735,6 +735,9 @@ final class MCPCalendarTools {
             if let title = person.jobTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
                 fields["job_title"] = .string(title)
             }
+            if let office = person.office?.trimmingCharacters(in: .whitespacesAndNewlines), !office.isEmpty {
+                fields["office"] = .string(office)
+            }
             return .object(fields)
         }
         for person in outcomes.flatMap({ $0.people ?? [] }) where !person.displayName.isEmpty {

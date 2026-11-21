@@ -210,7 +210,12 @@ final class OWARequestPayloadTests: XCTestCase {
         XCTAssertNotNil(body["Context"])
         let personaShape = try XCTUnwrap(body["PersonaShape"] as? [String: Any])
         let addl = try XCTUnwrap(personaShape["AdditionalProperties"] as? [[String: Any]])
-        XCTAssertTrue(addl.contains { ($0["FieldURI"] as? String) == "PersonaAttributions" })
+        let fields = addl.compactMap { $0["FieldURI"] as? String }
+        XCTAssertTrue(fields.contains("PersonaAttributions"))
+        XCTAssertTrue(fields.contains("PersonaTitle"))
+        XCTAssertTrue(fields.contains("PersonaOfficeLocations"))
+        // Rejected by the server with ErrorInvalidArgument, which fails the whole search.
+        XCTAssertFalse(fields.contains("PersonaDepartment"))
     }
 
     func testUserAvailabilityPayloadSerializesMailboxesAndWindow() throws {

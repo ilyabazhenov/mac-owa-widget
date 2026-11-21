@@ -123,7 +123,7 @@ enum MCPToolRegistry {
         MCPToolDefinition(
             name: "find_people",
             title: "Find people",
-            description: "Searches the Exchange address book (people in the user's organization) by name, surname or email. Returns name, email, job title, `external` (outside the user's mail domain; null when that domain is unknown) and `is_you: true` on the user's own entry. Use it to get attendee addresses for create_meeting. Pass several names in `queries` to look them all up in one call: the answer then has `results`, one group per name, each with its own `people` or `error`. Makes a request to Exchange per name.",
+            description: "Searches the Exchange address book (people in the user's organization) by name, surname or email. Returns name, email, `job_title` and `office` (each only when the address book has it), `external` (outside the user's mail domain; null when that domain is unknown) and `is_you: true` on the user's own entry. Use it to get attendee addresses for create_meeting. Pass several names in `queries` to look them all up in one call: the answer then has `results`, one group per name, each with its own `people` or `error`. Makes a request to Exchange per name.",
             inputSchema: [
                 "type": "object",
                 "properties": [

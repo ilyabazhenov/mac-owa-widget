@@ -853,7 +853,7 @@ final class MCPCalendarToolsTests: XCTestCase {
 
     // MARK: - find_people
 
-    private let ivanov = ResolvedAttendee(displayName: "Иванов Иван", email: "ivanov@corp.ru", jobTitle: "Разработчик")
+    private let ivanov = ResolvedAttendee(displayName: "Иванов Иван", email: "ivanov@corp.ru", jobTitle: "Разработчик", office: "Г-502")
     private let partner = ResolvedAttendee(displayName: "Partner Ivanov", email: "ivanov@partner.com", jobTitle: nil)
 
     func testFindPeopleMarksAddressesOutsideTheUsersDomain() async {
@@ -866,6 +866,8 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertEqual(people.map { $0["email"] }, ["ivanov@corp.ru", "ivanov@partner.com"])
         XCTAssertEqual(people.map { $0["external"] }, [false, true])
         XCTAssertEqual(people.first?["job_title"], "Разработчик")
+        XCTAssertEqual(people.first?["office"], "Г-502")
+        XCTAssertNil(people.last?["office"])
     }
 
     func testFindPeopleNeedsAQueryAndAnExchangeAccount() async {

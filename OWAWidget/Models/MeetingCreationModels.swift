@@ -5,6 +5,8 @@ struct ResolvedAttendee: Identifiable, Hashable, Sendable, Codable {
     let displayName: String
     let email: String
     let jobTitle: String?
+    /// Office location from the address book (`PersonaOfficeLocations`), when Exchange returns it.
+    var office: String? = nil
 
     func hash(into hasher: inout Hasher) { hasher.combine(email) }
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.email == rhs.email }
