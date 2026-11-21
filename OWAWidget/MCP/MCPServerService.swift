@@ -90,6 +90,14 @@ final class MCPServerService: ObservableObject {
             MCPDebugLog.log("cancelMeetings=\(canCancelMeetings)")
         }
     }
+    /// Answering invitations (`respond_to_meeting`), each answer confirmed in a panel.
+    @Published var canRespondMeetings: Bool {
+        didSet {
+            guard canRespondMeetings != oldValue else { return }
+            settingsChanged()
+            MCPDebugLog.log("respondMeetings=\(canRespondMeetings)")
+        }
+    }
     /// Mail tools in `tools/list` at all; each client is still asked separately.
     @Published var canReadMail: Bool {
         didSet {
@@ -156,6 +164,7 @@ final class MCPServerService: ObservableObject {
         askNewClients = settings.askNewClients
         canCreateMeetings = settings.createMeetings
         canCancelMeetings = settings.cancelMeetings
+        canRespondMeetings = settings.respondMeetings
         canReadMail = settings.mailRead
         canSendMail = settings.mailRead && settings.mailSend
         canOrganizeMail = settings.mailRead && settings.mailOrganize
@@ -172,7 +181,8 @@ final class MCPServerService: ObservableObject {
             mailSend: canReadMail && canSendMail,
             mailOrganize: canReadMail && canOrganizeMail,
             mailArrange: canReadMail && canArrangeMail,
-            cancelMeetings: canCancelMeetings
+            cancelMeetings: canCancelMeetings,
+            respondMeetings: canRespondMeetings
         )
         settingsSnapshot.update(settings)
         _ = MCPSettingsStore.shared.save(settings)
@@ -191,7 +201,8 @@ final class MCPServerService: ObservableObject {
             accessGuard: accessGuard,
             isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled },
             canCreateMeetings: { [settingsSnapshot] in settingsSnapshot.current.createMeetings },
-            canRemoveMeetings: { [settingsSnapshot] in settingsSnapshot.current.cancelMeetings }
+            canRemoveMeetings: { [settingsSnapshot] in settingsSnapshot.current.cancelMeetings },
+            canRespondMeetings: { [settingsSnapshot] in settingsSnapshot.current.respondMeetings }
         )
         let mailTools = MCPMailTools(
             calendarService: calendarService,
@@ -575,7 +586,8 @@ final class MCPServerService: ObservableObject {
             kind: identity.kind,
             declaredName: client.declaredName,
             canCreateMeetings: canCreateMeetings,
-            canCancelMeetings: canCancelMeetings
+            canCancelMeetings: canCancelMeetings,
+            canRespondMeetings: canRespondMeetings
         )
     }
 

@@ -23,7 +23,7 @@ struct MCPClientApprovalView: View {
             VStack(alignment: .leading, spacing: 12) {
                 header
                 client
-                Text(localization.tr(scopeKey))
+                Text(scopeText)
                     .font(.app(.body))
                     .fixedSize(horizontal: false, vertical: true)
                 Text(localization.tr("mcp.approve.hint"))
@@ -108,6 +108,12 @@ struct MCPClientApprovalView: View {
                     .padding(.top, 2)
             }
         }
+    }
+
+    private var scopeText: String {
+        let text = localization.tr(scopeKey)
+        guard !request.forMail, request.canRespondMeetings else { return text }
+        return text + " " + localization.tr("mcp.approve.scopeRespondSuffix")
     }
 
     private var scopeKey: String {

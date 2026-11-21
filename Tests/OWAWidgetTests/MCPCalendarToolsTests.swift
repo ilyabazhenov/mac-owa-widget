@@ -124,6 +124,12 @@ final class MCPCalendarToolsTests: XCTestCase {
             removed.append((event.id, mode, message))
         }
 
+        private(set) var responses: [(id: String, action: MeetingResponseAction, series: Bool, notes: String, send: Bool)] = []
+        func respondToCalendarEvent(_ event: CalendarEvent, action: MeetingResponseAction, series: Bool, notes: String, sendResponse: Bool) async throws {
+            if let removeError { throw removeError }
+            responses.append((event.id, action, series, notes, sendResponse))
+        }
+
         func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] {
             fetchCalls.append(DateInterval(start: start, end: end))
             if let fetchDelay { try await Task.sleep(for: fetchDelay) }
@@ -165,6 +171,16 @@ final class MCPCalendarToolsTests: XCTestCase {
         func confirm(_ proposal: MCPMeetingRemovalProposal, timeout: TimeInterval) async -> MCPConfirmationOutcome {
             proposals.append(proposal)
             timeouts.append(timeout)
+            return outcome
+        }
+    }
+
+    private final class FakeResponseConfirmer: MCPMeetingResponseConfirming {
+        var outcome: MCPConfirmationOutcome
+        private(set) var proposals: [MCPMeetingResponseProposal] = []
+        init(_ outcome: MCPConfirmationOutcome) { self.outcome = outcome }
+        func confirm(_ proposal: MCPMeetingResponseProposal, timeout: TimeInterval) async -> MCPConfirmationOutcome {
+            proposals.append(proposal)
             return outcome
         }
     }
@@ -215,8 +231,10 @@ final class MCPCalendarToolsTests: XCTestCase {
         enabled: Bool = true,
         confirmer: FakeConfirmer = FakeConfirmer(.rejected),
         removalConfirmer: FakeRemovalConfirmer = FakeRemovalConfirmer(.rejected),
+        responseConfirmer: FakeResponseConfirmer = FakeResponseConfirmer(.rejected),
         canCreateMeetings: Bool = true,
         canRemoveMeetings: Bool = true,
+        canRespondMeetings: Bool = true,
         onDemandDeadline: TimeInterval = MCPCalendarTools.onDemandDeadline,
         handOff: @escaping (MeetingDraftSeed) -> Void = { _ in },
         uptime: @escaping () -> TimeInterval = { 0 }
@@ -243,13 +261,15 @@ final class MCPCalendarToolsTests: XCTestCase {
             onDemandDeadline: onDemandDeadline,
             confirmer: confirmer,
             removalConfirmer: removalConfirmer,
+            responseConfirmer: responseConfirmer,
             handOff: handOff,
             clock: { [now] in now },
             timeZone: { [zone] in zone },
             uptime: uptime,
             isEnabled: { enabled },
             canCreateMeetings: { canCreateMeetings },
-            canRemoveMeetings: { canRemoveMeetings }
+            canRemoveMeetings: { canRemoveMeetings },
+            canRespondMeetings: { canRespondMeetings }
         )
         return (tools, service)
     }
@@ -1135,6 +1155,186 @@ final class MCPCalendarToolsTests: XCTestCase {
     private let colleague = EventAttendee(name: "Иванов Иван", email: "Ivanov@corp.ru", kind: .required, response: .accepted)
     private let myself = EventAttendee(name: "Баженов Илья", email: "me@corp.ru", kind: .required, response: .accepted)
     private let guest = EventAttendee(name: "Partner", email: "guest@partner.com", kind: .optional, response: .notResponded)
+
+    // MARK: - respond_to_meeting
+
+    func testRespondIsOffUntilTheUserAllowsIt() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeResponseConfirmer(.confirmed)
+        let (tools, _) = makeTools(
+            events: [event("invite", day: 6, hour: 10, response: .notResponded, organizer: "Grace Miller")],
+            provider: provider, responseConfirmer: confirmer, canRespondMeetings: false
+        )
+        let result = await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "response": "accept"])
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(confirmer.proposals.isEmpty)
+        let responses = await provider.responses
+        XCTAssertTrue(responses.isEmpty)
+    }
+
+    func testRespondAsksTheUserAndAnswersTheOccurrence() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeResponseConfirmer(.confirmed)
+        let (tools, service) = makeTools(
+            events: [event("invite", day: 6, hour: 10, response: .notResponded, organizer: "Grace Miller", series: "uid")],
+            provider: provider, responseConfirmer: confirmer
+        )
+        let result = await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "response": "tentative", "comment": "Late by ten minutes"], client: "Claude Code")
+
+        XCTAssertFalse(result.isError, result.errorMessage ?? "")
+        XCTAssertEqual(result.structured?["responded"], true)
+        XCTAssertEqual(result.structured?["my_response"], "tentative")
+        XCTAssertEqual(result.structured?["scope"], "occurrence")
+        XCTAssertEqual(result.structured?["response_sent"], true)
+        let proposal = confirmer.proposals.first
+        XCTAssertEqual(proposal?.action, .tentative)
+        XCTAssertEqual(proposal?.series, false)
+        XCTAssertEqual(proposal?.isRecurring, true)
+        XCTAssertEqual(proposal?.comment, "Late by ten minutes")
+        XCTAssertEqual(proposal?.organizer, "Grace Miller")
+        XCTAssertEqual(proposal?.client, "Claude Code")
+        let responses = await provider.responses
+        XCTAssertEqual(responses.count, 1)
+        XCTAssertEqual(responses.first?.id, "invite")
+        XCTAssertEqual(responses.first?.series, false)
+        XCTAssertEqual(responses.first?.send, true)
+        XCTAssertEqual(responses.first?.notes, "Late by ten minutes")
+        XCTAssertEqual(service.events.first { $0.id == "invite" }?.responseType, .tentative, "the popover follows before the next sync")
+
+        // The same call again: answered from the first one, nothing sent.
+        let again = await tools.call(name: "respond_to_meeting", arguments: ["event_id": .string(MCPEventID.short("invite")), "response": "tentative", "comment": "Late by ten minutes"])
+        XCTAssertEqual(again.structured?["duplicate"], true)
+        XCTAssertEqual(confirmer.proposals.count, 1)
+        let after = await provider.responses
+        XCTAssertEqual(after.count, 1)
+    }
+
+    /// An occurrence that already has this answer is left alone without asking the user.
+    func testRespondWithTheSameAnswerSendsNothing() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeResponseConfirmer(.confirmed)
+        let (tools, _) = makeTools(
+            events: [event("invite", day: 6, hour: 10, response: .accepted, organizer: "Grace Miller")],
+            provider: provider, responseConfirmer: confirmer
+        )
+        let result = await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "response": "accept"])
+        XCTAssertFalse(result.isError, result.errorMessage ?? "")
+        XCTAssertEqual(result.structured?["unchanged"], true)
+        XCTAssertEqual(result.structured?["responded"], false)
+        XCTAssertTrue(confirmer.proposals.isEmpty)
+        let responses = await provider.responses
+        XCTAssertTrue(responses.isEmpty)
+    }
+
+    func testRespondToTheSeriesWithoutTellingTheOrganizer() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeResponseConfirmer(.confirmed)
+        let (tools, service) = makeTools(
+            events: [
+                event("weekly-1", day: 6, hour: 10, response: .notResponded, organizer: "Grace Miller", series: "uid-w"),
+                event("weekly-2", day: 13, hour: 10, response: .notResponded, organizer: "Grace Miller", series: "uid-w"),
+                event("other", day: 7, hour: 10, response: .notResponded, organizer: "Grace Miller", series: "uid-o"),
+            ],
+            provider: provider, responseConfirmer: confirmer
+        )
+        let result = await tools.call(name: "respond_to_meeting", arguments: ["event_id": "weekly-1", "response": "accept", "scope": "series", "send_response": false])
+        XCTAssertFalse(result.isError, result.errorMessage ?? "")
+        XCTAssertEqual(result.structured?["scope"], "series")
+        XCTAssertEqual(result.structured?["response_sent"], false)
+        XCTAssertEqual(confirmer.proposals.first?.series, true)
+        XCTAssertEqual(confirmer.proposals.first?.sendResponse, false)
+        let responses = await provider.responses
+        XCTAssertEqual(responses.first?.series, true)
+        XCTAssertEqual(responses.first?.send, false)
+        XCTAssertEqual(service.events.filter { $0.responseType == .accepted }.map(\.id).sorted(), ["weekly-1", "weekly-2"])
+    }
+
+    func testRespondRefusesWhatCannotBeAnswered() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeResponseConfirmer(.confirmed)
+        let (tools, _) = makeTools(
+            events: [
+                event("mine", day: 6, hour: 10, response: .organizer, isOrganizer: true),
+                event("gone", day: 6, hour: 12, response: .notResponded, cancelled: true, organizer: "Grace Miller"),
+                event("past", day: 5, hour: 9, response: .notResponded, organizer: "Grace Miller"),
+                event("single", day: 6, hour: 14, response: .notResponded, organizer: "Grace Miller"),
+            ],
+            provider: provider, responseConfirmer: confirmer
+        )
+        let calls: [[String: JSONValue]] = [
+            ["event_id": "mine", "response": "accept"],
+            ["event_id": "gone", "response": "accept"],
+            ["event_id": "past", "response": "accept"],
+            ["event_id": "single", "response": "accept", "scope": "series"],
+            ["event_id": "single", "response": "accept", "comment": "Hi", "send_response": false],
+            ["event_id": "single", "response": "maybe"],
+            ["event_id": "unknown-id", "response": "accept"],
+        ]
+        for arguments in calls {
+            let result = await tools.call(name: "respond_to_meeting", arguments: arguments)
+            XCTAssertTrue(result.isError, "\(arguments)")
+        }
+        XCTAssertTrue(confirmer.proposals.isEmpty)
+        let responses = await provider.responses
+        XCTAssertTrue(responses.isEmpty)
+    }
+
+    func testRespondDeclinedByTheUserSendsNothing() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeResponseConfirmer(.rejected)
+        let (tools, service) = makeTools(
+            events: [event("invite", day: 6, hour: 10, response: .notResponded, organizer: "Grace Miller")],
+            provider: provider, responseConfirmer: confirmer
+        )
+        let result = await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "response": "decline"])
+        XCTAssertTrue(result.isError)
+        XCTAssertEqual(confirmer.proposals.count, 1)
+        let responses = await provider.responses
+        XCTAssertTrue(responses.isEmpty)
+        XCTAssertEqual(service.events.first?.responseType, .notResponded)
+    }
+
+    func testRespondFailureRestoresTheAnswer() async {
+        let provider = DetailsProvider(account: exchange, removeError: OWAError.ewsError("ErrorIrresolvableConflict"))
+        let confirmer = FakeResponseConfirmer(.confirmed)
+        let (tools, service) = makeTools(
+            events: [event("invite", day: 6, hour: 10, response: .notResponded, organizer: "Grace Miller")],
+            provider: provider, responseConfirmer: confirmer
+        )
+        let result = await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "response": "accept"])
+        XCTAssertTrue(result.isError)
+        XCTAssertEqual(service.events.first?.responseType, .notResponded)
+    }
+
+    func testRespondPayloadFollowsOWA() throws {
+        let occurrence = OWARespondToCalendarEventPayload.json(
+            itemID: "OCC", changeKey: "CK", series: false, action: .tentative, notes: "a < b\n\nok", sendResponse: true, timeZoneID: "Russian Standard Time"
+        )
+        let body = try XCTUnwrap(occurrence["Body"] as? [String: Any])
+        XCTAssertEqual(occurrence["__type"] as? String, "RespondToCalendarEventJsonRequest:#Exchange")
+        XCTAssertEqual(body["Response"] as? String, "Tentative")
+        XCTAssertEqual(body["SendResponse"] as? Bool, true)
+        let eventID = try XCTUnwrap(body["EventId"] as? [String: Any])
+        XCTAssertEqual(eventID["__type"] as? String, "ItemId:#Exchange")
+        XCTAssertEqual(eventID["Id"] as? String, "OCC")
+        XCTAssertEqual(eventID["ChangeKey"] as? String, "CK")
+        let notes = try XCTUnwrap((body["Notes"] as? [String: Any])?["Value"] as? String)
+        XCTAssertTrue(notes.contains("<div>a &lt; b</div><div><br></div><div>ok</div>"), notes)
+
+        let series = OWARespondToCalendarEventPayload.json(
+            itemID: "OCC", changeKey: "CK", series: true, action: .decline, notes: "", sendResponse: false, timeZoneID: "UTC"
+        )
+        let seriesBody = try XCTUnwrap(series["Body"] as? [String: Any])
+        let master = try XCTUnwrap(seriesBody["EventId"] as? [String: Any])
+        XCTAssertEqual(master["__type"] as? String, "RecurringMasterItemId:#Exchange")
+        XCTAssertEqual(master["OccurrenceId"] as? String, "OCC")
+        XCTAssertNil(master["Id"])
+        XCTAssertEqual(seriesBody["Response"] as? String, "Decline")
+        XCTAssertEqual(seriesBody["SendResponse"] as? Bool, false)
+
+        XCTAssertNoThrow(try OWARespondToCalendarEventPayload.check(Data(#"{"Body":{"ResponseCode":"NoError","ResponseClass":"Success"}}"#.utf8)))
+        XCTAssertThrowsError(try OWARespondToCalendarEventPayload.check(Data(#"{"Body":{"ResponseCode":"ErrorItemNotFound","ResponseClass":"Error"}}"#.utf8)))
+    }
 
     func testCancelMeetingIsOffUntilTheUserAllowsIt() async {
         let provider = DetailsProvider(account: exchange)

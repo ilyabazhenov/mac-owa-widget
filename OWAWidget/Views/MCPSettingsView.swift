@@ -44,6 +44,13 @@ struct MCPSettingsView: View {
                     isEnabled: !(!server.isEnabled)
                 )
                 .padding(.leading, 16)
+                SettingsToggle(
+                    title: localization.tr("mcp.respondMeetings"),
+                    info: localization.tr("mcp.respondMeetings.description"),
+                    isOn: $server.canRespondMeetings,
+                    isEnabled: !(!server.isEnabled)
+                )
+                .padding(.leading, 16)
             }
 
             Section(localization.tr("mcp.mail.section")) {

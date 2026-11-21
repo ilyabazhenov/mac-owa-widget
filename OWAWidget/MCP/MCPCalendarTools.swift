@@ -1,8 +1,9 @@
 import Foundation
+import OWAWidgetMCPShared
 
 /// The MCP tools, implemented over `CalendarService`: those that read the calendar (including
 /// `match_event`, which tells which meeting a time was), `find_people`, `get_my_org`, `get_person_profile`, `find_free_slots` and
-/// `create_meeting` and `cancel_meeting`.
+/// `create_meeting`, `cancel_meeting` and `respond_to_meeting`.
 ///
 /// The calendar tools read the in-memory calendar: no network, no load on Exchange, except for
 /// meeting details and periods beyond the sync window (start of day -7 days ... now +30 days),
@@ -54,6 +55,8 @@ final class MCPCalendarTools {
     private let isEnabled: () -> Bool
     private let canCreateMeetings: () -> Bool
     private let canRemoveMeetings: () -> Bool
+    private let canRespondMeetings: () -> Bool
+    private let responseConfirmer: MCPMeetingResponseConfirming
     private let confirmer: MCPMeetingConfirming
     private let removalConfirmer: MCPMeetingRemovalConfirming
     /// Sends a meeting the user chose to edit to the New Meeting window.
@@ -67,6 +70,8 @@ final class MCPCalendarTools {
     private var recentCreations: [String: (date: Date, result: [String: JSONValue])] = [:]
     /// By short event id: after a removal the meeting is gone, and a retry would only find nothing.
     private var recentRemovals: [String: (date: Date, result: [String: JSONValue])] = [:]
+    /// By event, scope, answer, sending and note: a repeat sends nothing again.
+    private var recentResponses: [String: (date: Date, result: [String: JSONValue])] = [:]
     /// The user's own address per Exchange account, from Exchange: a DOMAIN\login sign-in does
     /// not tell it. A `nil` address is a failed lookup, not repeated before `retryAfter`.
     private var ownAddresses: [UUID: (email: String?, retryAfter: Date)] = [:]
@@ -75,6 +80,7 @@ final class MCPCalendarTools {
     private var profileCache = MCPProfileCache()
     private var isCreatingMeeting = false
     private var isRemovingMeeting = false
+    private var isRespondingToMeeting = false
 
     init(
         calendarService: CalendarService,
@@ -84,6 +90,7 @@ final class MCPCalendarTools {
         onDemandDeadline: TimeInterval = MCPCalendarTools.onDemandDeadline,
         confirmer: MCPMeetingConfirming? = nil,
         removalConfirmer: MCPMeetingRemovalConfirming? = nil,
+        responseConfirmer: MCPMeetingResponseConfirming? = nil,
         handOff: @escaping (MeetingDraftSeed) -> Void = { MeetingDraftInbox.shared.deliver($0) },
         confirmationTimeout: TimeInterval = MCPCalendarTools.confirmationTimeout,
         clock: @escaping () -> Date = { Date() },
@@ -91,7 +98,8 @@ final class MCPCalendarTools {
         uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         isEnabled: @escaping () -> Bool = { true },
         canCreateMeetings: @escaping () -> Bool = { false },
-        canRemoveMeetings: @escaping () -> Bool = { false }
+        canRemoveMeetings: @escaping () -> Bool = { false },
+        canRespondMeetings: @escaping () -> Bool = { false }
     ) {
         self.calendarService = calendarService
         self.accessGuard = accessGuard ?? MCPAccessGuard(calendarService: calendarService, clock: clock)
@@ -100,6 +108,7 @@ final class MCPCalendarTools {
         self.onDemandDeadline = onDemandDeadline
         self.confirmer = confirmer ?? MCPMeetingConfirmationController()
         self.removalConfirmer = removalConfirmer ?? MCPMeetingRemovalConfirmationController()
+        self.responseConfirmer = responseConfirmer ?? MCPMeetingResponseConfirmationController()
         self.handOff = handOff
         self.confirmationTimeout = confirmationTimeout
         self.clock = clock
@@ -108,6 +117,7 @@ final class MCPCalendarTools {
         self.isEnabled = isEnabled
         self.canCreateMeetings = canCreateMeetings
         self.canRemoveMeetings = canRemoveMeetings
+        self.canRespondMeetings = canRespondMeetings
     }
 
     func call(name: String, arguments: [String: JSONValue], client: String? = nil) async -> MCPToolResult {
@@ -130,6 +140,7 @@ final class MCPCalendarTools {
             case "match_event": return try await matchEvent(arguments, context)
             case "create_meeting": return try await createMeeting(arguments, context, client: client)
             case "cancel_meeting": return try await cancelMeeting(arguments, context, client: client)
+            case "respond_to_meeting": return try await respondToMeeting(arguments, context, client: client)
             default: return .failure("Unknown tool: \(name)")
             }
         } catch let error as ArgumentError {
@@ -1126,6 +1137,184 @@ final class MCPCalendarTools {
         result["invitations_sent"] = .bool(!(required.isEmpty && optional.isEmpty))
         result["note"] = "Created in Exchange. It appears in list_events after the next sync, within a few minutes."
         recentCreations[key] = (context.now, result)
+        return .success(result)
+    }
+
+    // MARK: - respond_to_meeting
+
+    /// Answers an invitation: accept, tentative or decline, for this occurrence or the whole
+    /// series, with an optional note, telling the organizer or not. Every answer is shown to the
+    /// user first. An occurrence that already has this answer (and no note to send) is left alone,
+    /// and a repeat of the same call within ten minutes is answered from the first one: neither
+    /// sends a second email.
+    private func respondToMeeting(_ arguments: [String: JSONValue], _ context: CallContext, client: String?) async throws -> MCPToolResult {
+        guard canRespondMeetings() else {
+            return .failure(
+                "Answering invitations is turned off in OWA Widget (Settings → MCP → \"Allow answering invitations\"). Nothing was sent. Ask the user to turn it on."
+            )
+        }
+        guard let handle = arguments["event_id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !handle.isEmpty else {
+            throw ArgumentError("`event_id` is required (take it from list_events)")
+        }
+        guard let actionName = arguments["response"]?.stringValue, let action = MeetingResponseAction(name: actionName) else {
+            throw ArgumentError("`response` is required: accept, tentative or decline")
+        }
+        let scopeName = arguments["scope"]?.stringValue ?? "occurrence"
+        guard scopeName == "occurrence" || scopeName == "series" else {
+            throw ArgumentError("`scope` must be occurrence (default) or series")
+        }
+        let sendResponse = try optionalBool(arguments, "send_response") ?? true
+        let comment = MCPMeetingTextPolicy.normalizedAgenda(arguments["comment"]?.stringValue ?? "")
+        guard comment.count <= Self.maxRemovalMessageCharacters else {
+            throw ArgumentError("`comment` is limited to \(Self.maxRemovalMessageCharacters) characters")
+        }
+        if MCPMeetingTextPolicy.containsBidiControls(comment) {
+            throw ArgumentError(
+                "`comment` contains bidirectional control characters (U+202A–U+202E, U+2066–U+2069), "
+                    + "which make text display differently from what is sent. Remove them."
+            )
+        }
+        if MCPMeetingTextPolicy.containsHiddenCharacters(comment) {
+            throw ArgumentError(
+                "`comment` contains invisible characters (zero-width spaces, Unicode tags, variation selectors, "
+                    + "control characters), which the user cannot see in the confirmation. Remove them."
+            )
+        }
+        if !sendResponse, !comment.isEmpty {
+            throw ArgumentError("`comment` goes to the organizer with the answer, and `send_response: false` sends nothing. Leave one of them out.")
+        }
+
+        // Keyed by the short event id: a declined meeting leaves the calendar, and a retry with
+        // either id must still find the first answer.
+        let answerKey = [scopeName, action.name, sendResponse ? "send" : "quiet", MCPShortHash.hex(comment, bytes: 6)].joined(separator: "|")
+        recentResponses = recentResponses.filter { context.now.timeIntervalSince($0.value.date) < Self.duplicateWindow }
+        if let earlier = recentResponses[handle.lowercased() + "|" + answerKey] ?? recentResponses[MCPEventID.short(handle) + "|" + answerKey] {
+            var result = earlier.result
+            result["duplicate"] = true
+            result["note"] = "The same answer was given a few minutes ago; nothing new was sent."
+            return .success(result)
+        }
+        guard let event = MCPEventID.resolve(handle, in: calendarService.events)
+            ?? MCPEventID.resolve(handle, in: archive.allEvents) else {
+            return .failure("Event \(handle) not found. It may have been removed, or the calendar was refreshed — call list_events again.")
+        }
+        guard calendarService.accountType(for: event.accountID) == .owa, event.changeKey != nil,
+              let account = calendarService.accounts.first(where: { $0.id == event.accountID }) else {
+            return .failure("Only Exchange invitations can be answered here. This meeting comes from a calendar synced to macOS: the user can answer it in the Calendar app.")
+        }
+        guard !event.isOrganizer, event.responseType != .organizer else {
+            return .failure("The user organizes this meeting, so there is no invitation to answer. Nothing was sent. To call it off, use cancel_meeting.")
+        }
+        guard !event.isEffectivelyCancelled else {
+            return .failure("The organizer has cancelled this meeting: there is nothing to answer. Nothing was sent; cancel_meeting can remove it from the calendar.")
+        }
+        let series = scopeName == "series"
+        if series, !event.isRecurring {
+            throw ArgumentError("This meeting does not repeat: leave `scope` out (or pass occurrence).")
+        }
+        guard series || event.endDate > context.now else {
+            return .failure("This meeting is already over. Nothing was sent.")
+        }
+        let target = action.responseType
+        let sameAnswer: Bool
+        if series {
+            let occurrences = calendarService.events.filter { $0.accountID == event.accountID && $0.seriesID != nil && $0.seriesID == event.seriesID }
+            sameAnswer = !occurrences.isEmpty && occurrences.allSatisfy { $0.responseType == target }
+        } else {
+            sameAnswer = event.responseType == target
+        }
+        if sameAnswer, comment.isEmpty {
+            var result = commonFields(context)
+            result["responded"] = false
+            result["unchanged"] = true
+            result["my_response"] = .string(Self.responseName(target))
+            result["event_id"] = .string(MCPEventID.short(event.id))
+            result["scope"] = .string(scopeName)
+            result["note"] = .string(series
+                ? "Every occurrence of this series in the calendar already has this answer. Nothing was sent."
+                : "The meeting already has this answer. Nothing was sent.")
+            return .success(result)
+        }
+        guard !isCreatingMeeting, !isRemovingMeeting, !isRespondingToMeeting else {
+            return .failure("Another meeting is waiting for the user's answer in OWA Widget. Wait for that call to finish before asking again.")
+        }
+        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
+            return .failure(reason)
+        }
+        isRespondingToMeeting = true
+        defer { isRespondingToMeeting = false }
+
+        let proposal = MCPMeetingResponseProposal(
+            action: action,
+            series: series,
+            isRecurring: event.isRecurring,
+            sendResponse: sendResponse,
+            title: event.title,
+            start: event.startDate,
+            end: event.endDate,
+            location: event.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            organizer: event.organizer,
+            current: event.responseType,
+            comment: comment,
+            client: client ?? ""
+        )
+        switch await responseConfirmer.confirm(proposal, timeout: confirmationTimeout) {
+        case .confirmed:
+            break
+        case .rejected, .handedOff:
+            return .failure("The user chose not to answer in OWA Widget. Nothing was sent; do not retry unless the user asks.")
+        case .timedOut:
+            return .failure("The user did not answer in OWA Widget within \(Int(confirmationTimeout)) seconds. Nothing was sent; ask the user whether to try again.")
+        case .cancelled:
+            return .failure("The request was cancelled. Nothing was sent.")
+        }
+        if let denial = accessGuard.permitRequest() {
+            return .failure(denial.message + " Nothing was sent.")
+        }
+
+        // Past the button the request must finish even if the client cancels now: the user saw
+        // the answer go, and a half-sent one would leave them unsure.
+        let service = calendarService
+        let guardRef = accessGuard
+        let response = Task { @MainActor in
+            await guardRef.acquireSlot()
+            defer { guardRef.releaseSlot() }
+            try await service.respondToCalendarEvent(event, action: action, series: series, notes: comment, sendResponse: sendResponse)
+        }
+        do {
+            try await response.value
+        } catch {
+            accessGuard.report(error, context: "mcp.respondToMeeting")
+            MCPDebugLog.log("respond_to_meeting failed: \(error.localizedDescription)")
+            if case OWAError.ewsError(let code) = error {
+                if OWARespondToMeetingPayload.isStaleChangeKeyCode(code) {
+                    return .failure("The meeting changed in Exchange after the last sync, so nothing was sent. Call list_events after the next sync and ask the user again.")
+                }
+                if code == "ErrorItemNotFound" {
+                    return .failure("Exchange no longer has this meeting: it may have been cancelled or deleted. Check list_events after the next sync.")
+                }
+                return .failure("Exchange refused the answer (\(code)). Nothing was sent.")
+            }
+            return .failure(
+                "Exchange did not confirm: \(error.localizedDescription). It may still have gone through: check `my_response` in list_events after the next sync before trying again."
+            )
+        }
+
+        var result = commonFields(context)
+        result["responded"] = true
+        result["my_response"] = .string(Self.responseName(target))
+        result["scope"] = .string(scopeName)
+        result["response_sent"] = .bool(sendResponse)
+        result["event_id"] = .string(MCPEventID.short(event.id))
+        result["title"] = .string(event.title)
+        result["start"] = .string(context.coder.string(event.startDate))
+        result["end"] = .string(context.coder.string(event.endDate))
+        result["account_id"] = .string(account.id.uuidString)
+        if !comment.isEmpty { result["comment_sent"] = true }
+        var note = sendResponse ? "The organizer gets the answer by email." : "Nothing was sent to the organizer: they still see no answer from the user."
+        if action == .decline { note += " Exchange removes a declined meeting from the user's calendar." }
+        result["note"] = .string(note)
+        recentResponses[MCPEventID.short(event.id) + "|" + answerKey] = (context.now, result)
         return .success(result)
     }
 

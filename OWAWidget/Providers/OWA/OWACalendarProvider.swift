@@ -42,6 +42,12 @@ actor OWACalendarProvider: CalendarProvider {
         try await client.respondToMeeting(itemId: event.id, changeKey: changeKey, action: action)
     }
 
+    func respondToCalendarEvent(_ event: CalendarEvent, action: MeetingResponseAction, series: Bool, notes: String, sendResponse: Bool) async throws {
+        try await client.respondToCalendarEvent(
+            itemID: event.id, changeKey: event.changeKey, series: series, action: action, notes: notes, sendResponse: sendResponse
+        )
+    }
+
     func fetchDetails(for event: CalendarEvent) async throws -> CalendarEventDetails {
         try await client.fetchMeetingDetails(itemId: event.id, changeKey: event.changeKey)
     }

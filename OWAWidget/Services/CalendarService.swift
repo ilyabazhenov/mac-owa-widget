@@ -1005,6 +1005,36 @@ final class CalendarService: ObservableObject {
         }
     }
 
+    /// The answer of MCP `respond_to_meeting`: `RespondToCalendarEvent` with a scope, a note and
+    /// the choice of telling the organizer. The popover shows the new answer at once — on every
+    /// occurrence of the series in memory for a series answer — and goes back to the old one if
+    /// Exchange refuses. The caller (the MCP tool) counts the request against its own budget and
+    /// reports failures to the circuit breaker.
+    func respondToCalendarEvent(_ event: CalendarEvent, action: MeetingResponseAction, series: Bool, notes: String, sendResponse: Bool) async throws {
+        guard let provider = providers.first(where: { $0.account.id == event.accountID }) else {
+            throw CalendarProviderError.notSupported
+        }
+        let type: MeetingResponseType
+        switch action {
+        case .accept: type = .accepted
+        case .tentative: type = .tentative
+        case .decline: type = .declined
+        }
+        let affected = series
+            ? events.filter { $0.accountID == event.accountID && $0.seriesID != nil && $0.seriesID == event.seriesID }
+            : events.filter { $0.id == event.id }
+        let previous = affected.map { ($0.id, $0.responseType) }
+        for item in affected { applyResponseType(type, to: item.id) }
+        do {
+            try await provider.respondToCalendarEvent(event, action: action, series: series, notes: notes, sendResponse: sendResponse)
+            log.info("respondToCalendarEvent succeeded eventID=\(event.id, privacy: .public) series=\(series, privacy: .public) send=\(sendResponse, privacy: .public)")
+        } catch {
+            for (id, old) in previous { applyResponseType(old, to: id) }
+            log.error("respondToCalendarEvent failed eventID=\(event.id, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
+            throw error
+        }
+    }
+
     /// Accounts that have a provider now, in provider order: those whose calendar can be read.
     var readableAccounts: [CalendarAccount] {
         providers.map(\.account)

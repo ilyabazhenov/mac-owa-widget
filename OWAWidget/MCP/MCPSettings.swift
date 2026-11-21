@@ -27,11 +27,13 @@ struct MCPSettings: Codable, Equatable, Sendable {
     var mailArrange = false
     /// Off by default and separate from `createMeetings`: cancelling tells every attendee.
     var cancelMeetings = false
+    /// Off by default: answering invitations (`respond_to_meeting`), each answer confirmed in a panel.
+    var respondMeetings = false
 }
 
 extension MCPSettings {
     private enum CodingKeys: String, CodingKey {
-        case serverEnabled, createMeetings, askNewClients, mailRead, mailSend, mailOrganize, mailArrange, cancelMeetings
+        case serverEnabled, createMeetings, askNewClients, mailRead, mailSend, mailOrganize, mailArrange, cancelMeetings, respondMeetings
     }
 
     /// Settings saved before a switch existed lack its key: it takes its default (off).
@@ -45,6 +47,7 @@ extension MCPSettings {
         mailOrganize = try container.decodeIfPresent(Bool.self, forKey: .mailOrganize) ?? false
         mailArrange = try container.decodeIfPresent(Bool.self, forKey: .mailArrange) ?? false
         cancelMeetings = try container.decodeIfPresent(Bool.self, forKey: .cancelMeetings) ?? false
+        respondMeetings = try container.decodeIfPresent(Bool.self, forKey: .respondMeetings) ?? false
     }
 }
 
