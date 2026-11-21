@@ -557,7 +557,7 @@ private struct MeetingDetailActionsView: View {
                 }
             }
 
-            if !event.isOrganizer && event.responseType != .organizer && event.changeKey != nil {
+            if event.acceptsResponse {
                 RSVPActionsView(event: event)
             }
         }

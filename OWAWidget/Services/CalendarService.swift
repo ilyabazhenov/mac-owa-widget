@@ -919,6 +919,10 @@ final class CalendarService: ObservableObject {
     // MARK: - Meeting response
 
     func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {
+        // Exchange refuses it anyway (ErrorCalendarIsCancelledForAccept). Stopping here keeps the
+        // optimistic answer off the timeline and tells the user why, whichever path asked: the
+        // meeting card, an old invitation email, the invitation panel or "Overview".
+        guard !event.isEffectivelyCancelled else { throw CalendarProviderError.meetingCancelled }
         guard let provider = providers.first(where: { $0.account.id == event.accountID }) else {
             #if DEBUG
             DiagnosticLog.event("respondToMeeting: no provider for account, providers=\(providers.count)")

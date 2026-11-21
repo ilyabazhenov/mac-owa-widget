@@ -21,9 +21,13 @@ actor GoogleCalendarProvider: CalendarProvider {
 enum CalendarProviderError: Error, LocalizedError, Sendable {
     case notImplemented(String)
     case notSupported
+    /// The meeting was cancelled: there is nothing left to answer.
+    case meetingCancelled
 
     var errorDescription: String? {
         switch self {
+        case .meetingCancelled:
+            return "This meeting was cancelled by the organizer, so it can no longer be answered."
         case .notImplemented(let name):
             return "\(name) provider is not yet implemented"
         case .notSupported:
