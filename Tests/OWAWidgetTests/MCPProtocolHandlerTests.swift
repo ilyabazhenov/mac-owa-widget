@@ -214,9 +214,14 @@ final class MCPProtocolHandlerTests: XCTestCase {
         XCTAssertEqual(modern?["isError"], false)
         XCTAssertEqual(modern?["resultType"], "complete")
 
-        let legacy = handler.toolCallResponse(id: 1, result: .failure("nope"), modern: false)["result"]
+        let legacy = handler.toolCallResponse(id: 1, result: .failure(.stale, "nope"), modern: false)["result"]
         XCTAssertEqual(legacy?["isError"], true)
-        XCTAssertNil(legacy?["structuredContent"])
+        XCTAssertEqual(legacy?["content"]?.arrayValue?.first?["text"], "nope", "the text stays what the model reads")
+        XCTAssertEqual(legacy?["structuredContent"], ["error_code": "stale", "message": "nope"])
         XCTAssertNil(legacy?["resultType"])
+
+        let modernFailure = handler.toolCallResponse(id: 1, result: .failure(.invalidArgument, "bad"), modern: true)["result"]
+        XCTAssertEqual(modernFailure?["structuredContent"]?["error_code"], "invalid_argument")
+        XCTAssertEqual(modernFailure?["isError"], true)
     }
 }

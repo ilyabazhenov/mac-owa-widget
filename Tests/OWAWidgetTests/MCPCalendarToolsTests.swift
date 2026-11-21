@@ -175,6 +175,20 @@ final class MCPCalendarToolsTests: XCTestCase {
         }
     }
 
+    /// Keeps its panel open until `release`, like a user who has not answered yet.
+    private final class HoldingResponseConfirmer: MCPMeetingResponseConfirming {
+        private(set) var proposals: [MCPMeetingResponseProposal] = []
+        private var waiting: CheckedContinuation<MCPConfirmationOutcome, Never>?
+        func confirm(_ proposal: MCPMeetingResponseProposal, timeout: TimeInterval) async -> MCPConfirmationOutcome {
+            proposals.append(proposal)
+            return await withCheckedContinuation { waiting = $0 }
+        }
+        func release(_ outcome: MCPConfirmationOutcome) {
+            waiting?.resume(returning: outcome)
+            waiting = nil
+        }
+    }
+
     private final class FakeResponseConfirmer: MCPMeetingResponseConfirming {
         var outcome: MCPConfirmationOutcome
         private(set) var proposals: [MCPMeetingResponseProposal] = []
@@ -231,7 +245,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         enabled: Bool = true,
         confirmer: FakeConfirmer = FakeConfirmer(.rejected),
         removalConfirmer: FakeRemovalConfirmer = FakeRemovalConfirmer(.rejected),
-        responseConfirmer: FakeResponseConfirmer = FakeResponseConfirmer(.rejected),
+        responseConfirmer: any MCPMeetingResponseConfirming = FakeResponseConfirmer(.rejected),
         canCreateMeetings: Bool = true,
         canRemoveMeetings: Bool = true,
         canRespondMeetings: Bool = true,
@@ -283,7 +297,7 @@ final class MCPCalendarToolsTests: XCTestCase {
     func testDisabledServerReturnsNoData() async {
         let (tools, _) = makeTools(events: [event("a", day: 5, hour: 14)], enabled: false)
         let result = await tools.call(name: "list_events", arguments: [:])
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .serverDisabled)
         XCTAssertTrue(result.errorMessage?.contains("Settings") == true)
     }
 
@@ -452,7 +466,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         let (tools, _) = makeTools(events: [], provider: provider)
 
         let tooOld = await tools.call(name: "list_events", arguments: ["from": "2025-01-01", "to": "2025-02-01"])
-        XCTAssertTrue(tooOld.isError)
+        XCTAssertRefusal(tooOld, .invalidArgument)
         XCTAssertTrue(tooOld.errorMessage?.contains("a year back") == true)
 
         // Ten months back: only the 184 days nearest to the sync window are loaded.
@@ -542,7 +556,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         service.debugForceAuthBlock()
 
         let result = await tools.call(name: "list_events", arguments: ["from": "2026-08-01", "to": "2026-08-31"])
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .authFailed)
         let calls = await provider.fetchCalls.count
         XCTAssertEqual(calls, 0)
     }
@@ -584,9 +598,9 @@ final class MCPCalendarToolsTests: XCTestCase {
     func testInvalidArgumentsAreToolErrors() async {
         let (tools, _) = makeTools(events: [])
         let badDate = await tools.call(name: "list_events", arguments: ["from": "tomorrow"])
-        XCTAssertTrue(badDate.isError)
+        XCTAssertRefusal(badDate, .invalidArgument)
         let badLimit = await tools.call(name: "list_events", arguments: ["limit": 1000])
-        XCTAssertTrue(badLimit.isError)
+        XCTAssertRefusal(badLimit, .invalidArgument)
     }
 
     // MARK: - get_current_and_next
@@ -623,7 +637,7 @@ final class MCPCalendarToolsTests: XCTestCase {
     func testScheduleStatsValidatesWorkingHours() async {
         let (tools, _) = makeTools(events: [])
         let result = await tools.call(name: "get_schedule_stats", arguments: ["work_start": "18:00", "work_end": "09:00"])
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .invalidArgument)
     }
 
     // MARK: - find_events_with_person
@@ -763,7 +777,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         let series = await tools.call(name: "list_events", arguments: ["series_id": "S1"]).structured
         XCTAssertEqual(ids(series?["events"]), ["weekly-past", "weekly-now", "weekly-next"])
         let empty = await tools.call(name: "list_events", arguments: ["series_id": " "])
-        XCTAssertTrue(empty.isError)
+        XCTAssertRefusal(empty, .invalidArgument)
     }
 
     func testOneOffMeetingUIDAppearsOnceItsDetailsLoad() async {
@@ -826,7 +840,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         let (tools, _) = makeTools(events: [event("old", day: 5, hour: 10)])
 
         let result = await tools.call(name: "match_event", arguments: ["start": "2025-08-01T10:00"])
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .invalidArgument)
         XCTAssertTrue(result.errorMessage?.contains("outside") == true)
 
         let empty = await tools.call(name: "match_event", arguments: ["start": "2026-10-05T03:00"]).structured
@@ -848,7 +862,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         let result = await tools.call(name: "match_event", arguments: [
             "start": "2026-08-01T10:05", "account_id": .string(exchange.id.uuidString),
         ])
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .exchangeError)
         XCTAssertTrue(result.errorMessage?.contains("do not guess") == true)
     }
 
@@ -878,7 +892,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         ]
         for arguments in broken {
             let result = await tools.call(name: "match_event", arguments: arguments)
-            XCTAssertTrue(result.isError, "\(arguments)")
+            XCTAssertRefusal(result, .invalidArgument, "\(arguments)")
         }
     }
 
@@ -908,7 +922,7 @@ final class MCPCalendarToolsTests: XCTestCase {
     func testUnknownEventID() async {
         let (tools, _) = makeTools(events: [])
         let result = await tools.call(name: "get_event_details", arguments: ["event_id": "0123456789ab"])
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .notFound)
     }
 
     // MARK: - find_people
@@ -933,9 +947,9 @@ final class MCPCalendarToolsTests: XCTestCase {
     func testFindPeopleNeedsAQueryAndAnExchangeAccount() async {
         let (tools, _) = makeTools(events: [])
         let short = await tools.call(name: "find_people", arguments: ["query": "I"])
-        XCTAssertTrue(short.isError)
+        XCTAssertRefusal(short, .invalidArgument)
         let local = await tools.call(name: "find_people", arguments: ["query": "Ivanov", "account_id": .string(local.id.uuidString)])
-        XCTAssertTrue(local.isError)
+        XCTAssertRefusal(local, .notSupported)
     }
 
 
@@ -1026,9 +1040,9 @@ final class MCPCalendarToolsTests: XCTestCase {
         let (tools, _) = makeTools(events: [], provider: provider)
 
         let bad = await tools.call(name: "get_my_org", arguments: ["email": "Иванов"])
-        XCTAssertTrue(bad.isError)
+        XCTAssertRefusal(bad, .invalidArgument)
         let failed = await tools.call(name: "get_my_org", arguments: [:])
-        XCTAssertTrue(failed.isError)
+        XCTAssertRefusal(failed, .exchangeError)
     }
 
 
@@ -1081,11 +1095,11 @@ final class MCPCalendarToolsTests: XCTestCase {
     func testPersonProfileNeedsAddresses() async {
         let (tools, _) = makeTools(events: [])
         let missing = await tools.call(name: "get_person_profile", arguments: [:])
-        XCTAssertTrue(missing.isError)
+        XCTAssertRefusal(missing, .invalidArgument)
         let name = await tools.call(name: "get_person_profile", arguments: ["emails": ["Иванов"]])
-        XCTAssertTrue(name.isError)
+        XCTAssertRefusal(name, .invalidArgument)
         let tooMany = await tools.call(name: "get_person_profile", arguments: ["emails": .array((0..<11).map { .string("p\($0)@corp.ru") })])
-        XCTAssertTrue(tooMany.isError)
+        XCTAssertRefusal(tooMany, .invalidArgument)
     }
 
     // MARK: - find_free_slots
@@ -1129,11 +1143,11 @@ final class MCPCalendarToolsTests: XCTestCase {
     func testFreeSlotsNeedPeopleAndADuration() async {
         let (tools, _) = makeTools(events: [])
         let noPeople = await tools.call(name: "find_free_slots", arguments: ["duration_minutes": 30])
-        XCTAssertTrue(noPeople.isError)
+        XCTAssertRefusal(noPeople, .invalidArgument)
         let noDuration = await tools.call(name: "find_free_slots", arguments: ["required": ["a@corp.ru"]])
-        XCTAssertTrue(noDuration.isError)
+        XCTAssertRefusal(noDuration, .invalidArgument)
         let past = await tools.call(name: "find_free_slots", arguments: ["required": ["a@corp.ru"], "duration_minutes": 30, "to": "2026-10-05T10:00"])
-        XCTAssertTrue(past.isError)
+        XCTAssertRefusal(past, .invalidArgument)
     }
 
     func testFreeSlotsStayWithinCoverage() async {
@@ -1141,7 +1155,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         let (tools, _) = makeTools(events: [], provider: provider)
 
         let beyond = await tools.call(name: "find_free_slots", arguments: ["required": ["a@corp.ru"], "duration_minutes": 30, "from": "2026-11-20", "to": "2026-11-27"])
-        XCTAssertTrue(beyond.isError)
+        XCTAssertRefusal(beyond, .invalidArgument)
         XCTAssertTrue(beyond.errorMessage?.contains("only holds meetings") == true)
 
         let clipped = await tools.call(name: "find_free_slots", arguments: ["required": ["a@corp.ru"], "duration_minutes": 30, "from": "2026-11-01", "to": "2026-11-10"]).structured
@@ -1179,7 +1193,7 @@ final class MCPCalendarToolsTests: XCTestCase {
             provider: provider, responseConfirmer: confirmer, canRespondMeetings: false
         )
         let result = await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "response": "accept"])
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .settingDisabled)
         XCTAssertTrue(confirmer.proposals.isEmpty)
         let responses = await provider.responses
         XCTAssertTrue(responses.isEmpty)
@@ -1283,9 +1297,10 @@ final class MCPCalendarToolsTests: XCTestCase {
             ["event_id": "single", "response": "maybe"],
             ["event_id": "unknown-id", "response": "accept"],
         ]
-        for arguments in calls {
+        let codes: [MCPErrorCode] = [.notInvitation, .notInvitation, .pastEvent, .invalidArgument, .invalidArgument, .invalidArgument, .notFound]
+        for (arguments, code) in zip(calls, codes) {
             let result = await tools.call(name: "respond_to_meeting", arguments: arguments)
-            XCTAssertTrue(result.isError, "\(arguments)")
+            XCTAssertRefusal(result, code, "\(arguments)")
         }
         XCTAssertTrue(confirmer.proposals.isEmpty)
         let responses = await provider.responses
@@ -1300,7 +1315,7 @@ final class MCPCalendarToolsTests: XCTestCase {
             provider: provider, responseConfirmer: confirmer
         )
         let result = await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "response": "decline"])
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .userDeclined)
         XCTAssertEqual(confirmer.proposals.count, 1)
         let responses = await provider.responses
         XCTAssertTrue(responses.isEmpty)
@@ -1315,8 +1330,72 @@ final class MCPCalendarToolsTests: XCTestCase {
             provider: provider, responseConfirmer: confirmer
         )
         let result = await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "response": "accept"])
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .stale)
         XCTAssertEqual(service.events.first?.responseType, .notResponded)
+    }
+
+    // MARK: - Error codes
+
+    func testRespondErrorsFromExchangeCarryTheirCode() async {
+        let cases: [(Error, MCPErrorCode)] = [
+            (URLError(.networkConnectionLost), .unconfirmed),
+            (URLError(.timedOut), .unconfirmed),
+            (URLError(.notConnectedToInternet), .offline),
+            (OWAError.ewsError("ErrorItemNotFound"), .notFound),
+            (OWAError.ewsError("ErrorAccessDenied"), .exchangeError),
+            (OWAError.authenticationFailed("rejected"), .authFailed),
+        ]
+        for (error, code) in cases {
+            let provider = DetailsProvider(account: exchange, removeError: error)
+            let (tools, _) = makeTools(
+                events: [event("invite", day: 6, hour: 10, response: .notResponded, organizer: "Grace Miller")],
+                provider: provider, responseConfirmer: FakeResponseConfirmer(.confirmed)
+            )
+            let result = await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "response": "accept", "send_response": false])
+            XCTAssertRefusal(result, code, "\(error)")
+        }
+    }
+
+    func testAnotherOpenPanelIsBusy() async {
+        let confirmer = HoldingResponseConfirmer()
+        let (held, _) = makeTools(events: [
+            event("first", day: 6, hour: 10, response: .notResponded, organizer: "Grace Miller"),
+            event("second", day: 6, hour: 12, response: .notResponded, organizer: "Grace Miller"),
+        ], responseConfirmer: confirmer)
+        let waiting = Task { await held.call(name: "respond_to_meeting", arguments: ["event_id": "first", "response": "accept"]) }
+        while confirmer.proposals.isEmpty { await Task.yield() }
+
+        let second = await held.call(name: "respond_to_meeting", arguments: ["event_id": "second", "response": "accept"])
+        XCTAssertRefusal(second, .busy)
+        confirmer.release(.rejected)
+        let first = await waiting.value
+        XCTAssertRefusal(first, .userDeclined)
+    }
+
+    func testSettingRefusalNamesTheSwitch() async throws {
+        let (tools, _) = makeTools(events: [event("invite", day: 6, hour: 10, response: .notResponded, organizer: "Grace Miller")], canRespondMeetings: false)
+        let result = await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "response": "accept"])
+        XCTAssertRefusal(result, .settingDisabled)
+        let json = result.json["structuredContent"]
+        XCTAssertEqual(json?["error_code"], "setting_disabled")
+        XCTAssertEqual(json?["setting_id"], "respond_meetings")
+        let title = try XCTUnwrap(json?["setting"]?.stringValue)
+        XCTAssertTrue(["Allow answering invitations", "Разрешить отвечать на приглашения"].contains(title), title)
+    }
+
+    func testBlockedSyncRefusesWithItsCode() async {
+        let (tools, service) = makeTools(events: [], provider: DetailsProvider(account: exchange, people: [me]))
+        service.debugForceAuthBlock()
+        XCTAssertRefusal(await tools.call(name: "find_people", arguments: ["query": "Иванов"]), .authFailed)
+        XCTAssertEqual(MCPAccessGuard.blockError(.certificateTrustRequired(host: "mail", fingerprint: "ab"))?.code, .trustRequired)
+        XCTAssertEqual(MCPAccessGuard.blockError(.loginHostApprovalRequired(configuredHost: "mail", loginHost: "sso"))?.code, .trustRequired)
+        XCTAssertNil(MCPAccessGuard.blockError(.idle))
+    }
+
+    func testNoSyncYetIsNotReady() async {
+        let (tools, service) = makeTools(events: [])
+        service.setEventCoverageForTests(nil)
+        XCTAssertRefusal(await tools.call(name: "list_events", arguments: [:]), .notReady)
     }
 
     func testRespondPayloadFollowsOWA() throws {
@@ -1359,7 +1438,7 @@ final class MCPCalendarToolsTests: XCTestCase {
 
         let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "sync"])
 
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .settingDisabled)
         XCTAssertTrue(confirmer.proposals.isEmpty)
         let removed = await provider.removed
         XCTAssertTrue(removed.isEmpty)
@@ -1434,7 +1513,7 @@ final class MCPCalendarToolsTests: XCTestCase {
 
         let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "sync"])
 
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .exchangeError)
         XCTAssertTrue(result.errorMessage?.contains("Nothing was changed") == true)
         XCTAssertTrue(confirmer.proposals.isEmpty)
     }
@@ -1466,7 +1545,7 @@ final class MCPCalendarToolsTests: XCTestCase {
 
         let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "gone", "message": "Пока"])
 
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .invalidArgument)
         XCTAssertTrue(confirmer.proposals.isEmpty)
     }
 
@@ -1489,9 +1568,9 @@ final class MCPCalendarToolsTests: XCTestCase {
             event("local", day: 6, hour: 10, account: local),
         ], provider: provider, removalConfirmer: confirmer)
 
-        for id in ["past", "local", "missing"] {
+        for (id, code) in [("past", MCPErrorCode.pastEvent), ("local", .notSupported), ("missing", .notFound)] {
             let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": .string(id)])
-            XCTAssertTrue(result.isError, id)
+            XCTAssertRefusal(result, code, id)
         }
         XCTAssertTrue(confirmer.proposals.isEmpty)
     }
@@ -1506,7 +1585,7 @@ final class MCPCalendarToolsTests: XCTestCase {
 
             let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "invite"])
 
-            XCTAssertTrue(result.isError, "\(outcome)")
+            XCTAssertRefusal(result, outcome.refusalCode, "\(outcome)")
             XCTAssertTrue(result.errorMessage?.contains("Nothing was changed") == true, "\(outcome)")
             let removed = await provider.removed
             XCTAssertTrue(removed.isEmpty, "\(outcome)")
@@ -1523,7 +1602,7 @@ final class MCPCalendarToolsTests: XCTestCase {
 
         let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "invite"])
 
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .stale)
         XCTAssertTrue(result.errorMessage?.contains("changed in Exchange") == true)
         XCTAssertTrue(service.events.contains { $0.id == "invite" })
     }
@@ -1620,7 +1699,7 @@ final class MCPCalendarToolsTests: XCTestCase {
 
         let result = await tools.call(name: "cancel_meeting", arguments: ["event_id": "sync"])
 
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .exchangeError)
         XCTAssertTrue(result.errorMessage?.contains("Nothing was changed") == true)
         XCTAssertTrue(confirmer.proposals.isEmpty)
         let removed = await provider.removed
@@ -1671,7 +1750,7 @@ final class MCPCalendarToolsTests: XCTestCase {
 
         let result = await tools.call(name: "find_people", arguments: ["queries": .array(long.map(JSONValue.string))])
 
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .rateLimited)
         let searches = await provider.peopleSearches
         XCTAssertTrue(searches.isEmpty)
     }
@@ -1688,7 +1767,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         ]
         for arguments in broken {
             let result = await tools.call(name: "find_people", arguments: arguments)
-            XCTAssertTrue(result.isError, "\(arguments)")
+            XCTAssertRefusal(result, .invalidArgument, "\(arguments)")
         }
     }
 
@@ -1699,7 +1778,7 @@ final class MCPCalendarToolsTests: XCTestCase {
 
         let result = await tools.call(name: "create_meeting", arguments: meetingArguments)
 
-        XCTAssertTrue(result.isError)
+        XCTAssertRefusal(result, .settingDisabled)
         XCTAssertTrue(confirmer.proposals.isEmpty)
         let created = await provider.created
         XCTAssertTrue(created.isEmpty)
@@ -1740,7 +1819,7 @@ final class MCPCalendarToolsTests: XCTestCase {
 
             let result = await tools.call(name: "create_meeting", arguments: meetingArguments)
 
-            XCTAssertTrue(result.isError, "\(outcome)")
+            XCTAssertRefusal(result, outcome.refusalCode, "\(outcome)")
             XCTAssertTrue(result.errorMessage?.contains("Nothing was created") == true, "\(outcome)")
             let created = await provider.created
             XCTAssertTrue(created.isEmpty, "\(outcome)")
@@ -1818,7 +1897,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         ]
         for arguments in broken {
             let result = await tools.call(name: "create_meeting", arguments: arguments)
-            XCTAssertTrue(result.isError, "\(arguments)")
+            XCTAssertRefusal(result, arguments["account_id"] == nil ? .invalidArgument : .notSupported, "\(arguments)")
         }
         XCTAssertTrue(confirmer.proposals.isEmpty)
     }

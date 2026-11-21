@@ -25,7 +25,7 @@ struct MCPToolDefinition: Sendable {
         return [
             "name": .string(name),
             "title": .string(title),
-            "description": .string(description),
+            "description": .string(description + MCPToolErrorCodes.descriptionSuffix(for: name)),
             "inputSchema": inputSchema,
             "annotations": .object(annotations),
         ]
@@ -33,25 +33,43 @@ struct MCPToolDefinition: Sendable {
 }
 
 /// Outcome of one tool call. Failures are tool results (`isError: true`) rather than JSON-RPC
-/// errors, so the model reads the message and can correct its arguments or tell the user.
+/// errors, so the model reads the message and can correct its arguments or tell the user. A
+/// failure also carries a stable `error_code` (and `setting` for a setting that is off) in
+/// `structuredContent`, for clients that show their user what to do.
 struct MCPToolResult: Sendable, Equatable {
     let structured: [String: JSONValue]?
-    let errorMessage: String?
+    let error: MCPToolError?
+
+    var errorMessage: String? { error?.message }
+    var errorCode: MCPErrorCode? { error?.code }
 
     static func success(_ structured: [String: JSONValue]) -> MCPToolResult {
-        MCPToolResult(structured: structured, errorMessage: nil)
+        MCPToolResult(structured: structured, error: nil)
     }
 
-    static func failure(_ message: String) -> MCPToolResult {
-        MCPToolResult(structured: nil, errorMessage: message)
+    static func failure(_ error: MCPToolError) -> MCPToolResult {
+        MCPToolResult(structured: nil, error: error)
     }
 
-    var isError: Bool { errorMessage != nil }
+    static func failure(_ code: MCPErrorCode, _ message: String) -> MCPToolResult {
+        .failure(MCPToolError(code, message))
+    }
+
+    var isError: Bool { error != nil }
 
     var json: JSONValue {
-        if let errorMessage {
+        if let error {
+            var fields: [String: JSONValue] = [
+                "error_code": .string(error.code.rawValue),
+                "message": .string(error.message),
+            ]
+            if let setting = error.setting {
+                fields["setting_id"] = .string(setting.rawValue)
+                if let title = error.settingTitle { fields["setting"] = .string(title) }
+            }
             return [
-                "content": [["type": "text", "text": .string(errorMessage)]],
+                "content": [["type": "text", "text": .string(error.message)]],
+                "structuredContent": .object(fields),
                 "isError": true,
             ]
         }

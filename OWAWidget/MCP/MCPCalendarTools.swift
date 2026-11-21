@@ -122,7 +122,7 @@ final class MCPCalendarTools {
 
     func call(name: String, arguments: [String: JSONValue], client: String? = nil) async -> MCPToolResult {
         guard isEnabled() else {
-            return .failure(Self.disabledMessage)
+            return .failure(.serverDisabled, Self.disabledMessage)
         }
         let context = CallContext(now: clock(), coder: MCPDateCoder(timeZone: timeZoneProvider()))
         do {
@@ -141,12 +141,12 @@ final class MCPCalendarTools {
             case "create_meeting": return try await createMeeting(arguments, context, client: client)
             case "cancel_meeting": return try await cancelMeeting(arguments, context, client: client)
             case "respond_to_meeting": return try await respondToMeeting(arguments, context, client: client)
-            default: return .failure("Unknown tool: \(name)")
+            default: return .failure(.invalidArgument, "Unknown tool: \(name)")
             }
-        } catch let error as ArgumentError {
-            return .failure(error.message)
+        } catch let error as MCPToolError {
+            return .failure(error)
         } catch {
-            return .failure(error.localizedDescription)
+            return .failure(MCPToolError.code(for: error), error.localizedDescription)
         }
     }
 
@@ -391,7 +391,7 @@ final class MCPCalendarTools {
 
         // Free/busy, plus the user's own address on the first search.
         if let denial = accessGuard.permitRequest(count: 2) {
-            return .failure(denial.message)
+            return .failure(denial.error)
         }
         let search: (slots: [FreeSlot], attendeeAvailability: [AttendeeAvailability], optionalAvailability: [AttendeeAvailability], organizerAvailability: AttendeeAvailability?, organizerEvents: [CalendarEvent])
         do {
@@ -408,10 +408,10 @@ final class MCPCalendarTools {
             )
         } catch {
             accessGuard.report(error, context: "mcp.findFreeSlots")
-            if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
-                return .failure(reason)
+            if let block = MCPAccessGuard.blockError(calendarService.syncStatus) {
+                return .failure(block)
             }
-            return .failure("Exchange did not return free/busy: \(error.localizedDescription)")
+            return .failure(MCPToolError.code(for: error), "Exchange did not return free/busy: \(error.localizedDescription)")
         }
 
         var rows: [String: AttendeeAvailability] = [:]
@@ -653,7 +653,7 @@ final class MCPCalendarTools {
         }
         guard let event = MCPEventID.resolve(handle, in: calendarService.events)
             ?? MCPEventID.resolve(handle, in: archive.allEvents) else {
-            return .failure("Event \(handle) not found. It may have been removed, or the calendar was refreshed — call list_events again.")
+            return .failure(.notFound, "Event \(handle) not found. It may have been removed, or the calendar was refreshed — call list_events again.")
         }
 
         var result = commonFields(context)
@@ -716,9 +716,9 @@ final class MCPCalendarTools {
         // which names were never looked up.
         let cost = queries.reduce(0) { $0 + Self.findPeopleRequestCost($1) }
         if let denial = accessGuard.permitRequest(count: cost) {
-            return .failure(denial.message)
+            return .failure(denial.error)
         }
-        var outcomes: [(query: String, people: [ResolvedAttendee]?, error: String?)] = []
+        var outcomes: [(query: String, people: [ResolvedAttendee]?, error: MCPToolError?)] = []
         for query in queries {
             do {
                 await accessGuard.acquireSlot()
@@ -727,10 +727,10 @@ final class MCPCalendarTools {
                 outcomes.append((query, people, nil))
             } catch {
                 accessGuard.report(error, context: "mcp.findPeople")
-                if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
-                    return .failure(reason)
+                if let block = MCPAccessGuard.blockError(calendarService.syncStatus) {
+                    return .failure(block)
                 }
-                outcomes.append((query, nil, "Address book search failed: \(error.localizedDescription)"))
+                outcomes.append((query, nil, MCPToolError(MCPToolError.code(for: error), "Address book search failed: \(error.localizedDescription)")))
             }
         }
 
@@ -761,7 +761,7 @@ final class MCPCalendarTools {
 
         var result = commonFields(context)
         if !isBatch, let single = outcomes.first {
-            guard let people = single.people else { return .failure(single.error ?? "Address book search failed") }
+            guard let people = single.people else { return .failure(single.error ?? MCPToolError(.exchangeError, "Address book search failed")) }
             result["people"] = .array(people.prefix(limit).map(personJSON))
             result["total"] = .int(Int64(people.count))
             result["truncated"] = .bool(people.count > limit)
@@ -774,7 +774,9 @@ final class MCPCalendarTools {
                 group["total"] = .int(Int64(people.count))
                 group["truncated"] = .bool(people.count > limit)
             } else {
-                group["error"] = .string(outcome.error ?? "Address book search failed")
+                let error = outcome.error ?? MCPToolError(.exchangeError, "Address book search failed")
+                group["error"] = .string(error.message)
+                group["code"] = .string(error.code.rawValue)
             }
             return .object(group)
         })
@@ -819,7 +821,7 @@ final class MCPCalendarTools {
 
     private enum OrgLoad {
         case loaded(OrgHierarchy?, asOf: Date)
-        case failed(String)
+        case failed(MCPToolError)
     }
 
     private func getMyOrg(_ arguments: [String: JSONValue], _ context: CallContext) async throws -> MCPToolResult {
@@ -831,13 +833,13 @@ final class MCPCalendarTools {
         }
         let own = await ownAddress(account, wait: Self.ownDomainWaitForSearch)
         guard let target = given.isEmpty ? own : given else {
-            return .failure("The user's own address is not known yet (Exchange did not answer). Retry in a minute, or pass `email`.")
+            return .failure(.notReady, "The user's own address is not known yet (Exchange did not answer). Retry in a minute, or pass `email`.")
         }
 
         let hierarchy: OrgHierarchy?
         let asOf: Date
         switch await loadOrgHierarchy(target, account: account) {
-        case .failed(let message): return .failure(message)
+        case .failed(let error): return .failure(error)
         case .loaded(let found, let date): (hierarchy, asOf) = (found, date)
         }
 
@@ -871,9 +873,9 @@ final class MCPCalendarTools {
             "requested": .int(Int64(lookups.count)),
             "truncated": .bool(hierarchy.directReports.count > lookups.count),
         ]
-        var stopped: String?
+        var stopped: MCPToolError?
         if uncached > 0, let denial = accessGuard.permitRequest(count: uncached) {
-            stopped = denial.message
+            stopped = denial.error
         }
         var reports: [JSONValue] = []
         var loaded = 0
@@ -881,8 +883,8 @@ final class MCPCalendarTools {
             var fields = MCPOrgChartFormat.person(report, ownEmail: own)
             if stopped == nil, lookups.contains(report) {
                 switch await loadOrgHierarchy(report.email, account: account, prepaid: true) {
-                case .failed(let message):
-                    stopped = message
+                case .failed(let error):
+                    stopped = error
                 case .loaded(let theirs, _):
                     loaded += 1
                     fields["direct_reports"] = MCPOrgChartFormat.people(theirs?.directReports ?? [], ownEmail: own)
@@ -892,7 +894,10 @@ final class MCPCalendarTools {
             reports.append(.object(fields))
         }
         skipLevel["loaded"] = .int(Int64(loaded))
-        if let stopped { skipLevel["error"] = .string(stopped) }
+        if let stopped {
+            skipLevel["error"] = .string(stopped.message)
+            skipLevel["code"] = .string(stopped.code.rawValue)
+        }
         result["direct_reports"] = .array(reports)
         result["skip_level"] = .object(skipLevel)
         return .success(result)
@@ -904,7 +909,7 @@ final class MCPCalendarTools {
             return .loaded(cached.value, asOf: cached.date)
         }
         if !prepaid, let denial = accessGuard.permitRequest() {
-            return .failed(denial.message)
+            return .failed(denial.error)
         }
         await accessGuard.acquireSlot()
         defer { accessGuard.releaseSlot() }
@@ -915,10 +920,10 @@ final class MCPCalendarTools {
             return .loaded(hierarchy, asOf: now)
         } catch {
             accessGuard.report(error, context: "mcp.orgHierarchy")
-            if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
-                return .failed(reason)
+            if let block = MCPAccessGuard.blockError(calendarService.syncStatus) {
+                return .failed(block)
             }
-            return .failed("Organization chart request failed: \(error.localizedDescription)")
+            return .failed(MCPToolError(MCPToolError.code(for: error), "Organization chart request failed: \(error.localizedDescription)"))
         }
     }
 
@@ -947,14 +952,14 @@ final class MCPCalendarTools {
         // request sends the password again.
         let uncached = emails.filter { profileCache.lookup($0, account: account.id, now: clock()) == nil }.count
         if uncached > 0, let denial = accessGuard.permitRequest(count: uncached) {
-            return .failure(denial.message)
+            return .failure(denial.error)
         }
         let own = await ownAddress(account, wait: Self.ownDomainWaitForSearch)
-        var stopped: String?
+        var stopped: MCPToolError?
         var profiles: [JSONValue] = []
         for email in emails {
             if let stopped {
-                profiles.append(["email": .string(email), "error": .string("Not looked up: \(stopped)")])
+                profiles.append(["email": .string(email), "error": .string("Not looked up: \(stopped.message)"), "code": .string(stopped.code.rawValue)])
                 continue
             }
             var asOf: Date
@@ -971,12 +976,12 @@ final class MCPCalendarTools {
                 } catch {
                     accessGuard.releaseSlot()
                     accessGuard.report(error, context: "mcp.personProfile")
-                    if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
-                        return .failure(reason)
+                    if let block = MCPAccessGuard.blockError(calendarService.syncStatus) {
+                        return .failure(block)
                     }
-                    let message = "Address book request failed: \(error.localizedDescription)"
-                    stopped = message
-                    profiles.append(["email": .string(email), "error": .string(message)])
+                    let failure = MCPToolError(MCPToolError.code(for: error), "Address book request failed: \(error.localizedDescription)")
+                    stopped = failure
+                    profiles.append(["email": .string(email), "error": .string(failure.message), "code": .string(failure.code.rawValue)])
                     continue
                 }
             }
@@ -998,9 +1003,10 @@ final class MCPCalendarTools {
 
     private func createMeeting(_ arguments: [String: JSONValue], _ context: CallContext, client: String?) async throws -> MCPToolResult {
         guard canCreateMeetings() else {
-            return .failure(
+            return .failure(.settingOff(
+                .createMeetings,
                 "Creating meetings is turned off in OWA Widget (Settings → MCP → \"Allow creating meetings\"). Nothing was created. Ask the user to turn it on."
-            )
+            ))
         }
         let title = MCPMeetingTextPolicy.normalizedSpaces(arguments["title"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, title.count <= 255 else { throw ArgumentError("`title` is required, up to 255 characters") }
@@ -1049,10 +1055,10 @@ final class MCPCalendarTools {
             return .success(result)
         }
         guard !isCreatingMeeting, !isRemovingMeeting else {
-            return .failure("Another meeting is waiting for the user's answer in OWA Widget. Wait for that call to finish before asking again.")
+            return .failure(.busy, "Another meeting is waiting for the user's answer in OWA Widget. Wait for that call to finish before asking again.")
         }
-        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
-            return .failure(reason)
+        if let block = MCPAccessGuard.blockError(calendarService.syncStatus) {
+            return .failure(block)
         }
         isCreatingMeeting = true
         defer { isCreatingMeeting = false }
@@ -1084,7 +1090,7 @@ final class MCPCalendarTools {
         case .confirmed:
             break
         case .rejected:
-            return .failure("The user declined in OWA Widget. Nothing was created; do not retry unless the user asks.")
+            return .failure(.userDeclined, "The user declined in OWA Widget. Nothing was created; do not retry unless the user asks.")
         case .handedOff:
             // Not an error: models retry errors, and this one is settled — the user took over.
             handOff(MeetingDraftSeed(proposal: proposal, accountID: account.id))
@@ -1095,9 +1101,9 @@ final class MCPCalendarTools {
             recentCreations[key] = (context.now, result)
             return .success(result)
         case .timedOut:
-            return .failure("The user did not answer in OWA Widget within \(Int(confirmationTimeout)) seconds. Nothing was created; ask the user whether to try again.")
+            return .failure(.confirmationTimeout, "The user did not answer in OWA Widget within \(Int(confirmationTimeout)) seconds. Nothing was created; ask the user whether to try again.")
         case .cancelled:
-            return .failure("The request was cancelled. Nothing was created.")
+            return .failure(.cancelled, "The request was cancelled. Nothing was created.")
         }
 
         // Past "Create" the request must finish even if the client cancels now: a half-sent
@@ -1122,6 +1128,7 @@ final class MCPCalendarTools {
         } catch {
             MCPDebugLog.log("create_meeting failed: \(error.localizedDescription)")
             return .failure(
+                MCPToolError.code(for: error, mayHaveBeenSent: true),
                 "Exchange did not confirm the meeting: \(error.localizedDescription). It may still have been created: check list_events after the next sync before trying again."
             )
         }
@@ -1150,9 +1157,10 @@ final class MCPCalendarTools {
     /// sends a second email.
     private func respondToMeeting(_ arguments: [String: JSONValue], _ context: CallContext, client: String?) async throws -> MCPToolResult {
         guard canRespondMeetings() else {
-            return .failure(
+            return .failure(.settingOff(
+                .respondMeetings,
                 "Answering invitations is turned off in OWA Widget (Settings → MCP → \"Allow answering invitations\"). Nothing was sent. Ask the user to turn it on."
-            )
+            ))
         }
         guard let handle = arguments["event_id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !handle.isEmpty else {
             throw ArgumentError("`event_id` is required (take it from list_events)")
@@ -1197,24 +1205,24 @@ final class MCPCalendarTools {
         }
         guard let event = MCPEventID.resolve(handle, in: calendarService.events)
             ?? MCPEventID.resolve(handle, in: archive.allEvents) else {
-            return .failure("Event \(handle) not found. It may have been removed, or the calendar was refreshed — call list_events again.")
+            return .failure(.notFound, "Event \(handle) not found. It may have been removed, or the calendar was refreshed — call list_events again.")
         }
         guard calendarService.accountType(for: event.accountID) == .owa, event.changeKey != nil,
               let account = calendarService.accounts.first(where: { $0.id == event.accountID }) else {
-            return .failure("Only Exchange invitations can be answered here. This meeting comes from a calendar synced to macOS: the user can answer it in the Calendar app.")
+            return .failure(.notSupported, "Only Exchange invitations can be answered here. This meeting comes from a calendar synced to macOS: the user can answer it in the Calendar app.")
         }
         guard !event.isOrganizer, event.responseType != .organizer else {
-            return .failure("The user organizes this meeting, so there is no invitation to answer. Nothing was sent. To call it off, use cancel_meeting.")
+            return .failure(.notInvitation, "The user organizes this meeting, so there is no invitation to answer. Nothing was sent. To call it off, use cancel_meeting.")
         }
         guard !event.isEffectivelyCancelled else {
-            return .failure("The organizer has cancelled this meeting: there is nothing to answer. Nothing was sent; cancel_meeting can remove it from the calendar.")
+            return .failure(.notInvitation, "The organizer has cancelled this meeting: there is nothing to answer. Nothing was sent; cancel_meeting can remove it from the calendar.")
         }
         let series = scopeName == "series"
         if series, !event.isRecurring {
             throw ArgumentError("This meeting does not repeat: leave `scope` out (or pass occurrence).")
         }
         guard series || event.endDate > context.now else {
-            return .failure("This meeting is already over. Nothing was sent.")
+            return .failure(.pastEvent, "This meeting is already over. Nothing was sent.")
         }
         let target = action.responseType
         let sameAnswer: Bool
@@ -1237,10 +1245,10 @@ final class MCPCalendarTools {
             return .success(result)
         }
         guard !isCreatingMeeting, !isRemovingMeeting, !isRespondingToMeeting else {
-            return .failure("Another meeting is waiting for the user's answer in OWA Widget. Wait for that call to finish before asking again.")
+            return .failure(.busy, "Another meeting is waiting for the user's answer in OWA Widget. Wait for that call to finish before asking again.")
         }
-        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
-            return .failure(reason)
+        if let block = MCPAccessGuard.blockError(calendarService.syncStatus) {
+            return .failure(block)
         }
         isRespondingToMeeting = true
         defer { isRespondingToMeeting = false }
@@ -1263,14 +1271,14 @@ final class MCPCalendarTools {
         case .confirmed:
             break
         case .rejected, .handedOff:
-            return .failure("The user chose not to answer in OWA Widget. Nothing was sent; do not retry unless the user asks.")
+            return .failure(.userDeclined, "The user chose not to answer in OWA Widget. Nothing was sent; do not retry unless the user asks.")
         case .timedOut:
-            return .failure("The user did not answer in OWA Widget within \(Int(confirmationTimeout)) seconds. Nothing was sent; ask the user whether to try again.")
+            return .failure(.confirmationTimeout, "The user did not answer in OWA Widget within \(Int(confirmationTimeout)) seconds. Nothing was sent; ask the user whether to try again.")
         case .cancelled:
-            return .failure("The request was cancelled. Nothing was sent.")
+            return .failure(.cancelled, "The request was cancelled. Nothing was sent.")
         }
         if let denial = accessGuard.permitRequest() {
-            return .failure(denial.message + " Nothing was sent.")
+            return .failure(denial.error.appending(" Nothing was sent."))
         }
 
         // Past the button the request must finish even if the client cancels now: the user saw
@@ -1289,14 +1297,15 @@ final class MCPCalendarTools {
             MCPDebugLog.log("respond_to_meeting failed: \(error.localizedDescription)")
             if case OWAError.ewsError(let code) = error {
                 if OWARespondToMeetingPayload.isStaleChangeKeyCode(code) {
-                    return .failure("The meeting changed in Exchange after the last sync, so nothing was sent. Call list_events after the next sync and ask the user again.")
+                    return .failure(.stale, "The meeting changed in Exchange after the last sync, so nothing was sent. Call list_events after the next sync and ask the user again.")
                 }
                 if code == "ErrorItemNotFound" {
-                    return .failure("Exchange no longer has this meeting: it may have been cancelled or deleted. Check list_events after the next sync.")
+                    return .failure(.notFound, "Exchange no longer has this meeting: it may have been cancelled or deleted. Check list_events after the next sync.")
                 }
-                return .failure("Exchange refused the answer (\(code)). Nothing was sent.")
+                return .failure(.exchangeError, "Exchange refused the answer (\(code)). Nothing was sent.")
             }
             return .failure(
+                MCPToolError.code(for: error, mayHaveBeenSent: true),
                 "Exchange did not confirm: \(error.localizedDescription). It may still have gone through: check `my_response` in list_events after the next sync before trying again."
             )
         }
@@ -1328,9 +1337,10 @@ final class MCPCalendarTools {
     /// already cancelled is deleted. Only an occurrence's own id is touched, never the series.
     private func cancelMeeting(_ arguments: [String: JSONValue], _ context: CallContext, client: String?) async throws -> MCPToolResult {
         guard canRemoveMeetings() else {
-            return .failure(
+            return .failure(.settingOff(
+                .cancelMeetings,
                 "Cancelling meetings is turned off in OWA Widget (Settings → MCP → \"Allow cancelling meetings\"). Nothing was changed. Ask the user to turn it on."
-            )
+            ))
         }
         guard let handle = arguments["event_id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !handle.isEmpty else {
             throw ArgumentError("`event_id` is required (take it from list_events)")
@@ -1362,20 +1372,20 @@ final class MCPCalendarTools {
         }
         guard let event = MCPEventID.resolve(handle, in: calendarService.events)
             ?? MCPEventID.resolve(handle, in: archive.allEvents) else {
-            return .failure("Event \(handle) not found. It may have been removed, or the calendar was refreshed — call list_events again.")
+            return .failure(.notFound, "Event \(handle) not found. It may have been removed, or the calendar was refreshed — call list_events again.")
         }
         guard calendarService.accountType(for: event.accountID) == .owa, event.changeKey != nil,
               let account = calendarService.accounts.first(where: { $0.id == event.accountID }) else {
-            return .failure("Only Exchange meetings can be cancelled here. This one comes from a calendar synced to macOS: the user can remove it in the Calendar app.")
+            return .failure(.notSupported, "Only Exchange meetings can be cancelled here. This one comes from a calendar synced to macOS: the user can remove it in the Calendar app.")
         }
         guard event.endDate > context.now else {
-            return .failure("This meeting is already over. Only upcoming or ongoing meetings can be cancelled. Nothing was changed.")
+            return .failure(.pastEvent, "This meeting is already over. Only upcoming or ongoing meetings can be cancelled. Nothing was changed.")
         }
         guard !isCreatingMeeting, !isRemovingMeeting else {
-            return .failure("Another meeting is waiting for the user's answer in OWA Widget. Wait for that call to finish before asking again.")
+            return .failure(.busy, "Another meeting is waiting for the user's answer in OWA Widget. Wait for that call to finish before asking again.")
         }
-        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
-            return .failure(reason)
+        if let block = MCPAccessGuard.blockError(calendarService.syncStatus) {
+            return .failure(block)
         }
         isRemovingMeeting = true
         defer { isRemovingMeeting = false }
@@ -1401,7 +1411,7 @@ final class MCPCalendarTools {
                         attendees, ownAddress: knownOwnAddress(event.accountID), ownDomain: ownDomain
                     )
                 case .unavailable(let reason, _):
-                    return .failure("Could not load the attendee list, so OWA Widget cannot show who would get the cancellation: \(reason) Nothing was changed.")
+                    return .failure(.exchangeError, "Could not load the attendee list, so OWA Widget cannot show who would get the cancellation: \(reason) Nothing was changed.")
                 }
                 mode = recipients.isEmpty && unaddressed.isEmpty ? .deleteSilently : .cancelForAttendees
             }
@@ -1416,7 +1426,7 @@ final class MCPCalendarTools {
         }
         let panelTimeout = min(confirmationTimeout, Self.removalCallBudget - (uptime() - startedAt))
         guard panelTimeout >= Self.minimumRemovalPanelTime else {
-            return .failure("Exchange answered too slowly to leave the user time to decide before the request times out. Nothing was changed; try again.")
+            return .failure(.exchangeError, "Exchange answered too slowly to leave the user time to decide before the request times out. Nothing was changed; try again.")
         }
 
         let proposal = MCPMeetingRemovalProposal(
@@ -1439,11 +1449,11 @@ final class MCPCalendarTools {
         case .confirmed:
             break
         case .rejected, .handedOff:
-            return .failure("The user declined in OWA Widget. Nothing was changed; do not retry unless the user asks.")
+            return .failure(.userDeclined, "The user declined in OWA Widget. Nothing was changed; do not retry unless the user asks.")
         case .timedOut:
-            return .failure("The user did not answer in OWA Widget within \(Int(panelTimeout)) seconds. Nothing was changed; ask the user whether to try again.")
+            return .failure(.confirmationTimeout, "The user did not answer in OWA Widget within \(Int(panelTimeout)) seconds. Nothing was changed; ask the user whether to try again.")
         case .cancelled:
-            return .failure("The request was cancelled. Nothing was changed.")
+            return .failure(.cancelled, "The request was cancelled. Nothing was changed.")
         }
 
         // Past the button the request must finish even if the client cancels now, as with
@@ -1458,13 +1468,14 @@ final class MCPCalendarTools {
             MCPDebugLog.log("cancel_meeting failed: \(error.localizedDescription)")
             if case OWAError.ewsError(let code) = error {
                 if OWARespondToMeetingPayload.isStaleChangeKeyCode(code) {
-                    return .failure("The meeting changed in Exchange after the last sync, so nothing was changed. Call list_events after the next sync and ask the user again.")
+                    return .failure(.stale, "The meeting changed in Exchange after the last sync, so nothing was changed. Call list_events after the next sync and ask the user again.")
                 }
                 if code == "ErrorItemNotFound" {
-                    return .failure("Exchange no longer has this meeting: it may already have been cancelled or deleted. Check list_events after the next sync.")
+                    return .failure(.notFound, "Exchange no longer has this meeting: it may already have been cancelled or deleted. Check list_events after the next sync.")
                 }
             }
             return .failure(
+                MCPToolError.code(for: error, mayHaveBeenSent: true),
                 "Exchange did not confirm: \(error.localizedDescription). It may still have happened: check list_events after the next sync before trying again."
             )
         }
@@ -1539,16 +1550,16 @@ final class MCPCalendarTools {
         let exchange = calendarService.accounts.filter { $0.accountType == .owa }
         if let id = try optionalAccountID(arguments) {
             guard let account = calendarService.accounts.first(where: { $0.id == id }) else {
-                throw ArgumentError("Unknown `account_id`; take one from get_status")
+                throw ArgumentError(.notFound, "Unknown `account_id`; take one from get_status")
             }
             guard account.accountType == .owa else {
-                throw ArgumentError("Only Exchange accounts (type `exchange` in get_status) support this")
+                throw ArgumentError(.notSupported, "Only Exchange accounts (type `exchange` in get_status) support this")
             }
             return account
         }
         switch exchange.count {
         case 1: return exchange[0]
-        case 0: throw ArgumentError("No Exchange account is connected in OWA Widget")
+        case 0: throw ArgumentError(.notSupported, "No Exchange account is connected in OWA Widget")
         default: throw ArgumentError("Several Exchange accounts are connected: pass `account_id` from get_status")
         }
     }
@@ -1729,6 +1740,7 @@ final class MCPCalendarTools {
         let reach = try onDemandReach(context)
         guard start < reach.end, end >= reach.start else {
             return .failure(
+                .invalidArgument,
                 "\(context.coder.string(start)) is outside the calendar data OWA Widget can read (\(context.coder.string(reach.start)) to \(context.coder.string(reach.end))). Nothing can be matched there; do not guess."
             )
         }
@@ -1739,6 +1751,7 @@ final class MCPCalendarTools {
         if !(start < coverage.end && end >= coverage.start), !lookup.attempted.isEmpty,
            lookup.unavailable.count == lookup.attempted.count {
             return .failure(
+                .exchangeError,
                 "Could not load the calendar around \(context.coder.string(start)): \(lookup.unavailable.map(\.reason).joined(separator: "; ")) Nothing can be matched there; do not guess."
             )
         }
@@ -1893,10 +1906,8 @@ final class MCPCalendarTools {
 
     private enum DefaultSpan { case day, week }
 
-    struct ArgumentError: Error {
-        let message: String
-        init(_ message: String) { self.message = message }
-    }
+    /// A refusal thrown from deep in a tool; `invalid_argument` unless it says otherwise.
+    typealias ArgumentError = MCPToolError
 
     private func commonFields(_ context: CallContext) -> [String: JSONValue] {
         let coder = context.coder
@@ -1994,7 +2005,7 @@ final class MCPCalendarTools {
 
     private func requireCoverage() throws -> DateInterval {
         guard let coverage = calendarService.eventCoverage else {
-            throw ArgumentError("No calendar data yet: OWA Widget has not synced. Check get_status.")
+            throw ArgumentError(.notReady, "No calendar data yet: OWA Widget has not synced. Check get_status.")
         }
         return coverage.interval
     }
@@ -2202,7 +2213,7 @@ final class MCPCalendarTools {
         }
         let cost = jobs.filter { $0.key != nil }.count
         if cost > 0, let denial = accessGuard.permitRequest(count: cost) {
-            throw ArgumentError(denial.message)
+            throw denial.error
         }
 
         // Started together, run at most two at a time (`accessGuard`'s slots).
@@ -2233,8 +2244,8 @@ final class MCPCalendarTools {
                     ?? "The calendar did not answer within \(Int(onDemandDeadline)) seconds. Call again: the periods loaded meanwhile are kept for a few minutes."
             }
         }
-        if interrupted || !unavailable.isEmpty, let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) {
-            throw ArgumentError(reason)
+        if interrupted || !unavailable.isEmpty, let block = MCPAccessGuard.blockError(calendarService.syncStatus) {
+            throw block
         }
 
         // The sync's own copy wins inside `coverage`: a block loaded minutes ago may still hold a

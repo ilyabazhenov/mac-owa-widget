@@ -52,17 +52,17 @@ final class MCPChangeTools {
     var feed: MCPChangeFeed { calendarService.changeFeed }
 
     func call(arguments: [String: JSONValue], mail access: MailAccess) -> MCPToolResult {
-        guard isEnabled() else { return .failure(MCPCalendarTools.disabledMessage) }
+        guard isEnabled() else { return .failure(.serverDisabled, MCPCalendarTools.disabledMessage) }
         let cursor: String?
         switch arguments["since_cursor"] {
         case nil, .null?: cursor = nil
         case .string(let value)?: cursor = value
-        default: return .failure("`since_cursor` must be a string: the `cursor` of the previous get_changes answer")
+        default: return .failure(.invalidArgument, "`since_cursor` must be a string: the `cursor` of the previous get_changes answer")
         }
         var limit = Self.defaultLimit
         if let raw = arguments["limit"] {
             guard let value = raw.intValue, (1...Self.maxLimit).contains(value) else {
-                return .failure("`limit` must be an integer from 1 to \(Self.maxLimit)")
+                return .failure(.invalidArgument, "`limit` must be an integer from 1 to \(Self.maxLimit)")
             }
             limit = value
         }

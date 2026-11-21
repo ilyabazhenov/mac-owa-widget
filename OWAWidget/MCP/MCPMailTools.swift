@@ -82,10 +82,8 @@ final class MCPMailTools {
     static let sendDisabledMessage = "Preparing emails is turned off in OWA Widget (Settings → AI (MCP) → Mail). Nothing was sent. Ask the user to turn it on."
     static let organizeDisabledMessage = "Marking mail is turned off: ask the user to turn on “Let assistants change mail marks: read” in OWA Widget settings → AI (MCP) → Mail. Nothing was changed."
 
-    struct ToolError: Error {
-        let message: String
-        init(_ message: String) { self.message = message }
-    }
+    /// A refusal thrown from deep in a tool; `invalid_argument` unless it says otherwise.
+    typealias ToolError = MCPToolError
 
     private let calendarService: CalendarService
     private let accessGuard: MCPAccessGuard
@@ -152,7 +150,7 @@ final class MCPMailTools {
     }
 
     func call(name: String, arguments: [String: JSONValue], client: String?) async -> MCPToolResult {
-        guard isEnabled() else { return .failure(Self.disabledMessage) }
+        guard isEnabled() else { return .failure(.settingOff(.readMail, Self.disabledMessage, code: .mailNotAllowed)) }
         let coder = MCPDateCoder(timeZone: timeZoneProvider())
         do {
             switch name {
@@ -166,14 +164,14 @@ final class MCPMailTools {
             case "set_mail_read": return try await setMailRead(arguments)
             case "move_mail": return try await moveMail(arguments)
             case "set_mail_flag": return try await setMailFlag(arguments)
-            default: return .failure("Unknown tool: \(name)")
+            default: return .failure(.invalidArgument, "Unknown tool: \(name)")
             }
-        } catch let error as ToolError {
-            return .failure(error.message)
+        } catch let error as MCPToolError {
+            return .failure(error)
         } catch MailError.notFound {
-            return .failure("Not found. The message may have been moved or deleted (moving changes its id) — list or search again.")
+            return .failure(.notFound, "Not found. The message may have been moved or deleted (moving changes its id) — list or search again.")
         } catch {
-            return .failure(error.localizedDescription)
+            return .failure(MCPToolError.code(for: error), error.localizedDescription)
         }
     }
 
@@ -211,9 +209,9 @@ final class MCPMailTools {
         context: String,
         _ operation: @Sendable (any MailProvider) async throws -> T
     ) async throws -> T {
-        if let denial = accessGuard.permitRequest(count: cost) { throw ToolError(denial.message) }
+        if let denial = accessGuard.permitRequest(count: cost) { throw denial.error }
         guard let provider = calendarService.mailProvider(accountID: account.id) else {
-            throw ToolError("This account's mailbox is not available right now (no password saved, or OWA Widget is still starting).")
+            throw ToolError(.notReady, "This account's mailbox is not available right now (no password saved, or OWA Widget is still starting).")
         }
         await accessGuard.acquireSlot()
         defer { accessGuard.releaseSlot() }
@@ -229,13 +227,13 @@ final class MCPMailTools {
         let accounts = calendarService.mailAccounts
         if let raw = arguments["account_id"]?.stringValue {
             guard let id = UUID(uuidString: raw), let account = accounts.first(where: { $0.id == id }) else {
-                throw ToolError("Unknown `account_id`, or that account has no Exchange mailbox; take one from get_status")
+                throw ToolError(.notFound, "Unknown `account_id`, or that account has no Exchange mailbox; take one from get_status")
             }
             return account
         }
         switch accounts.count {
         case 1: return accounts[0]
-        case 0: throw ToolError("No Exchange account is connected in OWA Widget")
+        case 0: throw ToolError(.notSupported, "No Exchange account is connected in OWA Widget")
         default: throw ToolError("Several Exchange accounts are connected: pass `account_id` from get_status")
         }
     }
@@ -276,7 +274,7 @@ final class MCPMailTools {
             throw ToolError("`\(key)` is required (take it from \(from))")
         }
         guard let id = resolve(value) else {
-            throw ToolError("Unknown `\(key)` \(value). Ids are remembered only while OWA Widget runs: call \(from) again.")
+            throw ToolError(.notFound, "Unknown `\(key)` \(value). Ids are remembered only while OWA Widget runs: call \(from) again.")
         }
         return id
     }
@@ -344,7 +342,7 @@ final class MCPMailTools {
            let match = list.first(where: { $0.displayName.caseInsensitiveCompare(raw) == .orderedSame }) {
             return match.distinguished.map { .distinguished($0) } ?? .id(match.id)
         }
-        throw ToolError("Unknown folder `\(raw)`. Use inbox, sent, drafts, deleted, junk, archive, a folder name or a folder_id from list_mail_folders.")
+        throw ToolError(.notFound, "Unknown folder `\(raw)`. Use inbox, sent, drafts, deleted, junk, archive, a folder name or a folder_id from list_mail_folders.")
     }
 
     private func ownAddress(_ account: CalendarAccount) async -> String? {
@@ -731,7 +729,7 @@ final class MCPMailTools {
     // MARK: - prepare_mail
 
     private func prepareMail(_ arguments: [String: JSONValue], _ coder: MCPDateCoder, client: String?) async throws -> MCPToolResult {
-        guard canSend() else { return .failure(Self.sendDisabledMessage) }
+        guard canSend() else { return .failure(.settingOff(.prepareMail, Self.sendDisabledMessage)) }
         let account = try mailAccount(arguments)
         guard let kind = arguments["kind"]?.stringValue.flatMap({ raw -> MailOutgoing.Kind? in
             switch raw {
@@ -797,19 +795,19 @@ final class MCPMailTools {
         }
         sendTimes = sendTimes.filter { now.timeIntervalSince($0) < 3600 }
         guard sendTimes.count < Self.sendsPerHour else {
-            return .failure("OWA Widget allows at most \(Self.sendsPerHour) emails per hour from AI assistants. Nothing was sent; the user can write it in OWA Widget's compose window.")
+            return .failure(.rateLimited, "OWA Widget allows at most \(Self.sendsPerHour) emails per hour from AI assistants. Nothing was sent; the user can write it in OWA Widget's compose window.")
         }
         guard !isConfirming else {
-            return .failure("Another email is waiting for the user's answer in OWA Widget. Wait for that call to finish.")
+            return .failure(.busy, "Another email is waiting for the user's answer in OWA Widget. Wait for that call to finish.")
         }
         panelTimes = panelTimes.filter { now.timeIntervalSince($0) < 3600 }
         guard panelTimes.count < Self.panelsPerHour else {
-            return .failure("OWA Widget shows at most \(Self.panelsPerHour) email confirmations an hour. Nothing was sent; the user can write the email in OWA Widget's compose window.")
+            return .failure(.busy, "OWA Widget shows at most \(Self.panelsPerHour) email confirmations an hour. Nothing was sent; the user can write the email in OWA Widget's compose window.")
         }
         if let lastDecline, now.timeIntervalSince(lastDecline) < Self.pauseAfterDecline {
-            return .failure("The user just declined an email. Nothing was sent; ask the user before trying again.")
+            return .failure(.userDeclined, "The user just declined an email. Nothing was sent; ask the user before trying again.")
         }
-        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) { return .failure(reason) }
+        if let block = MCPAccessGuard.blockError(calendarService.syncStatus) { return .failure(block) }
         isConfirming = true
         defer { isConfirming = false }
 
@@ -822,7 +820,7 @@ final class MCPMailTools {
         let prepared: MailPreparedSend
         do {
             guard let ref = try await request(account, context: "mcp.mail.draft", { try await $0.mailSend(draftRequest) }) else {
-                return .failure("Exchange did not save the draft. Nothing was sent.")
+                return .failure(.exchangeError, "Exchange did not save the draft. Nothing was sent.")
             }
             do {
                 let message = try await request(account, context: "mcp.mail.review") { try await $0.mailDraftForReview(ref) }
@@ -834,7 +832,7 @@ final class MCPMailTools {
         } catch let error as ToolError {
             throw error
         } catch {
-            return .failure("OWA Widget could not prepare the email: \(error.localizedDescription). Nothing was sent.")
+            return .failure(MCPToolError.code(for: error), "OWA Widget could not prepare the email: \(error.localizedDescription). Nothing was sent.")
         }
 
         let known = Set(([original?.from?.email] + (original?.to ?? []).map(\.email) + (original?.cc ?? []).map(\.email)).compactMap { $0?.lowercased() })
@@ -876,10 +874,10 @@ final class MCPMailTools {
             // Settings or the client's mail access may have changed while the panel was open.
             guard canSend() else {
                 discardDraft(prepared.draft, account)
-                return .failure(Self.sendDisabledMessage)
+                return .failure(.settingOff(.prepareMail, Self.sendDisabledMessage))
             }
         case .rejected:
-            return .failure("The user declined in OWA Widget. Nothing was sent; do not retry unless the user asks.")
+            return .failure(.userDeclined, "The user declined in OWA Widget. Nothing was sent; do not retry unless the user asks.")
         case .handedOff where proposal.canOpenDraft:
             handOff(MailComposeRequest(kind: kind, original: original, to: to, cc: cc, subject: shownSubject, body: body))
             var result = commonFields(coder, account)
@@ -890,18 +888,18 @@ final class MCPMailTools {
             return .success(result)
         case .handedOff:
             // The panel offered no draft button; treat a stray hand-off as a refusal.
-            return .failure("The user declined in OWA Widget. Nothing was sent; do not retry unless the user asks.")
+            return .failure(.userDeclined, "The user declined in OWA Widget. Nothing was sent; do not retry unless the user asks.")
         case .timedOut:
-            return .failure("The user did not answer in OWA Widget within \(Int(confirmationTimeout)) seconds. Nothing was sent; ask the user whether to try again.")
+            return .failure(.confirmationTimeout, "The user did not answer in OWA Widget within \(Int(confirmationTimeout)) seconds. Nothing was sent; ask the user whether to try again.")
         case .cancelled:
-            return .failure("The request was cancelled. Nothing was sent.")
+            return .failure(.cancelled, "The request was cancelled. Nothing was sent.")
         }
 
         // Past "Send" the request finishes even if the client cancels: a half-known outcome is
         // the worst one for an email.
         guard accessGuard.permitRequest() == nil, let provider = calendarService.mailProvider(accountID: account.id) else {
             discardDraft(prepared.draft, account)
-            return .failure("OWA Widget could not reach Exchange right now. Nothing was sent.")
+            return .failure(.offline, "OWA Widget could not reach Exchange right now. Nothing was sent.")
         }
         let guardRef = accessGuard
         let draft = prepared.draft
@@ -917,9 +915,9 @@ final class MCPMailTools {
             MCPDebugLog.log("prepare_mail send failed: \(error.localizedDescription)")
             if case .sendUncertain = error as? MailError {
                 sendTimes.append(now)
-                return .failure("The connection broke while Exchange was sending. The email may have gone out: check the Sent folder (list_mail folder=sent) and do not send it again before that.")
+                return .failure(.unconfirmed, "The connection broke while Exchange was sending. The email may have gone out: check the Sent folder (list_mail folder=sent) and do not send it again before that.")
             }
-            return .failure("Exchange did not send the email: \(error.localizedDescription). It stays in the Drafts folder.")
+            return .failure(.exchangeError, "Exchange did not send the email: \(error.localizedDescription). It stays in the Drafts folder.")
         }
         sendTimes.append(now)
         var result = commonFields(coder, account)
@@ -941,7 +939,7 @@ final class MCPMailTools {
     /// follow. Exchange marks the other messages when one fails, and `failed` names only the
     /// conversations that were not marked in full.
     private func setMailRead(_ arguments: [String: JSONValue]) async throws -> MCPToolResult {
-        guard canOrganize() else { return .failure(Self.organizeDisabledMessage) }
+        guard canOrganize() else { return .failure(.settingOff(.markMail, Self.organizeDisabledMessage)) }
         guard let isRead = arguments["read"]?.boolValue else {
             throw ToolError("`read` is required: true marks the conversations read, false unread")
         }
@@ -960,28 +958,25 @@ final class MCPMailTools {
         }
         let account = try mailAccount(arguments)
         guard let marker = readMarker else {
-            return .failure("OWA Widget cannot mark mail right now (it is still starting). Nothing was changed; try again in a minute.")
+            return .failure(.notReady, "OWA Widget cannot mark mail right now (it is still starting). Nothing was changed; try again in a minute.")
         }
-        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) { return .failure(reason) }
+        if let block = MCPAccessGuard.blockError(calendarService.syncStatus) { return .failure(block) }
         // A conversation also holds its copies in Deleted Items: marking the newest one "unread"
         // there would leave the inbox conversation read.
         let ignored = try await folders(account, load: true)?
             .filter { $0.distinguished == .deleteditems }.map(\.id) ?? []
 
         var failed: [JSONValue] = []
-        func fail(_ threadID: String, _ reason: String) {
-            failed.append(["thread_id": .string(threadID), "reason": .string(reason)])
+        func fail(_ threadID: String, _ reason: MCPToolError) {
+            failed.append(Self.failure(threadID, reason))
         }
-        func reason(_ error: any Error) -> String {
-            if case MailError.notFound? = error as? MailError { return Self.goneReason }
-            return (error as? ToolError)?.message ?? error.localizedDescription
-        }
+        func reason(_ error: any Error) -> MCPToolError { Self.reason(error) }
 
         var wanted: [(threadID: String, id: String)] = []
         var seen: Set<String> = []
         for threadID in raw {
             guard let id = resolve(threadID) else {
-                fail(threadID, "unknown thread_id: ids are remembered only while OWA Widget runs — list or search again")
+                fail(threadID, MCPToolError(.notFound, "unknown thread_id: ids are remembered only while OWA Widget runs — list or search again"))
                 continue
             }
             if seen.insert(id).inserted { wanted.append((threadID, id)) }
@@ -990,7 +985,7 @@ final class MCPMailTools {
         var threads: [(threadID: String, thread: MailThread)] = []
         // The budget, a blocked sync or the connection: the next requests would fare no better,
         // and each one sends the password again.
-        var stopReason: String?
+        var stopReason: MCPToolError?
         for batch in wanted.chunked(Self.threadsPerMarkRead) {
             if let stopReason {
                 for entry in batch { fail(entry.threadID, stopReason) }
@@ -1030,7 +1025,7 @@ final class MCPMailTools {
         return .success(["updated": .int(Int64(updated)), "failed": .array(failed)])
     }
 
-    private static let goneReason = "not found: the conversation was deleted or moved — list or search again"
+    private static let goneReason = MCPToolError(.notFound, "not found: the conversation was deleted or moved — list or search again")
 
     // MARK: - Moving and flagging (`move_mail`, `set_mail_flag`)
 
@@ -1068,13 +1063,15 @@ final class MCPMailTools {
         }
     }
 
-    private static func reason(_ error: any Error) -> String {
+    private static func reason(_ error: any Error) -> MCPToolError {
         if case MailError.notFound? = error as? MailError { return goneReason }
-        return (error as? ToolError)?.message ?? error.localizedDescription
+        if let error = error as? MCPToolError { return error }
+        return MCPToolError(MCPToolError.code(for: error), error.localizedDescription)
     }
 
-    private static func failure(_ threadID: String, _ reason: String) -> JSONValue {
-        ["thread_id": .string(threadID), "reason": .string(reason)]
+    /// One `failed` entry: the reason the model reads and its code.
+    private static func failure(_ threadID: String, _ reason: MCPToolError) -> JSONValue {
+        ["thread_id": .string(threadID), "reason": .string(reason.message), "code": .string(reason.code.rawValue)]
     }
 
     /// Resolves `thread_ids`, one entry per conversation; unknown ids go to `failed`.
@@ -1083,7 +1080,7 @@ final class MCPMailTools {
         var seen: Set<String> = []
         for threadID in raw {
             guard let id = resolve(threadID) else {
-                failed.append(Self.failure(threadID, "unknown thread_id: ids are remembered only while OWA Widget runs — list or search again"))
+                failed.append(Self.failure(threadID, MCPToolError(.notFound, "unknown thread_id: ids are remembered only while OWA Widget runs — list or search again")))
                 continue
             }
             if seen.insert(id).inserted { wanted.append((threadID, id)) }
@@ -1100,9 +1097,9 @@ final class MCPMailTools {
         ignoring: [String],
         context: String,
         failed: inout [JSONValue]
-    ) async -> (threads: [(threadID: String, thread: MailThread)], stop: String?) {
+    ) async -> (threads: [(threadID: String, thread: MailThread)], stop: MCPToolError?) {
         var threads: [(threadID: String, thread: MailThread)] = []
-        var stop: String?
+        var stop: MCPToolError?
         for batch in wanted.chunked(Self.threadsPerMarkRead) {
             if let stop {
                 for entry in batch { failed.append(Self.failure(entry.threadID, stop)) }
@@ -1133,9 +1130,9 @@ final class MCPMailTools {
         if let system = Self.systemFolderNames[text.lowercased()] {
             guard let folder = list.first(where: { $0.distinguished == system }) else {
                 if system == .archive {
-                    throw ToolError("This mailbox has no Archive folder (Exchange creates it the first time Archive is used in Outlook or OWA). Nothing was moved: pick another folder from list_mail_folders, or ask the user to archive one message in OWA once.")
+                    throw ToolError(.noArchiveFolder, "This mailbox has no Archive folder (Exchange creates it the first time Archive is used in Outlook or OWA). Nothing was moved: pick another folder from list_mail_folders, or ask the user to archive one message in OWA once.")
                 }
-                throw ToolError("This mailbox has no `\(text)` folder. Nothing was moved.")
+                throw ToolError(.notFound, "This mailbox has no `\(text)` folder. Nothing was moved.")
             }
             return folder
         }
@@ -1145,7 +1142,7 @@ final class MCPMailTools {
         if named.count > 1 {
             throw ToolError("Several folders are named `\(text)`: pass `\(argument)` as a folder_id from list_mail_folders. Nothing was moved.")
         }
-        throw ToolError("Unknown folder `\(text)` in `\(argument)`. Use inbox, archive, a folder name or a folder_id from list_mail_folders. Nothing was moved.")
+        throw ToolError(.notFound, "Unknown folder `\(text)` in `\(argument)`. Use inbox, archive, a folder name or a folder_id from list_mail_folders. Nothing was moved.")
     }
 
     /// The folder and the ones above it, nearest first.
@@ -1199,12 +1196,12 @@ final class MCPMailTools {
 
     /// Moves messages in requests of `bulkPageSize`. Returns the new ref (or the error) of each
     /// message in order, and why it stopped when a request failed as a whole.
-    private func performMoves(_ refs: [MailItemRef], to folderID: String, _ account: CalendarAccount) async -> (results: [Result<MailItemRef, any Error>], stop: String?) {
+    private func performMoves(_ refs: [MailItemRef], to folderID: String, _ account: CalendarAccount) async -> (results: [Result<MailItemRef, any Error>], stop: MCPToolError?) {
         var results: [Result<MailItemRef, any Error>] = []
-        var stop: String?
+        var stop: MCPToolError?
         for chunk in refs.chunked(MailService.bulkPageSize) {
             if let stop {
-                results += chunk.map { _ in .failure(ToolError(stop)) }
+                results += chunk.map { _ in .failure(stop) }
                 continue
             }
             do {
@@ -1223,7 +1220,7 @@ final class MCPMailTools {
     /// The answer names the new ids and an `undo_id` that moves them back. Nothing goes to
     /// Deleted Items or Exchange's other own folders.
     private func moveMail(_ arguments: [String: JSONValue]) async throws -> MCPToolResult {
-        guard canArrange() else { return .failure(Self.arrangeDisabledMessage) }
+        guard canArrange() else { return .failure(.settingOff(.arrangeMail, Self.arrangeDisabledMessage)) }
         if let undoID = arguments["undo_id"], undoID != .null {
             guard arguments["thread_ids"] == nil, arguments["folder"] == nil, arguments["from_folder"] == nil else {
                 throw ToolError("Pass either `undo_id` alone or `thread_ids` with `folder`. Nothing was moved.")
@@ -1238,13 +1235,13 @@ final class MCPMailTools {
             throw ToolError("`folder` is required: archive, inbox, a folder name or a folder_id from list_mail_folders")
         }
         let account = try mailAccount(arguments)
-        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) { return .failure(reason) }
+        if let block = MCPAccessGuard.blockError(calendarService.syncStatus) { return .failure(block) }
         let list = try await folders(account, load: true) ?? []
         let target = try pickFolder(folderText, in: list, argument: "folder")
-        if let refusal = Self.destinationRefusal(target, in: list) { throw ToolError(refusal + " Nothing was moved.") }
+        if let refusal = Self.destinationRefusal(target, in: list) { throw ToolError(.forbiddenFolder, refusal + " Nothing was moved.") }
         let source = try pickFolder(arguments["from_folder"]?.stringValue ?? "inbox", in: list, argument: "from_folder")
         if Self.lineage(source, in: list).contains(where: { $0.distinguished == .deleteditems }) {
-            throw ToolError("`from_folder` cannot be Deleted Items: move_mail does not restore deleted mail. Nothing was moved.")
+            throw ToolError(.forbiddenFolder, "`from_folder` cannot be Deleted Items: move_mail does not restore deleted mail. Nothing was moved.")
         }
         guard source.id != target.id else {
             throw ToolError("`folder` and `from_folder` are the same folder (\(target.displayName)). Nothing was moved.")
@@ -1259,7 +1256,7 @@ final class MCPMailTools {
         var notMoved: [String: Int] = [:]
         var touched: [String] = []
         var observed: [MCPMailMove] = []
-        var stop: String?
+        var stop: MCPToolError?
         for round in 0..<Self.moveRounds where !pending.isEmpty && stop == nil {
             let read = await readThreads(pending, account, ignoring: ignored, context: "mcp.mail.move", failed: &failed)
             if let reason = read.stop {
@@ -1274,7 +1271,7 @@ final class MCPMailTools {
                 let inSource = thread.messages.filter { $0.parentFolderID == source.id }
                 if inSource.isEmpty {
                     if round == 0 {
-                        failed.append(Self.failure(threadID, "nothing to move: no message of this conversation is in \(source.displayName) (moved already? pass `from_folder`)"))
+                        failed.append(Self.failure(threadID, MCPToolError(.notFound, "nothing to move: no message of this conversation is in \(source.displayName) (moved already? pass `from_folder`)")))
                     }
                     continue
                 }
@@ -1335,19 +1332,19 @@ final class MCPMailTools {
     /// an `undo_id` of its own (to move them again); repeating the undo moves nothing.
     private func undoMove(_ undoID: String, _ arguments: [String: JSONValue]) async throws -> MCPToolResult {
         guard var undo = moveUndos[undoID], clock().timeIntervalSince(undo.date) <= Self.moveUndoLifetime else {
-            throw ToolError("Unknown `undo_id` \(undoID): an undo is remembered for 24 hours and only while OWA Widget runs. Nothing was moved; move the conversations with `thread_ids` and `folder` instead.")
+            throw ToolError(.notFound, "Unknown `undo_id` \(undoID): an undo is remembered for 24 hours and only while OWA Widget runs. Nothing was moved; move the conversations with `thread_ids` and `folder` instead.")
         }
         if var answer = undo.answer {
             answer["repeated"] = true
             return .success(answer)
         }
         guard let account = calendarService.mailAccounts.first(where: { $0.id == undo.accountID }) else {
-            throw ToolError("The account of this move is no longer connected. Nothing was moved.")
+            throw ToolError(.notFound, "The account of this move is no longer connected. Nothing was moved.")
         }
         if let raw = arguments["account_id"]?.stringValue, UUID(uuidString: raw) != account.id {
             throw ToolError("This `undo_id` belongs to another account. Nothing was moved.")
         }
-        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) { return .failure(reason) }
+        if let block = MCPAccessGuard.blockError(calendarService.syncStatus) { return .failure(block) }
         let list = try await folders(account, load: true) ?? []
 
         var failed: [JSONValue] = []
@@ -1357,16 +1354,16 @@ final class MCPMailTools {
         var messageIDs: [String: [String]] = [:]
         var order: [String] = []
         var failedThreads: Set<String> = []
-        var stop: String?
+        var stop: MCPToolError?
         let groups = Dictionary(grouping: undo.items, by: \.backTo)
         for (folderID, items) in groups.sorted(by: { $0.key < $1.key }) {
             for item in items where !order.contains(item.threadID) { order.append(item.threadID) }
-            func fail(_ reason: String) {
+            func fail(_ reason: MCPToolError) {
                 for item in items where failedThreads.insert(item.threadID).inserted { failed.append(Self.failure(item.threadID, reason)) }
             }
             if let stop { fail(stop); continue }
             guard list.contains(where: { $0.id == folderID }) else {
-                fail("the folder these messages came from no longer exists")
+                fail(MCPToolError(.notFound, "the folder these messages came from no longer exists"))
                 continue
             }
             let outcome = await performMoves(items.map(\.ref), to: folderID, account)
@@ -1406,13 +1403,13 @@ final class MCPMailTools {
     /// flag on a conversation in OWA does) unless one is flagged already; `false` clears every
     /// flagged message. Repeating a call changes nothing (`unchanged`).
     private func setMailFlag(_ arguments: [String: JSONValue]) async throws -> MCPToolResult {
-        guard canArrange() else { return .failure(Self.arrangeDisabledMessage) }
+        guard canArrange() else { return .failure(.settingOff(.arrangeMail, Self.arrangeDisabledMessage)) }
         guard let flagged = arguments["flagged"]?.boolValue else {
             throw ToolError("`flagged` is required: true flags the conversations, false clears their flags")
         }
         let raw = try threadIDs(arguments)
         let account = try mailAccount(arguments)
-        if let reason = MCPAccessGuard.blockReason(calendarService.syncStatus) { return .failure(reason) }
+        if let block = MCPAccessGuard.blockError(calendarService.syncStatus) { return .failure(block) }
         let ignored = try await folders(account, load: true)?
             .filter { $0.distinguished == .deleteditems }.map(\.id) ?? []
 
@@ -1454,7 +1451,7 @@ final class MCPMailTools {
         var done: [String] = []
         var doneMessages: [String] = []
         var doneConversations: [String] = []
-        var stop: String?
+        var stop: MCPToolError?
         let status: MailFlagStatus = flagged ? .flagged : .notFlagged
         for chunk in plan.chunked(MailService.bulkPageSize) {
             if let stop {
