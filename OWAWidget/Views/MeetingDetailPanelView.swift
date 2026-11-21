@@ -571,9 +571,17 @@ private struct RSVPActionsView: View {
 
     @State private var sendingAction: MeetingResponseAction? = nil
     @State private var feedbackState: FeedbackState = .none
+    /// Scope, the organizer flag and the comment are set before pressing an answer button; they
+    /// start from the series state and the "Tell the organizer" setting.
+    @State private var didSetDefaults = false
+    @State private var answersSeries = false
+    @State private var notifyOrganizer = true
+    @State private var isCommenting = false
+    @State private var comment = ""
+    @FocusState private var commentFocused: Bool
 
     private enum FeedbackState: Equatable {
-        case none, success, failure(String)
+        case none, success(String, silent: Bool), failure(String)
     }
 
     private struct RSVPOption {
@@ -591,21 +599,76 @@ private struct RSVPActionsView: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
+            if event.isRecurring {
+                Picker("", selection: $answersSeries) {
+                    Text(localization.tr("meeting.reply.scope.series")).tag(true)
+                    Text(localization.tr("meeting.reply.scope.one")).tag(false)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.small)
+                .fixedSize()
+                .disabled(sendingAction != nil)
+                .accessibilityLabel(localization.tr("meeting.reply.scope.label"))
+            }
+
+            if isCommenting && notifyOrganizer {
+                commentEditor
+            }
+
             HStack(spacing: 6) {
                 ForEach(options, id: \.action) { option in
                     rsvpButton(for: option)
                 }
             }
 
+            HStack(spacing: 6) {
+                Toggle(isOn: $notifyOrganizer) {
+                    Text(localization.tr("meeting.reply.notify")).font(.app(.footnote))
+                }
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .disabled(sendingAction != nil)
+                Spacer(minLength: 8)
+                if notifyOrganizer {
+                    Button {
+                        if isCommenting {
+                            isCommenting = false
+                            comment = ""
+                        } else {
+                            isCommenting = true
+                            commentFocused = true
+                        }
+                    } label: {
+                        Label(
+                            localization.tr(isCommenting ? "meeting.reply.comment.remove" : "meeting.reply.comment.add"),
+                            systemImage: isCommenting ? "xmark" : "plus"
+                        )
+                        .font(.app(.footnote))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                    .disabled(sendingAction != nil)
+                }
+            }
+
+            if !notifyOrganizer {
+                Text(localization.tr("meeting.reply.silent.hint"))
+                    .font(.app(.footnote))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 20)
+            }
+
             switch feedbackState {
             case .none:
                 EmptyView()
-            case .success:
-                Label(localization.tr("meeting.rsvp.response.sent"), systemImage: "checkmark.circle.fill")
+            case .success(let text, let silent):
+                Label(text, systemImage: silent ? "bell.slash" : "checkmark.circle.fill")
                     .font(.app(.footnote))
                     .foregroundStyle(.green)
-                    .accessibilityLabel(localization.tr("meeting.rsvp.response.sent"))
+                    .accessibilityLabel(text)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             case .failure(let message):
                 Label(message, systemImage: "exclamationmark.circle.fill")
@@ -618,6 +681,76 @@ private struct RSVPActionsView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: feedbackState == .none)
+        .onAppear {
+            setDefaultsIfNeeded()
+            takeCommentRequest()
+        }
+        .onChange(of: calendarService.replyCommentRequestEventID) { _ in takeCommentRequest() }
+        .onChange(of: event.id) { _ in
+            didSetDefaults = false
+            isCommenting = false
+            comment = ""
+            feedbackState = .none
+            setDefaultsIfNeeded()
+        }
+    }
+
+    private var commentEditor: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ZStack(alignment: .topLeading) {
+                if comment.isEmpty {
+                    Text(localization.tr("meeting.reply.comment.placeholder"))
+                        .font(.app(.body))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $comment)
+                    .font(.app(.body))
+                    .scrollContentBackground(.hidden)
+                    .focused($commentFocused)
+                    .frame(minHeight: 40, maxHeight: 84)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onChange(of: comment) { value in
+                        if value.count > MeetingReplyOptions.commentLimit {
+                            comment = String(value.prefix(MeetingReplyOptions.commentLimit))
+                        }
+                    }
+                    .accessibilityLabel(localization.tr("meeting.reply.comment.placeholder"))
+            }
+            .padding(.horizontal, 3)
+            .padding(.vertical, 5)
+            .background(Color(nsColor: .textBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(commentFocused ? Color.accentColor.opacity(0.6) : Color(nsColor: .separatorColor), lineWidth: commentFocused ? 2 : 1)
+            }
+            HStack {
+                Text(localization.tr("meeting.reply.comment.hint"))
+                Spacer()
+                Text("\(comment.count) / \(MeetingReplyOptions.commentLimit)").monospacedDigit()
+            }
+            .font(.app(.caption))
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func setDefaultsIfNeeded() {
+        guard !didSetDefaults else { return }
+        didSetDefaults = true
+        answersSeries = MeetingReplyScope.defaultsToSeries(event, in: calendarService.events)
+        notifyOrganizer = calendarService.invitationNotifyOrganizerByDefault
+    }
+
+    /// "With a comment…" in the inbox column opened this card: show the comment field ready.
+    private func takeCommentRequest() {
+        guard calendarService.replyCommentRequestEventID == event.id else { return }
+        calendarService.replyCommentRequestEventID = nil
+        notifyOrganizer = true
+        isCommenting = true
+        commentFocused = true
     }
 
     @ViewBuilder
@@ -666,11 +799,22 @@ private struct RSVPActionsView: View {
         guard sendingAction == nil else { return }
         sendingAction = option.action
         feedbackState = .none
+        let replyOptions = MeetingReplyOptions(
+            series: event.isRecurring && answersSeries,
+            notifyOrganizer: notifyOrganizer,
+            comment: isCommenting ? comment : ""
+        )
 
         Task {
             do {
-                try await calendarService.respondToMeeting(event, action: option.action)
-                feedbackState = .success
+                try await calendarService.reply(to: event, action: option.action, options: replyOptions)
+                // The comment went out with this answer: the next answer starts without one.
+                isCommenting = false
+                comment = ""
+                feedbackState = .success(
+                    MeetingReplySummary.text(action: option.action, options: replyOptions, tr: { localization.tr($0) }),
+                    silent: !replyOptions.notifyOrganizer
+                )
                 try? await Task.sleep(for: .seconds(2))
                 feedbackState = .none
             } catch {

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>RSVP: all states</title>
+<link rel="stylesheet" href="mock.css">
+<style>
+body{width:1560px;background:#dcdce1;overflow:visible}
+html.dark body{background:#141416}
+html,body{overflow:visible}
+.board{padding:32px 36px 40px;display:flex;flex-direction:column;gap:34px}
+.board h1{font-size:20px;font-weight:600}
+.board .lead{font-size:13px;color:var(--fg2);margin-top:4px;max-width:900px;line-height:1.45}
+.sec-h{font-size:15px;font-weight:600;margin-bottom:4px}
+.sec-n{font-size:12px;color:var(--fg2);margin-bottom:14px;max-width:1000px;line-height:1.45}
+.grid{display:flex;flex-wrap:wrap;gap:26px 28px;align-items:flex-start}
+.cap{font-size:12px;font-weight:600;margin-bottom:3px}
+.cap small{display:block;font-size:11px;font-weight:400;color:var(--fg2);margin-top:2px;max-width:440px;line-height:1.4}
+.cell{display:flex;flex-direction:column;gap:8px}
+
+/* detail card, as drawn over the popover */
+.card{width:456px;border-radius:14px;background:var(--win);overflow:hidden;
+  box-shadow:0 6px 14px rgba(0,0,0,.16),inset 0 0 0 1px color-mix(in srgb,var(--sep) 35%,transparent),0 0 0 1px rgba(255,255,255,.06)}
+.card-head{height:48px;padding:0 12px;gap:10px}
+.xbtn{width:28px;height:28px;border-radius:50%;background:var(--ctl);display:grid;place-items:center;flex:none}
+.card-body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:12px}
+.rsvp{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:5px 9px;border-radius:6px;background:var(--ctl);color:var(--fg2);box-shadow:inset 0 0 0 1px var(--sep);white-space:nowrap}
+.rsvp.dim{opacity:.5}
+.drow{gap:6px;font-size:12px;color:var(--fg2)}
+.drow .i{width:16px;display:inline-flex;justify-content:center}
+.seg.sm{font-size:11px}.seg.sm span{padding:2px 9px}
+.cb{display:inline-grid;place-items:center;width:14px;height:14px;border-radius:4px;background:var(--accent);flex:none}
+.cb.off{background:var(--ctl);box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--fg) 30%,transparent)}
+.opt{gap:7px;font-size:11px}
+.lnk{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--accent)}
+.note{font-size:11px;color:var(--fg2);line-height:1.4}
+.ta{border-radius:6px;background:var(--ctl);box-shadow:inset 0 0 0 1px var(--sep),0 0 0 3px color-mix(in srgb,var(--accent) 35%,transparent);
+  padding:6px 8px;font-size:12px;line-height:1.4;min-height:54px}
+.ta .ph{color:var(--fg3)}
+.fb{display:flex;gap:5px;align-items:flex-start;font-size:11px;line-height:1.4}
+
+/* invitation panel (NSPanel, 360pt) */
+.ipanel{width:360px;border-radius:12px;position:relative;overflow:visible;padding-bottom:4px;
+  background:linear-gradient(color-mix(in srgb,var(--accent) 10%,transparent),color-mix(in srgb,var(--accent) 10%,transparent)),var(--ctl);
+  box-shadow:0 3px 8px rgba(0,0,0,.16),inset 0 0 0 1px color-mix(in srgb,var(--accent) 22%,transparent)}
+html.dark .ipanel{background:linear-gradient(color-mix(in srgb,var(--accent) 10%,transparent),color-mix(in srgb,var(--accent) 10%,transparent)),#2b2b2e}
+.ip-h{padding:10px 12px 8px;gap:8px;font-size:13px;font-weight:600}
+.ip-r{padding:8px 12px;display:flex;flex-direction:column;gap:4px}
+.ip-div{height:1px;background:var(--sep);margin:0 12px}
+.ip-k{font-size:10px;font-weight:600;color:var(--accent)}
+.ip-c{font-size:10px;color:var(--fg2)}
+.ip-t{font-size:12px;font-weight:600}
+.ip-d{font-size:11px;color:var(--fg2)}
+.ib{display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:4px 7px;border-radius:6px;background:var(--ctl);box-shadow:inset 0 0 0 1px var(--sep);white-space:nowrap}
+.ib.dim{opacity:.5}
+.bell{width:24px;height:22px;border-radius:6px;display:inline-grid;place-items:center;flex:none}
+.bell.off{background:color-mix(in srgb,var(--orange) 18%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--orange) 45%,transparent)}
+.open{font-size:11px;font-weight:600;color:var(--accent)}
+
+/* popover inbox column */
+.inbox{width:330px;border-radius:10px;background:var(--win);box-shadow:var(--shadow);overflow:visible;position:relative;padding-bottom:8px}
+.ib-head{padding:10px 12px 6px;gap:8px;font-size:13px;font-weight:600}
+.ib-sec{font-size:11px;font-weight:600;color:var(--fg2);padding:10px 12px 3px;gap:5px}
+.ib-row{padding:4px 12px;gap:6px}
+.ib-row .t{font-size:12px;font-weight:500}
+.ib-row .d{font-size:11px;color:var(--fg2)}
+.sbtn{font-size:11px;padding:2px 8px;border-radius:5px;background:var(--ctl);box-shadow:0 .5px 1px rgba(0,0,0,.12),0 0 0 .5px color-mix(in srgb,var(--fg) 15%,transparent);white-space:nowrap}
+html.dark .sbtn{background:#4a4a4d}
+.mail-i{padding:5px 12px 5px 14px;gap:8px;font-size:12px}
+.menu{position:absolute;min-width:200px;border-radius:7px;padding:5px;font-size:13px;z-index:3;
+  background:color-mix(in srgb,var(--ctl) 92%,var(--win));box-shadow:0 10px 26px rgba(0,0,0,.22),0 0 0 .5px rgba(0,0,0,.2)}
+html.dark .menu{background:#2e2e31;box-shadow:0 10px 26px rgba(0,0,0,.5),0 0 0 .5px rgba(255,255,255,.18)}
+.mi{padding:3px 10px;border-radius:4px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.mi.hl{background:var(--accent);color:#fff}
+.mi.dis{color:var(--fg3)}
+.msep{height:1px;background:var(--sep);margin:5px 8px}
+
+/* settings */
+.swin{width:520px}
+.sform{padding:4px 20px 20px;display:flex;flex-direction:column;gap:14px}
+.sbox{border-radius:8px;background:color-mix(in srgb,var(--fg) 4%,transparent);box-shadow:inset 0 0 0 .5px var(--sep)}
+.fr{display:flex;align-items:center;gap:10px;padding:8px 10px;font-size:13px;min-height:36px}
+.fr + .fr{border-top:1px solid var(--sep)}
+.hint{font-size:11px;color:var(--fg2);padding:0 10px 9px;margin-top:-3px;line-height:1.4}
+.sh5{font-size:12px;font-weight:600;color:var(--fg2);margin:0 0 6px 8px}
+.ii{width:14px;height:14px;border-radius:50%;display:inline-grid;place-items:center;box-shadow:inset 0 0 0 1px var(--fg3);font-size:9px;color:var(--fg2);font-weight:600}
+</style>
+</head><body><div id="s"></div>
+<script src="mock.js"></script>
+<script>
+P.bellSlash = '<path d="M6 8a6 6 0 0 1 9.3-5"/><path d="M18 8c0 7 3 9 3 9H7"/><path d="M6 8c0 4-1 6.5-2 7.8"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/><path d="M3 3l18 18"/>';
+P.ellipsis = '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>';
+P.repeat = '<path d="M17 2.5 20.5 6 17 9.5"/><path d="M3.5 11V9.5A3.5 3.5 0 0 1 7 6h13.5"/><path d="M7 21.5 3.5 18 7 14.5"/><path d="M20.5 13v1.5A3.5 3.5 0 0 1 17 18H3.5"/>';
+P.alert = '<circle cx="12" cy="12" r="9.5"/><path d="M12 7.5v5.5M12 16.5h.01"/>';
+P.tray = '<path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5.5 5h13L21 13v6a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19v-6Z"/>';
+
+const spin = (s = 10) => `<svg class="ico" width="${s}" height="${s}" viewBox="0 0 24 24">${[...Array(8)].map((_, i) =>
+  `<path d="M12 2.5v5" stroke="var(--fg)" stroke-width="2.6" stroke-linecap="round" opacity="${(0.25 + i * 0.1).toFixed(2)}" transform="rotate(${i * 45} 12 12)"/>`).join('')}</svg>`;
+
+const ORG = PEOPLE.irina, ORG2 = PEOPLE.dmitry;
+const SINGLE = { t: 'Дизайн-ревью: новый онбординг', time: '11:00–11:45', day: 'вторник, 6 октября', p: 'zoom', org: ORG };
+const SERIES = { t: 'Еженедельный синк платформы', time: '12:00–12:30', day: 'среда, 7 октября', p: 'teams', org: ORG2, rec: 'каждую неделю по средам' };
+
+const OPTS = {
+  accept: { l: 'Принять', ic: 'check', c: C.green, w: 3.2 },
+  tentative: { l: 'Под вопросом', ic: 'question', c: C.orange, w: 2.6 },
+  decline: { l: 'Отклонить', ic: 'xmark', c: C.red, w: 3.2 },
+};
+
+function rsvpButtons({ active = null, sending = null } = {}) {
+  return `<div class="row" style="gap:6px">${Object.entries(OPTS).map(([k, o]) => {
+    const on = active === k, busy = sending === k, dim = sending && !busy;
+    const st = on ? `background:${a(o.c, .15)};color:${o.c};box-shadow:inset 0 0 0 1.5px ${a(o.c, .5)}` : '';
+    return `<span class="rsvp${dim ? ' dim' : ''}" style="${st}">${busy ? spin(10) : icon(o.ic, 10, o.c, o.w)}${o.l}</span>`;
+  }).join('')}</div>`;
+}
+
+const check = (on) => on ? `<span class="cb">${icon('check', 10, '#fff', 3.4)}</span>` : '<span class="cb off"></span>';
+
+function card(m, o = {}) {
+  const col = C[m.p];
+  const seg = m.rec ? `<div><span class="seg sm"><span class="${o.scope === 'series' ? 'on' : ''}">Вся серия</span><span class="${o.scope === 'series' ? '' : 'on'}">Это событие</span></span></div>` : '';
+  const comment = o.comment != null ? `<div class="col" style="gap:3px"><div class="ta">${o.comment || '<span class="ph">Комментарий для организатора</span>'}</div>
+      <div class="row note"><span>Уйдёт вместе с ответом</span><span class="spacer"></span><span class="tnum">${o.comment ? o.comment.length : 0} / 2000</span></div></div>` : '';
+  const notify = o.notify !== false;
+  const right = !notify ? '' : o.comment != null
+    ? `<span class="lnk">${icon('xmark', 9, C.accent, 3)}Убрать комментарий</span>`
+    : `<span class="lnk">${icon('plus', 10, C.accent, 3)}Комментарий</span>`;
+  const opts = `<div class="row opt">${check(notify)}<span>Сообщить организатору</span><span class="spacer"></span>${right}</div>`;
+  const silent = notify ? '' : `<div class="note" style="margin-top:-6px;padding-left:21px">Ответ сохранится только у вас: ${m.org.split(' ')[0]} увидит «нет ответа», письма не будет.</div>`;
+  let fb = '';
+  if (o.done) fb = `<div class="fb" style="color:${C.green}">${icon(o.doneSilent ? 'bellSlash' : 'checkCircle', 12, C.green)}<span>${o.done}</span></div>`;
+  if (o.error) fb = `<div class="fb" style="color:${C.red}">${icon('alert', 12, C.red, 2.4)}<span><b style="font-weight:600">Ошибка отправки</b><br>${o.error}</span></div>`;
+  return `<div class="card">
+    <div class="row card-head"><span class="xbtn">${icon('xmark', 11, 'var(--fg)', 2.8)}</span>
+      <span class="col" style="gap:1px;min-width:0"><span style="font-size:13px;font-weight:600" class="nowrap">${m.t}</span>
+      <span style="font-size:11px;font-weight:500" class="sec">${m.time}</span></span><span class="spacer"></span>${platformIcon(m.p, 13)}</div>
+    <div class="divider"></div>
+    <div class="card-body">
+      <div class="row" style="gap:10px"><span class="join-btn" style="background:${col};padding:7px 12px;border-radius:8px;gap:5px;--jc:${col}">${icon('joinCircle', 12, '#fff')}Подключиться</span>
+        <span class="row sec" style="gap:5px;font-size:12px">${icon('copy', 12, 'var(--fg2)')}Скопировать ссылку</span></div>
+      ${seg}${comment}${rsvpButtons(o)}${opts}${silent}${fb}
+      <div class="divider" style="opacity:.6"></div>
+      <div class="col" style="gap:8px">
+        <div class="row drow"><span class="i">${icon('clock', 12, 'var(--fg2)')}</span>${m.day}</div>
+        ${m.rec ? `<div class="row drow"><span class="i">${icon('repeat', 12, 'var(--fg2)')}</span>${m.rec}</div>` : ''}
+        <div class="row drow"><span class="i">${icon('person', 12, 'var(--fg2)')}</span>${m.org}</div>
+      </div>
+    </div></div>`;
+}
+
+const cell = (n, title, sub, body) => `<div class="cell"><div class="cap">${n} · ${title}<small>${sub}</small></div>${body}</div>`;
+
+// ---------- 1. Detail card ----------
+const cards = [
+  cell('1.1', 'Одиночная встреча, ждёт ответа', 'Переключателя охвата нет. Флажок взят из настройки (по умолчанию включён).', card(SINGLE)),
+  cell('1.2', 'Серия, ни на одно событие ещё не ответили', 'По умолчанию «Вся серия»: так отвечают на новое приглашение.', card(SERIES, { scope: 'series' })),
+  cell('1.3', 'Серия, уже принята раньше', 'По умолчанию «Это событие», чтобы не перезаписать ответы всей серии. Активный ответ подсвечен.', card(SERIES, { scope: 'one', active: 'accept' })),
+  cell('1.4', 'Комментарий раскрыт', 'Поле над кнопками, фокус в нём. До 2000 знаков. Нажатие кнопки отправит ответ вместе с текстом.', card(SERIES, { scope: 'one', active: 'accept', comment: 'Сегодня подключусь на 10 минут позже — начинайте без меня.' })),
+  cell('1.5', 'Без уведомления', 'Флажок снят: «Комментарий» пропадает, под флажком объяснение, что именно произойдёт.', card(SERIES, { scope: 'series', notify: false })),
+  cell('1.6', 'Отправка', 'Спиннер на нажатой кнопке, остальные приглушены и не нажимаются.', card(SERIES, { scope: 'series', notify: false, sending: 'accept' })),
+  cell('1.7', 'Готово', 'Строка результата держится 2 с. Ответ подсвечен сразу, до ответа сервера.', card(SERIES, { scope: 'series', notify: false, active: 'accept', done: 'Принято для всей серии · организатор не уведомлён', doneSilent: true })),
+  cell('1.8', 'Готово, с письмом и комментарием', '', card(SINGLE, { active: 'tentative', done: 'Ответ «Под вопросом» отправлен с комментарием' })),
+  cell('1.9', 'Ошибка', 'Подсветка ответа откатывается. Текст держится 5 с, выбор охвата, флажка и комментарий сохраняются.', card(SINGLE, { error: 'Встреча изменилась на сервере. Обновите календарь и ответьте ещё раз.' })),
+].join('');
+
+// ---------- 2. Invitation panel ----------
+function ipRow(m, o = {}) {
+  const head = `<div class="row" style="gap:4px"><span class="ip-k">Приглашение</span><span class="ip-c nowrap">· от ${m.org}</span><span class="spacer"></span><span class="ip-c">Скрыть</span></div>`;
+  if (o.done) return `<div class="ip-r">${head}<div class="ip-t">${m.t}</div>
+    <div class="row" style="gap:5px;font-size:11px;color:${C.green}">${icon(o.silent ? 'bellSlash' : 'checkCircle', 11, C.green)}${o.done}</div></div>`;
+  const btn = (k) => {
+    const x = OPTS[k], busy = o.sending === k, dim = o.sending && !busy;
+    return `<span class="ib${dim ? ' dim' : ''}">${busy ? spin(9) : icon(x.ic, 9, x.c, x.w + .3)}${x.l}</span>`;
+  };
+  const bell = o.silent
+    ? `<span class="bell off">${icon('bellSlash', 12, C.orange, 2.2)}</span>`
+    : `<span class="bell">${icon('bell', 12, 'var(--fg2)', 2.2)}</span>`;
+  const date = m.rec ? `${m.day} · ${m.time} · Серия (5)` : `${m.day} · ${m.time}`;
+  return `<div class="ip-r">${head}<div class="ip-t">${m.t}</div><div class="row" style="gap:6px"><span class="ip-d">${date}</span><span class="spacer"></span><span class="open">Открыть</span></div>
+    <div class="row" style="gap:6px;padding-top:2px">${btn('accept')}${btn('tentative')}${btn('decline')}${bell}</div>
+    ${m.rec ? `<div class="ip-d" style="font-size:10px">${o.silent ? 'Ответ на все 5 событий · организатор не узнает' : 'Ответ на все 5 событий'}</div>` : ''}
+    ${o.error ? `<div class="row" style="gap:4px;font-size:10px;color:${C.red}">${icon('alert', 10, C.red, 2.6)}Не удалось отправить ответ</div>` : ''}
+    ${o.tip ? `<div style="position:absolute;left:${o.tip}px;top:${o.tipTop}px;background:var(--ctl);border-radius:5px;padding:3px 7px;font-size:11px;box-shadow:0 2px 8px rgba(0,0,0,.2),0 0 0 .5px var(--sep);white-space:nowrap;z-index:2">Организатор получит письмо. Нажмите, чтобы выключить</div>` : ''}
+  </div>`;
+}
+const PIN = { ...SINGLE, day: 'Завтра', time: '11:00–11:45' };
+const SIN = { ...SERIES, day: 'Ср, 7 окт.', time: '12:00–12:30' };
+const ipanel = (title, rows) => `<div class="ipanel"><div class="row ip-h">${icon('envelope', 13, C.accent, 2.4)}<span>${title}</span><span class="spacer"></span>${icon('xmark', 10, 'var(--fg2)', 3)}</div>${rows.join('<div class="ip-div"></div>')}</div>`;
+const panels = [
+  cell('2.1', 'До ответа', 'Колокольчик в положении из настройки. «Открыть» переехала в строку даты: иначе ряд не влезает в 360 pt. Серия получила кнопки: они отвечают на все события.', ipanel('Новые приглашения · 2', [ipRow(PIN), ipRow(SIN)])),
+  cell('2.2', 'Колокольчик выключен у серии', 'Оранжевый, чтобы молчаливый ответ был заметен. Подпись под кнопками меняется.', ipanel('Новые приглашения · 2', [ipRow(PIN, { tip: 40, tipTop: 112 }), ipRow(SIN, { silent: true })])),
+  cell('2.3', 'Отправка', '', ipanel('Новые приглашения · 2', [ipRow(PIN), ipRow(SIN, { silent: true, sending: 'accept' })])),
+  cell('2.4', 'Готово', 'Итог держится 2 с, потом строка уходит, как сейчас.', ipanel('Новые приглашения · 2', [ipRow(PIN, { done: 'Принято · ответ отправлен' }), ipRow(SIN, { done: 'Принято для всей серии · без уведомления', silent: true })])),
+  cell('2.5', 'Ошибка', 'Как сейчас: строка остаётся, кнопки снова доступны.', ipanel('Новое приглашение', [ipRow(PIN, { error: true })])),
+].join('');
+
+// ---------- 3. Popover inbox column ----------
+function ibRow(m, count, o = {}) {
+  const right = o.sending ? `<span style="padding:0 6px">${spin(13)}</span>`
+    : `<span class="sbtn">Принять</span><span style="padding:0 3px;display:inline-flex${o.menu ? ';background:color-mix(in srgb,var(--fg) 12%,transparent);border-radius:4px' : ''}">${icon('ellipsis', 14, 'var(--fg)', 2.4)}</span>`;
+  const d = o.failed ? `<span style="color:${C.orange}">Не удалось ответить — попробуйте ещё раз</span>` : `${m.day}, ${m.time.split('–')[0]}${count > 1 ? ' · серия' : ''}`;
+  return `<div class="row ib-row"><div class="col" style="flex:1;min-width:0;gap:1px"><div class="row" style="gap:4px"><span class="t nowrap">${m.t}</span>${count > 1 ? `<span class="ter" style="font-size:10px;color:var(--fg2)">×${count}</span>` : ''}</div>
+    <div class="d nowrap">${d}</div></div>${right}</div>`;
+}
+const mailTail = `<div class="ib-sec">Почта <span class="ter tnum">12</span></div>
+  <div class="row mail-i"><span style="width:7px;height:7px;border-radius:50%;background:${C.accent}"></span><span style="font-weight:600;width:96px" class="nowrap">${PEOPLE.olga}</span><span class="nowrap sec" style="flex:1">Отчёт по релизу 1.2</span><span class="sec" style="font-size:11px">10:42</span></div>
+  <div class="row mail-i"><span style="width:7px"></span><span style="font-weight:600;width:96px" class="nowrap">${PEOPLE.alex}</span><span class="nowrap sec" style="flex:1">Re: доступы к стенду</span><span class="sec" style="font-size:11px">09:15</span></div>`;
+const inbox = (rows, extra = '') => `<div class="inbox"><div class="row ib-head">${icon('tray', 13, 'var(--fg)', 2.2)}<span>Входящие</span><span class="spacer"></span>${icon('refresh', 12, 'var(--fg2)')}</div>
+  <div class="divider"></div><div class="ib-sec">Приглашения <span class="ter tnum">2</span></div>${rows}${mailTail}${extra}</div>`;
+const menu = `<div class="menu" style="left:150px;top:118px">
+  <div class="mi">Под вопросом</div><div class="mi">Отклонить</div><div class="msep"></div>
+  <div class="mi hl">Без уведомления<span class="spacer"></span>${icon('chevR', 10, '#fff', 3)}</div>
+  <div class="mi">С комментарием…</div><div class="msep"></div><div class="mi">Скрыть</div></div>
+  <div class="menu" style="left:352px;top:178px;min-width:150px"><div class="mi">Принять</div><div class="mi">Под вопросом</div><div class="mi">Отклонить</div></div>`;
+const PI = { ...SINGLE, day: 'Завтра', time: '11:00–11:45' };
+const SI = { ...SERIES, day: 'Ср', time: '12:00–12:30' };
+const inboxes = [
+  cell('3.1', 'Обычный вид', '«Принять» у строки ×5 теперь отвечает на всю серию, а не только на первое событие.', inbox(ibRow(PI, 1) + ibRow(SI, 5))),
+  cell('3.2', 'Меню «…»', '«Без уведомления» — подменю из трёх ответов. «С комментарием…» открывает карточку с раскрытым полем.', `<div style="width:520px">${inbox(ibRow(PI, 1) + ibRow(SI, 5, { menu: true }), menu)}</div>`),
+  cell('3.3', 'Отправка и ошибка', 'Как сейчас; после успеха строка уходит из раздела.', inbox(ibRow(PI, 1, { failed: true }) + ibRow(SI, 5, { sending: true }))),
+].join('');
+
+// ---------- 4. Settings ----------
+const toggle = (on) => `<span class="toggle${on ? ' on' : ''}"></span>`;
+const settings = `<div class="window swin">
+  <div class="titlebar"><span class="traffic"><i></i><i></i><i></i></span>Приглашения</div>
+  <div class="sform">
+    <div class="sbox">
+      <div class="fr"><span>Сообщать о новых приглашениях</span><span class="ii">i</span><span class="spacer"></span>${toggle(true)}</div>
+      <div class="fr" style="padding-left:26px"><span>Показывать «Новые приглашения» в поповере</span><span class="spacer"></span>${toggle(true)}</div>
+      <div class="fr" style="padding-left:42px"><span>Показывать счётчик ✉︎ в строке меню</span><span class="spacer"></span>${toggle(true)}</div>
+    </div>
+    <div><div class="sh5">Ответ на приглашение</div><div class="sbox">
+      <div class="fr" style="background:${a(C.accent, .07)}"><span>Сообщать организатору об ответе</span><span class="spacer"></span>${toggle(true)}</div>
+      <div class="hint" style="background:${a(C.accent, .07)};margin-top:0;padding-top:0">Начальное положение флажка в карточке встречи и колокольчика в панели приглашений. Перед каждым ответом его можно поменять.</div>
+    </div></div>
+  </div></div>`;
+
+document.getElementById('s').innerHTML = `<div class="board">
+  <div><h1>Ответ на приглашение: все состояния</h1>
+    <div class="lead">Охват (событие или серия), письмо организатору и комментарий. Ответ, как и раньше, уходит одним нажатием на «Принять», «Под вопросом» или «Отклонить». Размеры и шрифты взяты из SwiftUI-кода, 1 pt = 1 px.</div></div>
+  <div><div class="sec-h">1. Карточка встречи</div><div class="sec-n">Единственное место со всеми настройками. Ниже кнопок «Подключиться» и «Скопировать ссылку», выше подробностей встречи.</div><div class="grid">${cards}</div></div>
+  <div><div class="sec-h">2. Панель «Новые приглашения»</div><div class="sec-n">Плавающая панель шириной 360 pt. Добавлен колокольчик, у серии появились кнопки; комментарий — через «Открыть».</div><div class="grid">${panels}</div></div>
+  <div><div class="sec-h">3. Поповер, колонка «Входящие»</div><div class="sec-n">Раздел «Приглашения» над почтой.</div><div class="grid">${inboxes}</div></div>
+  <div><div class="sec-h">4. Настройки → Приглашения</div><div class="sec-n">Новая группа (подсвечена).</div><div class="grid">${settings}</div></div>
+</div>`;
+</script>
+</body></html>

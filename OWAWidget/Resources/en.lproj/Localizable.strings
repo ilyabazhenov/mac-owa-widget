@@ -869,7 +869,7 @@
 "settings.search.keywords.accounts" = "account exchange owa google icloud calendar password server certificate login sync interval";
 "settings.search.keywords.menuBar" = "menu bar countdown status smart icon popover window size timeline past dim counter badge";
 "settings.search.keywords.reminders" = "reminders notifications alerts banner sound screen position before meeting";
-"settings.search.keywords.invitations" = "invitations notifications rescheduled cancelled panel rsvp counter badge envelope";
+"settings.search.keywords.invitations" = "invitations notifications rescheduled cancelled panel rsvp counter badge envelope organizer comment series notify";
 "settings.search.keywords.mail" = "mail email inbox notifications counter badge unread newsletters conversations swipe read check";
 "settings.search.keywords.colleagues" = "colleagues availability free busy room cache rows";
 "settings.search.keywords.mcp" = "ai mcp claude cursor codex vs code assistant clients journal requests connect";
@@ -939,3 +939,30 @@
 "popover.day.done" = "No more meetings today";
 "popover.day.free" = "No meetings today";
 "a11y.popover.day.next.hint" = "Opens the day of this meeting";
+
+/* Answering invitations from the app */
+"meeting.reply.scope.series" = "Whole series";
+"meeting.reply.scope.one" = "This event";
+"meeting.reply.scope.label" = "What to answer";
+"meeting.reply.notify" = "Tell the organizer";
+"meeting.reply.comment.add" = "Comment";
+"meeting.reply.comment.remove" = "Remove comment";
+"meeting.reply.comment.placeholder" = "Comment for the organizer";
+"meeting.reply.comment.hint" = "Goes with the answer";
+"meeting.reply.silent.hint" = "The answer stays in your calendar only: the organizer sees “no response” and gets no email.";
+"meeting.reply.done.accept" = "Accepted";
+"meeting.reply.done.tentative" = "Tentative";
+"meeting.reply.done.decline" = "Declined";
+"meeting.reply.done.series" = "for the whole series";
+"meeting.reply.done.sent" = "response sent";
+"meeting.reply.done.sentWithComment" = "response sent with a comment";
+"meeting.reply.done.silent" = "organizer not notified";
+"invitations.notify.on.help" = "The organizer gets an email. Click to answer without one";
+"invitations.notify.off.help" = "The organizer gets no email. Click to send one";
+"invitations.series.all" = "Answers the whole series (%d)";
+"invitations.series.all.silent" = "Answers the whole series (%d) · the organizer won't know";
+"popover.inbox.silent" = "Without notifying";
+"popover.inbox.withComment" = "With a comment…";
+"preferences.invitations.replySection" = "Answering invitations";
+"preferences.invitations.notifyOrganizer" = "Tell the organizer about my answer";
+"preferences.invitations.notifyOrganizer.hint" = "Where “Tell the organizer” starts in the meeting card and the bell in the invitation panel; you can change it before each answer. Without it the answer stays in your calendar only and the organizer sees “no response”.";

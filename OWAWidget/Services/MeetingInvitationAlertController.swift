@@ -31,8 +31,13 @@ protocol MeetingInvitationAlertPresenting: AnyObject {
 final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
     static let visibleRowLimit = 4
 
-    /// Sends an RSVP for the given event. Throws when the server did not accept it.
-    var onRespond: ((String, MeetingResponseAction) async throws -> Void)?
+    /// Answers the row's meetings (a folded series as one series answer); the flag says whether
+    /// the organizer is told. Throws when the server did not accept it.
+    var onRespond: (([String], MeetingResponseAction, Bool) async throws -> Void)?
+    /// Where each new row's bell starts: the "Tell the organizer" setting.
+    var notifyOrganizerByDefault: () -> Bool = { true }
+    /// How long the outcome stays on a row before it leaves the panel.
+    var resultLifetime: Duration = .seconds(2)
     /// Shows the given event in the popover.
     var onOpen: ((String) -> Void)?
     /// The user hid a row: its invitations leave the badge. Closing the whole panel does not call
@@ -69,7 +74,8 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
                 alert: alert,
                 canRespond: Self.canRespond(alert, byID: byID),
                 sendingAction: nil,
-                errorMessage: nil
+                errorMessage: nil,
+                notifyOrganizer: notifyOrganizerByDefault()
             ))
             added += 1
         }
@@ -97,7 +103,8 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
         rows = rows.compactMap { row in
             // Leave a row alone while its answer is in flight: the optimistic update has already
             // flipped the event, and dropping the row here would swallow a failure message.
-            guard row.sendingAction == nil else { return row }
+            // Likewise for a row showing how its answer went: it leaves on its own timer.
+            guard row.sendingAction == nil, row.result == nil else { return row }
             let alive = row.alert.eventIDs.contains { byID[$0] != nil }
             guard alive else { return nil }
             if row.alert.change == .invited {
@@ -134,6 +141,7 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
         #endif
         guard let index = rows.firstIndex(where: { $0.id == row.id }),
               rows[index].sendingAction == nil,
+              rows[index].result == nil,
               let onRespond
         else { return }
         rows[index].sendingAction = action
@@ -141,14 +149,22 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
         refreshPanel()
 
         let rowID = row.id
-        let eventID = row.alert.representativeEventID
+        let eventIDs = row.alert.eventIDs
+        let notify = rows[index].notifyOrganizer
         Task { @MainActor in
             do {
-                try await onRespond(eventID, action)
+                try await onRespond(eventIDs, action, notify)
                 #if DEBUG
                 DiagnosticLog.event("Invitation panel respond done action=\(action)")
                 #endif
-                rows.removeAll { $0.id == rowID }
+                if let i = rows.firstIndex(where: { $0.id == rowID }) {
+                    rows[i].sendingAction = nil
+                    rows[i].result = MeetingInvitationRow.Result(
+                        text: localization.summary(action: action, series: rows[i].alert.occurrenceCount > 1, notify: notify),
+                        isSilent: !notify
+                    )
+                }
+                scheduleRemoval(of: rowID)
             } catch {
                 log.error("respond failed: \(error.localizedDescription, privacy: .private)")
                 #if DEBUG
@@ -165,6 +181,26 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
                 refreshPanel()
             }
         }
+    }
+
+    private func scheduleRemoval(of rowID: String) {
+        let lifetime = resultLifetime
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: lifetime)
+            guard let self else { return }
+            self.rows.removeAll { $0.id == rowID }
+            if self.rows.isEmpty {
+                self.closePanel()
+            } else {
+                self.refreshPanel()
+            }
+        }
+    }
+
+    private func toggleNotify(_ row: MeetingInvitationRow) {
+        guard let index = rows.firstIndex(where: { $0.id == row.id }), rows[index].sendingAction == nil else { return }
+        rows[index].notifyOrganizer.toggle()
+        refreshPanel()
     }
 
     private func open(_ row: MeetingInvitationRow) {
@@ -198,6 +234,7 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
             localization: localization,
             now: clock(),
             onRespond: { [weak self] row, action in self?.respond(row, action: action) },
+            onToggleNotify: { [weak self] row in self?.toggleNotify(row) },
             onOpen: { [weak self] row in self?.open(row) },
             onHide: { [weak self] row in self?.hide(row) },
             onClose: { [weak self] in
@@ -303,11 +340,13 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
         Dictionary(events.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    private static func canRespond(_ alert: MeetingInvitationAlert, byID: [String: CalendarEvent]) -> Bool {
-        guard alert.change != .cancelled, alert.occurrenceCount == 1,
-              let event = byID[alert.representativeEventID]
-        else { return false }
-        return MeetingInvitationPolicy.isAwaitingResponse(event, now: Date())
+    /// A folded series is answered as a whole now (`CalendarService.reply(toInvitation:)`), so a
+    /// row can be answered while any of its meetings still awaits an answer.
+    static func canRespond(_ alert: MeetingInvitationAlert, byID: [String: CalendarEvent], now: Date = Date()) -> Bool {
+        guard alert.change != .cancelled else { return false }
+        return alert.eventIDs.contains { id in
+            byID[id].map { MeetingInvitationPolicy.isAwaitingResponse($0, now: now) } ?? false
+        }
     }
 }
 

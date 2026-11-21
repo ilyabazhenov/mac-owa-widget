@@ -299,6 +299,14 @@ struct InvitationsSettingsPane: View {
                 .disabled(!vm.invitationAlertsEnabled || !vm.invitationPopoverSectionEnabled)
                 .padding(.leading, 32)
             }
+            // Applies wherever an invitation is answered, with or without the panel.
+            Section(localization.tr("preferences.invitations.replySection")) {
+                SettingsToggle(
+                    title: localization.tr("preferences.invitations.notifyOrganizer"),
+                    info: localization.tr("preferences.invitations.notifyOrganizer.hint"),
+                    isOn: $vm.invitationNotifyOrganizerByDefault
+                )
+            }
         }
         .formStyle(.grouped)
     }
