@@ -374,7 +374,7 @@ extension MCPToolRegistry {
         MCPToolDefinition(
             name: "search_mail",
             title: "Search mail",
-            description: "Searches the mailbox with Exchange's index (subject, text, people). Returns conversations like list_mail, each with its `folder`, plus `suggested_filters` (senders, folders, attachments, with counts) to narrow a broad search. For questions about people's work (what someone wrote, decided or asked), pass `only: people`: otherwise notifications from Jira, Confluence and other systems often fill the answer. Exchange returns at most 250 results per search: narrow with `from` (email addresses, from find_people or earlier results), `since`/`until`, `has_attachments` or `folder` rather than paging far. Deleted items are included and marked by their folder. " + untrusted,
+            description: "Searches the mailbox with Exchange's index (subject, text, people). Returns conversations like list_mail, each with its `folder`, plus `suggested_filters` (senders, folders, attachments, with counts over all results) to narrow a broad search; Exchange does not count them for every search, so they may be missing. For questions about people's work (what someone wrote, decided or asked), pass `only: people`: otherwise notifications from Jira, Confluence and other systems often fill the answer. Exchange returns at most 250 results per search: narrow with `from` (email addresses, from find_people or earlier results), `since`/`until`, `has_attachments` or `folder` rather than paging far. Deleted items are included and marked by their folder. " + untrusted,
             inputSchema: [
                 "type": "object",
                 "properties": [

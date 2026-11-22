@@ -110,6 +110,8 @@ final class MCPMailTools {
     private var handles: [String: String] = [:]
     private var handleOrder: [String] = []
     private var folderCache: [UUID: (folders: [MailFolder], date: Date)] = [:]
+    /// How long a search waits before asking again for its `suggested_filters`; tests shorten it.
+    var refinerDelay: Duration = .milliseconds(800)
     private var ownAddresses: [UUID: (email: String?, retryAfter: Date)] = [:]
     private var recentSends: [String: (date: Date, result: [String: JSONValue])] = [:]
     private var sendTimes: [Date] = []
@@ -757,6 +759,7 @@ final class MCPMailTools {
         var skipped = 0
         var position = offset
         var first: MailSearchPage?
+        var refiners: [MailSearchRefiner] = []
         var more = true
         var pagesRead = 0
         var stoppedEarly = false
@@ -779,6 +782,7 @@ final class MCPMailTools {
             }
             pagesRead += 1
             if first == nil { first = page }
+            if refiners.isEmpty { refiners = page.refiners }
             var looked = 0
             for conversation in page.conversations {
                 guard kept.count < limit else { break }
@@ -796,16 +800,29 @@ final class MCPMailTools {
             more = looked < page.conversations.count || (page.moreAvailable && !page.conversations.isEmpty)
         }
         let page = first ?? MailSearchPage(conversations: [], moreAvailable: false, searchTerms: [], refiners: [], offset: offset)
+        // Exchange counts the filters over the whole result set. When everything fits on the
+        // first page they come with it; for a larger set it counts them in the background and
+        // hands them to a later request of the same session, about half a second on (or never,
+        // for some mid-sized sets). A new search asks once more for them: one row, one request.
+        if refiners.isEmpty, offset == 0, more, position < cap, !stoppedEarly, accessGuard.permitRequest() == nil {
+            try? await Task.sleep(for: refinerDelay)
+            let lateQuery = query
+            let lateOffset = position
+            if let late = try? await perform(account, context: "mcp.mail.search", { try await $0.mailSearch(lateQuery, offset: lateOffset, count: 1) }) {
+                refiners = late.refiners
+            }
+        }
 
         var result = commonFields(coder, account)
         // A search spans folders, so rows name their folder, and one in the inbox needs no
         // `folder_id`. The list is asked for only when a row is in a folder the app does not
         // know yet (one request, kept 10 minutes); an empty page asks for nothing.
         var known = try? await folders(account, load: false)
-        let unknownFolder = kept.contains { conversation in
-            guard let id = conversation.parentFolderID else { return false }
-            return known?.contains { $0.id == id } != true
+        let shownFolders = kept.compactMap(\.parentFolderID) + refiners.compactMap { refiner in
+            if case .folder(_, let folderID, _) = refiner { return folderID }
+            return nil
         }
+        let unknownFolder = shownFolders.contains { id in known?.contains { $0.id == id } != true }
         if unknownFolder { known = try? await folders(account, load: true) }
         let labels = FolderLabels(known)
         let names = labels.names
@@ -830,7 +847,7 @@ final class MCPMailTools {
             let words = MCPSearchWords.hintWords(query.text)
             if !words.isEmpty { await addWordHints(words, query: query, account: account, to: &result) }
         }
-        let suggestions: [JSONValue] = page.refiners.compactMap { refiner in
+        let suggestions: [JSONValue] = refiners.compactMap { refiner in
             switch refiner {
             case .sender(let name, let email, let count):
                 return ["type": "from", "name": .string(name), "email": .string(email), "count": .int(Int64(count))]
