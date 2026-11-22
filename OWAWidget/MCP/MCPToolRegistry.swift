@@ -394,12 +394,13 @@ extension MCPToolRegistry {
         MCPToolDefinition(
             name: "get_mail_thread",
             title: "Read a conversation",
-            description: "The messages of a conversation, newest first: sender and recipients (`external: true` outside the user's organization), time, attachments (names, types, sizes) and `text` — only what each message added, without the quoted history, up to 8000 characters each and 40000 in total (`text_truncated`). Encrypted and archived messages have no text (`text_unavailable`). `open_url` opens the conversation in OWA Widget's mail window (for a notification or a note). Does not mark anything as read. " + untrusted,
+            description: "The messages of a conversation, newest first: sender and recipients (`external: true` outside the user's organization), time, attachments (names, types, sizes) and `text` — only what each message added, without the quoted history, up to 8000 characters each and 40000 in total (`text_truncated`). Encrypted and archived messages have no text (`text_unavailable`). By default (`detail: compact`) repeats are left out: only the newest message lists `to` and `cc`; an older one lists no recipients when the same people took part (sender and recipients together), otherwise `recipients_changed` names who is on the newest message and was not on it (`added`) and who was on it and is not on the newest (`removed`); a message's `subject` appears only when it differs from the conversation's beyond RE:/FW:; a signature after \"Best regards\", \"С уважением\" or `--` is cut (`signature_cut: true`; get_mail_message has it). `open_url` opens the conversation in OWA Widget's mail window (for a notification or a note). Does not mark anything as read. " + untrusted,
             inputSchema: [
                 "type": "object",
                 "properties": [
                     "thread_id": ["type": "string", "description": "thread_id from list_mail or search_mail."],
                     "max_messages": ["type": "integer", "minimum": 1, "maximum": 20, "description": "Default 10."],
+                    "detail": ["type": "string", "enum": ["compact", "full"], "description": "`full`: every message with its subject, `to`, `cc` and the text as it is. Default `compact`."],
                     "include_html": ["type": "boolean", "description": .string(includeHTMLDescription)],
                     "account_id": ["type": "string", "description": .string(mailAccountDescription)],
                 ],

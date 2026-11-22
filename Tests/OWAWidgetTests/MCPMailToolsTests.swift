@@ -352,6 +352,121 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertNil(found["note"])
     }
 
+    // MARK: - Compact thread
+
+    /// Ten replies among the same ten people (as in the conversation that set the goal: about
+    /// 1500 characters a message, 300–600 of them its own text), each with a signature; one
+    /// reply adds a person.
+    private func longThread() -> MailThread {
+        let people = [
+            ("Петров Иван Сергеевич", "ipetrov"), ("Сидорова Анна Викторовна", "asidorova"), ("Кузнецов Олег Петрович", "okuznetsov"),
+            ("Морозова Елена Андреевна", "emorozova"), ("Волков Дмитрий Игоревич", "dvolkov"), ("Лебедева Мария Олеговна", "mlebedeva"),
+            ("Новиков Артём Павлович", "anovikov"), ("Соколова Ирина Николаевна", "isokolova"),
+            ("Козлов Сергей Аркадьевич", "skozlov"), ("Павлова Ольга Дмитриевна", "opavlova"),
+        ].map { MailAddress(name: $0.0, email: "\($0.1)@example.com") }
+        let newcomer = MailAddress(name: "Фёдоров Павел Ильич", email: "pfedorov@example.com")
+        let messages = (0..<10).map { index -> MailMessage in
+            let author = people[index % people.count]
+            let others = people.filter { $0 != author }
+            // Messages are newest first: the newest five already have the newcomer in copy.
+            let cc = index < 5 ? [others[0], others[1], newcomer] : [others[0], others[1]]
+            let body = """
+            <div>Коллеги, добрый день.<br>По импортозамещению телефонии: шаг \(10 - index) — согласовали с подрядчиком окно миграции \
+            исходящей связи на выходные, тестовый стенд проверен на двух филиалах, замечаний по качеству звука нет. \
+            Осталось подтвердить нагрузочное тестирование и план отката, прошу до четверга прислать замечания по регламенту.<br><br>\
+            С уважением,<br>\(author.name)<br>Ведущий инженер<br>Департамент информационных технологий<br>\
+            Управление инфраструктуры и связи<br>Отдел корпоративной телефонии<br>Тел.: +7 (495) 000-00-0\(index)</div>
+            """
+            return MailMessage(
+                ref: MailItemRef(id: "MSG-LONG-\(index)-FULL-ID-0000000", changeKey: "CK"), conversationID: "CONV-LONG-FULL-ID-0000000000",
+                parentFolderID: "F-INBOX-FULL-ID-0000000000", kind: .note,
+                subject: index == 9 ? "Импортозамещение телефонии" : (index.isMultiple(of: 3) ? "FW: RE: Импортозамещение телефонии" : "RE: Импортозамещение телефонии"),
+                from: author, to: others.dropFirst(2).map { $0 }, cc: cc, bcc: [], hiddenRecipientCount: 0,
+                received: Date(timeIntervalSince1970: 1_792_000_000 - Double(index) * 3_600), sent: nil, isRead: true, isDraft: false,
+                importance: .normal, bodyHTML: body, preview: "", attachments: [], categories: [], isFlagged: false,
+                actions: [.reply, .replyAll, .forward], meeting: nil, internetMessageID: nil
+            )
+        }
+        return MailThread(id: "CONV-LONG-FULL-ID-0000000000", messages: messages, totalMessageCount: 10)
+    }
+
+    private func readLongThread(_ arguments: [String: JSONValue] = [:], tools: MCPMailTools? = nil) async throws -> (answer: [String: JSONValue], size: Int) {
+        let thread = longThread()
+        let summary = MailConversationSummary(
+            id: thread.id, topic: "Импортозамещение телефонии", senders: ["Петров Иван Сергеевич"], recipients: [],
+            lastDelivery: thread.messages.first?.received, messageCount: 10, unreadCount: 0, hasAttachments: false,
+            importance: .normal, preview: "Коллеги", itemRefs: thread.messages.map(\.ref), categories: [], isFlagged: false,
+            isProtected: false, instanceKey: "KEY-LONG", parentFolderID: "F-INBOX-FULL-ID-0000000000"
+        )
+        await provider.set(conversations: [summary], threads: [thread])
+        let tools = tools ?? makeTools()
+        let list = try object(await tools.call(name: "list_mail", arguments: [:], client: nil))
+        let threadID = try XCTUnwrap(list["threads"]?.arrayValue?.first?["thread_id"]?.stringValue)
+        var call = arguments
+        call["thread_id"] = .string(threadID)
+        let answer = try object(await tools.call(name: "get_mail_thread", arguments: call, client: nil))
+        return (answer, JSONLine.encodeString(.object(answer)).count)
+    }
+
+    func testCompactThreadLeavesOutRepeatsAndIsAtLeastHalfTheSize() async throws {
+        let full = try await readLongThread(["detail": "full"])
+        let compact = try await readLongThread()
+        print("get_mail_thread, 10 messages: full \(full.size) characters, compact \(compact.size)")
+        XCTAssertLessThanOrEqual(compact.size * 2, full.size, "compact \(compact.size) vs full \(full.size)")
+
+        let messages = try XCTUnwrap(compact.answer["messages"]?.arrayValue)
+        XCTAssertEqual(messages.count, 10)
+        let newest = messages[0]
+        XCTAssertEqual(newest["to"]?.arrayValue?.count, 7)
+        XCTAssertEqual(newest["cc"]?.arrayValue?.count, 3)
+        XCTAssertNil(newest["subject"], "RE: of the conversation's subject")
+        XCTAssertEqual(newest["signature_cut"], true)
+        let text = try XCTUnwrap(newest["text"]?.stringValue)
+        XCTAssertTrue(text.hasSuffix("прошу до четверга прислать замечания по регламенту."), text)
+        XCTAssertFalse(text.contains("Ведущий инженер"))
+
+        // Message 4 has the same people as the newest (another author, others in other roles):
+        // no recipients.
+        XCTAssertNil(messages[4]["to"])
+        XCTAssertNil(messages[4]["cc"])
+        XCTAssertNil(messages[4]["recipients_changed"])
+        // Message 5 is before the newcomer joined.
+        let change = try XCTUnwrap(messages[5]["recipients_changed"]?.objectValue)
+        XCTAssertEqual(change["added"]?.arrayValue?.first?["email"]?.stringValue, "pfedorov@example.com")
+        XCTAssertNil(change["removed"])
+        XCTAssertNil(messages[5]["to"])
+
+        // `full` is the earlier format: every message with its subject, recipients and text.
+        let fullMessages = try XCTUnwrap(full.answer["messages"]?.arrayValue)
+        for message in fullMessages {
+            XCTAssertNotNil(message["subject"])
+            XCTAssertNotNil(message["to"])
+            XCTAssertNotNil(message["cc"])
+            XCTAssertNil(message["signature_cut"])
+            XCTAssertNil(message["recipients_changed"])
+            XCTAssertTrue(message["text"]?.stringValue?.contains("Ведущий инженер") == true)
+        }
+        XCTAssertEqual(fullMessages[9]["subject"]?.stringValue, "Импортозамещение телефонии")
+    }
+
+    func testThreadDetailMustBeCompactOrFull() async {
+        let result = await makeTools().call(name: "get_mail_thread", arguments: ["thread_id": "0123456789ab", "detail": "short"], client: nil)
+        XCTAssertRefusal(result, .invalidArgument)
+    }
+
+    /// The full message stays whole: no signature cut, its subject and recipients given.
+    func testFullMessageKeepsItsSignature() async throws {
+        let tools = makeTools()
+        let thread = try await readLongThread(tools: tools)
+        let messageID = try XCTUnwrap(thread.answer["messages"]?.arrayValue?[3]["message_id"]?.stringValue)
+        let message = try object(await tools.call(name: "get_mail_message", arguments: ["message_id": .string(messageID)], client: nil))
+        let fields = try XCTUnwrap(message["message"]?.objectValue)
+        XCTAssertEqual(fields["subject"]?.stringValue, "FW: RE: Импортозамещение телефонии")
+        XCTAssertNotNil(fields["to"])
+        XCTAssertNil(fields["signature_cut"])
+        XCTAssertTrue(fields["text"]?.stringValue?.contains("Ведущий инженер") == true)
+    }
+
     private func messageID(_ tools: MCPMailTools) async throws -> String {
         let list = try object(await tools.call(name: "list_mail", arguments: [:], client: nil))
         let threadID = try XCTUnwrap(list["threads"]?.arrayValue?.first?["thread_id"]?.stringValue)

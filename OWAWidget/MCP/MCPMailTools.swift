@@ -438,18 +438,46 @@ final class MCPMailTools {
     /// One message; `budget` is what is left of the characters this answer may still carry.
     /// With `includeHTML`, also `html`: the same part of the body as `text`, cleaned markup for a
     /// client that draws the message itself. It is not limited: cutting markup would break it.
-    private func messageJSON(_ message: MailMessage, _ coder: MCPDateCoder, ownDomain: String?, characterLimit: Int, includeHTML: Bool, budget: inout Int) -> JSONValue {
+    /// How `get_mail_thread` shows a message in its compact view (`detail: compact`).
+    struct CompactMessage {
+        /// The conversation's subject: a message's own is left out when it only repeats it.
+        let topic: String
+        /// The people of the newest message (sender, `to`, `cc`), for the older ones; nil for the
+        /// newest itself.
+        let newestPeople: [MailAddress]?
+    }
+
+    private static func people(of message: MailMessage) -> [MailAddress] {
+        (message.from.map { [$0] } ?? []) + message.to + message.cc
+    }
+
+    private func messageJSON(_ message: MailMessage, _ coder: MCPDateCoder, ownDomain: String?, characterLimit: Int, includeHTML: Bool, compact: CompactMessage? = nil, budget: inout Int) -> JSONValue {
         var fields: [String: JSONValue] = [
             "message_id": .string(handle(message.ref.id)),
-            "subject": .string(message.subject),
             "from": message.from.map { addressJSON($0, ownDomain: ownDomain) } ?? .null,
-            "to": .array(message.to.map { addressJSON($0, ownDomain: ownDomain) }),
             "received": .optional(message.received.map(coder.string)),
             "is_read": .bool(message.isRead),
             "kind": .string(Self.kindName(message.kind)),
         ]
+        if compact.map({ MCPMailCompaction.repeatsTopic(message.subject, topic: $0.topic) }) != true {
+            fields["subject"] = .string(message.subject)
+        }
         if let sender = message.sender { fields["sent_by"] = addressJSON(sender, ownDomain: ownDomain) }
-        if !message.cc.isEmpty { fields["cc"] = .array(message.cc.map { addressJSON($0, ownDomain: ownDomain) }) }
+        if let newest = compact?.newestPeople {
+            // An older message: its recipients only when its people differ from the newest
+            // one's. The sender counts too: in a reply-all chain the author and a recipient swap
+            // places from message to message, and nobody joined or left.
+            let change = MCPMailCompaction.recipientChange(from: Self.people(of: message), to: newest)
+            if !change.isEmpty {
+                var diff: [String: JSONValue] = [:]
+                if !change.added.isEmpty { diff["added"] = .array(change.added.map { addressJSON($0, ownDomain: ownDomain) }) }
+                if !change.removed.isEmpty { diff["removed"] = .array(change.removed.map { addressJSON($0, ownDomain: ownDomain) }) }
+                fields["recipients_changed"] = .object(diff)
+            }
+        } else {
+            fields["to"] = .array(message.to.map { addressJSON($0, ownDomain: ownDomain) })
+            if !message.cc.isEmpty { fields["cc"] = .array(message.cc.map { addressJSON($0, ownDomain: ownDomain) }) }
+        }
         if !message.bcc.isEmpty { fields["bcc"] = .array(message.bcc.map { addressJSON($0, ownDomain: ownDomain) }) }
         if message.hiddenRecipientCount > 0 { fields["more_recipients"] = .int(Int64(message.hiddenRecipientCount)) }
         if message.importance != .normal { fields["importance"] = .string(message.importance.rawValue.lowercased()) }
@@ -495,7 +523,11 @@ final class MCPMailTools {
             }
         default:
             if includeHTML { fields["html"] = .string(MailHTMLDocument.clientHTML(message.bodyHTML)) }
-            let text = MailHTMLDocument.plainText(message.bodyHTML)
+            var text = MailHTMLDocument.plainText(message.bodyHTML)
+            if compact != nil, let body = MCPMailCompaction.strippingSignature(text) {
+                text = body
+                fields["signature_cut"] = true
+            }
             let allowed = max(0, min(characterLimit, budget))
             if text.count > allowed {
                 fields["text"] = .string(String(text.prefix(allowed)))
@@ -690,6 +722,12 @@ final class MCPMailTools {
 
     private func getThread(_ arguments: [String: JSONValue], _ coder: MCPDateCoder) async throws -> MCPToolResult {
         let account = try mailAccount(arguments)
+        let compact: Bool
+        switch arguments["detail"]?.stringValue ?? "compact" {
+        case "compact": compact = true
+        case "full": compact = false
+        default: throw ToolError("`detail` must be compact or full")
+        }
         let id = try requiredID(arguments, "thread_id", from: "list_mail or search_mail")
         let maxMessages = try optionalInt(arguments, "max_messages", range: 1...20) ?? 10
         let includeHTML = try optionalBool(arguments, "include_html") ?? false
@@ -701,8 +739,11 @@ final class MCPMailTools {
         result["open_url"] = openURL(.thread(id: thread.id, accountID: linkAccountID(account)))
         result["subject"] = .string(thread.topic)
         result["total_messages"] = .int(Int64(thread.totalMessageCount))
-        result["messages"] = .array(thread.messages.prefix(maxMessages).map {
-            messageJSON($0, coder, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, includeHTML: includeHTML, budget: &budget)
+        let shown = Array(thread.messages.prefix(maxMessages))
+        let newestPeople = shown.first.map(Self.people(of:))
+        result["messages"] = .array(shown.enumerated().map { index, message in
+            let view = compact ? CompactMessage(topic: thread.topic, newestPeople: index == 0 ? nil : newestPeople) : nil
+            return messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, includeHTML: includeHTML, compact: view, budget: &budget)
         })
         if thread.messages.count > maxMessages || thread.totalMessageCount > thread.messages.count {
             result["note"] = "Newest messages first; older ones are not included. Each message's `text` is only what it added, without the quoted history: get_mail_message returns the full text."
