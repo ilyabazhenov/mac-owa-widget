@@ -32,8 +32,10 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
     static let visibleRowLimit = 4
 
     /// Answers the row's meetings (a folded series as one series answer); the flag says whether
-    /// the organizer is told. Throws when the server did not accept it.
-    var onRespond: (([String], MeetingResponseAction, Bool) async throws -> Void)?
+    /// the organizer is told. Returns whether it went as one series answer: a row folds meetings
+    /// by subject and organizer, and unrelated ones are answered one by one. Throws when the
+    /// server did not accept it.
+    var onRespond: (([String], MeetingResponseAction, Bool) async throws -> Bool)?
     /// Where each new row's bell starts: the "Tell the organizer" setting.
     var notifyOrganizerByDefault: () -> Bool = { true }
     /// How long the outcome stays on a row before it leaves the panel.
@@ -153,14 +155,14 @@ final class MeetingInvitationAlertController: MeetingInvitationAlertPresenting {
         let notify = rows[index].notifyOrganizer
         Task { @MainActor in
             do {
-                try await onRespond(eventIDs, action, notify)
+                let answeredSeries = try await onRespond(eventIDs, action, notify)
                 #if DEBUG
                 DiagnosticLog.event("Invitation panel respond done action=\(action)")
                 #endif
                 if let i = rows.firstIndex(where: { $0.id == rowID }) {
                     rows[i].sendingAction = nil
                     rows[i].result = MeetingInvitationRow.Result(
-                        text: localization.summary(action: action, series: rows[i].alert.occurrenceCount > 1, notify: notify),
+                        text: localization.summary(action: action, series: answeredSeries, notify: notify),
                         isSilent: !notify
                     )
                 }

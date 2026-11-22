@@ -382,6 +382,15 @@ final class OWAMailParsersTests: XCTestCase {
         XCTAssertThrowsError(try OWAMailParsers.updatedRefs(data(json)), "the all-or-nothing parser still fails as a whole")
     }
 
+    /// An item the answer leaves out is unknown: failed, as with `MoveItem`, never counted done.
+    func testUpdateResultsMissingItemIsAFailure() throws {
+        let json = #"{"Body":{"ResponseMessages":{"Items":[{"ResponseCode":"NoError","ResponseClass":"Success","Items":[{"__type":"Message:#Exchange","ItemId":{"ChangeKey":"CK2","Id":"I1"}}]}]}}}"#
+        let refs = ["I1", "I2"].map { MailItemRef(id: $0, changeKey: "CK") }
+        let results = try OWAMailParsers.updateResults(data(json), targets: refs)
+        XCTAssertEqual(try results[0].get(), MailItemRef(id: "I1", changeKey: "CK2"))
+        XCTAssertEqual(results[1], .failure(.serverError("NoAnswer")))
+    }
+
     func testUpdateResultsFailOnARequestError() {
         let json = #"{"Body":{"ResponseCode":"ErrorServerBusy","ResponseClass":"Error"}}"#
         XCTAssertThrowsError(try OWAMailParsers.updateResults(data(json), targets: [MailItemRef(id: "I1", changeKey: nil)]))

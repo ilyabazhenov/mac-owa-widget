@@ -165,8 +165,11 @@ final class CalendarServiceReplyTests: XCTestCase {
         let oneOffs = [event("x"), event("y")]
         let service = makeService(provider, events: series + oneOffs)
 
-        try await service.reply(toInvitation: series, action: .accept, notifyOrganizer: false)
-        try await service.reply(toInvitation: oneOffs, action: .tentative, notifyOrganizer: true)
+        let seriesAnswer = try await service.reply(toInvitation: series, action: .accept, notifyOrganizer: false)
+        let oneByOne = try await service.reply(toInvitation: oneOffs, action: .tentative, notifyOrganizer: true)
+        // The panel's line says "for the whole series" only for a series answer.
+        XCTAssertTrue(seriesAnswer)
+        XCTAssertFalse(oneByOne)
 
         let calls = await provider.calls
         XCTAssertEqual(calls, [

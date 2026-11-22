@@ -448,11 +448,12 @@ enum OWAMailParsers {
     }
 
     /// `UpdateItem` item by item, in request order: the new id and change key, or why that item
-    /// was not updated. An item the response leaves out keeps its old ref.
+    /// was not updated. An item the response leaves out is unknown and reported as failed, as in
+    /// `moveResults`: counting it as done would mark it in the app while the server never said so.
     static func updateResults(_ data: Data, targets: [MailItemRef]) throws -> [Result<MailItemRef, MailError>] {
         let items = responseItems(try jsonWithItemErrors(data))
         return targets.enumerated().map { index, ref in
-            guard index < items.count else { return .success(ref) }
+            guard index < items.count else { return .failure(.serverError("NoAnswer")) }
             let item = items[index]
             if let error = itemError(item) { return .failure(error) }
             return .success(((item["Items"] as? [[String: Any]])?.first).flatMap { itemRef($0["ItemId"]) } ?? ref)

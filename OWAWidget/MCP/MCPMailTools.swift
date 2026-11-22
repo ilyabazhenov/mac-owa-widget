@@ -52,6 +52,9 @@ final class MCPMailTools {
 
     static let maxMessageCharacters = 8_000
     static let maxThreadCharacters = 40_000
+    /// Markup (`include_html`) one get_mail_thread answer carries at most; a message past it gets
+    /// `html: null` and `html_omitted`. Cutting markup would break it, so a message is all or none.
+    static let maxThreadHTMLCharacters = 300_000
     /// Exchange returns at most this many search results per request, whatever is asked for.
     static let searchPageRows = 25
     /// Search requests one search_mail call makes at most to fill its `limit`.
@@ -507,8 +510,9 @@ final class MCPMailTools {
 
     /// One message; `budget` is what is left of the characters this answer may still carry.
     /// With `includeHTML`, also `html`: the same part of the body as `text`, cleaned markup for a
-    /// client that draws the message itself. It is not limited: cutting markup would break it.
-    private func messageJSON(_ message: MailMessage, _ coder: MCPDateCoder, ownDomain: String?, characterLimit: Int, includeHTML: Bool, compact: CompactMessage? = nil, budget: inout Int) -> JSONValue {
+    /// client that draws the message itself. Markup is never cut (it would break): a message whose
+    /// markup does not fit into `htmlBudget` gets none, with `html_omitted`.
+    private func messageJSON(_ message: MailMessage, _ coder: MCPDateCoder, ownDomain: String?, characterLimit: Int, includeHTML: Bool, compact: CompactMessage? = nil, budget: inout Int, htmlBudget: inout Int) -> JSONValue {
         var fields: [String: JSONValue] = [
             "message_id": .string(handle(message.ref.id)),
             "from": message.from.map { addressJSON($0, ownDomain: ownDomain) } ?? .null,
@@ -579,7 +583,16 @@ final class MCPMailTools {
                 fields["html_unavailable"] = reason
             }
         default:
-            if includeHTML { fields["html"] = .string(MailHTMLDocument.clientHTML(message.bodyHTML)) }
+            if includeHTML {
+                let html = MailHTMLDocument.clientHTML(message.bodyHTML)
+                if html.count <= htmlBudget {
+                    fields["html"] = .string(html)
+                    htmlBudget -= html.count
+                } else {
+                    fields["html"] = .null
+                    fields["html_omitted"] = .string("The markup of this message did not fit into this answer (\(Self.maxThreadHTMLCharacters) characters of html at most): get_mail_message returns it.")
+                }
+            }
             var text = MailHTMLDocument.plainText(message.bodyHTML)
             // Not with `html`: it is the same part of the body as `text`, signature included.
             if compact != nil, !includeHTML, let body = MCPMailCompaction.strippingSignature(text) {
@@ -931,6 +944,7 @@ final class MCPMailTools {
         let thread = try await request(account, context: "mcp.mail.thread") { try await $0.mailThread(conversationID: id, ignoringFolders: []) }
         let ownDomain = Self.domain(await ownAddress(account))
         var budget = Self.maxThreadCharacters
+        var htmlBudget = Self.maxThreadHTMLCharacters
         var result = commonFields(coder, account)
         result["thread_id"] = .string(handle(thread.id))
         result["open_url"] = openURL(.thread(id: thread.id, accountID: linkAccountID(account)))
@@ -941,7 +955,7 @@ final class MCPMailTools {
             let newer = index == 0 ? nil : shown[index - 1]
             let newerPeople = newer.flatMap { $0.hiddenRecipientCount == 0 ? Self.people(of: $0) : nil }
             let view = compact ? CompactMessage(topic: thread.topic, newerPeople: newerPeople) : nil
-            return messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, includeHTML: includeHTML, compact: view, budget: &budget)
+            return messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, includeHTML: includeHTML, compact: view, budget: &budget, htmlBudget: &htmlBudget)
         })
         if thread.messages.count > maxMessages || thread.totalMessageCount > thread.messages.count {
             result["note"] = "Newest messages first; older ones are not included. Each message's `text` is only what it added, without the quoted history: get_mail_message returns the full text."
@@ -959,8 +973,10 @@ final class MCPMailTools {
         let message = try await request(account, context: "mcp.mail.message") { try await $0.mailMessage(MailItemRef(id: id, changeKey: nil)) }
         let ownDomain = Self.domain(await ownAddress(account))
         var budget = Self.maxFullMessageCharacters
+        // One message: its markup whole, however long.
+        var htmlBudget = Int.max
         var result = commonFields(coder, account)
-        result["message"] = messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxFullMessageCharacters, includeHTML: includeHTML, budget: &budget)
+        result["message"] = messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxFullMessageCharacters, includeHTML: includeHTML, budget: &budget, htmlBudget: &htmlBudget)
         result["open_url"] = openURL(.message(id: message.ref.id, accountID: linkAccountID(account)))
         if let conversation = message.conversationID { result["thread_id"] = .string(handle(conversation)) }
         return .success(result)

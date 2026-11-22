@@ -1426,6 +1426,27 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertRefusal(first, .userDeclined)
     }
 
+    /// One meeting panel at a time: while an answer waits for the user, creating or cancelling
+    /// a meeting does not open a second panel beside it.
+    func testOpenResponsePanelKeepsCreateAndCancelWaiting() async {
+        let confirmer = HoldingResponseConfirmer()
+        let removal = FakeRemovalConfirmer(.confirmed)
+        let creation = FakeConfirmer(.confirmed)
+        let (held, _) = makeTools(events: [
+            event("invite", day: 6, hour: 10, response: .notResponded, organizer: "Grace Miller"),
+            event("sync", day: 6, hour: 12, isOrganizer: true, attendees: [colleague]),
+        ], confirmer: creation, removalConfirmer: removal, responseConfirmer: confirmer)
+        let waiting = Task { await held.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "response": "accept"]) }
+        while confirmer.proposals.isEmpty { await Task.yield() }
+
+        XCTAssertRefusal(await held.call(name: "cancel_meeting", arguments: ["event_id": "sync"]), .busy)
+        XCTAssertRefusal(await held.call(name: "create_meeting", arguments: meetingArguments), .busy)
+        XCTAssertTrue(removal.proposals.isEmpty, "no cancellation panel opened")
+        XCTAssertTrue(creation.proposals.isEmpty, "no creation panel opened")
+        confirmer.release(.rejected)
+        XCTAssertRefusal(await waiting.value, .userDeclined)
+    }
+
     func testSettingRefusalNamesTheSwitch() async throws {
         let (tools, _) = makeTools(events: [event("invite", day: 6, hour: 10, response: .notResponded, organizer: "Grace Miller")], canRespondMeetings: false)
         let result = await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "response": "accept"])
