@@ -664,11 +664,12 @@ final class MCPMailTools {
         let names = (try? await folders(account, load: false))??.reduce(into: [String: String]()) { $0[$1.id] = $1.displayName } ?? [:]
         result["threads"] = .array(page.conversations.map { conversationJSON($0, coder, folderNames: names) })
         let nextOffset = offset + page.conversations.count
-        result["more_available"] = .bool(page.moreAvailable && nextOffset < OWAMailPayloads.searchResultsCap)
-        if page.moreAvailable, nextOffset < OWAMailPayloads.searchResultsCap, !page.conversations.isEmpty {
-            result["next_cursor"] = .string(String(nextOffset))
-        }
-        if page.moreAvailable, nextOffset >= OWAMailPayloads.searchResultsCap {
+        // An empty page never says "more": with nothing on it there is no cursor to go on from,
+        // and asking again from the same offset would get the same empty page.
+        let more = page.moreAvailable && !page.conversations.isEmpty && nextOffset < OWAMailPayloads.searchResultsCap
+        result["more_available"] = .bool(more)
+        if more { result["next_cursor"] = .string(String(nextOffset)) }
+        if page.moreAvailable, !page.conversations.isEmpty, nextOffset >= OWAMailPayloads.searchResultsCap {
             result["note"] = .string("Exchange returns at most \(OWAMailPayloads.searchResultsCap) results per search: narrow it with `from`, `since`/`until` or `folder`.")
         }
         if !page.searchTerms.isEmpty { result["matched_terms"] = .array(page.searchTerms.map(JSONValue.string)) }

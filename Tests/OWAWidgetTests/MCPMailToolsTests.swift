@@ -341,6 +341,17 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertNotNil(searches.first?.receivedFrom)
     }
 
+    /// Exchange can answer an empty page with `MoreResultsAvailable` (an empty query did): the
+    /// answer must not say "more" when there is no cursor to go on from.
+    func testEmptySearchPageSaysNoMore() async throws {
+        await provider.set(conversations: [], threads: [])
+        let found = try object(await makeTools().call(name: "search_mail", arguments: ["from": ["alfanotes@example.com"], "since": "2026-10-01"], client: nil))
+        XCTAssertEqual(found["threads"]?.arrayValue?.count, 0)
+        XCTAssertEqual(found["more_available"], false)
+        XCTAssertNil(found["next_cursor"])
+        XCTAssertNil(found["note"])
+    }
+
     private func messageID(_ tools: MCPMailTools) async throws -> String {
         let list = try object(await tools.call(name: "list_mail", arguments: [:], client: nil))
         let threadID = try XCTUnwrap(list["threads"]?.arrayValue?.first?["thread_id"]?.stringValue)

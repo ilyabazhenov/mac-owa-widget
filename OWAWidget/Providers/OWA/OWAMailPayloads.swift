@@ -383,12 +383,44 @@ enum OWAMailPayloads {
         return queries
     }
 
+    /// The `Query` of a search. Exchange answers an empty query with an empty page (and
+    /// `MoreResultsAvailable`), whatever the refiners and restrictions say: they only narrow what
+    /// the query found (checked live 2026-11-22 — `from`, `hasattachment` and dates alone found
+    /// nothing; the same conditions as KQL in the query found the mail). So a search by filters
+    /// alone writes them into the query; refiners and the date restriction still go as before.
+    static func queryText(for query: MailSearchQuery, calendar: Calendar) -> String {
+        let text = query.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.isEmpty else { return text }
+        var parts: [String] = []
+        let senders = query.from.map { "from:\"\($0.replacingOccurrences(of: "\"", with: ""))\"" }
+        if senders.count == 1 {
+            parts.append(senders[0])
+        } else if senders.count > 1 {
+            parts.append("(" + senders.joined(separator: " OR ") + ")")
+        }
+        if let has = query.hasAttachments { parts.append("hasattachment:\(has ? "true" : "false")") }
+        if parts.isEmpty {
+            // Dates or a folder alone: any query that matches everything the restriction keeps.
+            if let from = query.receivedFrom {
+                parts.append("received>=\(searchDay(calendar.startOfDay(for: from), calendar))")
+            } else if let to = query.receivedTo {
+                let next = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: to)) ?? to
+                parts.append("received<=\(searchDay(next, calendar))")
+            } else {
+                parts.append("received>=1900-01-01")
+            }
+        }
+        return parts.joined(separator: " ")
+    }
+
+    private static func searchDay(_ date: Date, _ calendar: Calendar) -> String {
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+
     /// Day bounds as OWA sends them: bare dates, the upper one the day *after* the last day.
     static func dateRestriction(from: Date?, to: Date?, calendar: Calendar) -> [String: Any]? {
-        func day(_ date: Date) -> String {
-            let parts = calendar.dateComponents([.year, .month, .day], from: date)
-            return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
-        }
+        func day(_ date: Date) -> String { searchDay(date, calendar) }
         func condition(_ type: String, _ value: String) -> [String: Any] {
             [
                 "__type": "\(type):#Exchange",
@@ -429,7 +461,7 @@ enum OWAMailPayloads {
                 "ApplicationId": "Owa",
                 "SearchSessionId": sessionID,
                 "SearchScope": searchScope(query.scope),
-                "Query": query.text.trimmingCharacters(in: .whitespacesAndNewlines),
+                "Query": queryText(for: query, calendar: calendar),
                 "SearchRefiners": refiners.isEmpty ? NSNull() : refiners,
                 "SearchRestrictions": dateRestriction(from: query.receivedFrom, to: query.receivedTo, calendar: calendar) ?? NSNull(),
                 "IdFormat": "EwsId",
