@@ -72,7 +72,7 @@ enum MCPToolRegistry {
                     "from": ["type": "string", "description": .string(dateDescription)],
                     "to": ["type": "string", "description": .string(dateDescription + " A bare date includes that whole day. Defaults to the end of the `from` day; with only `to`, the period starts at the beginning of that day.")],
                     "account_id": ["type": "string", "description": .string(accountDescription)],
-                    "query": ["type": "string", "description": "Case-insensitive text to find in the title, location or organizer name. Attendees are not searched: use find_events_with_person."],
+                    "query": ["type": "string", "description": "Words to find in the title, location or organizer name, not exact text: a meeting matches when each word starts a word there, in any form (\"телефония\" finds \"телефонии\", \"review\" finds \"reviews\"); case does not matter. An abbreviation in capitals (\"ИЗТ\") must be a whole word. Attendees are not searched: use find_events_with_person."],
                     "response": [
                         "type": "array",
                         "items": ["type": "string", "enum": ["accepted", "tentative", "not_responded", "declined", "organizer"]],
