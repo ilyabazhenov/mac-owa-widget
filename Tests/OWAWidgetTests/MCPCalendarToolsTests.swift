@@ -445,6 +445,8 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertEqual(found6, ["Sprint reviews"], "the organizer counts")
         let found7 = await titles("импортозамещения")
         XCTAssertEqual(found7, ["Импортозамещение: бюджет"])
+        let capsLock = await titles("ИМПОРТ")
+        XCTAssertEqual(capsLock, ["Импортозамещение: бюджет"], "capitals that are no whole word anywhere: a word start (Caps Lock)")
         let found8 = await titles(" — ")
         XCTAssertEqual(found8.count, 6, "no words: nothing is filtered")
     }

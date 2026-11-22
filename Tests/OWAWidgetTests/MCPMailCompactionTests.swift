@@ -66,5 +66,20 @@ final class MCPMailCompactionTests: XCTestCase {
         XCTAssertNil(MCPMailCompaction.strippingSignature("С уважением,\nИван"))
         // "Regardless" is not "Regards".
         XCTAssertNil(MCPMailCompaction.strippingSignature("Ok.\nRegardless of the date\nwe go"))
+        // A bare `--` is a separator unless contact details follow.
+        XCTAssertNil(MCPMailCompaction.strippingSignature("Итоги встречи\n--\nстенд готов\nокна согласованы\nоткат в среду"))
+        XCTAssertNil(MCPMailCompaction.strippingSignature("Итоги\n—\nИван Петров\n+7 (495) 000-00-00"), "an em dash is a separator")
+        // A phrase followed by more text is text.
+        XCTAssertNil(MCPMailCompaction.strippingSignature("Release is out.\nCheers to everyone who helped:\nAnn\nBob"))
+        XCTAssertNil(MCPMailCompaction.strippingSignature("Готово.\nС уважением к срокам, сдвигаем релиз\nна неделю"))
+    }
+
+    func testOnlyTheLastSignatureStartCounts() {
+        let text = "Пишу с уважением к вашему времени.\nС уважением,\nэто не подпись, а цитата\nдальше текст\n\nС уважением,\nИван Петров\n+7 (495) 000-00-00"
+        XCTAssertEqual(
+            MCPMailCompaction.strippingSignature(text),
+            "Пишу с уважением к вашему времени.\nС уважением,\nэто не подпись, а цитата\nдальше текст"
+        )
+        XCTAssertEqual(MCPMailCompaction.strippingSignature("Ok.\nС уважением, Иван Петров\nОтдел телефонии"), "Ok.", "a name after the phrase")
     }
 }

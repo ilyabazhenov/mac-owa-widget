@@ -350,6 +350,18 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertEqual(found["more_available"], false)
         XCTAssertNil(found["next_cursor"])
         XCTAssertNil(found["note"])
+        let calls = await provider.calls
+        XCTAssertFalse(calls.contains("folders"), "an empty page needs no folder names")
+    }
+
+    /// Folder names come once: a second search with known folders asks Exchange for nothing more.
+    func testSearchLoadsFoldersOnlyForUnknownOnes() async throws {
+        await provider.set(conversations: searchResults(), threads: [])
+        let tools = makeTools()
+        _ = try object(await tools.call(name: "search_mail", arguments: ["query": "телефония"], client: nil))
+        _ = try object(await tools.call(name: "search_mail", arguments: ["query": "бюджет"], client: nil))
+        let calls = await provider.calls
+        XCTAssertEqual(calls.filter { $0 == "folders" }.count, 1)
     }
 
     // MARK: - Compact list rows
@@ -513,6 +525,39 @@ final class MCPMailToolsTests: XCTestCase {
             XCTAssertTrue(message["text"]?.stringValue?.contains("Ведущий инженер") == true)
         }
         XCTAssertEqual(fullMessages[9]["subject"]?.stringValue, "Импортозамещение телефонии")
+    }
+
+    /// With a recipient list Exchange cut short, nobody can tell whether an older message had the
+    /// same people: it lists its own. With `html`, the text keeps its signature like the markup.
+    func testCompactViewKeepsWhatItCannotCompare() async throws {
+        var thread = longThread()
+        var messages = thread.messages
+        let newest = messages[0]
+        messages[0] = MailMessage(
+            ref: newest.ref, conversationID: newest.conversationID, parentFolderID: newest.parentFolderID, kind: newest.kind,
+            subject: newest.subject, from: newest.from, to: newest.to, cc: newest.cc, bcc: [], hiddenRecipientCount: 40,
+            received: newest.received, sent: nil, isRead: true, isDraft: false, importance: .normal, bodyHTML: newest.bodyHTML,
+            preview: "", attachments: [], categories: [], isFlagged: false, actions: newest.actions, meeting: nil, internetMessageID: nil
+        )
+        thread = MailThread(id: thread.id, messages: messages, totalMessageCount: 10)
+        let tools = makeTools()
+        _ = try await readLongThread(tools: tools)
+        await provider.add(thread)
+        let list = try object(await tools.call(name: "list_mail", arguments: [:], client: nil))
+        let threadID = try XCTUnwrap(list["threads"]?.arrayValue?.first?["thread_id"]?.stringValue)
+        let answer = try object(await tools.call(name: "get_mail_thread", arguments: ["thread_id": .string(threadID)], client: nil))
+        let rows = try XCTUnwrap(answer["messages"]?.arrayValue)
+        XCTAssertEqual(rows[0]["more_recipients"], 40)
+        for row in rows.dropFirst() {
+            XCTAssertNotNil(row["to"], "the newest list is incomplete: every message lists its own")
+            XCTAssertNil(row["recipients_changed"])
+        }
+
+        let html = try object(await tools.call(name: "get_mail_thread", arguments: ["thread_id": .string(threadID), "include_html": true], client: nil))
+        let first = try XCTUnwrap(html["messages"]?.arrayValue?.first)
+        XCTAssertNil(first["signature_cut"])
+        XCTAssertTrue(first["text"]?.stringValue?.contains("Ведущий инженер") == true, "text is the same part as html")
+        XCTAssertNil(first["subject"], "the rest of the compact view stays")
     }
 
     func testThreadDetailMustBeCompactOrFull() async {

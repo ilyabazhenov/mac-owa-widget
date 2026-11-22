@@ -2,13 +2,16 @@ import Foundation
 
 /// `list_events`' `query`: words, not a phrase. A meeting matches when every word of the query
 /// starts some word of its title, location or organizer, in any grammatical form: "телефония"
-/// finds "…по исходящей телефонии". An abbreviation typed in capitals ("ИЗТ") must be a whole
-/// word, so it does not catch longer words that merely start the same way.
+/// finds "…по исходящей телефонии". A word typed in capitals ("ИЗТ") is first taken as an
+/// abbreviation and must be a whole word, so it does not catch longer words that merely start
+/// the same way; when that finds nothing (it was "ПЛАН" typed with Caps Lock), the caller asks
+/// again with `strict: false`, and it is a word start like any other.
 struct MCPEventTextMatch {
     private struct Term {
-        let text: String
-        /// A whole word, not a start (an abbreviation).
-        let exact: Bool
+        /// A word start: the stem, folded.
+        let start: String
+        /// Typed in capitals: as a whole word, folded, in a strict match.
+        let abbreviation: String?
     }
 
     private let terms: [Term]
@@ -20,18 +23,20 @@ struct MCPEventTextMatch {
                 && word.contains(where: \.isLetter)
                 && word.allSatisfy { !$0.isLetter || $0.isUppercase }
             // Stem before folding: folding turns "й" into "и", and the endings are spelt as written.
-            return isAbbreviation
-                ? Term(text: Self.fold(word), exact: true)
-                : Term(text: Self.fold(Self.stem(word.lowercased())), exact: false)
+            return Term(start: Self.fold(Self.stem(word.lowercased())), abbreviation: isAbbreviation ? Self.fold(word) : nil)
         }
         guard !terms.isEmpty else { return nil }
         self.terms = terms
     }
 
-    func matches(_ fields: [String?]) -> Bool {
+    /// Whether a word was taken as an abbreviation: only then does `strict` matter.
+    var hasAbbreviations: Bool { terms.contains { $0.abbreviation != nil } }
+
+    func matches(_ fields: [String?], strict: Bool = true) -> Bool {
         let words = fields.compactMap { $0 }.flatMap(Self.rawWords).map(Self.fold)
         return terms.allSatisfy { term in
-            words.contains { term.exact ? $0 == term.text : $0.hasPrefix(term.text) }
+            if strict, let whole = term.abbreviation { return words.contains(whole) }
+            return words.contains { $0.hasPrefix(term.start) }
         }
     }
 

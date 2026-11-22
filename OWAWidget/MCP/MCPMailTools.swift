@@ -474,15 +474,13 @@ final class MCPMailTools {
         }
     }
 
-    /// One message; `budget` is what is left of the characters this answer may still carry.
-    /// With `includeHTML`, also `html`: the same part of the body as `text`, cleaned markup for a
-    /// client that draws the message itself. It is not limited: cutting markup would break it.
     /// How `get_mail_thread` shows a message in its compact view (`detail: compact`).
     struct CompactMessage {
         /// The conversation's subject: a message's own is left out when it only repeats it.
         let topic: String
         /// The people of the newest message (sender, `to`, `cc`), for the older ones; nil for the
-        /// newest itself.
+        /// newest itself, and when its recipient list is incomplete (`more_recipients`): then
+        /// nobody can tell whether an older message had the same people.
         let newestPeople: [MailAddress]?
     }
 
@@ -490,6 +488,9 @@ final class MCPMailTools {
         (message.from.map { [$0] } ?? []) + message.to + message.cc
     }
 
+    /// One message; `budget` is what is left of the characters this answer may still carry.
+    /// With `includeHTML`, also `html`: the same part of the body as `text`, cleaned markup for a
+    /// client that draws the message itself. It is not limited: cutting markup would break it.
     private func messageJSON(_ message: MailMessage, _ coder: MCPDateCoder, ownDomain: String?, characterLimit: Int, includeHTML: Bool, compact: CompactMessage? = nil, budget: inout Int) -> JSONValue {
         var fields: [String: JSONValue] = [
             "message_id": .string(handle(message.ref.id)),
@@ -502,7 +503,7 @@ final class MCPMailTools {
             fields["subject"] = .string(message.subject)
         }
         if let sender = message.sender { fields["sent_by"] = addressJSON(sender, ownDomain: ownDomain) }
-        if let newest = compact?.newestPeople {
+        if let newest = compact?.newestPeople, message.hiddenRecipientCount == 0 {
             // An older message: its recipients only when its people differ from the newest
             // one's. The sender counts too: in a reply-all chain the author and a recipient swap
             // places from message to message, and nobody joined or left.
@@ -563,7 +564,8 @@ final class MCPMailTools {
         default:
             if includeHTML { fields["html"] = .string(MailHTMLDocument.clientHTML(message.bodyHTML)) }
             var text = MailHTMLDocument.plainText(message.bodyHTML)
-            if compact != nil, let body = MCPMailCompaction.strippingSignature(text) {
+            // Not with `html`: it is the same part of the body as `text`, signature included.
+            if compact != nil, !includeHTML, let body = MCPMailCompaction.strippingSignature(text) {
                 text = body
                 fields["signature_cut"] = true
             }
@@ -733,9 +735,16 @@ final class MCPMailTools {
         let page = try await request(account, cost: 2, context: "mcp.mail.search") { try await $0.mailSearch(finalQuery, offset: startOffset, count: count) }
 
         var result = commonFields(coder, account)
-        // A search spans folders, so it learns their names (one request, kept 10 minutes): rows
-        // name their folder, and one in the inbox needs no `folder_id`.
-        let labels = FolderLabels(try? await folders(account, load: true))
+        // A search spans folders, so rows name their folder, and one in the inbox needs no
+        // `folder_id`. The list is asked for only when a row is in a folder the app does not
+        // know yet (one request, kept 10 minutes); an empty page asks for nothing.
+        var known = try? await folders(account, load: false)
+        let unknownFolder = page.conversations.contains { conversation in
+            guard let id = conversation.parentFolderID else { return false }
+            return known?.contains { $0.id == id } != true
+        }
+        if unknownFolder { known = try? await folders(account, load: true) }
+        let labels = FolderLabels(known)
         let names = labels.names
         result["threads"] = .array(page.conversations.map { conversationJSON($0, coder, folders: labels) })
         let nextOffset = offset + page.conversations.count
@@ -783,7 +792,7 @@ final class MCPMailTools {
         result["subject"] = .string(thread.topic)
         result["total_messages"] = .int(Int64(thread.totalMessageCount))
         let shown = Array(thread.messages.prefix(maxMessages))
-        let newestPeople = shown.first.map(Self.people(of:))
+        let newestPeople = shown.first.flatMap { $0.hiddenRecipientCount == 0 ? Self.people(of: $0) : nil }
         result["messages"] = .array(shown.enumerated().map { index, message in
             let view = compact ? CompactMessage(topic: thread.topic, newestPeople: index == 0 ? nil : newestPeople) : nil
             return messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, includeHTML: includeHTML, compact: view, budget: &budget)

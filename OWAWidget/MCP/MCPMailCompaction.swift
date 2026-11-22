@@ -73,30 +73,45 @@ enum MCPMailCompaction {
     static let maxSignatureLineLength = 100
 
     /// `text` without the signature at its end, or nil when there is none it is sure of. The
-    /// signature starts at a line that is `--` or opens with a closing phrase ("С уважением",
-    /// "Best regards", …) and runs to the end in a few short lines. Text must remain before it.
+    /// signature starts at a line that is only a closing phrase ("С уважением,", "Best regards",
+    /// "Best regards, Alex") or `--`, and runs to the end in a few short lines. After `--` one of
+    /// them must look like contact details (a phone, an address, a link): a bare `--` is also a
+    /// separator inside a message. The last such start counts, so an earlier "С уважением" in the
+    /// text does not take the rest with it. Text must remain before it.
     static func strippingSignature(_ text: String) -> String? {
         let lines = text.components(separatedBy: "\n")
-        for (index, line) in lines.enumerated() where isSignatureOpener(line) {
+        for index in lines.indices.reversed() {
+            guard let opener = signatureOpener(lines[index]) else { continue }
             let tail = lines[(index + 1)...].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-            guard tail.count <= maxSignatureLines, tail.allSatisfy({ $0.count <= maxSignatureLineLength }) else { continue }
+            guard tail.count <= maxSignatureLines, tail.allSatisfy({ $0.count <= maxSignatureLineLength }) else { return nil }
+            if opener == .dashes, !tail.contains(where: looksLikeContact) { return nil }
             let body = lines[..<index].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !body.isEmpty else { return nil }
-            return body
+            return body.isEmpty ? nil : body
         }
         return nil
     }
 
-    private static func isSignatureOpener(_ line: String) -> Bool {
+    private enum Opener { case phrase, dashes }
+
+    private static func signatureOpener(_ line: String) -> Opener? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        if trimmed == "--" || trimmed == "—" { return true }
-        guard trimmed.count <= 60 else { return false }
+        if trimmed == "--" { return .dashes }
+        guard trimmed.count <= 60 else { return nil }
         let lower = trimmed.lowercased()
-        return signatureOpeners.contains { opener in
-            guard lower.hasPrefix(opener) else { return false }
-            // "Regards" opens a signature; "Regardless of …" does not.
-            guard let next = lower.dropFirst(opener.count).first else { return true }
-            return !next.isLetter
+        for opener in signatureOpeners where lower.hasPrefix(opener) {
+            // After the phrase: only punctuation, or a name — "Regards, Alex", "С уважением, Иван
+            // Петров". "Cheers to everyone who helped:" and "Regardless of …" are text.
+            let rest = trimmed.dropFirst(opener.count)
+            if let first = rest.first, first.isLetter { continue }
+            let words = rest.split { $0.isWhitespace || ",.!;:—-".contains($0) }
+            if words.isEmpty { return .phrase }
+            if words.count <= 3, words.allSatisfy({ $0.first?.isUppercase == true && $0.allSatisfy(\.isLetter) }) { return .phrase }
         }
+        return nil
+    }
+
+    /// A phone (7+ digits), an email address or a link.
+    private static func looksLikeContact(_ line: String) -> Bool {
+        line.filter(\.isNumber).count >= 7 || line.contains("@") || line.lowercased().contains("http") || line.lowercased().contains("www.")
     }
 }
