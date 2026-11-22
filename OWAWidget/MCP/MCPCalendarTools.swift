@@ -252,27 +252,26 @@ final class MCPCalendarTools {
         let defaultRange = seriesID == nil ? today : try requireCoverage()
         let resolved = try resolveRange(arguments, default: defaultRange, spanWhenOnlyFrom: .day, onDemand: true, context)
         let accountID = try optionalAccountID(arguments)
-        let query = arguments["query"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = arguments["query"]?.stringValue.flatMap(MCPEventTextMatch.init)
         let responses = try responseFilter(arguments["response"])
         let includeCancelled = try optionalBool(arguments, "include_cancelled") ?? false
         let includeAllDay = try optionalBool(arguments, "include_all_day") ?? true
         let limit = try optionalInt(arguments, "limit", range: 1...300) ?? 100
         let lookup = try await calendarEvents(for: resolved, accountID: accountID, context)
 
-        let matching = lookup.events
+        let candidates = lookup.events
             .filter { Self.overlaps($0, resolved.range) }
             .filter { accountID == nil || $0.accountID == accountID }
             .filter { includeCancelled || !$0.isEffectivelyCancelled }
             .filter { includeAllDay || !$0.isAllDay }
             .filter { responses.contains($0.responseType) }
             .filter { seriesID == nil || $0.seriesID == seriesID }
-            .filter { event in
-                guard let query, !query.isEmpty else { return true }
-                return [event.title, event.location, event.organizer].contains {
-                    $0?.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-                }
-            }
             .sorted { ($0.startDate, $0.endDate) < ($1.startDate, $1.endDate) }
+        var matching = candidates.filter { query?.matches([$0.title, $0.location, $0.organizer]) ?? true }
+        if matching.isEmpty, let query, query.hasAbbreviations {
+            // A word in capitals found nothing as an abbreviation: take it as a word start.
+            matching = candidates.filter { query.matches([$0.title, $0.location, $0.organizer], strict: false) }
+        }
 
         var result = commonFields(context)
         result["range"] = rangeJSON(resolved, context)

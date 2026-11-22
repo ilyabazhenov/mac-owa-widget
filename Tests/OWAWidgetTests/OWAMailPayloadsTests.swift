@@ -140,6 +140,42 @@ final class OWAMailPayloadsTests: XCTestCase {
         XCTAssertEqual(asMessages["ItemTypes"] as? String, "MailItems", "grouping off: the search answers with messages")
     }
 
+    /// Exchange finds nothing for an empty `Query`, whatever the refiners say: a search by filters
+    /// alone writes them into the query as KQL (checked live), and the refiners still go.
+    func testFilterOnlySearchPutsFiltersIntoTheQuery() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Moscow"))
+        let october = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 1, hour: 15)))
+
+        var sender = MailSearchQuery(text: "  ")
+        sender.from = ["AlfaNotes@example.com"]
+        sender.receivedFrom = october
+        XCTAssertEqual(OWAMailPayloads.queryText(for: sender, calendar: calendar), "from:\"AlfaNotes@example.com\"")
+        let request = try body(OWAMailPayloads.executeSearch(sessionID: "S", query: sender, offset: 0, count: 25, calendar: calendar, timeZoneID: zone))
+        XCTAssertEqual(request["Query"] as? String, "from:\"AlfaNotes@example.com\"")
+        XCTAssertEqual((request["SearchRefiners"] as? [[String: Any]])?.count, 1, "the refiner still narrows")
+        XCTAssertFalse(request["SearchRestrictions"] is NSNull, "the date restriction stays")
+
+        var two = MailSearchQuery(text: "")
+        two.from = ["a@example.com", "b\"@example.com"]
+        two.hasAttachments = false
+        XCTAssertEqual(OWAMailPayloads.queryText(for: two, calendar: calendar), "(from:\"a@example.com\" OR from:\"b@example.com\") hasattachment:false")
+
+        var since = MailSearchQuery(text: "")
+        since.receivedFrom = october
+        XCTAssertEqual(OWAMailPayloads.queryText(for: since, calendar: calendar), "received>=2026-10-01")
+        var until = MailSearchQuery(text: "")
+        until.receivedTo = october
+        XCTAssertEqual(OWAMailPayloads.queryText(for: until, calendar: calendar), "received<=2026-10-02", "the day after, as the restriction")
+        var folder = MailSearchQuery(text: "")
+        folder.folderRefinerID = "R1"
+        XCTAssertEqual(OWAMailPayloads.queryText(for: folder, calendar: calendar), "received>=1900-01-01")
+
+        var text = MailSearchQuery(text: " release ")
+        text.from = ["a@example.com"]
+        XCTAssertEqual(OWAMailPayloads.queryText(for: text, calendar: calendar), "release", "with words, filters stay refiners only")
+    }
+
     // MARK: - EWS
 
     func testReplySOAPReferencesOriginalAndEscapes() {

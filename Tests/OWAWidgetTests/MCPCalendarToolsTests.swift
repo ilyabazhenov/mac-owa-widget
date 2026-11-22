@@ -409,6 +409,60 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertNil(first?["join_url"], "join links only come from get_event_details")
     }
 
+    /// `query` is words in any form, not exact text: the agent that asked "телефония" got nothing
+    /// for titles that say "телефонии".
+    func testListEventsQueryMatchesWordsInAnyForm() async {
+        let (tools, _) = makeTools(events: [
+            event("Статус по исходящей телефонии", day: 6, hour: 10),
+            event("ИЗТ: миграция телефонии", day: 6, hour: 11),
+            event("Изтоп-синк", day: 6, hour: 12),
+            event("Телефонный справочник", day: 6, hour: 13),
+            event("Sprint reviews", day: 6, hour: 14, organizer: "Grace Miller"),
+            event("Импортозамещение: бюджет", day: 6, hour: 15),
+        ])
+        func titles(_ query: String) async -> [String] {
+            let result = await tools.call(name: "list_events", arguments: ["from": "2026-10-06", "to": "2026-10-06", "query": .string(query)]).structured
+            return ids(result?["events"])
+        }
+        // Every form meets at the stem "телефон", so the related "Телефонный" comes along: for
+        // a filter of meetings that is the right side to err on.
+        let phone = ["Статус по исходящей телефонии", "ИЗТ: миграция телефонии", "Телефонный справочник"]
+        for query in ["телефония", "телефонии", "Телефония", "телефонию", "телефон"] {
+            let found = await titles(query)
+            XCTAssertEqual(found, phone, query)
+        }
+        let found1 = await titles("ИЗТ")
+        XCTAssertEqual(found1, ["ИЗТ: миграция телефонии"], "an abbreviation is a whole word: not \"Изтоп\"")
+        let found2 = await titles("изт")
+        XCTAssertEqual(found2, ["ИЗТ: миграция телефонии", "Изтоп-синк"], "typed in lower case it is a word start")
+        let found3 = await titles("исходящая телефония")
+        XCTAssertEqual(found3, ["Статус по исходящей телефонии"], "every word must match")
+        let found4 = await titles("телефония бюджет")
+        XCTAssertEqual(found4, [])
+        let found5 = await titles("review")
+        XCTAssertEqual(found5, ["Sprint reviews"])
+        let found6 = await titles("reviews grace")
+        XCTAssertEqual(found6, ["Sprint reviews"], "the organizer counts")
+        let found7 = await titles("импортозамещения")
+        XCTAssertEqual(found7, ["Импортозамещение: бюджет"])
+        let capsLock = await titles("ИМПОРТ")
+        XCTAssertEqual(capsLock, ["Импортозамещение: бюджет"], "capitals that are no whole word anywhere: a word start (Caps Lock)")
+        let found8 = await titles(" — ")
+        XCTAssertEqual(found8.count, 6, "no words: nothing is filtered")
+    }
+
+    func testEventTextMatchStems() {
+        XCTAssertEqual(MCPEventTextMatch.stem("телефония"), "телефон")
+        XCTAssertEqual(MCPEventTextMatch.stem("телефонии"), "телефон")
+        XCTAssertEqual(MCPEventTextMatch.stem("телефонию"), "телефон")
+        XCTAssertEqual(MCPEventTextMatch.stem("план"), "план", "short words stay")
+        XCTAssertEqual(MCPEventTextMatch.stem("встреча"), "встреч")
+        XCTAssertEqual(MCPEventTextMatch.stem("reviews"), "review")
+        XCTAssertEqual(MCPEventTextMatch.stem("access"), "access")
+        XCTAssertEqual(MCPEventTextMatch.stem("релиз2026"), "релиз2026")
+        XCTAssertNil(MCPEventTextMatch(" , "))
+    }
+
     func testListEventsFiltersAndLimits() async {
         let (tools, _) = makeTools(events: [
             event("Sprint review", day: 6, hour: 10),

@@ -72,7 +72,7 @@ enum MCPToolRegistry {
                     "from": ["type": "string", "description": .string(dateDescription)],
                     "to": ["type": "string", "description": .string(dateDescription + " A bare date includes that whole day. Defaults to the end of the `from` day; with only `to`, the period starts at the beginning of that day.")],
                     "account_id": ["type": "string", "description": .string(accountDescription)],
-                    "query": ["type": "string", "description": "Case-insensitive text to find in the title, location or organizer name. Attendees are not searched: use find_events_with_person."],
+                    "query": ["type": "string", "description": "Words to find in the title, location or organizer name, not exact text: a meeting matches when each word starts a word there, in any form (\"телефония\" finds \"телефонии\", \"review\" finds \"reviews\"); case does not matter. A word in capitals (\"ИЗТ\") is first matched as a whole word, and as a word start only when that finds nothing. Attendees are not searched: use find_events_with_person."],
                     "response": [
                         "type": "array",
                         "items": ["type": "string", "enum": ["accepted", "tentative", "not_responded", "declined", "organizer"]],
@@ -394,12 +394,13 @@ extension MCPToolRegistry {
         MCPToolDefinition(
             name: "get_mail_thread",
             title: "Read a conversation",
-            description: "The messages of a conversation, newest first: sender and recipients (`external: true` outside the user's organization), time, attachments (names, types, sizes) and `text` — only what each message added, without the quoted history, up to 8000 characters each and 40000 in total (`text_truncated`). Encrypted and archived messages have no text (`text_unavailable`). `open_url` opens the conversation in OWA Widget's mail window (for a notification or a note). Does not mark anything as read. " + untrusted,
+            description: "The messages of a conversation, newest first: sender and recipients (`external: true` outside the user's organization), time, attachments (names, types, sizes) and `text` — only what each message added, without the quoted history, up to 8000 characters each and 40000 in total (`text_truncated`). Encrypted and archived messages have no text (`text_unavailable`). By default (`detail: compact`) repeats are left out: only the newest message lists `to` and `cc`; an older one lists no recipients when the same people took part as in the message just above it (sender and recipients together; with `more_recipients` on either it lists them all), otherwise `recipients_changed` names who is on that newer message and was not on this one (`added`) and who was on this one and is not on the newer (`removed`) — walk down from the newest to get anyone's list; a message's `subject` appears only when it differs from the conversation's beyond RE:/FW:; a signature after \"Best regards\", \"С уважением\" or `--` is cut with the rule above it (`signature_cut: true`; not with `include_html`; get_mail_message has it). `open_url` opens the conversation in OWA Widget's mail window (for a notification or a note). Does not mark anything as read. " + untrusted,
             inputSchema: [
                 "type": "object",
                 "properties": [
                     "thread_id": ["type": "string", "description": "thread_id from list_mail or search_mail."],
                     "max_messages": ["type": "integer", "minimum": 1, "maximum": 20, "description": "Default 10."],
+                    "detail": ["type": "string", "enum": ["compact", "full"], "description": "`full`: every message with its subject, `to`, `cc` and the text as it is. Default `compact`."],
                     "include_html": ["type": "boolean", "description": .string(includeHTMLDescription)],
                     "account_id": ["type": "string", "description": .string(mailAccountDescription)],
                 ],
