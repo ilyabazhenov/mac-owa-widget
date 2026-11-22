@@ -387,7 +387,42 @@ final class MCPMailTools {
         return .object(fields)
     }
 
-    private func conversationJSON(_ conversation: MailConversationSummary, _ coder: MCPDateCoder, folderNames: [String: String] = [:]) -> JSONValue {
+    /// What a list knows about folders: their names, and which one is the inbox, whose id a row
+    /// leaves out (most mail is there, and the id only repeats it).
+    struct FolderLabels {
+        var names: [String: String] = [:]
+        var inboxID: String?
+        /// The rows come from the inbox itself (list_mail of the inbox, the digest).
+        var listedInbox = false
+
+        init(names: [String: String] = [:], inboxID: String? = nil, listedInbox: Bool = false) {
+            self.names = names
+            self.inboxID = inboxID
+            self.listedInbox = listedInbox
+        }
+
+        init(_ folders: [MailFolder]?, listedInbox: Bool = false) {
+            self.init(
+                names: (folders ?? []).reduce(into: [:]) { $0[$1.id] = $1.displayName },
+                inboxID: folders?.first { $0.distinguished == .inbox }?.id,
+                listedInbox: listedInbox
+            )
+        }
+
+        func isInbox(_ folderID: String) -> Bool { listedInbox || folderID == inboxID }
+    }
+
+    /// How many recipients a row of a list names; the rest is `to_more`.
+    static let listedRecipients = 3
+
+    /// The recipients of a list row, one name each: Exchange gives them as one "A; B; C" string.
+    static func recipientNames(_ recipients: [String]) -> [String] {
+        recipients.flatMap { $0.split(separator: ";") }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func conversationJSON(_ conversation: MailConversationSummary, _ coder: MCPDateCoder, folders: FolderLabels = FolderLabels()) -> JSONValue {
         var fields: [String: JSONValue] = [
             "thread_id": .string(handle(conversation.id)),
             "subject": .string(conversation.topic),
@@ -398,7 +433,11 @@ final class MCPMailTools {
             "has_attachments": .bool(conversation.hasAttachments),
             "preview": .string(conversation.preview),
         ]
-        if !conversation.recipients.isEmpty { fields["to"] = .array(conversation.recipients.map(JSONValue.string)) }
+        let recipients = Self.recipientNames(conversation.recipients)
+        if !recipients.isEmpty {
+            fields["to"] = .array(recipients.prefix(Self.listedRecipients).map(JSONValue.string))
+            if recipients.count > Self.listedRecipients { fields["to_more"] = .int(Int64(recipients.count - Self.listedRecipients)) }
+        }
         if conversation.importance != .normal { fields["importance"] = .string(conversation.importance.rawValue.lowercased()) }
         if conversation.isFlagged { fields["flagged"] = true }
         if !conversation.categories.isEmpty { fields["categories"] = .array(conversation.categories.map(JSONValue.string)) }
@@ -411,8 +450,8 @@ final class MCPMailTools {
         }
         if conversation.userHasReplied { fields["you_replied"] = true }
         if let folder = conversation.parentFolderID {
-            fields["folder"] = .optional(folderNames[folder])
-            fields["folder_id"] = .string(handle(folder))
+            fields["folder"] = .optional(folders.names[folder])
+            if !folders.isInbox(folder) { fields["folder_id"] = .string(handle(folder)) }
         }
         return .object(fields)
     }
@@ -572,8 +611,9 @@ final class MCPMailTools {
 
         var result = commonFields(coder, account)
         result["inbox_unread"] = .int(Int64(counts.first?.unreadCount ?? unread.count))
-        result["unread_from_people"] = .array(people.prefix(limit).map { conversationJSON($0, coder) })
-        result["awaiting_reply"] = .array(awaiting.prefix(limit).map { conversationJSON($0, coder) })
+        let inbox = FolderLabels(try? await folders(account, load: false), listedInbox: true)
+        result["unread_from_people"] = .array(people.prefix(limit).map { conversationJSON($0, coder, folders: inbox) })
+        result["awaiting_reply"] = .array(awaiting.prefix(limit).map { conversationJSON($0, coder, folders: inbox) })
         result["unread_from_systems"] = .array(systems.sorted { $0.value.unread > $1.value.unread }.prefix(15).map { sender, entry in
             .object([
                 "sender": .string(sender),
@@ -654,8 +694,8 @@ final class MCPMailTools {
         }
 
         var result = commonFields(coder, account)
-        let names = (try? await folders(account, load: false))??.reduce(into: [String: String]()) { $0[$1.id] = $1.displayName } ?? [:]
-        result["threads"] = .array(collected.map { conversationJSON($0, coder, folderNames: names) })
+        let labels = FolderLabels(try? await folders(account, load: false), listedInbox: folder == .distinguished(.inbox))
+        result["threads"] = .array(collected.map { conversationJSON($0, coder, folders: labels) })
         if let total { result["total_in_folder"] = .int(Int64(total)) }
         if !reachedSince, let last = collected.last?.instanceKey, next != nil || collected.count == limit {
             result["next_cursor"] = .string(handle(last))
@@ -693,8 +733,11 @@ final class MCPMailTools {
         let page = try await request(account, cost: 2, context: "mcp.mail.search") { try await $0.mailSearch(finalQuery, offset: startOffset, count: count) }
 
         var result = commonFields(coder, account)
-        let names = (try? await folders(account, load: false))??.reduce(into: [String: String]()) { $0[$1.id] = $1.displayName } ?? [:]
-        result["threads"] = .array(page.conversations.map { conversationJSON($0, coder, folderNames: names) })
+        // A search spans folders, so it learns their names (one request, kept 10 minutes): rows
+        // name their folder, and one in the inbox needs no `folder_id`.
+        let labels = FolderLabels(try? await folders(account, load: true))
+        let names = labels.names
+        result["threads"] = .array(page.conversations.map { conversationJSON($0, coder, folders: labels) })
         let nextOffset = offset + page.conversations.count
         // An empty page never says "more": with nothing on it there is no cursor to go on from,
         // and asking again from the same offset would get the same empty page.

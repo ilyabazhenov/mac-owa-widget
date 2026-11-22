@@ -352,6 +352,72 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertNil(found["note"])
     }
 
+    // MARK: - Compact list rows
+
+    /// 25 search results as Exchange gives them: recipients as one "A; B; C" string, as many as
+    /// a live search for "Alfa Notes" showed (1, 5, 1, 11, 4, 36, 7, 36…: invitations to big
+    /// meetings and mailing lists), most in the inbox, every fifth in another folder.
+    private func searchResults() -> [MailConversationSummary] {
+        let surnames = ["Петров", "Сидорова", "Кузнецов", "Морозова", "Волков", "Лебедева", "Новиков", "Соколова", "Козлов", "Павлова", "Фёдоров", "Орлова"]
+        let given = ["Иван Сергеевич", "Анна Викторовна", "Олег Петрович"]
+        let names = (0..<36).map { "\(surnames[$0 % surnames.count]) \(given[$0 / surnames.count])" }
+        let counts = [1, 5, 1, 11, 4, 36, 7, 36, 2, 6]
+        return (0..<25).map { index in
+            MailConversationSummary(
+                id: "CONV-SEARCH-\(index)-FULL-ID-000000", topic: "Импортозамещение телефонии: шаг \(index)",
+                senders: [names[index % names.count]], recipients: [names.prefix(counts[index % counts.count]).joined(separator: "; ")],
+                lastDelivery: Date(timeIntervalSince1970: 1_792_000_000 - Double(index) * 3_600), messageCount: 1 + index % 4,
+                unreadCount: index % 2, hasAttachments: index.isMultiple(of: 3), importance: .normal,
+                preview: "Коллеги, по телефонии: окно миграции на выходные", itemRefs: [], categories: [], isFlagged: false,
+                isProtected: false, instanceKey: "KEY-S\(index)",
+                parentFolderID: index.isMultiple(of: 5) ? "F-JIRA-FULL-ID-00000000000" : "F-INBOX-FULL-ID-0000000000"
+            )
+        }
+    }
+
+    func testSearchRowsNameThreeRecipientsAndNoInboxID() async throws {
+        let conversations = searchResults()
+        await provider.set(conversations: conversations, threads: [])
+        let found = try object(await makeTools().call(name: "search_mail", arguments: ["query": "телефония"], client: nil))
+        let rows = try XCTUnwrap(found["threads"]?.arrayValue)
+        XCTAssertEqual(rows.count, 25)
+
+        let eleven = rows[3]
+        XCTAssertEqual(eleven["to"]?.arrayValue?.compactMap(\.stringValue), ["Петров Иван Сергеевич", "Сидорова Иван Сергеевич", "Кузнецов Иван Сергеевич"])
+        XCTAssertEqual(eleven["to_more"], 8)
+        XCTAssertEqual(rows[1]["to"]?.arrayValue?.count, 3)
+        XCTAssertEqual(rows[0]["to"]?.arrayValue?.count, 1)
+        XCTAssertNil(rows[0]["to_more"])
+
+        XCTAssertEqual(rows[1]["folder"]?.stringValue, "Inbox", "a search learns the folders' names")
+        XCTAssertNil(rows[1]["folder_id"], "the inbox needs no id")
+        XCTAssertEqual(rows[5]["folder"]?.stringValue, "Jira")
+        XCTAssertNotNil(rows[5]["folder_id"]?.stringValue, "another folder keeps its id")
+
+        // The same answer in the earlier format: every recipient, every folder id.
+        var earlier = found
+        earlier["threads"] = .array(zip(rows, conversations).map { row, conversation in
+            guard case .object(var fields) = row else { return row }
+            fields["to"] = .array(MCPMailTools.recipientNames(conversation.recipients).map(JSONValue.string))
+            fields["to_more"] = nil
+            fields["folder_id"] = fields["folder_id"] ?? "0123456789ab"
+            return .object(fields)
+        })
+        let before = JSONLine.encodeString(.object(earlier)).count
+        let after = JSONLine.encodeString(.object(found)).count
+        print("search_mail, 25 threads: before \(before) characters, after \(after)")
+        XCTAssertLessThanOrEqual(after * 3, before * 2, "at least a third shorter: \(before) → \(after)")
+    }
+
+    func testInboxListHasNoFolderIDEvenWithoutFolderNames() async throws {
+        await provider.set(conversations: searchResults(), threads: [])
+        let list = try object(await makeTools().call(name: "list_mail", arguments: [:], client: nil))
+        let rows = try XCTUnwrap(list["threads"]?.arrayValue)
+        XCTAssertTrue(rows.allSatisfy { $0["folder_id"] == nil }, "list_mail of the inbox: every row is in it")
+        let calls = await provider.calls
+        XCTAssertFalse(calls.contains("folders"), "listing the inbox does not load the folders")
+    }
+
     // MARK: - Compact thread
 
     /// Ten replies among the same ten people (as in the conversation that set the goal: about
