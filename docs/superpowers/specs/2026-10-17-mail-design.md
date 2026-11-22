@@ -258,6 +258,8 @@ GET /owa/service.svc/s/GetFileAttachment?id=<url-encoded AttachmentId>&X-OWA-CAN
 - Период: верхняя граница — день **после** последнего дня (OWA для «по 17 октября» шлёт `<= 2026-10-18`). Даты без времени.
 - Ответ: `Body.SearchResults.{Conversations[] | null, MoreResultsAvailable, SearchResultsCount, SearchTerms[], SearchRefiners[]}`. **Пусто — `null`, а не `[]`.** `TotalResultsCount` всегда 0: общего числа нет. У треда те же поля, что в `FindConversation`, плюс `SenderSMTPAddress`, `UniqueRecipients`, `ParentFolderId`, `FolderRefinerId`.
 - `SearchRefiners` в ответе (если `RetrieveRefiners: true`, только на первой странице): `PeopleRefinerType` (отправитель, `SmtpAddress`, `ResultCount`), `AttachmentRefinerType`, `FolderRefinerType` — готовые `RefinerQuery` для уточнения.
+- Проверено 2026-11-22: `SearchResultsCount` — строк на этой странице; за запрос не больше 25 строк, сколько ни проси в `ResultRowCount`. `SearchRefiners` приходят с первой страницей, только когда на ней весь результат; для большого результата Exchange считает их в фоне и отдаёт со следующим `ExecuteSearch` той же сессии примерно через полсекунды (даже с `RetrieveRefiners: false`); для части средних результатов не отдаёт никогда.
+- Слова `Query` сочетаются через «И»; слово совпадает по началу и по формам («опти» → «оптимизировать», «панель» → «панели», «й» сводится к «и»). KQL `a OR b` работает. `SearchTerms` — разобранные слова запроса, а не те, что нашлись.
 - **Предел — 250 результатов** на запрос (`MaxResultsCountHint`). Дальше OWA не листает, и мы тоже: «показаны первые 250, уточните запрос».
 - `IncludeDeleted: true` — результаты из «Удалённых» помечаем.
 - Сессию держим открытой, пока пользователь листает результаты (или 5 минут для MCP), потом `EndSearchSession`.
