@@ -374,7 +374,7 @@ extension MCPToolRegistry {
         MCPToolDefinition(
             name: "search_mail",
             title: "Search mail",
-            description: "Searches the mailbox with Exchange's index (subject, text, people). Returns conversations like list_mail, each with its `folder`, plus `suggested_filters` (senders, folders, attachments, with counts) to narrow a broad search. Exchange returns at most 250 results per search: narrow with `from` (email addresses, from find_people or earlier results), `since`/`until`, `has_attachments` or `folder` rather than paging far. Deleted items are included and marked by their folder. " + untrusted,
+            description: "Searches the mailbox with Exchange's index (subject, text, people). Returns conversations like list_mail, each with its `folder`, plus `suggested_filters` (senders, folders, attachments, with counts) to narrow a broad search. For questions about people's work (what someone wrote, decided or asked), pass `only: people`: otherwise notifications from Jira, Confluence and other systems often fill the answer. Exchange returns at most 250 results per search: narrow with `from` (email addresses, from find_people or earlier results), `since`/`until`, `has_attachments` or `folder` rather than paging far. Deleted items are included and marked by their folder. " + untrusted,
             inputSchema: [
                 "type": "object",
                 "properties": [
@@ -384,6 +384,7 @@ extension MCPToolRegistry {
                     "until": ["type": "string", "description": .string(dateDescription + " Received on or before; a bare date includes that day.")],
                     "has_attachments": ["type": "boolean"],
                     "folder": ["type": "string", "description": "Search one folder only (same values as in list_mail). Default: the whole mailbox."],
+                    "only": ["type": "string", "enum": ["people"], "description": "`people`: only conversations from people, without notifications and other automated mail (Jira, Confluence, robots). Reads up to 3 pages of results to fill `limit`; `skipped_notifications` says how many were left out. Use it for questions about what people wrote or worked on."],
                     "limit": ["type": "integer", "minimum": 1, "maximum": 50, "description": "Default 25."],
                     "cursor": ["type": "string", "description": "`next_cursor` from the previous answer."],
                     "account_id": ["type": "string", "description": .string(mailAccountDescription)],

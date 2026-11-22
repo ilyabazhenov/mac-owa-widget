@@ -54,6 +54,8 @@ final class MCPMailTools {
     static let maxThreadCharacters = 40_000
     /// Exchange returns at most this many search results per request, whatever is asked for.
     static let searchPageRows = 25
+    /// Search requests one search_mail call makes at most to fill its `limit`.
+    static let maxSearchPages = 3
     static let maxFullMessageCharacters = 16_000
     static let maxOutgoingBodyCharacters = 20_000
     static let maxRecipients = 50
@@ -741,36 +743,90 @@ final class MCPMailTools {
             guard let value = Int(raw), value > 0, value < OWAMailPayloads.searchResultsCap else { throw ToolError("Unknown `cursor`: search again without it") }
             offset = value
         }
-        let count = min(limit, OWAMailPayloads.searchResultsCap - offset)
-        let finalQuery = query
-        let startOffset = offset
-        // Start the session, the search itself, and possibly ending an older session.
-        let page = try await request(account, cost: 2, context: "mcp.mail.search") { try await $0.mailSearch(finalQuery, offset: startOffset, count: count) }
+        let only = arguments["only"]?.stringValue
+        guard only == nil || only == "people" else { throw ToolError("`only` must be people") }
+        let peopleOnly = only == "people"
+        let cap = OWAMailPayloads.searchResultsCap
+
+        // Pages until `limit` conversations are collected, at most `maxSearchPages` of them:
+        // Exchange gives at most 25 rows a request, and with `only: people` notifications take
+        // many of them. The first request starts a session (and may end an older one); the
+        // next pages go on in it. A later page the request limit does not allow, or that fails,
+        // ends the answer early with a cursor rather than losing what was read.
+        var kept: [MailConversationSummary] = []
+        var skipped = 0
+        var position = offset
+        var first: MailSearchPage?
+        var more = true
+        var pagesRead = 0
+        var stoppedEarly = false
+        while more, kept.count < limit, pagesRead < Self.maxSearchPages, position < cap {
+            let wanted = limit - kept.count
+            let count = min(peopleOnly ? max(wanted, Self.searchPageRows) : wanted, cap - position)
+            let pageQuery = query
+            let pageOffset = position
+            let page: MailSearchPage
+            if pagesRead == 0 {
+                page = try await request(account, cost: 2, context: "mcp.mail.search") { try await $0.mailSearch(pageQuery, offset: pageOffset, count: count) }
+            } else {
+                guard accessGuard.permitRequest() == nil,
+                      let next = try? await perform(account, context: "mcp.mail.search", { try await $0.mailSearch(pageQuery, offset: pageOffset, count: count) })
+                else {
+                    stoppedEarly = true
+                    break
+                }
+                page = next
+            }
+            pagesRead += 1
+            if first == nil { first = page }
+            var looked = 0
+            for conversation in page.conversations {
+                guard kept.count < limit else { break }
+                looked += 1
+                if peopleOnly, conversation.isAutomated {
+                    skipped += 1
+                } else {
+                    kept.append(conversation)
+                }
+            }
+            position += looked
+            // Rows left on this page mean more even when Exchange says the page was the last.
+            // An empty page never says "more": with nothing on it there is no cursor to go on
+            // from, and asking again from the same offset would get the same empty page.
+            more = looked < page.conversations.count || (page.moreAvailable && !page.conversations.isEmpty)
+        }
+        let page = first ?? MailSearchPage(conversations: [], moreAvailable: false, searchTerms: [], refiners: [], offset: offset)
 
         var result = commonFields(coder, account)
         // A search spans folders, so rows name their folder, and one in the inbox needs no
         // `folder_id`. The list is asked for only when a row is in a folder the app does not
         // know yet (one request, kept 10 minutes); an empty page asks for nothing.
         var known = try? await folders(account, load: false)
-        let unknownFolder = page.conversations.contains { conversation in
+        let unknownFolder = kept.contains { conversation in
             guard let id = conversation.parentFolderID else { return false }
             return known?.contains { $0.id == id } != true
         }
         if unknownFolder { known = try? await folders(account, load: true) }
         let labels = FolderLabels(known)
         let names = labels.names
-        result["threads"] = .array(page.conversations.map { conversationJSON($0, coder, folders: labels) })
-        let nextOffset = offset + page.conversations.count
-        // An empty page never says "more": with nothing on it there is no cursor to go on from,
-        // and asking again from the same offset would get the same empty page.
-        let more = page.moreAvailable && !page.conversations.isEmpty && nextOffset < OWAMailPayloads.searchResultsCap
-        result["more_available"] = .bool(more)
-        if more { result["next_cursor"] = .string(String(nextOffset)) }
-        if page.moreAvailable, !page.conversations.isEmpty, nextOffset >= OWAMailPayloads.searchResultsCap {
-            result["note"] = .string("Exchange returns at most \(OWAMailPayloads.searchResultsCap) results per search: narrow it with `from`, `since`/`until` or `folder`.")
+        result["threads"] = .array(kept.map { conversationJSON($0, coder, folders: labels) })
+        let hasMore = more && position < cap
+        result["more_available"] = .bool(hasMore)
+        if hasMore { result["next_cursor"] = .string(String(position)) }
+        if peopleOnly, skipped > 0 { result["skipped_notifications"] = .int(Int64(skipped)) }
+        if more, position >= cap {
+            result["note"] = .string("Exchange returns at most \(cap) results per search: narrow it with `from`, `since`/`until` or `folder`.")
+        } else if peopleOnly, hasMore, kept.count < limit {
+            let reason = stoppedEarly
+                ? "Stopped early (the request limit, or Exchange did not answer)"
+                : "Read \(pagesRead) pages of results, the most for one call"
+            result["note"] = .string(
+                "\(reason): left out \(skipped) notifications and other automated mail, kept \(kept.count) conversations from people. "
+                    + "Go on with `next_cursor`, or narrow the search (`since`/`until`, `from`, other words)."
+            )
         }
         if !page.searchTerms.isEmpty { result["matched_terms"] = .array(page.searchTerms.map(JSONValue.string)) }
-        if offset == 0, page.conversations.isEmpty {
+        if offset == 0, page.conversations.isEmpty, kept.isEmpty {
             let words = MCPSearchWords.hintWords(query.text)
             if !words.isEmpty { await addWordHints(words, query: query, account: account, to: &result) }
         }

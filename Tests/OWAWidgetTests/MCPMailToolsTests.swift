@@ -133,8 +133,10 @@ final class MCPMailToolsTests: XCTestCase {
             searches.append(query)
             searchPages.append((offset, count))
             if let searchResponder { return searchResponder(query, offset, count) }
+            // As Exchange: at most 25 rows from `offset`, and "more" while rows are left.
+            let end = min(conversations.count, offset + min(count, 25))
             return MailSearchPage(
-                conversations: conversations, moreAvailable: true, searchTerms: [query.text],
+                conversations: offset < end ? Array(conversations[offset..<end]) : [], moreAvailable: end < conversations.count, searchTerms: [query.text],
                 refiners: [.sender(name: "Grace Miller", email: "g.miller@example.com", count: 4)], offset: offset
             )
         }
@@ -341,7 +343,8 @@ final class MCPMailToolsTests: XCTestCase {
         let bad = await tools.call(name: "search_mail", arguments: ["from": ["Grace Miller"]], client: nil)
         XCTAssertRefusal(bad, .invalidArgument, "names go through find_people first")
 
-        let found = try object(await tools.call(name: "search_mail", arguments: ["query": "release", "from": ["g.miller@example.com"], "since": "2026-10-01"], client: nil))
+        await provider.set(conversations: searchResults(), threads: [])
+        let found = try object(await tools.call(name: "search_mail", arguments: ["query": "release", "from": ["g.miller@example.com"], "since": "2026-10-01", "limit": 1], client: nil))
         XCTAssertEqual(found["threads"]?.arrayValue?.count, 1)
         XCTAssertEqual(found["more_available"], true)
         XCTAssertEqual(found["next_cursor"]?.stringValue, "1")
@@ -438,6 +441,99 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertNil(found["per_word"])
         let searches = await provider.searches
         XCTAssertEqual(searches.count, 1)
+    }
+
+    // MARK: - Search: only people
+
+    /// `count` search results, newest first: one in `peopleEvery` from a person, the rest
+    /// notifications (Jira, Confluence) as a live search for "панель" showed.
+    private func mixedResults(_ count: Int, peopleEvery: Int) -> [MailConversationSummary] {
+        (0..<count).map { index in
+            let person = index.isMultiple(of: peopleEvery)
+            return MailConversationSummary(
+                id: "CONV-MIXED-\(index)-FULL-ID-0000000", topic: person ? "Встройка панели: шаг \(index)" : "[confluence] Тестирование DR-решений",
+                senders: [person ? "Логинов Николай Юрьевич" : "confluence-noreply@example.com"], recipients: ["Баженов Илья Андреевич"],
+                lastDelivery: Date(timeIntervalSince1970: 1_792_000_000 - Double(index) * 3_600), messageCount: 1,
+                unreadCount: 0, hasAttachments: false, importance: .normal, preview: "панель", itemRefs: [], categories: [],
+                isFlagged: false, isProtected: false, instanceKey: "KEY-M\(index)", parentFolderID: "F-INBOX-FULL-ID-0000000000"
+            )
+        }
+    }
+
+    func testPeopleOnlyLeavesOutNotificationsAndReadsTheNextPage() async throws {
+        await provider.set(conversations: mixedResults(80, peopleEvery: 4), threads: [])
+        let found = try object(await makeTools().call(name: "search_mail", arguments: ["query": "панель", "since": "2026-10-01", "only": "people", "limit": 10], client: nil))
+        let rows = try XCTUnwrap(found["threads"]?.arrayValue)
+        XCTAssertEqual(rows.count, 10)
+        XCTAssertTrue(rows.allSatisfy { $0["from_system"] == nil }, "\(rows)")
+        XCTAssertEqual(rows.last?["subject"]?.stringValue, "Встройка панели: шаг 36")
+        XCTAssertEqual(found["more_available"], true)
+        XCTAssertEqual(found["next_cursor"]?.stringValue, "37", "the cursor goes on right after the last conversation given")
+        XCTAssertEqual(found["skipped_notifications"], 27)
+        XCTAssertNil(found["note"], "the limit was filled")
+        let pages = await provider.searchPages
+        XCTAssertEqual(pages.map(\.offset), [0, 25])
+        XCTAssertTrue(pages.allSatisfy { $0.count >= 25 }, "full pages: fewer requests")
+
+        let next = try object(await makeTools().call(name: "search_mail", arguments: ["query": "панель", "only": "people", "limit": 10, "cursor": "37"], client: nil))
+        XCTAssertEqual(next["threads"]?.arrayValue?.first?["subject"]?.stringValue, "Встройка панели: шаг 40")
+    }
+
+    func testPeopleOnlyReadsAtMostThreePages() async throws {
+        await provider.set(conversations: mixedResults(120, peopleEvery: 20), threads: [])
+        let found = try object(await makeTools().call(name: "search_mail", arguments: ["query": "панель", "only": "people"], client: nil))
+        XCTAssertEqual(found["threads"]?.arrayValue?.count, 4)
+        XCTAssertEqual(found["more_available"], true)
+        XCTAssertEqual(found["next_cursor"]?.stringValue, "75")
+        XCTAssertEqual(found["skipped_notifications"], 71)
+        let note = try XCTUnwrap(found["note"]?.stringValue)
+        XCTAssertTrue(note.contains("3 pages") && note.contains("71 notifications") && note.contains("next_cursor"), note)
+        let pages = await provider.searchPages
+        XCTAssertEqual(pages.map(\.offset), [0, 25, 50])
+    }
+
+    func testPeopleOnlyLastPageSaysNoMore() async throws {
+        await provider.set(conversations: mixedResults(30, peopleEvery: 3), threads: [])
+        let found = try object(await makeTools().call(name: "search_mail", arguments: ["query": "панель", "only": "people"], client: nil))
+        XCTAssertEqual(found["threads"]?.arrayValue?.count, 10)
+        XCTAssertEqual(found["more_available"], false)
+        XCTAssertNil(found["next_cursor"])
+        XCTAssertNil(found["note"])
+        XCTAssertEqual(found["skipped_notifications"], 20)
+    }
+
+    /// A later page the request limit does not allow ends the answer with a cursor, not an error.
+    func testPeopleOnlyStopsAtTheRequestLimitWithACursor() async throws {
+        await provider.set(conversations: mixedResults(80, peopleEvery: 10), threads: [])
+        let guardian = MCPAccessGuard(calendarService: service)
+        XCTAssertNil(guardian.permitRequest(count: MCPAccessGuard.requestsPerMinute - 2))
+        let found = try object(await makeTools(accessGuard: guardian).call(name: "search_mail", arguments: ["query": "панель", "only": "people"], client: nil))
+        XCTAssertEqual(found["threads"]?.arrayValue?.count, 3)
+        XCTAssertEqual(found["next_cursor"]?.stringValue, "25")
+        XCTAssertTrue(found["note"]?.stringValue?.hasPrefix("Stopped early") == true)
+        let pages = await provider.searchPages
+        XCTAssertEqual(pages.count, 1)
+    }
+
+    func testOnlyTakesPeople() async {
+        let result = await makeTools().call(name: "search_mail", arguments: ["query": "панель", "only": "awaiting_reply"], client: nil)
+        XCTAssertRefusal(result, .invalidArgument)
+    }
+
+    /// Exchange gives 25 rows a request: a larger `limit` reads the next page too.
+    func testLimitAboveOnePageReadsTheNextPage() async throws {
+        await provider.set(conversations: mixedResults(60, peopleEvery: 1), threads: [])
+        let found = try object(await makeTools().call(name: "search_mail", arguments: ["query": "панель", "limit": 50], client: nil))
+        XCTAssertEqual(found["threads"]?.arrayValue?.count, 50)
+        XCTAssertEqual(found["next_cursor"]?.stringValue, "50")
+        XCTAssertNil(found["skipped_notifications"])
+        let pages = await provider.searchPages
+        XCTAssertEqual(pages.map(\.offset), [0, 25])
+
+        let small = try object(await makeTools().call(name: "search_mail", arguments: ["query": "панель", "limit": 5], client: nil))
+        XCTAssertEqual(small["next_cursor"]?.stringValue, "5")
+        let after = await provider.searchPages
+        XCTAssertEqual(after.last?.count, 5, "a small limit asks for no more rows than it shows")
     }
 
     /// Folder names come once: a second search with known folders asks Exchange for nothing more.
