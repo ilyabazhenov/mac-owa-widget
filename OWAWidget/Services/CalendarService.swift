@@ -418,7 +418,7 @@ final class CalendarService: ObservableObject {
                     #endif
                     throw CalendarProviderError.notSupported
                 }
-                try await self.reply(toInvitation: pending, action: action, notifyOrganizer: notify)
+                return try await self.reply(toInvitation: pending, action: action, notifyOrganizer: notify)
             }
             invitationController.notifyOrganizerByDefault = { [weak self] in
                 self?.invitationNotifyOrganizerByDefault ?? true
@@ -1083,15 +1083,18 @@ final class CalendarService: ObservableObject {
 
     /// Answers an invitation row that may fold several meetings: one series answer when they are
     /// occurrences of one series, otherwise each meeting in turn (stopping at the first failure).
-    func reply(toInvitation events: [CalendarEvent], action: MeetingResponseAction, notifyOrganizer: Bool) async throws {
-        guard let first = events.first else { return }
+    /// Returns whether it went as one series answer, for the line that tells the user what happened.
+    @discardableResult
+    func reply(toInvitation events: [CalendarEvent], action: MeetingResponseAction, notifyOrganizer: Bool) async throws -> Bool {
+        guard let first = events.first else { return false }
         if MeetingReplyScope.isSingleSeries(events) {
             try await reply(to: first, action: action, options: MeetingReplyOptions(series: true, notifyOrganizer: notifyOrganizer))
-            return
+            return true
         }
         for event in events {
             try await reply(to: event, action: action, options: MeetingReplyOptions(notifyOrganizer: notifyOrganizer))
         }
+        return false
     }
 
     /// Asks the detail card of this meeting to open with the comment field ready ("With a

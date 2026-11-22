@@ -1053,7 +1053,7 @@ final class MCPCalendarTools {
             result["note"] = "This exact meeting was already created a few minutes ago; nothing new was sent."
             return .success(result)
         }
-        guard !isCreatingMeeting, !isRemovingMeeting else {
+        guard !isCreatingMeeting, !isRemovingMeeting, !isRespondingToMeeting else {
             return .failure(.busy, "Another meeting is waiting for the user's answer in OWA Widget. Wait for that call to finish before asking again.")
         }
         if let block = MCPAccessGuard.blockError(calendarService.syncStatus) {
@@ -1380,7 +1380,7 @@ final class MCPCalendarTools {
         guard event.endDate > context.now else {
             return .failure(.pastEvent, "This meeting is already over. Only upcoming or ongoing meetings can be cancelled. Nothing was changed.")
         }
-        guard !isCreatingMeeting, !isRemovingMeeting else {
+        guard !isCreatingMeeting, !isRemovingMeeting, !isRespondingToMeeting else {
             return .failure(.busy, "Another meeting is waiting for the user's answer in OWA Widget. Wait for that call to finish before asking again.")
         }
         if let block = MCPAccessGuard.blockError(calendarService.syncStatus) {

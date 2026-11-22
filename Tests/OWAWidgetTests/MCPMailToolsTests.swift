@@ -1542,6 +1542,30 @@ final class MCPMailToolsTests: XCTestCase {
         }
     }
 
+    /// A thread's markup has a ceiling: a message past it gets none (never cut markup), and
+    /// get_mail_message still returns it whole.
+    func testThreadHTMLStopsAtItsLimit() async throws {
+        let long = "<p>" + String(repeating: "x", count: 200_000) + "</p>"
+        let conversation = "CONV-LONG-FULL-ID-00000000000"
+        let newer = message("MSG-LONG-NEW-FULL-ID-0000000", in: conversation, isRead: true, received: 1_791_995_100, body: long)
+        let older = message("MSG-LONG-OLD-FULL-ID-0000000", in: conversation, isRead: true, received: 1_791_995_000, body: long)
+        await provider.add(MailThread(id: conversation, messages: [newer, older], totalMessageCount: 2))
+        let tools = makeTools()
+
+        let thread = try object(await tools.call(name: "get_mail_thread", arguments: ["thread_id": .string(conversation), "include_html": true], client: nil))
+        let messages = try XCTUnwrap(thread["messages"]?.arrayValue)
+        XCTAssertEqual(messages.count, 2)
+        let first = try XCTUnwrap(messages[0]["html"]?.stringValue)
+        XCTAssertGreaterThan(first.count, 200_000)
+        XCTAssertNil(messages[0]["html_omitted"])
+        XCTAssertEqual(messages[1]["html"], .null)
+        XCTAssertNotNil(messages[1]["html_omitted"]?.stringValue)
+        XCTAssertNotNil(messages[1]["text"]?.stringValue, "text keeps its own budget")
+
+        let single = try object(await tools.call(name: "get_mail_message", arguments: ["message_id": "MSG-LONG-OLD-FULL-ID-0000000", "include_html": true], client: nil))
+        XCTAssertGreaterThan(single["message"]?["html"]?.stringValue?.count ?? 0, 200_000)
+    }
+
     func testIncludeHTMLIsCleanedAndKeepsFormatting() async throws {
         await addPlanThread()
         let tools = makeTools()
