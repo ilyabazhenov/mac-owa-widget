@@ -478,10 +478,12 @@ final class MCPMailTools {
     struct CompactMessage {
         /// The conversation's subject: a message's own is left out when it only repeats it.
         let topic: String
-        /// The people of the newest message (sender, `to`, `cc`), for the older ones; nil for the
-        /// newest itself, and when its recipient list is incomplete (`more_recipients`): then
-        /// nobody can tell whether an older message had the same people.
-        let newestPeople: [MailAddress]?
+        /// The people (sender, `to`, `cc`) of the message just above this one, the next newer;
+        /// nil for the newest itself, and when that one's recipient list is incomplete
+        /// (`more_recipients`): then nobody can tell whether this one had the same people.
+        /// Comparing with the neighbour, not with the newest, names a change once, on the
+        /// message where it happened, and not again on every older one.
+        let newerPeople: [MailAddress]?
     }
 
     private static func people(of message: MailMessage) -> [MailAddress] {
@@ -503,11 +505,11 @@ final class MCPMailTools {
             fields["subject"] = .string(message.subject)
         }
         if let sender = message.sender { fields["sent_by"] = addressJSON(sender, ownDomain: ownDomain) }
-        if let newest = compact?.newestPeople, message.hiddenRecipientCount == 0 {
-            // An older message: its recipients only when its people differ from the newest
+        if let newer = compact?.newerPeople, message.hiddenRecipientCount == 0 {
+            // An older message: its recipients only when its people differ from the next newer
             // one's. The sender counts too: in a reply-all chain the author and a recipient swap
             // places from message to message, and nobody joined or left.
-            let change = MCPMailCompaction.recipientChange(from: Self.people(of: message), to: newest)
+            let change = MCPMailCompaction.recipientChange(from: Self.people(of: message), to: newer)
             if !change.isEmpty {
                 var diff: [String: JSONValue] = [:]
                 if !change.added.isEmpty { diff["added"] = .array(change.added.map { addressJSON($0, ownDomain: ownDomain) }) }
@@ -792,9 +794,10 @@ final class MCPMailTools {
         result["subject"] = .string(thread.topic)
         result["total_messages"] = .int(Int64(thread.totalMessageCount))
         let shown = Array(thread.messages.prefix(maxMessages))
-        let newestPeople = shown.first.flatMap { $0.hiddenRecipientCount == 0 ? Self.people(of: $0) : nil }
         result["messages"] = .array(shown.enumerated().map { index, message in
-            let view = compact ? CompactMessage(topic: thread.topic, newestPeople: index == 0 ? nil : newestPeople) : nil
+            let newer = index == 0 ? nil : shown[index - 1]
+            let newerPeople = newer.flatMap { $0.hiddenRecipientCount == 0 ? Self.people(of: $0) : nil }
+            let view = compact ? CompactMessage(topic: thread.topic, newerPeople: newerPeople) : nil
             return messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, includeHTML: includeHTML, compact: view, budget: &budget)
         })
         if thread.messages.count > maxMessages || thread.totalMessageCount > thread.messages.count {

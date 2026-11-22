@@ -22,6 +22,7 @@ final class MCPMailCompactionTests: XCTestCase {
 
     func testRecipientChangeIgnoresOrderCaseAndToCcMoves() {
         let ann = MailAddress(name: "Ann", email: "ann@example.com")
+        // `from` is the older message, `to` the next newer one.
         let bob = MailAddress(name: "Bob", email: "Bob@Example.com")
         let cid = MailAddress(name: "Cid", email: "cid@example.com")
         let same = MCPMailCompaction.recipientChange(from: [bob, ann], to: [ann, MailAddress(name: "Bob B.", email: "bob@example.com")])
@@ -72,6 +73,16 @@ final class MCPMailCompactionTests: XCTestCase {
         // A phrase followed by more text is text.
         XCTAssertNil(MCPMailCompaction.strippingSignature("Release is out.\nCheers to everyone who helped:\nAnn\nBob"))
         XCTAssertNil(MCPMailCompaction.strippingSignature("Готово.\nС уважением к срокам, сдвигаем релиз\nна неделю"))
+    }
+
+    /// The rule people draw above their signature goes with it; a message that is nothing but
+    /// a rule and a signature keeps its text.
+    func testRuleAboveTheSignatureGoesWithIt() {
+        let text = "Дайте пожалуйста пример заявки.\n\n----\nС уважением,\nЧереповский Д.К.\nTL QA ИЗТ"
+        XCTAssertEqual(MCPMailCompaction.strippingSignature(text), "Дайте пожалуйста пример заявки.")
+        XCTAssertEqual(MCPMailCompaction.strippingSignature("Ok.\n___\n\nBest regards"), "Ok.")
+        XCTAssertNil(MCPMailCompaction.strippingSignature("---\nС уважением,\nВолобуев Алексей\nТел: (495) 974-25-15"))
+        XCTAssertEqual(MCPMailCompaction.strippingSignature("Итог: -- не нужен\nС уважением,\nИван"), "Итог: -- не нужен", "a dash inside a line stays")
     }
 
     func testOnlyTheLastSignatureStartCounts() {

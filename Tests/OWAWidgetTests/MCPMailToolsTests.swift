@@ -508,8 +508,13 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertNil(messages[4]["to"])
         XCTAssertNil(messages[4]["cc"])
         XCTAssertNil(messages[4]["recipients_changed"])
-        // Message 5 is before the newcomer joined.
+        // Message 5 is before the newcomer joined: the change is named there, compared with
+        // message 4 just above it, and not again on the older ones, which match message 5.
         let change = try XCTUnwrap(messages[5]["recipients_changed"]?.objectValue)
+        for older in messages[6...] {
+            XCTAssertNil(older["recipients_changed"], "the same people as the message above")
+            XCTAssertNil(older["to"])
+        }
         XCTAssertEqual(change["added"]?.arrayValue?.first?["email"]?.stringValue, "pfedorov@example.com")
         XCTAssertNil(change["removed"])
         XCTAssertNil(messages[5]["to"])
@@ -527,8 +532,8 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertEqual(fullMessages[9]["subject"]?.stringValue, "Импортозамещение телефонии")
     }
 
-    /// With a recipient list Exchange cut short, nobody can tell whether an older message had the
-    /// same people: it lists its own. With `html`, the text keeps its signature like the markup.
+    /// With a recipient list Exchange cut short, nobody can tell whether the message below it had
+    /// the same people: that one lists its own. With `html`, the text keeps its signature like the markup.
     func testCompactViewKeepsWhatItCannotCompare() async throws {
         var thread = longThread()
         var messages = thread.messages
@@ -548,10 +553,11 @@ final class MCPMailToolsTests: XCTestCase {
         let answer = try object(await tools.call(name: "get_mail_thread", arguments: ["thread_id": .string(threadID)], client: nil))
         let rows = try XCTUnwrap(answer["messages"]?.arrayValue)
         XCTAssertEqual(rows[0]["more_recipients"], 40)
-        for row in rows.dropFirst() {
-            XCTAssertNotNil(row["to"], "the newest list is incomplete: every message lists its own")
-            XCTAssertNil(row["recipients_changed"])
-        }
+        XCTAssertNotNil(rows[1]["to"], "the message above has an incomplete list: this one lists its own")
+        XCTAssertNil(rows[1]["recipients_changed"])
+        // From there on the neighbour's list is whole again: compared as usual.
+        XCTAssertNil(rows[2]["to"])
+        XCTAssertNotNil(rows[5]["recipients_changed"])
 
         let html = try object(await tools.call(name: "get_mail_thread", arguments: ["thread_id": .string(threadID), "include_html": true], client: nil))
         let first = try XCTUnwrap(html["messages"]?.arrayValue?.first)

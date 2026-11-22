@@ -40,20 +40,20 @@ enum MCPMailCompaction {
     }
 
     struct RecipientChange: Equatable {
-        /// On the newest message, not on this one.
+        /// On the newer message, not on this one.
         let added: [MailAddress]
-        /// On this message, not on the newest one.
+        /// On this message, not on the newer one.
         let removed: [MailAddress]
         var isEmpty: Bool { added.isEmpty && removed.isEmpty }
     }
 
-    /// How the people of a message went from `message` to `newest`. Moving someone from `to`
+    /// How the people went from `message` to the next newer one. Moving someone from `to`
     /// to `cc` (or to the sender) is not a change: a model needs who took part.
-    static func recipientChange(from message: [MailAddress], to newest: [MailAddress]) -> RecipientChange {
+    static func recipientChange(from message: [MailAddress], to newer: [MailAddress]) -> RecipientChange {
         let mine = Set(message.map(recipientKey))
-        let theirs = Set(newest.map(recipientKey))
+        let theirs = Set(newer.map(recipientKey))
         var seen = Set<String>()
-        let added = newest.filter { !mine.contains(recipientKey($0)) && seen.insert(recipientKey($0)).inserted }
+        let added = newer.filter { !mine.contains(recipientKey($0)) && seen.insert(recipientKey($0)).inserted }
         seen = []
         let removed = message.filter { !theirs.contains(recipientKey($0)) && seen.insert(recipientKey($0)).inserted }
         return RecipientChange(added: added, removed: removed)
@@ -85,7 +85,10 @@ enum MCPMailCompaction {
             let tail = lines[(index + 1)...].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             guard tail.count <= maxSignatureLines, tail.allSatisfy({ $0.count <= maxSignatureLineLength }) else { return nil }
             if opener == .dashes, !tail.contains(where: looksLikeContact) { return nil }
-            let body = lines[..<index].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            // The rule people draw above their signature ("---", "____") goes with it.
+            var bodyLines = lines[..<index]
+            while let last = bodyLines.last, isRule(last) || last.trimmingCharacters(in: .whitespaces).isEmpty { bodyLines.removeLast() }
+            let body = bodyLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
             return body.isEmpty ? nil : body
         }
         return nil
@@ -108,6 +111,12 @@ enum MCPMailCompaction {
             if words.count <= 3, words.allSatisfy({ $0.first?.isUppercase == true && $0.allSatisfy(\.isLetter) }) { return .phrase }
         }
         return nil
+    }
+
+    /// A line that is only a rule: three or more dashes, underscores, equals signs or dashes.
+    private static func isRule(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed.count >= 3 && trimmed.allSatisfy { "-_=—–*".contains($0) }
     }
 
     /// A phone (7+ digits), an email address or a link.
