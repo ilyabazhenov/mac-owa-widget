@@ -44,6 +44,11 @@ protocol MailProvider: Actor {
     /// changes it), or why that one did not move.
     func mailMoveEach(_ refs: [MailItemRef], to folder: MailFolderRef) async throws -> [Result<MailItemRef, MailError>]
     func mailSearch(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage
+    /// A page in the search session already open for the query's scope: one request, or `nil`
+    /// without any when none is open (another search may have ended or replaced it). For the
+    /// requests of a search after its first page, and checks next to it, such as how much each
+    /// word finds alone: they must not cost a new session.
+    func mailSearchInOpenSession(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage?
     func mailEndSearch() async
     /// Sends (or saves to Drafts) through EWS. Returns the saved draft's id, if any.
     func mailSend(_ outgoing: MailOutgoing) async throws -> MailItemRef?
@@ -58,6 +63,10 @@ protocol MailProvider: Actor {
 /// One request per conversation and all-or-nothing updates: what a provider without batched
 /// requests (and the test fakes) does. The Exchange provider batches both.
 extension MailProvider {
+    func mailSearchInOpenSession(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage? {
+        try await mailSearch(query, offset: offset, count: count)
+    }
+
     func mailThreads(conversationIDs: [String], ignoringFolders: [String]) async throws -> [Result<MailThread, MailError>] {
         var results: [Result<MailThread, MailError>] = []
         for id in conversationIDs {

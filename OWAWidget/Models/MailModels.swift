@@ -522,6 +522,10 @@ struct MailSearchPage: Sendable {
     let searchTerms: [String]
     let refiners: [MailSearchRefiner]
     let offset: Int
+    /// The search session the page came from. Exchange hands filters it counted in the
+    /// background to any later request of that session, whichever query that request has, so
+    /// filters count only from the session the search itself started.
+    var sessionID: String?
 }
 
 /// What `UpdateItem` changes on a message.

@@ -52,6 +52,10 @@ final class MCPMailTools {
 
     static let maxMessageCharacters = 8_000
     static let maxThreadCharacters = 40_000
+    /// Exchange returns at most this many search results per request, whatever is asked for.
+    static let searchPageRows = 25
+    /// Search requests one search_mail call makes at most to fill its `limit`.
+    static let maxSearchPages = 3
     static let maxFullMessageCharacters = 16_000
     static let maxOutgoingBodyCharacters = 20_000
     static let maxRecipients = 50
@@ -106,6 +110,8 @@ final class MCPMailTools {
     private var handles: [String: String] = [:]
     private var handleOrder: [String] = []
     private var folderCache: [UUID: (folders: [MailFolder], date: Date)] = [:]
+    /// How long a search waits before asking again for its `suggested_filters`; tests shorten it.
+    var refinerDelay: Duration = .milliseconds(800)
     private var ownAddresses: [UUID: (email: String?, retryAfter: Date)] = [:]
     private var recentSends: [String: (date: Date, result: [String: JSONValue])] = [:]
     private var sendTimes: [Date] = []
@@ -210,6 +216,15 @@ final class MCPMailTools {
         _ operation: @Sendable (any MailProvider) async throws -> T
     ) async throws -> T {
         if let denial = accessGuard.permitRequest(count: cost) { throw denial.error }
+        return try await perform(account, context: context, operation)
+    }
+
+    /// `request` for requests already counted against the client's limit.
+    private func perform<T: Sendable>(
+        _ account: CalendarAccount,
+        context: String,
+        _ operation: @Sendable (any MailProvider) async throws -> T
+    ) async throws -> T {
         guard let provider = calendarService.mailProvider(accountID: account.id) else {
             throw ToolError(.notReady, "This account's mailbox is not available right now (no password saved, or OWA Widget is still starting).")
         }
@@ -730,36 +745,113 @@ final class MCPMailTools {
             guard let value = Int(raw), value > 0, value < OWAMailPayloads.searchResultsCap else { throw ToolError("Unknown `cursor`: search again without it") }
             offset = value
         }
-        let count = min(limit, OWAMailPayloads.searchResultsCap - offset)
-        let finalQuery = query
-        let startOffset = offset
-        // Start the session, the search itself, and possibly ending an older session.
-        let page = try await request(account, cost: 2, context: "mcp.mail.search") { try await $0.mailSearch(finalQuery, offset: startOffset, count: count) }
+        let only = arguments["only"]?.stringValue
+        guard only == nil || only == "people" else { throw ToolError("`only` must be people") }
+        let peopleOnly = only == "people"
+        let cap = OWAMailPayloads.searchResultsCap
+
+        // Pages until `limit` conversations are collected, at most `maxSearchPages` of them:
+        // Exchange gives at most 25 rows a request, and with `only: people` notifications take
+        // many of them. The first request starts a session (and may end an older one); the
+        // next pages go on in it and never start one: the session is shared with the app's mail
+        // window and other calls, which may end or replace it. A later page the request limit
+        // does not allow, that fails or that finds no session ends the answer early with a
+        // cursor rather than losing what was read.
+        var kept: [MailConversationSummary] = []
+        var skipped = 0
+        var position = offset
+        var first: MailSearchPage?
+        var refiners: [MailSearchRefiner] = []
+        var more = true
+        var pagesRead = 0
+        var stoppedEarly = false
+        while more, kept.count < limit, pagesRead < Self.maxSearchPages, position < cap {
+            let wanted = limit - kept.count
+            let count = min(peopleOnly ? max(wanted, Self.searchPageRows) : wanted, cap - position)
+            let pageQuery = query
+            let pageOffset = position
+            let page: MailSearchPage
+            if pagesRead == 0 {
+                page = try await request(account, cost: 2, context: "mcp.mail.search") { try await $0.mailSearch(pageQuery, offset: pageOffset, count: count) }
+            } else {
+                guard accessGuard.permitRequest() == nil,
+                      let next = try? await perform(account, context: "mcp.mail.search", { try await $0.mailSearchInOpenSession(pageQuery, offset: pageOffset, count: count) })
+                else {
+                    stoppedEarly = true
+                    break
+                }
+                page = next
+            }
+            pagesRead += 1
+            if first == nil { first = page }
+            if refiners.isEmpty, page.sessionID == first?.sessionID { refiners = page.refiners }
+            var looked = 0
+            for conversation in page.conversations {
+                guard kept.count < limit else { break }
+                looked += 1
+                if peopleOnly, conversation.isAutomated {
+                    skipped += 1
+                } else {
+                    kept.append(conversation)
+                }
+            }
+            position += looked
+            // Rows left on this page mean more even when Exchange says the page was the last.
+            // An empty page never says "more": with nothing on it there is no cursor to go on
+            // from, and asking again from the same offset would get the same empty page.
+            more = looked < page.conversations.count || (page.moreAvailable && !page.conversations.isEmpty)
+        }
+        let page = first ?? MailSearchPage(conversations: [], moreAvailable: false, searchTerms: [], refiners: [], offset: offset)
+        // Exchange counts the filters over the whole result set. When everything fits on the
+        // first page they come with it; for a larger set it counts them in the background and
+        // hands them to a later request of the same session, about half a second on (or never,
+        // for some mid-sized sets). A new search asks once more for them: one row, one request,
+        // only in the session it started (another search would have its own filters there).
+        if refiners.isEmpty, offset == 0, more, position < cap, !stoppedEarly,
+           (try? await Task.sleep(for: refinerDelay)) != nil, !Task.isCancelled, accessGuard.permitRequest() == nil {
+            let lateQuery = query
+            let lateOffset = position
+            if let late = try? await perform(account, context: "mcp.mail.search", { try await $0.mailSearchInOpenSession(lateQuery, offset: lateOffset, count: 1) }),
+               late.sessionID == first?.sessionID {
+                refiners = late.refiners
+            }
+        }
 
         var result = commonFields(coder, account)
         // A search spans folders, so rows name their folder, and one in the inbox needs no
         // `folder_id`. The list is asked for only when a row is in a folder the app does not
         // know yet (one request, kept 10 minutes); an empty page asks for nothing.
         var known = try? await folders(account, load: false)
-        let unknownFolder = page.conversations.contains { conversation in
-            guard let id = conversation.parentFolderID else { return false }
-            return known?.contains { $0.id == id } != true
+        let shownFolders = kept.compactMap(\.parentFolderID) + refiners.compactMap { refiner in
+            if case .folder(_, let folderID, _) = refiner { return folderID }
+            return nil
         }
+        let unknownFolder = shownFolders.contains { id in known?.contains { $0.id == id } != true }
         if unknownFolder { known = try? await folders(account, load: true) }
         let labels = FolderLabels(known)
         let names = labels.names
-        result["threads"] = .array(page.conversations.map { conversationJSON($0, coder, folders: labels) })
-        let nextOffset = offset + page.conversations.count
-        // An empty page never says "more": with nothing on it there is no cursor to go on from,
-        // and asking again from the same offset would get the same empty page.
-        let more = page.moreAvailable && !page.conversations.isEmpty && nextOffset < OWAMailPayloads.searchResultsCap
-        result["more_available"] = .bool(more)
-        if more { result["next_cursor"] = .string(String(nextOffset)) }
-        if page.moreAvailable, !page.conversations.isEmpty, nextOffset >= OWAMailPayloads.searchResultsCap {
-            result["note"] = .string("Exchange returns at most \(OWAMailPayloads.searchResultsCap) results per search: narrow it with `from`, `since`/`until` or `folder`.")
+        result["threads"] = .array(kept.map { conversationJSON($0, coder, folders: labels) })
+        let hasMore = more && position < cap
+        result["more_available"] = .bool(hasMore)
+        if hasMore { result["next_cursor"] = .string(String(position)) }
+        if peopleOnly, skipped > 0 { result["skipped_notifications"] = .int(Int64(skipped)) }
+        if more, position >= cap {
+            result["note"] = .string("Exchange returns at most \(cap) results per search: narrow it with `from`, `since`/`until` or `folder`.")
+        } else if peopleOnly, hasMore, kept.count < limit {
+            let reason = stoppedEarly
+                ? "Stopped early (the request limit, or Exchange did not answer)"
+                : "Read \(pagesRead) pages of results, the most for one call"
+            result["note"] = .string(
+                "\(reason): left out \(skipped) notifications and other automated mail, kept \(kept.count) conversations from people. "
+                    + "Go on with `next_cursor`, or narrow the search (`since`/`until`, `from`, other words)."
+            )
         }
         if !page.searchTerms.isEmpty { result["matched_terms"] = .array(page.searchTerms.map(JSONValue.string)) }
-        let suggestions: [JSONValue] = page.refiners.compactMap { refiner in
+        if offset == 0, page.conversations.isEmpty, kept.isEmpty {
+            let words = MCPSearchWords.hintWords(query.text)
+            if !words.isEmpty { await addWordHints(words, query: query, peopleOnly: peopleOnly, account: account, to: &result) }
+        }
+        let suggestions: [JSONValue] = refiners.compactMap { refiner in
             switch refiner {
             case .sender(let name, let email, let count):
                 return ["type": "from", "name": .string(name), "email": .string(email), "count": .int(Int64(count))]
@@ -772,6 +864,57 @@ final class MCPMailTools {
         }
         if !suggestions.isEmpty { result["suggested_filters"] = .array(suggestions) }
         return .success(result)
+    }
+
+    /// Why a search of several words found nothing: Exchange wants every word in a result.
+    /// `per_word` says what each word finds alone with the same filters (with `only: people`,
+    /// only conversations from people count), one request a word in the search's session,
+    /// counted against the client's limit; when the limit leaves no room for all of them, or a
+    /// check fails or finds no session, only the `note` says what to do.
+    private func addWordHints(
+        _ words: [String], query: MailSearchQuery, peopleOnly: Bool, account: CalendarAccount, to result: inout [String: JSONValue]
+    ) async {
+        let checked = Array(words.prefix(MCPSearchWords.maxChecked))
+        let lead = "No result contains all the words: Exchange returns only results with every word of the query. "
+        let advice = "Search with one or two characteristic words or a person's name, or join words with OR to match any of them."
+        var counts: [(word: String, count: Int, more: Bool)] = []
+        if accessGuard.permitRequest(count: checked.count) == nil {
+            for word in checked {
+                var single = query
+                single.text = word
+                let probe = single
+                guard let page = try? await perform(account, context: "mcp.mail.search.word", { try await $0.mailSearchInOpenSession(probe, offset: 0, count: Self.searchPageRows) }) else {
+                    counts = []
+                    break
+                }
+                let found = peopleOnly ? page.conversations.filter { !$0.isAutomated }.count : page.conversations.count
+                counts.append((word, found, page.moreAvailable && !page.conversations.isEmpty))
+            }
+        }
+        guard !counts.isEmpty else {
+            result["note"] = .string(lead + advice)
+            return
+        }
+        result["per_word"] = .array(counts.map { entry in
+            var item: [String: JSONValue] = ["word": .string(entry.word), "count": .int(Int64(entry.count))]
+            if entry.more { item["more_available"] = true }
+            return .object(item)
+        })
+        let whose = peopleOnly ? " (conversations from people only, as with `only: people`)" : ""
+        let unchecked = words.count > checked.count ? " Only the first \(checked.count) words were checked." : ""
+        if counts.allSatisfy({ $0.count == 0 && !$0.more }) {
+            let filtered = !query.from.isEmpty || query.hasAttachments != nil || query.receivedFrom != nil || query.receivedTo != nil
+                || query.scope != .mailbox || query.folderRefinerID != nil
+            let fix = filtered
+                ? "None of the words finds anything alone with these filters\(whose): widen `since`/`until` or drop `from`, `folder` or `has_attachments` before changing the words."
+                : "None of the words finds anything alone\(whose): check their spelling or try other words."
+            result["note"] = .string(lead + fix + unchecked)
+            return
+        }
+        result["note"] = .string(
+            lead + "`per_word` shows how many results each word finds alone with the same filters\(whose) (`more_available`: at least that many). "
+                + advice + unchecked
+        )
     }
 
     private func getThread(_ arguments: [String: JSONValue], _ coder: MCPDateCoder) async throws -> MCPToolResult {
