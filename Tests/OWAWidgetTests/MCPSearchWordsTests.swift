@@ -19,6 +19,13 @@ final class MCPSearchWordsTests: XCTestCase {
         }
     }
 
+    func testPunctuationAndOneLetterWordsAreLeftOut() {
+        XCTAssertEqual(MCPSearchWords.hintWords("встройка — панели / ОПТИ"), ["встройка", "панели", "ОПТИ"])
+        XCTAssertEqual(MCPSearchWords.hintWords("панели и ОПТИ"), ["панели", "ОПТИ"])
+        XCTAssertEqual(MCPSearchWords.hintWords("релиз 5"), ["релиз", "5"], "a number is a word")
+        XCTAssertEqual(MCPSearchWords.hintWords("панель — и"), [], "one word left")
+    }
+
     func testLowercaseOperatorWordsAreWords() {
         XCTAssertEqual(MCPSearchWords.hintWords("cats or dogs"), ["cats", "or", "dogs"])
     }

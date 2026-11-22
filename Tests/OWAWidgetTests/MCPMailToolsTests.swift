@@ -129,6 +129,16 @@ final class MCPMailToolsTests: XCTestCase {
         /// Answers searches instead of the fixed page below.
         private var searchResponder: (@Sendable (MailSearchQuery, Int, Int) -> MailSearchPage)?
         func setSearch(_ responder: @escaping @Sendable (MailSearchQuery, Int, Int) -> MailSearchPage) { searchResponder = responder }
+        /// Another search ended the session: requests that need the open one get nothing.
+        private var sessionGone = false
+        func setSessionGone(_ gone: Bool) { sessionGone = gone }
+        func mailSearchInOpenSession(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage? {
+            if sessionGone {
+                calls.append("search:no-session")
+                return nil
+            }
+            return try await mailSearch(query, offset: offset, count: count)
+        }
         func mailSearch(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage {
             searches.append(query)
             searchPages.append((offset, count))
@@ -402,6 +412,40 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertTrue(searches.allSatisfy { $0.receivedFrom != nil }, "each word is checked with the same filters")
     }
 
+    /// With `only: people` a word counts only conversations from people: one that finds only
+    /// notifications is as good as none.
+    func testWordCountsWithPeopleOnlyCountPeople() async throws {
+        let rows = mixedResults(25, peopleEvery: 5)
+        await provider.set(conversations: [], threads: [])
+        await provider.setSearch { query, offset, _ in
+            MailSearchPage(conversations: query.text == "релиз" ? rows : [], moreAvailable: query.text == "релиз", searchTerms: [], refiners: [], offset: offset)
+        }
+        let found = try object(await makeTools().call(name: "search_mail", arguments: ["query": "панели релиз", "only": "people"], client: nil))
+        XCTAssertEqual(found["per_word"], [["word": "панели", "count": 0], ["word": "релиз", "count": 5, "more_available": true]])
+        XCTAssertTrue(found["note"]?.stringValue?.contains("people only") == true)
+    }
+
+    /// No word finds anything alone: with filters the filters are the suspect, without them
+    /// the words.
+    func testWordsThatFindNothingAlonePointAtTheFilters() async throws {
+        await answerWordSearches([:])
+        let filtered = try object(await makeTools().call(name: "search_mail", arguments: ["query": "встройка панели", "since": "2026-11-21"], client: nil))
+        let note = try XCTUnwrap(filtered["note"]?.stringValue)
+        XCTAssertTrue(note.contains("widen `since`/`until`"), note)
+        XCTAssertFalse(note.contains("characteristic"), note)
+
+        let plain = try object(await makeTools().call(name: "search_mail", arguments: ["query": "встроика паннели"], client: nil))
+        XCTAssertTrue(plain["note"]?.stringValue?.contains("spelling") == true)
+    }
+
+    func testWordCountsNeedTheOpenSession() async throws {
+        await answerWordSearches(["панели": 3])
+        await provider.setSessionGone(true)
+        let found = try object(await makeTools().call(name: "search_mail", arguments: ["query": "встройка панели"], client: nil))
+        XCTAssertNil(found["per_word"])
+        XCTAssertTrue(found["note"]?.stringValue?.contains("every word") == true)
+    }
+
     func testOnlyFourWordsAreCheckedOneByOne() async throws {
         await answerWordSearches(["бюджет": 2])
         let found = try object(await makeTools().call(name: "search_mail", arguments: ["query": "бюджет платформа 2027 защита план"], client: nil))
@@ -542,18 +586,19 @@ final class MCPMailToolsTests: XCTestCase {
 
     /// As Exchange: filters come with the first page when it holds every result; for a larger
     /// set they come with the requests after the first one in the session.
-    private func answerWithLateFilters(_ results: [MailConversationSummary]) async {
+    private func answerWithLateFilters(_ results: [MailConversationSummary], laterSession: String = "S1") async {
         await provider.set(conversations: [], threads: [])
         let requests = Counter()
         await provider.setSearch { query, offset, count in
             let index = requests.next()
+            let session = index == 0 ? "S1" : laterSession
             let end = min(results.count, offset + min(count, 25))
             let rows = offset < end ? Array(results[offset..<end]) : []
             let all = offset == 0 && end == results.count
             return MailSearchPage(
                 conversations: rows, moreAvailable: end < results.count, searchTerms: [query.text],
                 refiners: all || index > 0 ? [.sender(name: "Grace Miller", email: "g.miller@example.com", count: 40), .folder(refinerID: "R1", folderID: "F-JIRA-FULL-ID-00000000000", count: 7)] : [],
-                offset: offset
+                offset: offset, sessionID: session
             )
         }
     }
@@ -595,6 +640,45 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertNotNil(found["suggested_filters"])
         let pages = await provider.searchPages
         XCTAssertEqual(pages.map(\.offset), [0, 25], "the second page brought them: no extra request")
+    }
+
+    /// The mail window or another call replaced the session: the filters it hands over are that
+    /// other search's, so they stay out, from a later page and from the extra request alike.
+    func testFiltersFromAnotherSessionAreLeftOut() async throws {
+        await answerWithLateFilters(mixedResults(60, peopleEvery: 1), laterSession: "S2")
+        let late = try object(await makeTools().call(name: "search_mail", arguments: ["query": "панель", "limit": 5], client: nil))
+        XCTAssertNil(late["suggested_filters"])
+
+        await answerWithLateFilters(mixedResults(80, peopleEvery: 10), laterSession: "S2")
+        let paged = try object(await makeTools().call(name: "search_mail", arguments: ["query": "панель", "only": "people", "limit": 5], client: nil))
+        XCTAssertNil(paged["suggested_filters"])
+        XCTAssertEqual(paged["threads"]?.arrayValue?.count, 5, "the rows are still this search's: the query goes with each request")
+    }
+
+    /// Without the session, later requests are not made at all: no request may start one.
+    func testLaterRequestsNeedTheOpenSession() async throws {
+        await answerWithLateFilters(mixedResults(80, peopleEvery: 10))
+        await provider.setSessionGone(true)
+        let found = try object(await makeTools().call(name: "search_mail", arguments: ["query": "панель", "only": "people"], client: nil))
+        XCTAssertEqual(found["threads"]?.arrayValue?.count, 3)
+        XCTAssertEqual(found["next_cursor"]?.stringValue, "25")
+        XCTAssertTrue(found["note"]?.stringValue?.hasPrefix("Stopped early") == true)
+        XCTAssertNil(found["suggested_filters"])
+        let pages = await provider.searchPages
+        XCTAssertEqual(pages.count, 1)
+    }
+
+    /// A cancelled call makes no request after its pause.
+    func testCancelledSearchMakesNoLateRequest() async throws {
+        await answerWithLateFilters(mixedResults(60, peopleEvery: 1))
+        let tools = makeTools()
+        tools.refinerDelay = .seconds(10)
+        let call = Task { await tools.call(name: "search_mail", arguments: ["query": "панель", "limit": 5], client: nil) }
+        try await Task.sleep(for: .milliseconds(200))
+        call.cancel()
+        _ = await call.value
+        let pages = await provider.searchPages
+        XCTAssertEqual(pages.count, 1)
     }
 
     /// A continued search takes filters only as they come: no extra request.

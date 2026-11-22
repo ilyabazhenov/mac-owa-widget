@@ -342,8 +342,8 @@ extension OWACalendarProvider: MailProvider {
         try await client.mailSearch(query, offset: offset, count: count)
     }
 
-    func mailSearchProbe(_ query: MailSearchQuery, count: Int) async throws -> MailSearchPage {
-        try await client.mailSearchProbe(query, count: count)
+    func mailSearchInOpenSession(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage? {
+        try await client.mailSearchInOpenSession(query, offset: offset, count: count)
     }
 
     func mailEndSearch() async { await client.mailEndSearch() }

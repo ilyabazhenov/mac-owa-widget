@@ -5,6 +5,31 @@ import os.log
 struct OWAMailSearchSession: Sendable {
     let id: String
     let scope: MailSearchScope
+
+    /// How a search page may use the session.
+    enum Use: Sendable {
+        /// A new search: always a new session (its filters are counted for this query).
+        case fresh
+        /// The next page: the open session, or a new one when there is none for the scope.
+        case openOrNew
+        /// Only the open session: never one more request to start a session.
+        case openOnly
+    }
+
+    enum Decision: Equatable, Sendable {
+        case reuse
+        case start
+        case unavailable
+    }
+
+    static func decision(current: OWAMailSearchSession?, scope: MailSearchScope, use: Use) -> Decision {
+        let open = current?.scope == scope
+        switch use {
+        case .fresh: return .start
+        case .openOrNew: return open ? .reuse : .start
+        case .openOnly: return open ? .reuse : .unavailable
+        }
+    }
 }
 
 /// Mail over the same session as the calendar: OWA JSON (`service.svc`) for reading and for
@@ -281,17 +306,26 @@ extension OWAClient {
     /// Runs a search page inside a session for the query's scope, opening one when needed.
     /// The search history OWA keeps in the mailbox (`UpdateUserConfiguration`) is not touched.
     func mailSearch(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage {
-        try await mailSearchPage(query, offset: offset, count: count, newSession: offset == 0)
+        guard let page = try await mailSearchPage(query, offset: offset, count: count, use: offset == 0 ? .fresh : .openOrNew) else {
+            throw OWAError.invalidResponse
+        }
+        return page
     }
 
-    /// The first page of `query` in the session open for its scope: one request, no new session.
-    func mailSearchProbe(_ query: MailSearchQuery, count: Int) async throws -> MailSearchPage {
-        try await mailSearchPage(query, offset: 0, count: count, newSession: false)
+    /// A page of `query` in the session open for its scope: one request, or `nil` without one
+    /// when no session is open for that scope.
+    func mailSearchInOpenSession(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage? {
+        try await mailSearchPage(query, offset: offset, count: count, use: .openOnly)
     }
 
-    private func mailSearchPage(_ query: MailSearchQuery, offset: Int, count: Int, newSession: Bool) async throws -> MailSearchPage {
+    private func mailSearchPage(_ query: MailSearchQuery, offset: Int, count: Int, use: OWAMailSearchSession.Use) async throws -> MailSearchPage? {
         let zone = windowsTimezoneID()
-        if mailSearchSession?.scope != query.scope || newSession {
+        switch OWAMailSearchSession.decision(current: mailSearchSession, scope: query.scope, use: use) {
+        case .unavailable:
+            return nil
+        case .reuse:
+            break
+        case .start:
             await mailEndSearch()
             let sessionID = UUID().uuidString.lowercased()
             _ = try await mailServiceCall(
@@ -305,7 +339,9 @@ extension OWAClient {
             sessionID: session.id, query: query, offset: offset, count: count, calendar: AppTimeZone.calendar, timeZoneID: zone
         )
         let data = try await mailServiceCall(action: "ExecuteSearch", payload: payload)
-        return try OWAMailParsers.searchPage(data, offset: offset)
+        var page = try OWAMailParsers.searchPage(data, offset: offset)
+        page.sessionID = session.id
+        return page
     }
 
     func mailEndSearch() async {

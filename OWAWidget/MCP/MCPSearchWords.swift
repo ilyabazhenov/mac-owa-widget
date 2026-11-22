@@ -13,18 +13,20 @@ enum MCPSearchWords {
     private static let operators: Set<String> = ["OR", "AND", "NOT", "NEAR"]
     private static let syntax = CharacterSet(charactersIn: "\":()[]{}<>=*")
 
-    /// The distinct words of `text` in order (case-insensitively), or `[]` when it is a single
-    /// word or uses search syntax.
+    /// The distinct words of `text` in order (case-insensitively), or `[]` when fewer than two
+    /// are left or it uses search syntax. Punctuation on its own ("—", "/", "&") and one-letter
+    /// words ("и", "в", "a") are not checked: each check is a request, and these say nothing.
     static func hintWords(_ text: String) -> [String] {
         let tokens = text.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard tokens.count >= 2 else { return [] }
-        for token in tokens {
-            if operators.contains(token) || token.unicodeScalars.contains(where: syntax.contains) || token.hasPrefix("-") {
-                return []
-            }
+        guard !tokens.contains(where: { $0.unicodeScalars.contains(where: syntax.contains) }) else { return [] }
+        let meaningful = tokens.filter { token in
+            let letters = token.unicodeScalars.filter(CharacterSet.alphanumerics.contains)
+            guard !letters.isEmpty else { return false }
+            return !(letters.count == 1 && token.count == 1 && token.unicodeScalars.allSatisfy(CharacterSet.letters.contains))
         }
+        guard !meaningful.contains(where: { operators.contains($0) || $0.hasPrefix("-") }) else { return [] }
         var seen = Set<String>()
-        let words = tokens.filter { seen.insert($0.lowercased()).inserted }
+        let words = meaningful.filter { seen.insert($0.lowercased()).inserted }
         return words.count >= 2 ? words : []
     }
 }

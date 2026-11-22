@@ -753,8 +753,10 @@ final class MCPMailTools {
         // Pages until `limit` conversations are collected, at most `maxSearchPages` of them:
         // Exchange gives at most 25 rows a request, and with `only: people` notifications take
         // many of them. The first request starts a session (and may end an older one); the
-        // next pages go on in it. A later page the request limit does not allow, or that fails,
-        // ends the answer early with a cursor rather than losing what was read.
+        // next pages go on in it and never start one: the session is shared with the app's mail
+        // window and other calls, which may end or replace it. A later page the request limit
+        // does not allow, that fails or that finds no session ends the answer early with a
+        // cursor rather than losing what was read.
         var kept: [MailConversationSummary] = []
         var skipped = 0
         var position = offset
@@ -773,7 +775,7 @@ final class MCPMailTools {
                 page = try await request(account, cost: 2, context: "mcp.mail.search") { try await $0.mailSearch(pageQuery, offset: pageOffset, count: count) }
             } else {
                 guard accessGuard.permitRequest() == nil,
-                      let next = try? await perform(account, context: "mcp.mail.search", { try await $0.mailSearch(pageQuery, offset: pageOffset, count: count) })
+                      let next = try? await perform(account, context: "mcp.mail.search", { try await $0.mailSearchInOpenSession(pageQuery, offset: pageOffset, count: count) })
                 else {
                     stoppedEarly = true
                     break
@@ -782,7 +784,7 @@ final class MCPMailTools {
             }
             pagesRead += 1
             if first == nil { first = page }
-            if refiners.isEmpty { refiners = page.refiners }
+            if refiners.isEmpty, page.sessionID == first?.sessionID { refiners = page.refiners }
             var looked = 0
             for conversation in page.conversations {
                 guard kept.count < limit else { break }
@@ -803,12 +805,14 @@ final class MCPMailTools {
         // Exchange counts the filters over the whole result set. When everything fits on the
         // first page they come with it; for a larger set it counts them in the background and
         // hands them to a later request of the same session, about half a second on (or never,
-        // for some mid-sized sets). A new search asks once more for them: one row, one request.
-        if refiners.isEmpty, offset == 0, more, position < cap, !stoppedEarly, accessGuard.permitRequest() == nil {
-            try? await Task.sleep(for: refinerDelay)
+        // for some mid-sized sets). A new search asks once more for them: one row, one request,
+        // only in the session it started (another search would have its own filters there).
+        if refiners.isEmpty, offset == 0, more, position < cap, !stoppedEarly,
+           (try? await Task.sleep(for: refinerDelay)) != nil, !Task.isCancelled, accessGuard.permitRequest() == nil {
             let lateQuery = query
             let lateOffset = position
-            if let late = try? await perform(account, context: "mcp.mail.search", { try await $0.mailSearch(lateQuery, offset: lateOffset, count: 1) }) {
+            if let late = try? await perform(account, context: "mcp.mail.search", { try await $0.mailSearchInOpenSession(lateQuery, offset: lateOffset, count: 1) }),
+               late.sessionID == first?.sessionID {
                 refiners = late.refiners
             }
         }
@@ -845,7 +849,7 @@ final class MCPMailTools {
         if !page.searchTerms.isEmpty { result["matched_terms"] = .array(page.searchTerms.map(JSONValue.string)) }
         if offset == 0, page.conversations.isEmpty, kept.isEmpty {
             let words = MCPSearchWords.hintWords(query.text)
-            if !words.isEmpty { await addWordHints(words, query: query, account: account, to: &result) }
+            if !words.isEmpty { await addWordHints(words, query: query, peopleOnly: peopleOnly, account: account, to: &result) }
         }
         let suggestions: [JSONValue] = refiners.compactMap { refiner in
             switch refiner {
@@ -863,35 +867,52 @@ final class MCPMailTools {
     }
 
     /// Why a search of several words found nothing: Exchange wants every word in a result.
-    /// `per_word` says what each word finds alone with the same filters, one request a word,
-    /// counted against the client's limit; when the limit leaves no room for all of them (or a
-    /// check fails), only the `note` says what to do.
-    private func addWordHints(_ words: [String], query: MailSearchQuery, account: CalendarAccount, to result: inout [String: JSONValue]) async {
+    /// `per_word` says what each word finds alone with the same filters (with `only: people`,
+    /// only conversations from people count), one request a word in the search's session,
+    /// counted against the client's limit; when the limit leaves no room for all of them, or a
+    /// check fails or finds no session, only the `note` says what to do.
+    private func addWordHints(
+        _ words: [String], query: MailSearchQuery, peopleOnly: Bool, account: CalendarAccount, to result: inout [String: JSONValue]
+    ) async {
         let checked = Array(words.prefix(MCPSearchWords.maxChecked))
+        let lead = "No result contains all the words: Exchange returns only results with every word of the query. "
         let advice = "Search with one or two characteristic words or a person's name, or join words with OR to match any of them."
-        var counts: [JSONValue] = []
+        var counts: [(word: String, count: Int, more: Bool)] = []
         if accessGuard.permitRequest(count: checked.count) == nil {
             for word in checked {
                 var single = query
                 single.text = word
                 let probe = single
-                guard let page = try? await perform(account, context: "mcp.mail.search.word", { try await $0.mailSearchProbe(probe, count: Self.searchPageRows) }) else {
+                guard let page = try? await perform(account, context: "mcp.mail.search.word", { try await $0.mailSearchInOpenSession(probe, offset: 0, count: Self.searchPageRows) }) else {
                     counts = []
                     break
                 }
-                var entry: [String: JSONValue] = ["word": .string(word), "count": .int(Int64(page.conversations.count))]
-                if page.moreAvailable, !page.conversations.isEmpty { entry["more_available"] = true }
-                counts.append(.object(entry))
+                let found = peopleOnly ? page.conversations.filter { !$0.isAutomated }.count : page.conversations.count
+                counts.append((word, found, page.moreAvailable && !page.conversations.isEmpty))
             }
         }
         guard !counts.isEmpty else {
-            result["note"] = .string("No result contains all the words: Exchange returns only results with every word of the query. " + advice)
+            result["note"] = .string(lead + advice)
             return
         }
-        result["per_word"] = .array(counts)
+        result["per_word"] = .array(counts.map { entry in
+            var item: [String: JSONValue] = ["word": .string(entry.word), "count": .int(Int64(entry.count))]
+            if entry.more { item["more_available"] = true }
+            return .object(item)
+        })
+        let whose = peopleOnly ? " (conversations from people only, as with `only: people`)" : ""
         let unchecked = words.count > checked.count ? " Only the first \(checked.count) words were checked." : ""
+        if counts.allSatisfy({ $0.count == 0 && !$0.more }) {
+            let filtered = !query.from.isEmpty || query.hasAttachments != nil || query.receivedFrom != nil || query.receivedTo != nil
+                || query.scope != .mailbox || query.folderRefinerID != nil
+            let fix = filtered
+                ? "None of the words finds anything alone with these filters\(whose): widen `since`/`until` or drop `from`, `folder` or `has_attachments` before changing the words."
+                : "None of the words finds anything alone\(whose): check their spelling or try other words."
+            result["note"] = .string(lead + fix + unchecked)
+            return
+        }
         result["note"] = .string(
-            "No result contains all the words: Exchange returns only results with every word of the query. `per_word` shows how many results each word finds alone with the same filters (`more_available`: at least that many). "
+            lead + "`per_word` shows how many results each word finds alone with the same filters\(whose) (`more_available`: at least that many). "
                 + advice + unchecked
         )
     }
