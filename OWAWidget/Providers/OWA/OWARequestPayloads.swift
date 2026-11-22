@@ -610,6 +610,14 @@ enum OWARespondToMeetingPayload {
     /// current. Typical right after the organiser moves a meeting: applying the update and then
     /// processing the meeting request each bump the item's version, possibly after the sync that
     /// raised the alert.
+    /// Exchange's refusal to answer a meeting the organizer has cancelled, one code per answer.
+    /// It comes when the calendar here has not synced the cancellation yet.
+    static func isCancelledMeetingCode(_ code: String) -> Bool {
+        code == "ErrorCalendarIsCancelledForAccept"
+            || code == "ErrorCalendarIsCancelledForTentative"
+            || code == "ErrorCalendarIsCancelledForDecline"
+    }
+
     static func isStaleChangeKeyCode(_ code: String) -> Bool {
         code == "ErrorIrresolvableConflict" || code == "ErrorStaleObject"
     }

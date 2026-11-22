@@ -80,10 +80,10 @@ final class CancelledMeetingResponseTests: XCTestCase {
         XCTAssertFalse(event(isCancelled: true).acceptsResponse)
     }
 
-    /// Cached payloads may carry the cancellation only in the subject.
-    func testMeetingCancelledBySubjectDoesNotAcceptResponse() {
-        XCTAssertFalse(event(title: "Отменено: Planning").acceptsResponse)
-        XCTAssertFalse(event(title: "Canceled: Planning").acceptsResponse)
+    /// Only Exchange's flag blocks an answer: a live meeting may well be titled "Cancelled: …".
+    func testCancelledLookingSubjectAloneStillAcceptsResponse() {
+        XCTAssertTrue(event(title: "Cancelled: order review").acceptsResponse)
+        XCTAssertTrue(event(title: "Отменено: разбор отменённых заказов").acceptsResponse)
     }
 
     func testOwnMeetingOrReadOnlyCalendarDoesNotAcceptResponse() {
@@ -114,6 +114,30 @@ final class CancelledMeetingResponseTests: XCTestCase {
         XCTAssertEqual(service.events.first?.responseType, .notResponded)
     }
 
+    /// The card's copy predates the sync that brought the cancellation: the calendar's own wins.
+    func testStaleCopyOfCancelledMeetingNeverReachesProvider() async {
+        let provider = RecordingProvider(account: account)
+        let service = makeService(provider: provider)
+        service.replaceEventsForTests([event(isCancelled: true)])
+
+        do {
+            try await service.respondToMeeting(event(), action: .accept)
+            XCTFail("Expected meetingCancelled")
+        } catch CalendarProviderError.meetingCancelled {
+        } catch {
+            XCTFail("Unexpected error \(error)")
+        }
+        let sent = await provider.responses
+        XCTAssertEqual(sent, [])
+    }
+
+    func testExchangeRefusalCodesForCancelledMeeting() {
+        XCTAssertTrue(OWARespondToMeetingPayload.isCancelledMeetingCode("ErrorCalendarIsCancelledForAccept"))
+        XCTAssertTrue(OWARespondToMeetingPayload.isCancelledMeetingCode("ErrorCalendarIsCancelledForTentative"))
+        XCTAssertTrue(OWARespondToMeetingPayload.isCancelledMeetingCode("ErrorCalendarIsCancelledForDecline"))
+        XCTAssertFalse(OWARespondToMeetingPayload.isCancelledMeetingCode("ErrorStaleObject"))
+    }
+
     func testRespondingToActiveMeetingStillReachesProvider() async throws {
         let provider = RecordingProvider(account: account)
         let service = makeService(provider: provider)
@@ -137,5 +161,22 @@ final class CancelledMeetingResponseTests: XCTestCase {
 
         service.replaceEventsForTests([event()])
         XCTAssertFalse(service.mailMeetingIsCancelled(calendarItemID: "e1"))
+        service.replaceEventsForTests([event(title: "Отменено: Planning")])
+        XCTAssertFalse(service.mailMeetingIsCancelled(calendarItemID: "e1"), "the subject alone is no cancellation")
+    }
+
+    /// An invitation open in the reader redraws once the calendar learns of the cancellation.
+    func testMailRedrawsWhenCalendarLearnsOfCancellation() {
+        let calendar = makeService(provider: RecordingProvider(account: account))
+        calendar.replaceEventsForTests([event()])
+        let mail = MailService(defaults: UserDefaults(suiteName: "cancelled-rsvp-\(UUID().uuidString)")!)
+        mail.attach(calendar)
+        let before = mail.changeGeneration
+
+        calendar.replaceEventsForTests([event()])
+        XCTAssertEqual(mail.changeGeneration, before, "an unrelated sync redraws nothing")
+
+        calendar.replaceEventsForTests([event(isCancelled: true)])
+        XCTAssertEqual(mail.changeGeneration, before + 1)
     }
 }

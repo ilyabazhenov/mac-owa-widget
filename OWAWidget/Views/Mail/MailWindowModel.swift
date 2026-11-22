@@ -396,6 +396,12 @@ final class MailWindowModel: ObservableObject {
     /// Shows a failure in the banner. A cancelled request is the user moving on, not a failure.
     func show(_ error: Error) {
         guard !MailCancellation.isCancellation(error) else { return }
+        // An invitation answered after its meeting was cancelled: said in the user's language.
+        if case CalendarProviderError.meetingCancelled = error,
+           let text = service.localization?.tr("meeting.rsvp.error.cancelled") {
+            actionError = text
+            return
+        }
         actionError = error.localizedDescription
     }
 

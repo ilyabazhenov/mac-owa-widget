@@ -65,7 +65,7 @@ extension CalendarService: MailBackend {
     }
 
     func mailMeetingIsCancelled(calendarItemID: String) -> Bool {
-        events.first { $0.id == calendarItemID }?.isEffectivelyCancelled ?? false
+        events.first { $0.id == calendarItemID }?.isCancelled ?? false
     }
 
     var mailVIPNames: Set<String> {
@@ -363,6 +363,16 @@ final class MailService: ObservableObject {
             .dropFirst()
             .sink { [weak self] _ in
                 Task { @MainActor in self?.providersChanged() }
+            }
+            .store(in: &cancellables)
+        // An invitation open in the reader drops its answer buttons once the calendar learns the
+        // meeting was cancelled. Published only when that set changes, not on every sync.
+        calendarService.$events
+            .map { Set($0.lazy.filter(\.isCancelled).map(\.id)) }
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.changeGeneration += 1 }
             }
             .store(in: &cancellables)
         isOffline = calendarService.lastSyncFailedOnConnection

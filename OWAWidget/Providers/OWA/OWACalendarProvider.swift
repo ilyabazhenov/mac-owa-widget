@@ -39,7 +39,11 @@ actor OWACalendarProvider: CalendarProvider {
 
     func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {
         guard let changeKey = event.changeKey else { throw OWAError.invalidResponse }
-        try await client.respondToMeeting(itemId: event.id, changeKey: changeKey, action: action)
+        do {
+            try await client.respondToMeeting(itemId: event.id, changeKey: changeKey, action: action)
+        } catch OWAError.ewsError(let code) where OWARespondToMeetingPayload.isCancelledMeetingCode(code) {
+            throw CalendarProviderError.meetingCancelled
+        }
     }
 
     func fetchDetails(for event: CalendarEvent) async throws -> CalendarEventDetails {
