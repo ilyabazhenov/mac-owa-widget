@@ -378,7 +378,7 @@ extension MCPToolRegistry {
             inputSchema: [
                 "type": "object",
                 "properties": [
-                    "query": ["type": "string", "description": "Words to find. May be empty when filters are given."],
+                    "query": ["type": "string", "description": "Words to find. A result must contain every word; each word also matches longer words that start with it and its other forms (`панель` finds `панели`, `опти` finds `оптимизировать`). Write `a OR b` to find any of them. Prefer one or two characteristic words or a person's name: a long phrase usually finds nothing. When several plain words find nothing, `per_word` says what each finds alone. May be empty when filters are given."],
                     "from": ["type": "array", "items": ["type": "string"], "description": "Sender email addresses (any of them)."],
                     "since": ["type": "string", "description": .string(dateDescription + " Received on or after.")],
                     "until": ["type": "string", "description": .string(dateDescription + " Received on or before; a bare date includes that day.")],

@@ -281,8 +281,17 @@ extension OWAClient {
     /// Runs a search page inside a session for the query's scope, opening one when needed.
     /// The search history OWA keeps in the mailbox (`UpdateUserConfiguration`) is not touched.
     func mailSearch(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage {
+        try await mailSearchPage(query, offset: offset, count: count, newSession: offset == 0)
+    }
+
+    /// The first page of `query` in the session open for its scope: one request, no new session.
+    func mailSearchProbe(_ query: MailSearchQuery, count: Int) async throws -> MailSearchPage {
+        try await mailSearchPage(query, offset: 0, count: count, newSession: false)
+    }
+
+    private func mailSearchPage(_ query: MailSearchQuery, offset: Int, count: Int, newSession: Bool) async throws -> MailSearchPage {
         let zone = windowsTimezoneID()
-        if mailSearchSession?.scope != query.scope || offset == 0 {
+        if mailSearchSession?.scope != query.scope || newSession {
             await mailEndSearch()
             let sessionID = UUID().uuidString.lowercased()
             _ = try await mailServiceCall(

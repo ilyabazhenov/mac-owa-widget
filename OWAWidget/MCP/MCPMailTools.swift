@@ -52,6 +52,8 @@ final class MCPMailTools {
 
     static let maxMessageCharacters = 8_000
     static let maxThreadCharacters = 40_000
+    /// Exchange returns at most this many search results per request, whatever is asked for.
+    static let searchPageRows = 25
     static let maxFullMessageCharacters = 16_000
     static let maxOutgoingBodyCharacters = 20_000
     static let maxRecipients = 50
@@ -210,6 +212,15 @@ final class MCPMailTools {
         _ operation: @Sendable (any MailProvider) async throws -> T
     ) async throws -> T {
         if let denial = accessGuard.permitRequest(count: cost) { throw denial.error }
+        return try await perform(account, context: context, operation)
+    }
+
+    /// `request` for requests already counted against the client's limit.
+    private func perform<T: Sendable>(
+        _ account: CalendarAccount,
+        context: String,
+        _ operation: @Sendable (any MailProvider) async throws -> T
+    ) async throws -> T {
         guard let provider = calendarService.mailProvider(accountID: account.id) else {
             throw ToolError(.notReady, "This account's mailbox is not available right now (no password saved, or OWA Widget is still starting).")
         }
@@ -759,6 +770,10 @@ final class MCPMailTools {
             result["note"] = .string("Exchange returns at most \(OWAMailPayloads.searchResultsCap) results per search: narrow it with `from`, `since`/`until` or `folder`.")
         }
         if !page.searchTerms.isEmpty { result["matched_terms"] = .array(page.searchTerms.map(JSONValue.string)) }
+        if offset == 0, page.conversations.isEmpty {
+            let words = MCPSearchWords.hintWords(query.text)
+            if !words.isEmpty { await addWordHints(words, query: query, account: account, to: &result) }
+        }
         let suggestions: [JSONValue] = page.refiners.compactMap { refiner in
             switch refiner {
             case .sender(let name, let email, let count):
@@ -772,6 +787,40 @@ final class MCPMailTools {
         }
         if !suggestions.isEmpty { result["suggested_filters"] = .array(suggestions) }
         return .success(result)
+    }
+
+    /// Why a search of several words found nothing: Exchange wants every word in a result.
+    /// `per_word` says what each word finds alone with the same filters, one request a word,
+    /// counted against the client's limit; when the limit leaves no room for all of them (or a
+    /// check fails), only the `note` says what to do.
+    private func addWordHints(_ words: [String], query: MailSearchQuery, account: CalendarAccount, to result: inout [String: JSONValue]) async {
+        let checked = Array(words.prefix(MCPSearchWords.maxChecked))
+        let advice = "Search with one or two characteristic words or a person's name, or join words with OR to match any of them."
+        var counts: [JSONValue] = []
+        if accessGuard.permitRequest(count: checked.count) == nil {
+            for word in checked {
+                var single = query
+                single.text = word
+                let probe = single
+                guard let page = try? await perform(account, context: "mcp.mail.search.word", { try await $0.mailSearchProbe(probe, count: Self.searchPageRows) }) else {
+                    counts = []
+                    break
+                }
+                var entry: [String: JSONValue] = ["word": .string(word), "count": .int(Int64(page.conversations.count))]
+                if page.moreAvailable, !page.conversations.isEmpty { entry["more_available"] = true }
+                counts.append(.object(entry))
+            }
+        }
+        guard !counts.isEmpty else {
+            result["note"] = .string("No result contains all the words: Exchange returns only results with every word of the query. " + advice)
+            return
+        }
+        result["per_word"] = .array(counts)
+        let unchecked = words.count > checked.count ? " Only the first \(checked.count) words were checked." : ""
+        result["note"] = .string(
+            "No result contains all the words: Exchange returns only results with every word of the query. `per_word` shows how many results each word finds alone with the same filters (`more_available`: at least that many). "
+                + advice + unchecked
+        )
     }
 
     private func getThread(_ arguments: [String: JSONValue], _ coder: MCPDateCoder) async throws -> MCPToolResult {

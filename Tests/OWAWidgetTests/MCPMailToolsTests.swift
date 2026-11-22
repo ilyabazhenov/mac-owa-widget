@@ -124,8 +124,15 @@ final class MCPMailToolsTests: XCTestCase {
             calls.append("move")
             return refs
         }
+        /// Each search request: its offset and how many rows it asked for.
+        private(set) var searchPages: [(offset: Int, count: Int)] = []
+        /// Answers searches instead of the fixed page below.
+        private var searchResponder: (@Sendable (MailSearchQuery, Int, Int) -> MailSearchPage)?
+        func setSearch(_ responder: @escaping @Sendable (MailSearchQuery, Int, Int) -> MailSearchPage) { searchResponder = responder }
         func mailSearch(_ query: MailSearchQuery, offset: Int, count: Int) async throws -> MailSearchPage {
             searches.append(query)
+            searchPages.append((offset, count))
+            if let searchResponder { return searchResponder(query, offset, count) }
             return MailSearchPage(
                 conversations: conversations, moreAvailable: true, searchTerms: [query.text],
                 refiners: [.sender(name: "Grace Miller", email: "g.miller@example.com", count: 4)], offset: offset
@@ -244,13 +251,16 @@ final class MCPMailToolsTests: XCTestCase {
 
     private static let fixtureNow = Date(timeIntervalSince1970: 1_792_000_000 + 86_400)
 
-    private func makeTools(read: Bool = true, send: Bool = true, organize: Bool = true, arrange: Bool = true, marker: MCPMailReadMarking? = nil, draftWindow: Bool = true) -> MCPMailTools {
+    private func makeTools(
+        read: Bool = true, send: Bool = true, organize: Bool = true, arrange: Bool = true, marker: MCPMailReadMarking? = nil, draftWindow: Bool = true,
+        accessGuard: MCPAccessGuard? = nil
+    ) -> MCPMailTools {
         if marker == nil, mailService == nil {
             mailService = MailService(backend: service, defaults: UserDefaults(suiteName: "mcp-mail-\(UUID().uuidString)")!)
         }
         return MCPMailTools(
             calendarService: service,
-            accessGuard: MCPAccessGuard(calendarService: service),
+            accessGuard: accessGuard ?? MCPAccessGuard(calendarService: service),
             confirmer: confirmer,
             handOff: { [weak self] in self?.handedOff.append($0) },
             canHandOff: { draftWindow },
@@ -352,6 +362,82 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertNil(found["note"])
         let calls = await provider.calls
         XCTAssertFalse(calls.contains("folders"), "an empty page needs no folder names")
+    }
+
+    // MARK: - Search: words
+
+    /// A search of several words that finds nothing, as on the live mailbox: Exchange wants every
+    /// word in a result, and each word alone finds something (or nothing).
+    private func answerWordSearches(_ hits: [String: Int]) async {
+        let results = searchResults()
+        await provider.set(conversations: [], threads: [])
+        await provider.setSearch { query, offset, _ in
+            let found = hits[query.text.lowercased()] ?? 0
+            return MailSearchPage(
+                conversations: Array(results.prefix(min(found, 25))), moreAvailable: found > 25,
+                searchTerms: query.text.split(separator: " ").map { $0.lowercased() }, refiners: [], offset: offset
+            )
+        }
+    }
+
+    func testWordsThatFindNothingTogetherGetCountsOneByOne() async throws {
+        await answerWordSearches(["панели": 3, "релиз": 40])
+        let found = try object(await makeTools().call(name: "search_mail", arguments: ["query": "встройка панели ОПТИ релиз", "since": "2026-10-01"], client: nil))
+        XCTAssertEqual(found["threads"]?.arrayValue?.count, 0)
+        XCTAssertEqual(found["per_word"], [
+            ["word": "встройка", "count": 0],
+            ["word": "панели", "count": 3],
+            ["word": "ОПТИ", "count": 0],
+            ["word": "релиз", "count": 25, "more_available": true],
+        ])
+        XCTAssertTrue(found["note"]?.stringValue?.contains("every word") == true)
+        XCTAssertTrue(found["note"]?.stringValue?.contains("OR") == true)
+        let searches = await provider.searches
+        XCTAssertEqual(searches.map(\.text), ["встройка панели ОПТИ релиз", "встройка", "панели", "ОПТИ", "релиз"])
+        XCTAssertTrue(searches.allSatisfy { $0.receivedFrom != nil }, "each word is checked with the same filters")
+    }
+
+    func testOnlyFourWordsAreCheckedOneByOne() async throws {
+        await answerWordSearches(["бюджет": 2])
+        let found = try object(await makeTools().call(name: "search_mail", arguments: ["query": "бюджет платформа 2027 защита план"], client: nil))
+        XCTAssertEqual(found["per_word"]?.arrayValue?.count, 4)
+        XCTAssertTrue(found["note"]?.stringValue?.contains("first 4 words") == true)
+        let searches = await provider.searches
+        XCTAssertEqual(searches.count, 5)
+    }
+
+    /// The checks count against the client's limit: without room for all of them only the note
+    /// comes, and Exchange gets no more requests.
+    func testWordCountsGiveWayToTheRequestLimit() async throws {
+        await answerWordSearches(["панели": 3])
+        let guardian = MCPAccessGuard(calendarService: service)
+        XCTAssertNil(guardian.permitRequest(count: MCPAccessGuard.requestsPerMinute - 3))
+        let found = try object(await makeTools(accessGuard: guardian).call(name: "search_mail", arguments: ["query": "встройка панели ОПТИ"], client: nil))
+        XCTAssertNil(found["per_word"])
+        XCTAssertTrue(found["note"]?.stringValue?.contains("every word") == true)
+        let searches = await provider.searches
+        XCTAssertEqual(searches.count, 1)
+    }
+
+    func testOneWordOrSearchSyntaxGetsNoWordCounts() async throws {
+        await answerWordSearches([:])
+        let tools = makeTools()
+        for query in ["встройка", "встройка OR ОПТИ", "\"встройка панели\"", "subject:релиз панели"] {
+            let found = try object(await tools.call(name: "search_mail", arguments: ["query": .string(query)], client: nil))
+            XCTAssertNil(found["per_word"], query)
+            XCTAssertNil(found["note"], query)
+        }
+        let searches = await provider.searches
+        XCTAssertEqual(searches.count, 4)
+    }
+
+    func testFoundResultsGetNoWordCounts() async throws {
+        await answerWordSearches(["панели опти": 2])
+        let found = try object(await makeTools().call(name: "search_mail", arguments: ["query": "панели ОПТИ"], client: nil))
+        XCTAssertEqual(found["threads"]?.arrayValue?.count, 2)
+        XCTAssertNil(found["per_word"])
+        let searches = await provider.searches
+        XCTAssertEqual(searches.count, 1)
     }
 
     /// Folder names come once: a second search with known folders asks Exchange for nothing more.
