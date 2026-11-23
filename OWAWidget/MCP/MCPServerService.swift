@@ -48,6 +48,14 @@ final class MCPServerService: ObservableObject {
     /// Live connections, for change notifications.
     private var connections: [UUID: MCPConnection] = [:]
     private var pendingPush = PendingPush()
+
+    /// What one connection hears of a push. `mayRead`: the client may read now, as for any tool
+    /// call; `mailAllowed`: it may also read mail. `nil`: nothing.
+    nonisolated static func delivery(_ pending: PendingPush, mayRead: Bool, mailAllowed: Bool) -> (resources: Bool, toolList: Bool)? {
+        let ring = mayRead && (pending.calendar || pending.settings || (pending.mail && mailAllowed))
+        guard ring || pending.tools else { return nil }
+        return (ring, pending.tools)
+    }
     private var pushTask: Task<Void, Never>?
     /// Changes arrive in bursts (a sync, an inbox page): one notification per burst.
     static let pushDelay: Duration = .seconds(2)
@@ -395,7 +403,7 @@ final class MCPServerService: ObservableObject {
     // MARK: - Change notifications
 
     /// What the next push carries: changes in the feed, switches, the tool list.
-    private struct PendingPush {
+    struct PendingPush: Equatable, Sendable {
         var calendar = false
         var mail = false
         var settings = false
@@ -433,11 +441,12 @@ final class MCPServerService: ObservableObject {
         pushTask = nil
         for (clientID, connection) in connections {
             // Access taken away after subscribing: the subscription stays, the ringing stops.
-            let ring = mayReadQuietly(clientID)
-                && (pending.calendar || pending.settings || (pending.mail && changesMailAccess(clientID) == .allowed))
-            guard ring || pending.tools else { continue }
-            let tools = pending.tools
-            Task { await connection.notify(resources: ring, toolList: tools) }
+            guard let delivery = Self.delivery(
+                pending,
+                mayRead: mayReadQuietly(clientID),
+                mailAllowed: changesMailAccess(clientID) == .allowed
+            ) else { continue }
+            Task { await connection.notify(resources: delivery.resources, toolList: delivery.toolList) }
         }
     }
 

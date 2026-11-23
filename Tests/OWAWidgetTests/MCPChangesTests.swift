@@ -370,6 +370,25 @@ final class MCPChangesTests: XCTestCase {
         XCTAssertEqual(second["changes"]?.arrayValue?.count, 0, "nor an entry: the new value is in `settings`")
     }
 
+    func testPushReachesOnlyClientsThatMayHearIt() {
+        typealias Push = MCPServerService.PendingPush
+        func delivery(_ push: Push, mayRead: Bool, mail: Bool) -> [Bool]? {
+            MCPServerService.delivery(push, mayRead: mayRead, mailAllowed: mail).map { [$0.resources, $0.toolList] }
+        }
+        let switches = Push(settings: true)
+        XCTAssertEqual(delivery(switches, mayRead: true, mail: false), [true, false], "a switch rings every client that may read")
+        XCTAssertNil(delivery(switches, mayRead: false, mail: true), "not one the user has not allowed")
+
+        let tools = Push(settings: true, tools: true)
+        XCTAssertEqual(delivery(tools, mayRead: false, mail: false), [false, true], "the tool list is anyone's, like tools/list")
+
+        let mail = Push(mail: true)
+        XCTAssertEqual(delivery(mail, mayRead: true, mail: true), [true, false])
+        XCTAssertNil(delivery(mail, mayRead: true, mail: false), "mail rings only with mail consent")
+        XCTAssertNil(delivery(Push(calendar: true), mayRead: false, mail: true))
+        XCTAssertNil(delivery(Push(), mayRead: true, mail: true))
+    }
+
     func testWhichTogglesRingAndWhichChangeTheToolList() {
         let base = MCPSettings(serverEnabled: true)
         func push(_ change: (inout MCPSettings) -> Void, from old: MCPSettings = base) -> MCPSettingsPush {
