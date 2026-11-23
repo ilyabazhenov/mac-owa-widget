@@ -91,16 +91,36 @@ final class CalendarServiceReplyTests: XCTestCase {
 
         nonisolated let account: CalendarAccount
         private(set) var calls: [Call] = []
+        /// What the server holds, answers included: a series answer starts a sync in the
+        /// background, and it must find the meetings (with their new answers) rather than none.
+        private var stored: [CalendarEvent]
 
-        init(account: CalendarAccount) { self.account = account }
+        init(account: CalendarAccount, events: [CalendarEvent] = []) {
+            self.account = account
+            self.stored = events
+        }
 
-        func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] { [] }
+        func fetchEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] { stored }
         func validateCredentials() async throws {}
         func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {
             calls.append(Call(kind: "ews", eventID: event.id, series: false, notes: "", send: true))
+            record(action, for: event, series: false)
         }
         func respondToCalendarEvent(_ event: CalendarEvent, action: MeetingResponseAction, series: Bool, notes: String, sendResponse: Bool) async throws {
             calls.append(Call(kind: "owa", eventID: event.id, series: series, notes: notes, send: sendResponse))
+            record(action, for: event, series: series)
+        }
+
+        private func record(_ action: MeetingResponseAction, for event: CalendarEvent, series: Bool) {
+            let type: MeetingResponseType = switch action {
+            case .accept: .accepted
+            case .tentative: .tentative
+            case .decline: .declined
+            }
+            stored = stored.map { item in
+                let hit = series ? (item.seriesID != nil && item.seriesID == event.seriesID) : item.id == event.id
+                return hit ? item.withResponseType(type) : item
+            }
         }
     }
 
@@ -142,30 +162,35 @@ final class CalendarServiceReplyTests: XCTestCase {
     }
 
     func testEachChoiceGoesThroughTheRightRequest() async throws {
-        let provider = RecordingProvider(account: account)
         let one = event("a", series: "s")
+        let provider = RecordingProvider(account: account, events: [one])
         let service = makeService(provider, events: [one])
 
         try await service.reply(to: one, action: .accept, options: MeetingReplyOptions())
-        try await service.reply(to: one, action: .accept, options: MeetingReplyOptions(series: true, comment: " Late "))
         try await service.reply(to: one, action: .decline, options: MeetingReplyOptions(notifyOrganizer: false, comment: "Late"))
+        // The series answer goes last: it starts a sync in the background, which may land in
+        // `events` at any later suspension point. Read the answer before there is one.
+        try await service.reply(to: one, action: .accept, options: MeetingReplyOptions(series: true, comment: " Late "))
+        let shown = service.events.first?.responseType
 
         let calls = await provider.calls
         XCTAssertEqual(calls, [
             .init(kind: "ews", eventID: "a", series: false, notes: "", send: true),
-            .init(kind: "owa", eventID: "a", series: true, notes: "Late", send: true),
             .init(kind: "owa", eventID: "a", series: false, notes: "", send: false),
+            .init(kind: "owa", eventID: "a", series: true, notes: "Late", send: true),
         ])
-        XCTAssertEqual(service.events.first?.responseType, .declined)
+        XCTAssertEqual(shown, .accepted)
     }
 
     func testFoldedSeriesIsOneSeriesAnswerAndUnrelatedMeetingsAreAnsweredInTurn() async throws {
-        let provider = RecordingProvider(account: account)
         let series = [event("a", series: "s"), event("b", series: "s")]
         let oneOffs = [event("x"), event("y")]
+        let provider = RecordingProvider(account: account, events: series + oneOffs)
         let service = makeService(provider, events: series + oneOffs)
 
         let seriesAnswer = try await service.reply(toInvitation: series, action: .accept, notifyOrganizer: false)
+        // Read before the next suspension point: the series answer starts a sync in the background.
+        let shown = service.events.filter { $0.seriesID == "s" }.map(\.responseType)
         let oneByOne = try await service.reply(toInvitation: oneOffs, action: .tentative, notifyOrganizer: true)
         // The panel's line says "for the whole series" only for a series answer.
         XCTAssertTrue(seriesAnswer)
@@ -177,7 +202,7 @@ final class CalendarServiceReplyTests: XCTestCase {
             .init(kind: "ews", eventID: "x", series: false, notes: "", send: true),
             .init(kind: "ews", eventID: "y", series: false, notes: "", send: true),
         ])
-        XCTAssertEqual(service.events.filter { $0.seriesID == "s" }.map(\.responseType), [.accepted, .accepted])
+        XCTAssertEqual(shown, [.accepted, .accepted])
     }
 
     func testNotifyingTheOrganizerIsOnUntilTheUserTurnsItOff() {
