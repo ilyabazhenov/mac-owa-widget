@@ -64,10 +64,23 @@ final class MCPMailToolsTests: XCTestCase {
         func mailFolderCounts(_ folders: [MailFolderRef]) async throws -> [MailFolder] {
             [MailFolder(id: "F-INBOX-FULL-ID-0000000000", distinguishedID: "inbox", displayName: "Inbox", parentID: nil, unreadCount: 7, totalCount: 10, childFolderCount: 0)]
         }
+        /// Pages of `listPageSize` conversations, as Exchange's `FindConversation`; `nil`: one page with all.
+        var listPageSize: Int?
+        func setListPageSize(_ size: Int?) { listPageSize = size }
+        private(set) var listCursors: [MailListCursor] = []
         func mailConversations(in folder: MailFolderRef, cursor: MailListCursor, filter: MailListFilter) async throws -> MailConversationPage {
             calls.append("list:\(filter.rawValue)")
+            listCursors.append(cursor)
             let list = filter == .unread ? conversations.filter(\.isUnread) : conversations
-            return MailConversationPage(conversations: list, totalInView: list.count, nextCursor: nil)
+            guard let listPageSize else { return MailConversationPage(conversations: list, totalInView: list.count, nextCursor: nil) }
+            var start = 0
+            if case .after(let key) = cursor, let index = list.firstIndex(where: { $0.instanceKey == key }) { start = index + 1 }
+            let page = Array(list[start..<min(start + listPageSize, list.count)])
+            let more = start + page.count < list.count
+            return MailConversationPage(
+                conversations: page, totalInView: list.count,
+                nextCursor: more ? page.last?.instanceKey.map { .after(instanceKey: $0) } : nil
+            )
         }
         func mailItems(in folder: MailFolderRef, cursor: MailListCursor, filter: MailListFilter, count: Int) async throws -> MailItemPage {
             MailItemPage(items: [], totalInView: 0, nextCursor: nil)
@@ -507,6 +520,64 @@ final class MCPMailToolsTests: XCTestCase {
                 isFlagged: false, isProtected: false, instanceKey: "KEY-M\(index)", parentFolderID: "F-INBOX-FULL-ID-0000000000"
             )
         }
+    }
+
+    func testListSplitsPeopleAndSystems() async throws {
+        await provider.set(conversations: mixedResults(12, peopleEvery: 4), threads: [])
+        var rows: [String: [JSONValue]] = [:]
+        for only in ["", "people", "systems"] {
+            let arguments: [String: JSONValue] = only.isEmpty ? [:] : ["only": .string(only)]
+            let found = try object(await makeTools().call(name: "list_mail", arguments: arguments, client: nil))
+            rows[only] = try XCTUnwrap(found["threads"]?.arrayValue)
+        }
+        let all = rows[""] ?? [], people = rows["people"] ?? [], systems = rows["systems"] ?? []
+        XCTAssertEqual(all.count, 12)
+        XCTAssertEqual(people.count, 3)
+        XCTAssertEqual(systems.count, 9)
+        XCTAssertTrue(people.allSatisfy { $0["from_system"] == nil }, "\(people)")
+        XCTAssertTrue(systems.allSatisfy { $0["from_system"] == true }, "\(systems)")
+        XCTAssertEqual(systems.first?["subject"]?.stringValue, "[confluence] Тестирование DR-решений")
+    }
+
+    /// Two pages with nothing that matches `only` still give a cursor, after the last
+    /// conversation looked at: the folder goes on, and the next call does not read them again.
+    func testFilteredListGoesOnAfterPagesWithNoMatch() async throws {
+        await provider.set(conversations: mixedResults(30, peopleEvery: 25), threads: [])
+        await provider.setListPageSize(10)
+        let tools = makeTools()
+        let first = try object(await tools.call(name: "list_mail", arguments: ["only": "people", "limit": 5], client: nil))
+        let firstRows = try XCTUnwrap(first["threads"]?.arrayValue)
+        XCTAssertEqual(firstRows.count, 1, "only the first conversation, index 0, is from a person in two pages")
+        let cursor = try XCTUnwrap(first["next_cursor"]?.stringValue)
+        XCTAssertNotNil(first["note"]?.stringValue)
+        let second = try object(await tools.call(name: "list_mail", arguments: ["only": "people", "limit": 5, "cursor": .string(cursor)], client: nil))
+        XCTAssertEqual(second["threads"]?.arrayValue?.map { $0["subject"]?.stringValue }, ["Встройка панели: шаг 25"])
+        XCTAssertNil(second["next_cursor"], "the folder ended")
+        let cursors = await provider.listCursors
+        XCTAssertEqual(cursors, [.first, .after(instanceKey: "KEY-M9"), .after(instanceKey: "KEY-M19")])
+    }
+
+    /// A full `limit` in the middle of a page goes on right after the last conversation given,
+    /// even when a later one on the page is older than `since`.
+    func testFullListGoesOnInTheMiddleOfAPage() async throws {
+        // 0…20 are of 14 October (Moscow), 21 and later older: one page holds them all.
+        await provider.set(conversations: mixedResults(30, peopleEvery: 1), threads: [])
+        let found = try object(await makeTools().call(name: "list_mail", arguments: ["limit": 4, "since": "2026-10-14"], client: nil))
+        XCTAssertEqual(found["threads"]?.arrayValue?.count, 4)
+        XCTAssertNotNil(found["next_cursor"]?.stringValue)
+        XCTAssertNil(found["note"])
+    }
+
+    func testSystemsOnlySearchLeavesOutPeople() async throws {
+        await provider.set(conversations: mixedResults(20, peopleEvery: 4), threads: [])
+        let found = try object(await makeTools().call(name: "search_mail", arguments: ["query": "панель", "only": "systems", "limit": 10], client: nil))
+        let rows = try XCTUnwrap(found["threads"]?.arrayValue)
+        XCTAssertEqual(rows.count, 10)
+        XCTAssertTrue(rows.allSatisfy { $0["from_system"] == true }, "\(rows)")
+        XCTAssertEqual(found["skipped_from_people"], 4, "people at 0, 4, 8, 12 come before the 10th notification")
+        XCTAssertNil(found["skipped_notifications"])
+        let bad = await makeTools().call(name: "search_mail", arguments: ["query": "панель", "only": "robots"], client: nil)
+        XCTAssertRefusal(bad, .invalidArgument)
     }
 
     func testPeopleOnlyLeavesOutNotificationsAndReadsTheNextPage() async throws {

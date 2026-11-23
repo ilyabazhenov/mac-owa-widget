@@ -731,12 +731,13 @@ final class MCPMailTools {
         let unreadOnly = arguments["unread_only"]?.boolValue ?? false
         let limit = try optionalInt(arguments, "limit", range: 1...50) ?? 20
         let only = arguments["only"]?.stringValue
-        guard only == nil || only == "people" || only == "awaiting_reply" else {
-            throw ToolError("`only` must be people or awaiting_reply")
+        guard only == nil || only == "people" || only == "systems" || only == "awaiting_reply" else {
+            throw ToolError("`only` must be people, systems or awaiting_reply")
         }
         let keep: (MailConversationSummary) -> Bool = { conversation in
             switch only {
             case "people": !conversation.isAutomated
+            case "systems": conversation.isAutomated
             case "awaiting_reply": !conversation.isAutomated && !conversation.userHasReplied
             default: true
             }
@@ -751,29 +752,49 @@ final class MCPMailTools {
         var collected: [MailConversationSummary] = []
         var next: MailListCursor? = cursor
         var reachedSince = false
+        var leftOnPage = false
+        var pagesRead = 0
+        var skipped = 0
+        // The cursor goes on after the last conversation looked at, kept or not: with `only`,
+        // two pages may keep nothing, and going on after the last kept one would read them again
+        // (or, with none kept, leave no cursor and make the folder look done).
+        var lastLooked: String?
         var total: Int?
         // At most two pages per call: the model asks again with `next_cursor` for more.
-        for _ in 0..<2 {
+        pages: for _ in 0..<2 {
             guard let page = next, collected.count < limit, !reachedSince else { break }
             let filter: MailListFilter = unreadOnly ? .unread : .all
             let loaded = try await request(account, context: "mcp.mail.list") { try await $0.mailConversations(in: folder, cursor: page, filter: filter) }
+            pagesRead += 1
             total = total ?? loaded.totalInView
+            next = loaded.nextCursor
             for conversation in loaded.conversations {
+                guard collected.count < limit else {
+                    leftOnPage = true
+                    break pages
+                }
                 if let since, let date = conversation.lastDelivery, date < since {
                     reachedSince = true
-                    break
+                    break pages
                 }
-                if collected.count < limit, keep(conversation) { collected.append(conversation) }
+                lastLooked = conversation.instanceKey
+                if keep(conversation) { collected.append(conversation) } else { skipped += 1 }
             }
-            next = loaded.nextCursor
         }
 
         var result = commonFields(coder, account)
         let labels = FolderLabels(try? await folders(account, load: false), listedInbox: folder == .distinguished(.inbox))
         result["threads"] = .array(collected.map { conversationJSON($0, coder, folders: labels) })
         if let total { result["total_in_folder"] = .int(Int64(total)) }
-        if !reachedSince, let last = collected.last?.instanceKey, next != nil || collected.count == limit {
-            result["next_cursor"] = .string(handle(last))
+        let hasMore = !reachedSince && (next != nil || leftOnPage)
+        if hasMore, let lastLooked {
+            result["next_cursor"] = .string(handle(lastLooked))
+            if only != nil, collected.count < limit {
+                result["note"] = .string(
+                    "Read \(pagesRead) pages of the folder, the most for one call: left out \(skipped) conversations that do not match `only`, kept \(collected.count). "
+                        + "Older conversations were not looked at yet: go on with `next_cursor`."
+                )
+            }
         }
         return .success(result)
     }
@@ -802,13 +823,14 @@ final class MCPMailTools {
             offset = value
         }
         let only = arguments["only"]?.stringValue
-        guard only == nil || only == "people" else { throw ToolError("`only` must be people") }
+        guard only == nil || only == "people" || only == "systems" else { throw ToolError("`only` must be people or systems") }
         let peopleOnly = only == "people"
+        let systemsOnly = only == "systems"
         let cap = OWAMailPayloads.searchResultsCap
 
         // Pages until `limit` conversations are collected, at most `maxSearchPages` of them:
         // Exchange gives at most 25 rows a request, and with `only: people` notifications take
-        // many of them. The first request starts a session (and may end an older one); the
+        // many of them (and people's mail, with `only: systems`). The first request starts a session (and may end an older one); the
         // next pages go on in it and never start one: the session is shared with the app's mail
         // window and other calls, which may end or replace it. A later page the request limit
         // does not allow, that fails or that finds no session ends the answer early with a
@@ -823,7 +845,7 @@ final class MCPMailTools {
         var stoppedEarly = false
         while more, kept.count < limit, pagesRead < Self.maxSearchPages, position < cap {
             let wanted = limit - kept.count
-            let count = min(peopleOnly ? max(wanted, Self.searchPageRows) : wanted, cap - position)
+            let count = min(only != nil ? max(wanted, Self.searchPageRows) : wanted, cap - position)
             let pageQuery = query
             let pageOffset = position
             let page: MailSearchPage
@@ -845,7 +867,7 @@ final class MCPMailTools {
             for conversation in page.conversations {
                 guard kept.count < limit else { break }
                 looked += 1
-                if peopleOnly, conversation.isAutomated {
+                if (peopleOnly && conversation.isAutomated) || (systemsOnly && !conversation.isAutomated) {
                     skipped += 1
                 } else {
                     kept.append(conversation)
@@ -890,22 +912,25 @@ final class MCPMailTools {
         let hasMore = more && position < cap
         result["more_available"] = .bool(hasMore)
         if hasMore { result["next_cursor"] = .string(String(position)) }
-        if peopleOnly, skipped > 0 { result["skipped_notifications"] = .int(Int64(skipped)) }
+        if skipped > 0 { result[peopleOnly ? "skipped_notifications" : "skipped_from_people"] = .int(Int64(skipped)) }
         if more, position >= cap {
             result["note"] = .string("Exchange returns at most \(cap) results per search: narrow it with `from`, `since`/`until` or `folder`.")
-        } else if peopleOnly, hasMore, kept.count < limit {
+        } else if only != nil, hasMore, kept.count < limit {
             let reason = stoppedEarly
                 ? "Stopped early (the request limit, or Exchange did not answer)"
                 : "Read \(pagesRead) pages of results, the most for one call"
+            let what = peopleOnly
+                ? "left out \(skipped) notifications and other automated mail, kept \(kept.count) conversations from people"
+                : "left out \(skipped) conversations from people, kept \(kept.count) from systems"
             result["note"] = .string(
-                "\(reason): left out \(skipped) notifications and other automated mail, kept \(kept.count) conversations from people. "
+                "\(reason): \(what). "
                     + "Go on with `next_cursor`, or narrow the search (`since`/`until`, `from`, other words)."
             )
         }
         if !page.searchTerms.isEmpty { result["matched_terms"] = .array(page.searchTerms.map(JSONValue.string)) }
         if offset == 0, page.conversations.isEmpty, kept.isEmpty {
             let words = MCPSearchWords.hintWords(query.text)
-            if !words.isEmpty { await addWordHints(words, query: query, peopleOnly: peopleOnly, account: account, to: &result) }
+            if !words.isEmpty { await addWordHints(words, query: query, only: only, account: account, to: &result) }
         }
         let suggestions: [JSONValue] = refiners.compactMap { refiner in
             switch refiner {
@@ -923,12 +948,12 @@ final class MCPMailTools {
     }
 
     /// Why a search of several words found nothing: Exchange wants every word in a result.
-    /// `per_word` says what each word finds alone with the same filters (with `only: people`,
-    /// only conversations from people count), one request a word in the search's session,
+    /// `per_word` says what each word finds alone with the same filters (with `only`, only the
+    /// conversations it keeps count), one request a word in the search's session,
     /// counted against the client's limit; when the limit leaves no room for all of them, or a
     /// check fails or finds no session, only the `note` says what to do.
     private func addWordHints(
-        _ words: [String], query: MailSearchQuery, peopleOnly: Bool, account: CalendarAccount, to result: inout [String: JSONValue]
+        _ words: [String], query: MailSearchQuery, only: String?, account: CalendarAccount, to result: inout [String: JSONValue]
     ) async {
         let checked = Array(words.prefix(MCPSearchWords.maxChecked))
         let lead = "No result contains all the words: Exchange returns only results with every word of the query. "
@@ -943,7 +968,11 @@ final class MCPMailTools {
                     counts = []
                     break
                 }
-                let found = peopleOnly ? page.conversations.filter { !$0.isAutomated }.count : page.conversations.count
+                let found = switch only {
+                case "people": page.conversations.filter { !$0.isAutomated }.count
+                case "systems": page.conversations.filter(\.isAutomated).count
+                default: page.conversations.count
+                }
                 counts.append((word, found, page.moreAvailable && !page.conversations.isEmpty))
             }
         }
@@ -956,7 +985,11 @@ final class MCPMailTools {
             if entry.more { item["more_available"] = true }
             return .object(item)
         })
-        let whose = peopleOnly ? " (conversations from people only, as with `only: people`)" : ""
+        let whose = switch only {
+        case "people": " (conversations from people only, as with `only: people`)"
+        case "systems": " (conversations from systems only, as with `only: systems`)"
+        default: ""
+        }
         let unchecked = words.count > checked.count ? " Only the first \(checked.count) words were checked." : ""
         if counts.allSatisfy({ $0.count == 0 && !$0.more }) {
             let filtered = !query.from.isEmpty || query.hasAttachments != nil || query.receivedFrom != nil || query.receivedTo != nil

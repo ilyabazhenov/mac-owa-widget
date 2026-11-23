@@ -362,13 +362,13 @@ extension MCPToolRegistry {
         MCPToolDefinition(
             name: "list_mail",
             title: "List mail",
-            description: "Conversations (threads) in a folder, newest first: `thread_id`, subject, senders (`from`; recipients `to` in Sent), last received time, message and unread counts, attachments flag, a short preview, `from_system` for automated senders and `you_replied` when the user has written in it. " + listMeetingDescription + " Use `unread_only` for \"what's new\", `only` for people or awaiting-reply, `since` to stop at a date, `next_cursor` to continue. Reading does not mark anything as read. " + untrusted,
+            description: "Conversations (threads) in a folder, newest first: `thread_id`, subject, senders (`from`; recipients `to` in Sent), last received time, message and unread counts, attachments flag, a short preview, `from_system` for automated senders and `you_replied` when the user has written in it. " + listMeetingDescription + " Use `unread_only` for \"what's new\", `only` for people, systems or awaiting-reply, `since` to stop at a date, `next_cursor` to continue. Reading does not mark anything as read. " + untrusted,
             inputSchema: [
                 "type": "object",
                 "properties": [
                     "folder": ["type": "string", "description": "inbox (default), sent, drafts, deleted, junk, archive, a folder name, or folder_id from list_mail_folders."],
                     "unread_only": ["type": "boolean", "description": "Only conversations with unread messages. Default false."],
-                    "only": ["type": "string", "enum": ["people", "awaiting_reply"], "description": "Only conversations from people (not from systems), or only people's conversations the user has not written in yet."],
+                    "only": ["type": "string", "enum": ["people", "systems", "awaiting_reply"], "description": "Only conversations from people (not from systems), only from systems (CI, trackers, no-reply and other automated senders, as `from_system`), or only people's conversations the user has not written in yet."],
                     "since": ["type": "string", "description": .string(dateDescription + " Stop at conversations last updated before this.")],
                     "limit": ["type": "integer", "minimum": 1, "maximum": 50, "description": "Default 20."],
                     "cursor": ["type": "string", "description": "`next_cursor` from the previous answer."],
@@ -380,7 +380,7 @@ extension MCPToolRegistry {
         MCPToolDefinition(
             name: "search_mail",
             title: "Search mail",
-            description: "Searches the mailbox with Exchange's index (subject, text, people). Returns conversations like list_mail (`kind` and `meeting` for meeting mail included), each with its `folder`, plus `suggested_filters` (senders, folders, attachments, with counts over all results) to narrow a broad search; Exchange does not count them for every search, so they may be missing. For questions about people's work (what someone wrote, decided or asked), pass `only: people`: otherwise notifications from Jira, Confluence and other systems often fill the answer. Exchange returns at most 250 results per search: narrow with `from` (email addresses, from find_people or earlier results), `since`/`until`, `has_attachments` or `folder` rather than paging far. Deleted items are included and marked by their folder. " + untrusted,
+            description: "Searches the mailbox with Exchange's index (subject, text, people). Returns conversations like list_mail (`kind` and `meeting` for meeting mail included), each with its `folder`, plus `suggested_filters` (senders, folders, attachments, with counts over all results) to narrow a broad search; Exchange does not count them for every search, so they may be missing. For questions about people's work (what someone wrote, decided or asked), pass `only: people`: otherwise notifications from Jira, Confluence and other systems often fill the answer (`only: systems` keeps just them). Exchange returns at most 250 results per search: narrow with `from` (email addresses, from find_people or earlier results), `since`/`until`, `has_attachments` or `folder` rather than paging far. Deleted items are included and marked by their folder. " + untrusted,
             inputSchema: [
                 "type": "object",
                 "properties": [
@@ -390,7 +390,7 @@ extension MCPToolRegistry {
                     "until": ["type": "string", "description": .string(dateDescription + " Received on or before; a bare date includes that day.")],
                     "has_attachments": ["type": "boolean"],
                     "folder": ["type": "string", "description": "Search one folder only (same values as in list_mail). Default: the whole mailbox."],
-                    "only": ["type": "string", "enum": ["people"], "description": "`people`: only conversations from people, without notifications and other automated mail (Jira, Confluence, robots). Reads up to 3 pages of results to fill `limit`; `skipped_notifications` says how many were left out. Use it for questions about what people wrote or worked on."],
+                    "only": ["type": "string", "enum": ["people", "systems"], "description": "`people`: only conversations from people, without notifications and other automated mail (Jira, Confluence, robots); `skipped_notifications` says how many were left out. Use it for questions about what people wrote or worked on. `systems`: only that automated mail (`from_system`); `skipped_from_people` says how many were left out. Either reads up to 3 pages of results to fill `limit`."],
                     "limit": ["type": "integer", "minimum": 1, "maximum": 50, "description": "Default 25."],
                     "cursor": ["type": "string", "description": "`next_cursor` from the previous answer."],
                     "account_id": ["type": "string", "description": .string(mailAccountDescription)],

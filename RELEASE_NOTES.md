@@ -1,3 +1,15 @@
+## Unreleased
+
+### RU
+
+- **MCP: только письма систем.** У `list_mail` и `search_mail` новый `only: "systems"` — обратный `only: "people"`: только CI, трекеры, no-reply и другая автоматическая почта (`from_system`). `search_mail` пишет в `skipped_from_people`, сколько писем людей пропущено.
+- **MCP: `list_mail` с фильтром не теряет продолжение.** Если на двух прочитанных страницах папки не нашлось ни одной подходящей под `only` цепочки, ответ был пустым и без `next_cursor`, и ассистент считал, что писем больше нет. Теперь курсор идёт после последней просмотренной цепочки, а `note` объясняет, что читать дальше. Полный `limit` вместе с `since` тоже больше не теряет курсор из-за более старого письма ниже на странице.
+
+### EN
+
+- **MCP: system mail only.** `list_mail` and `search_mail` take a new `only: "systems"`, the reverse of `only: "people"`: just CI, trackers, no-reply and other automated mail (`from_system`). `search_mail` says in `skipped_from_people` how many people's conversations it left out.
+- **MCP: a filtered `list_mail` keeps its place.** When the two folder pages it read held no conversation matching `only`, the answer came back empty and without `next_cursor`, and the assistant took the folder as done. The cursor now goes on after the last conversation looked at, and a `note` says to read on. A full `limit` with `since` no longer loses the cursor because of an older message further down the page.
+
 ## v1.0.63 - 2026-11-23
 
 ### RU
