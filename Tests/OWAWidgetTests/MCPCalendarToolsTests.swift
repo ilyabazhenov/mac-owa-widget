@@ -1392,6 +1392,113 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertEqual(service.events.first?.responseType, .notResponded)
     }
 
+    // MARK: - respond_to_meeting by message_id
+
+    /// Stands in for the mailbox: the messages by handle, as `MCPMailTools` would read them.
+    private final class FakeMeetingMail: MCPMeetingMail {
+        var messages: [String: MailMessage] = [:]
+        var error: MCPToolError?
+        let accountID: UUID
+        private(set) var reads: [String] = []
+        init(accountID: UUID) { self.accountID = accountID }
+        func meetingMessage(_ handle: String, accountID: String?) async throws -> (message: MailMessage, accountID: UUID) {
+            reads.append(handle)
+            if let error { throw error }
+            guard let message = messages[handle] else { throw MCPToolError(.notFound, "Message \(handle) not found.") }
+            return (message, self.accountID)
+        }
+    }
+
+    private func mailMessage(_ kind: MailItemKind, subject: String, start: Date, minutes: Int = 60, calendarItemID: String?) -> MailMessage {
+        MailMessage(
+            ref: MailItemRef(id: "MSG-\(subject)", changeKey: nil), conversationID: "CONV", parentFolderID: "INBOX", kind: kind,
+            subject: subject, from: MailAddress(name: "Grace Miller", email: "g.miller@example.com"), to: [], cc: [], bcc: [],
+            hiddenRecipientCount: 0, received: now, sent: nil, isRead: true, isDraft: false, importance: .normal, bodyHTML: "",
+            preview: "", attachments: [], categories: [], isFlagged: false, actions: [],
+            meeting: MailMeetingInfo(start: start, end: start.addingTimeInterval(TimeInterval(minutes * 60)), location: nil, associatedCalendarItemID: calendarItemID),
+            internetMessageID: nil
+        )
+    }
+
+    /// An invitation to a meeting beyond the sync window: its period is loaded from the calendar
+    /// as list_events would, and the answer goes through the same panel and request. A repeat is
+    /// answered from the first one even though a decline would have taken the meeting away.
+    func testRespondByMessageIDLoadsAMeetingOutsideTheSyncWindow() async {
+        let far = event("far", day: 10, hour: 10, response: .notResponded, organizer: "Grace Miller", month: 12)
+        let provider = DetailsProvider(account: exchange, archive: [far])
+        let confirmer = FakeResponseConfirmer(.confirmed)
+        let (tools, _) = makeTools(events: [], provider: provider, responseConfirmer: confirmer)
+        let mail = FakeMeetingMail(accountID: exchange.id)
+        mail.messages["m1"] = mailMessage(.meetingRequest, subject: "far", start: far.startDate, calendarItemID: "far")
+        tools.meetingMail = mail
+
+        let result = await tools.call(name: "respond_to_meeting", arguments: ["message_id": "m1", "response": "decline"], client: "Lotsman")
+        XCTAssertFalse(result.isError, result.errorMessage ?? "")
+        XCTAssertEqual(result.structured?["responded"], true)
+        XCTAssertEqual(result.structured?["event_id"]?.stringValue, MCPEventID.short("far"))
+        XCTAssertEqual(result.structured?["my_response"], "declined")
+        XCTAssertEqual(confirmer.proposals.first?.title, "far")
+        XCTAssertEqual(confirmer.proposals.first?.client, "Lotsman")
+        let fetches = await provider.fetchCalls
+        XCTAssertFalse(fetches.isEmpty, "the meeting's period was loaded")
+        let responses = await provider.responses
+        XCTAssertEqual(responses.map(\.id), ["far"])
+        XCTAssertEqual(responses.first?.action, .decline)
+
+        let again = await tools.call(name: "respond_to_meeting", arguments: ["message_id": "m1", "response": "decline"])
+        XCTAssertEqual(again.structured?["duplicate"], true)
+        XCTAssertEqual(mail.reads, ["m1"], "the repeat reads nothing")
+        let after = await provider.responses
+        XCTAssertEqual(after.count, 1)
+    }
+
+    /// Inside the sync window a series invitation (pointing at the series, which the calendar
+    /// view never lists) finds its occurrence by time and title.
+    func testRespondByMessageIDFindsTheOccurrenceOfASeries() async {
+        let occurrence = event("weekly-1", day: 6, hour: 10, response: .notResponded, organizer: "Grace Miller", series: "uid-w")
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeResponseConfirmer(.confirmed)
+        let (tools, _) = makeTools(events: [occurrence], provider: provider, responseConfirmer: confirmer)
+        let mail = FakeMeetingMail(accountID: exchange.id)
+        mail.messages["m2"] = mailMessage(.meetingRequest, subject: "weekly-1", start: occurrence.startDate, calendarItemID: "SERIES-MASTER")
+        tools.meetingMail = mail
+
+        let result = await tools.call(name: "respond_to_meeting", arguments: ["message_id": "m2", "response": "accept", "scope": "series"])
+        XCTAssertFalse(result.isError, result.errorMessage ?? "")
+        XCTAssertEqual(result.structured?["event_id"]?.stringValue, MCPEventID.short("weekly-1"))
+        XCTAssertEqual(result.structured?["scope"], "series")
+        let responses = await provider.responses
+        XCTAssertEqual(responses.first?.series, true)
+    }
+
+    /// Exactly one of the ids; a message that is no invitation, a meeting not in the calendar
+    /// and the mailbox's own refusals send nothing and ask nothing.
+    func testRespondByMessageIDRefusals() async {
+        let provider = DetailsProvider(account: exchange)
+        let confirmer = FakeResponseConfirmer(.confirmed)
+        let (tools, _) = makeTools(events: [event("invite", day: 6, hour: 10, response: .notResponded, organizer: "Grace Miller")], provider: provider, responseConfirmer: confirmer)
+        let mail = FakeMeetingMail(accountID: exchange.id)
+        mail.messages["cancel"] = mailMessage(.meetingCancellation, subject: "Canceled: invite", start: date(6, 10), calendarItemID: "invite")
+        mail.messages["answer"] = mailMessage(.meetingResponse, subject: "Accepted: invite", start: date(6, 10), calendarItemID: "invite")
+        mail.messages["note"] = mailMessage(.note, subject: "invite", start: date(6, 10), calendarItemID: nil)
+        mail.messages["gone"] = mailMessage(.meetingRequest, subject: "gone", start: date(7, 10), calendarItemID: "gone")
+        tools.meetingMail = mail
+
+        XCTAssertRefusal(await tools.call(name: "respond_to_meeting", arguments: ["response": "accept"]), .invalidArgument)
+        XCTAssertRefusal(await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "message_id": "cancel", "response": "accept"]), .invalidArgument)
+        XCTAssertRefusal(await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "account_id": .string(exchange.id.uuidString), "response": "accept"]), .invalidArgument)
+        for id in ["cancel", "answer", "note"] {
+            XCTAssertRefusal(await tools.call(name: "respond_to_meeting", arguments: ["message_id": .string(id), "response": "accept"]), .notInvitation)
+        }
+        XCTAssertRefusal(await tools.call(name: "respond_to_meeting", arguments: ["message_id": "gone", "response": "accept"]), .notFound)
+        XCTAssertRefusal(await tools.call(name: "respond_to_meeting", arguments: ["message_id": "unknown", "response": "accept"]), .notFound)
+        mail.error = MCPToolError.settingOff(.readMail, MCPMailTools.disabledMessage, code: .mailNotAllowed)
+        XCTAssertRefusal(await tools.call(name: "respond_to_meeting", arguments: ["message_id": "cancel", "response": "accept"]), .mailNotAllowed)
+        XCTAssertTrue(confirmer.proposals.isEmpty)
+        let responses = await provider.responses
+        XCTAssertTrue(responses.isEmpty)
+    }
+
     // MARK: - Error codes
 
     func testRespondErrorsFromExchangeCarryTheirCode() async {

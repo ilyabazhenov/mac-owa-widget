@@ -200,7 +200,7 @@ enum MCPToolErrorCodes {
             codes = gate + [.settingDisabled, .invalidArgument, .notFound, .notSupported] + panel
                 + [.authFailed, .trustRequired, .offline, .unconfirmed]
         case "respond_to_meeting":
-            codes = gate + [.settingDisabled, .invalidArgument, .notFound, .notSupported, .notInvitation, .pastEvent] + panel
+            codes = gate + [.mailNotAllowed, .settingDisabled, .invalidArgument, .notFound, .notSupported, .notInvitation, .pastEvent] + panel
                 + [.stale] + exchange + [.unconfirmed]
         case "cancel_meeting":
             codes = gate + [.settingDisabled, .invalidArgument, .notFound, .notSupported, .pastEvent] + panel
