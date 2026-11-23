@@ -371,9 +371,11 @@ enum OWAMailPayloads {
         ]
     }
 
-    /// Refiner queries for the filters of `query`: several of them mean "and".
+    /// Refiner queries for the filters of `query`: several of them mean "and". So a sender goes
+    /// as a refiner only alone: two sender refiners ask for mail from both at once and find
+    /// nothing (checked live 2026-11-23); several senders go into the query as `OR` instead.
     static func refinerQueries(for query: MailSearchQuery) -> [String] {
-        var queries = query.from.map { "ShallowRefiner::SearchScope:from:\"\($0.replacingOccurrences(of: "\"", with: ""))\"" }
+        var queries = query.from.count == 1 ? [sender(query.from[0], prefix: "ShallowRefiner::SearchScope:")] : []
         if let has = query.hasAttachments {
             queries.append("ShallowRefiner::SearchScope:hasattachment:\(has ? "true" : "false")")
         }
@@ -388,11 +390,18 @@ enum OWAMailPayloads {
     /// the query found (checked live 2026-11-22 — `from`, `hasattachment` and dates alone found
     /// nothing; the same conditions as KQL in the query found the mail). So a search by filters
     /// alone writes them into the query; refiners and the date restriction still go as before.
+    ///
+    /// Several senders are an `OR` group in the query whether or not there are words (see
+    /// `refinerQueries`); words that hold their own `OR` are put in brackets first.
     static func queryText(for query: MailSearchQuery, calendar: Calendar) -> String {
         let text = query.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.isEmpty else { return text }
+        let senders = query.from.map { sender($0) }
+        guard text.isEmpty else {
+            guard senders.count > 1 else { return text }
+            let words = text.split(whereSeparator: \.isWhitespace).contains("OR") ? "(\(text))" : text
+            return words + " (" + senders.joined(separator: " OR ") + ")"
+        }
         var parts: [String] = []
-        let senders = query.from.map { "from:\"\($0.replacingOccurrences(of: "\"", with: ""))\"" }
         if senders.count == 1 {
             parts.append(senders[0])
         } else if senders.count > 1 {
@@ -411,6 +420,11 @@ enum OWAMailPayloads {
             }
         }
         return parts.joined(separator: " ")
+    }
+
+    /// `from:"address"` in KQL, quotes taken out of the address.
+    private static func sender(_ address: String, prefix: String = "") -> String {
+        prefix + "from:\"" + address.replacingOccurrences(of: "\"", with: "") + "\""
     }
 
     private static func searchDay(_ date: Date, _ calendar: Calendar) -> String {

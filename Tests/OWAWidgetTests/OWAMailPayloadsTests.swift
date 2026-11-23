@@ -176,6 +176,25 @@ final class OWAMailPayloadsTests: XCTestCase {
         XCTAssertEqual(OWAMailPayloads.queryText(for: text, calendar: calendar), "release", "with words, filters stay refiners only")
     }
 
+    /// Refiners mean "and": two sender refiners ask for mail from both at once and find nothing
+    /// (checked live). Several senders go into the query as one `OR` group, with or without words.
+    func testSeveralSendersAreAnOrGroupInTheQueryNotRefiners() throws {
+        var query = MailSearchQuery(text: " release ")
+        query.from = ["a@example.com", "b@example.com"]
+        query.hasAttachments = true
+        XCTAssertEqual(OWAMailPayloads.refinerQueries(for: query), ["ShallowRefiner::SearchScope:hasattachment:true"])
+        XCTAssertEqual(OWAMailPayloads.queryText(for: query, calendar: .current), "release (from:\"a@example.com\" OR from:\"b@example.com\")")
+
+        query.text = "release OR релиз"
+        XCTAssertEqual(OWAMailPayloads.queryText(for: query, calendar: .current), "(release OR релиз) (from:\"a@example.com\" OR from:\"b@example.com\")",
+                       "the words' own OR must not swallow the senders")
+
+        query.text = ""
+        let request = try body(OWAMailPayloads.executeSearch(sessionID: "S", query: query, offset: 0, count: 25, calendar: .current, timeZoneID: zone))
+        XCTAssertEqual(request["Query"] as? String, "(from:\"a@example.com\" OR from:\"b@example.com\") hasattachment:true")
+        XCTAssertEqual((request["SearchRefiners"] as? [[String: Any]])?.count, 1, "only the attachments refiner")
+    }
+
     // MARK: - EWS
 
     func testReplySOAPReferencesOriginalAndEscapes() {
