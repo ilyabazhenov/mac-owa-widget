@@ -27,8 +27,9 @@ enum MCPMailMeetings {
     /// The calendar meeting a meeting message is about. By the message's `AssociatedCalendarItemId`
     /// first (a one-off meeting's own id); then, for a series (whose messages point at the series,
     /// which the calendar view never lists) and for ids that did not match, the meeting of the same
-    /// account with the message's time and title — a cancellation's subject has a prefix, so the
-    /// title only has to end it.
+    /// account with the message's time and title — a cancellation's subject has a prefix
+    /// ("Canceled: …", "Отменено: …"), so after a colon the title only has to end it; a shorter
+    /// title that merely ends the subject ("Sync" in "Weekly sync") is another meeting.
     static func event(for meeting: MailMeetingInfo, subject: String, accountID: UUID, in events: [CalendarEvent]) -> CalendarEvent? {
         let own = events.filter { $0.accountID == accountID }
         if let id = meeting.associatedCalendarItemID, let exact = own.first(where: { $0.id == id }) {
@@ -40,7 +41,7 @@ enum MCPMailMeetings {
         let sameTime = own.filter { $0.startDate == start && $0.endDate == end }
         return sameTime.first { candidate in
             let normalized = MailVIP.normalized(candidate.title)
-            return !normalized.isEmpty && (normalized == wanted || wanted.hasSuffix(" " + normalized) || wanted.hasSuffix(":" + normalized))
+            return !normalized.isEmpty && (normalized == wanted || wanted.hasSuffix(": " + normalized) || wanted.hasSuffix(":" + normalized))
         }
     }
 

@@ -1796,6 +1796,7 @@ final class MCPMailToolsTests: XCTestCase {
         withCalendar([
             calendarEvent("CAL-OCC-1", "Weekly sync", at(10), minutes: 30, response: .notResponded, series: "uid-weekly"),
             calendarEvent("CAL-OTHER", "Weekly sync", at(10, day: 17), minutes: 30, response: .notResponded),
+            calendarEvent("CAL-SHORT", "Sync", at(10), minutes: 30),
         ])
         await setMeetingThread([
             meetingMessage("MSG-SERIES", .meetingRequest, subject: "Weekly sync", start: at(10), end: at(10, 30), calendarItemID: "CAL-MASTER"),
@@ -1808,7 +1809,12 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertEqual(meeting["event_id"]?.stringValue, MCPEventID.short("CAL-OCC-1"))
         XCTAssertEqual(meeting["is_recurring"], true)
         XCTAssertEqual(meeting["my_response"], "not_responded")
-        XCTAssertEqual(meeting["conflicts"], .array([]), "the calendar covers that time and nothing else is on")
+        XCTAssertEqual(titles(meeting["conflicts"]), ["Sync"], "a title that only ends the subject is another meeting")
+
+        // Without the occurrence, the shorter title at the same time is not taken for it.
+        service.replaceEventsForTests([calendarEvent("CAL-SHORT", "Sync", at(10), minutes: 30)])
+        let alone = try object(await tools.call(name: "get_mail_thread", arguments: ["thread_id": .string(threadID)], client: nil))
+        XCTAssertNil(alone["messages"]?.arrayValue?.first?["meeting"]?["event_id"])
     }
 
     /// A meeting the calendar does not have (beyond the sync window): only what the message says;

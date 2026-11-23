@@ -1487,6 +1487,10 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertRefusal(await tools.call(name: "respond_to_meeting", arguments: ["response": "accept"]), .invalidArgument)
         XCTAssertRefusal(await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "message_id": "cancel", "response": "accept"]), .invalidArgument)
         XCTAssertRefusal(await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "account_id": .string(exchange.id.uuidString), "response": "accept"]), .invalidArgument)
+        // An explicit null is no argument.
+        let nulls = await tools.call(name: "respond_to_meeting", arguments: ["event_id": "invite", "message_id": .null, "account_id": .null, "response": "accept", "send_response": false])
+        XCTAssertFalse(nulls.isError, nulls.errorMessage ?? "")
+        confirmer.outcome = .rejected
         for id in ["cancel", "answer", "note"] {
             XCTAssertRefusal(await tools.call(name: "respond_to_meeting", arguments: ["message_id": .string(id), "response": "accept"]), .notInvitation)
         }
@@ -1494,9 +1498,9 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertRefusal(await tools.call(name: "respond_to_meeting", arguments: ["message_id": "unknown", "response": "accept"]), .notFound)
         mail.error = MCPToolError.settingOff(.readMail, MCPMailTools.disabledMessage, code: .mailNotAllowed)
         XCTAssertRefusal(await tools.call(name: "respond_to_meeting", arguments: ["message_id": "cancel", "response": "accept"]), .mailNotAllowed)
-        XCTAssertTrue(confirmer.proposals.isEmpty)
+        XCTAssertEqual(confirmer.proposals.count, 1, "only the call by event_id asked the user")
         let responses = await provider.responses
-        XCTAssertTrue(responses.isEmpty)
+        XCTAssertEqual(responses.map(\.id), ["invite"])
     }
 
     // MARK: - Error codes

@@ -717,7 +717,7 @@ struct MCPGatedToolbox: MCPToolProviding {
             return .failure(refusal)
         }
         // An invitation answered by its `message_id` is read from the mailbox: mail's own consent.
-        let readsMail = MCPMailTools.toolNames.contains(name) || (name == "respond_to_meeting" && arguments["message_id"] != nil)
+        let readsMail = MCPMailTools.toolNames.contains(name) || (name == "respond_to_meeting" && arguments["message_id"].map({ $0 != .null }) == true)
         if readsMail, let refusal = await MCPServerService.shared.authorizeMail(clientID, tool: name) {
             await base.recordCall(name, client, true)
             return .failure(refusal)

@@ -1172,7 +1172,7 @@ final class MCPCalendarTools {
                 ? "`event_id` or `message_id` is required (event_id from list_events, message_id of an invitation from get_mail_thread)"
                 : "Pass either `event_id` or `message_id`, not both")
         }
-        if arguments["account_id"] != nil, messageHandle == nil {
+        if arguments["account_id"].map({ $0 != .null }) == true, messageHandle == nil {
             throw ArgumentError("`account_id` goes only with `message_id`: an event_id already names its account")
         }
         guard let actionName = arguments["response"]?.stringValue, let action = MeetingResponseAction(name: actionName) else {
@@ -1379,7 +1379,7 @@ final class MCPCalendarTools {
             return event
         }
         guard let start = info.start, let coverage = calendarService.eventCoverage?.interval,
-              !(start < coverage.end && max(info.end ?? start, start) >= coverage.start) else {
+              !(start < coverage.end && max(info.end ?? start, start) > coverage.start) else {
             throw notInCalendar
         }
         // Beyond the sync window: load the meeting's own period (a block of the archive).
