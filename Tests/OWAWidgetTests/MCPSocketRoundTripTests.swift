@@ -129,6 +129,62 @@ final class MCPSocketRoundTripTests: XCTestCase {
         }
     }
 
+    /// A mail switch adds or removes tools: a legacy session hears `tools/list_changed` without
+    /// subscribing; the change resource rings only where it was subscribed to.
+    func testLegacySessionHearsToolListChanges() async throws {
+        let path = try startListener()
+        let fd = try connect(path)
+        defer { close(fd) }
+        send(fd, #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#)
+        XCTAssertEqual(readLine(fd)?["result"]?["capabilities"]?["tools"]?["listChanged"], true)
+        send(fd, #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+
+        let connection = try XCTUnwrap(connections.all.first)
+        await connection.notify(resources: true, toolList: true)
+        let changed = readLine(fd)
+        XCTAssertEqual(changed?["method"], "notifications/tools/list_changed")
+        XCTAssertNil(changed?["params"])
+        // Not subscribed: no resource ring follows. The next line is the ping's answer.
+        send(fd, #"{"jsonrpc":"2.0","id":2,"method":"ping"}"#)
+        XCTAssertEqual(readLine(fd)?["id"], 2)
+
+        send(fd, #"{"jsonrpc":"2.0","id":3,"method":"resources/subscribe","params":{"uri":"owawidget://changes"}}"#)
+        XCTAssertEqual(readLine(fd)?["id"], 3)
+        // A switch that changes no tool: only the ring.
+        await connection.notify(resources: true, toolList: false)
+        XCTAssertEqual(readLine(fd)?["method"], "notifications/resources/updated")
+        send(fd, #"{"jsonrpc":"2.0","id":4,"method":"ping"}"#)
+        XCTAssertEqual(readLine(fd)?["id"], 4)
+    }
+
+    /// 2026-07-28: each `subscriptions/listen` stream carries what it asked for, with its id.
+    func testModernListenStreamsCarryWhatTheyAskedFor() async throws {
+        let path = try startListener()
+        let fd = try connect(path)
+        defer { close(fd) }
+        let meta = #""_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}"#
+        send(fd, #"{"jsonrpc":"2.0","id":"tools","method":"subscriptions/listen","params":{\#(meta),"notifications":{"toolsListChanged":true}}}"#)
+        let toolsAck = readLine(fd)
+        XCTAssertEqual(toolsAck?["method"], "notifications/subscriptions/acknowledged")
+        XCTAssertEqual(toolsAck?["params"]?["notifications"], ["toolsListChanged": true])
+        send(fd, #"{"jsonrpc":"2.0","id":"changes","method":"subscriptions/listen","params":{\#(meta),"notifications":{"resourceSubscriptions":["owawidget://changes"]}}}"#)
+        XCTAssertEqual(readLine(fd)?["params"]?["notifications"], ["resourceSubscriptions": ["owawidget://changes"]])
+
+        let connection = try XCTUnwrap(connections.all.first)
+        await connection.notify(resources: false, toolList: true)
+        let changed = readLine(fd)
+        XCTAssertEqual(changed?["method"], "notifications/tools/list_changed")
+        XCTAssertEqual(changed?["params"]?["_meta"]?[MCPProtocolHandler.subscriptionIDKey], "tools")
+
+        await connection.notify(resources: true, toolList: false)
+        let ring = readLine(fd)
+        XCTAssertEqual(ring?["method"], "notifications/resources/updated")
+        XCTAssertEqual(ring?["params"]?["_meta"]?[MCPProtocolHandler.subscriptionIDKey], "changes")
+        // Nothing else on either stream: the next line answers the ping.
+        send(fd, #"{"jsonrpc":"2.0","id":5,"method":"ping","params":{\#(meta)}}"#)
+        XCTAssertEqual(readLine(fd)?["id"], 5)
+    }
+
     func testPeerCredentialsNameTheConnectingProcess() throws {
         let path = directory.appendingPathComponent("p.sock").path
         let accepted = expectation(description: "accepted")

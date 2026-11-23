@@ -34,7 +34,13 @@ actor MCPConnection {
     /// Legacy `resources/subscribe` to the change resource.
     private var legacySubscribed = false
     /// Open `subscriptions/listen` requests, by the canonical JSON of their id.
-    private var listens: [String: JSONValue] = [:]
+    private var listens: [String: Listen] = [:]
+
+    /// What one `subscriptions/listen` stream accepted.
+    private struct Listen {
+        let id: JSONValue
+        let filter: MCPListenFilter
+    }
 
     var hasSubscriptions: Bool { legacySubscribed || !listens.isEmpty }
 
@@ -104,14 +110,14 @@ actor MCPConnection {
         case .unsubscribe(let id):
             legacySubscribed = false
             channel.send(JSONLine.encode(handler.subscribeResponse(id: id)))
-        case .listen(let id):
+        case .listen(let id, let filter):
             let key = JSONLine.encodeString(id)
             let tools = self.tools
             // Held like a running call, so a cancel that races the check still wins.
             running[key] = Task { [weak self] in
                 let refusal = await tools.authorizeSubscription()
                 guard !Task.isCancelled else { return }
-                await self?.listening(id: id, key: key, refusal: refusal)
+                await self?.listening(id: id, key: key, filter: filter, refusal: refusal)
             }
         case .callTool(let id, let name, let arguments, let modern):
             let key = JSONLine.encodeString(id)
@@ -135,24 +141,40 @@ actor MCPConnection {
         channel.send(JSONLine.encode(handler.subscribeResponse(id: id)))
     }
 
-    private func listening(id: JSONValue, key: String, refusal: String?) {
+    private func listening(id: JSONValue, key: String, filter: MCPListenFilter, refusal: String?) {
         guard running.removeValue(forKey: key) != nil else { return }
         if let refusal {
             channel.send(JSONLine.encode(handler.listenRefused(id: id, message: refusal)))
             return
         }
-        listens[key] = id
-        channel.send(JSONLine.encode(handler.listenAcknowledgment(id: id)))
+        listens[key] = Listen(id: id, filter: filter)
+        channel.send(JSONLine.encode(handler.listenAcknowledgment(id: id, filter: filter)))
     }
 
     /// Something changed: one `notifications/resources/updated` per subscription. What changed
     /// the client reads with `get_changes`.
     func notifyChanged() {
-        if legacySubscribed {
+        notify(resources: true, toolList: false)
+    }
+
+    /// `resources`: the change resource rings on every subscription to it. `toolList`:
+    /// `notifications/tools/list_changed` — on a legacy session (the capability is in its
+    /// `initialize` answer, no subscription needed) and on every `subscriptions/listen` stream
+    /// that asked for `toolsListChanged`.
+    func notify(resources: Bool, toolList: Bool) {
+        if toolList, case .legacy = session.era {
+            channel.send(JSONLine.encode(handler.toolsListChanged(subscriptionID: nil)))
+        }
+        if resources, legacySubscribed {
             channel.send(JSONLine.encode(handler.resourceUpdated(subscriptionID: nil)))
         }
-        for id in listens.values.sorted(by: { JSONLine.encodeString($0) < JSONLine.encodeString($1) }) {
-            channel.send(JSONLine.encode(handler.resourceUpdated(subscriptionID: id)))
+        for listen in listens.values.sorted(by: { JSONLine.encodeString($0.id) < JSONLine.encodeString($1.id) }) {
+            if toolList, listen.filter.toolsListChanged {
+                channel.send(JSONLine.encode(handler.toolsListChanged(subscriptionID: listen.id)))
+            }
+            if resources, listen.filter.changes {
+                channel.send(JSONLine.encode(handler.resourceUpdated(subscriptionID: listen.id)))
+            }
         }
     }
 

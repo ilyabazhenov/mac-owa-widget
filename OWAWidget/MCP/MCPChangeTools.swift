@@ -100,6 +100,8 @@ final class MCPChangeTools {
             mail["check_every_seconds"] = .int(Int64(checkInterval().rounded()))
         }
         result["mail"] = .object(mail)
+        // The switches ring the subscription too: a client re-reads them here.
+        result["settings"] = calendarTools.settingsJSON()
         return .success(result)
     }
 

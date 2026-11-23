@@ -103,6 +103,15 @@ enum MCPEra: Equatable, Sendable {
     case legacy(version: String)
 }
 
+/// What a `subscriptions/listen` stream carries: the part of the client's filter this server
+/// honours.
+struct MCPListenFilter: Equatable, Sendable {
+    /// `owawidget://changes` was in `resourceSubscriptions`.
+    var changes: Bool
+    /// `toolsListChanged: true`: the mail tools come and go with their switches.
+    var toolsListChanged: Bool
+}
+
 struct MCPSessionState: Sendable {
     var era: MCPEra = .undetermined
 }
@@ -116,9 +125,10 @@ enum MCPDispatch: Equatable, Sendable {
     /// connection answers once it knows whether the client may subscribe.
     case subscribe(id: JSONValue)
     case unsubscribe(id: JSONValue)
-    /// Modern `subscriptions/listen` asking for the change resource. The request stays open: the
-    /// connection acknowledges it and sends `notifications/resources/updated` on it.
-    case listen(id: JSONValue)
+    /// Modern `subscriptions/listen` asking for the change resource, tool list changes or both.
+    /// The request stays open: the connection acknowledges it and sends
+    /// `notifications/resources/updated` and `notifications/tools/list_changed` on it.
+    case listen(id: JSONValue, filter: MCPListenFilter)
 }
 
 /// The one resource: a doorbell for `get_changes`. Subscribing to it is how a client hears that
@@ -154,10 +164,12 @@ struct MCPProtocolHandler: Sendable {
     static let metaVersionKey = "io.modelcontextprotocol/protocolVersion"
     static let metaCapabilitiesKey = "io.modelcontextprotocol/clientCapabilities"
     static let metaServerInfoKey = "io.modelcontextprotocol/serverInfo"
-    /// The tool set never changes at runtime, so clients may cache it for an hour.
+    /// The tool set changes only with the mail switches, and `notifications/tools/list_changed`
+    /// says so: clients may cache it for an hour.
     static let toolsListTTLMilliseconds: Int64 = 3_600_000
-    /// One resource and its updates: the push for `get_changes`.
-    static let capabilities: JSONValue = ["tools": [:], "resources": ["subscribe": true]]
+    /// One resource and its updates: the push for `get_changes`. The tool list announces its
+    /// changes (the mail tools come and go with their switches).
+    static let capabilities: JSONValue = ["tools": ["listChanged": true], "resources": ["subscribe": true]]
 
     let serverName: String
     let serverTitle: String
@@ -309,18 +321,22 @@ struct MCPProtocolHandler: Sendable {
             }
             return method == "resources/subscribe" ? .subscribe(id: id) : .unsubscribe(id: id)
         case "subscriptions/listen" where isModern:
-            let filter = params["notifications"]?.objectValue ?? [:]
-            let uris = filter["resourceSubscriptions"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            let requested = params["notifications"]?.objectValue ?? [:]
+            let uris = requested["resourceSubscriptions"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            let filter = MCPListenFilter(
+                changes: uris.contains(MCPChangeResource.uri),
+                toolsListChanged: requested["toolsListChanged"] == true
+            )
             // Nothing this server can send was asked for: an empty acknowledgment would leave the
             // client holding a stream that never speaks.
-            guard uris.contains(MCPChangeResource.uri) else {
+            guard filter.changes || filter.toolsListChanged else {
                 return .reply(JSONRPC.error(
                     id: id,
                     code: JSONRPCErrorCode.invalidParams,
-                    message: "This server sends only resource updates for \(MCPChangeResource.uri): put it in notifications.resourceSubscriptions"
+                    message: "This server sends only resource updates for \(MCPChangeResource.uri) (put it in notifications.resourceSubscriptions) and tool list changes (notifications.toolsListChanged)"
                 ))
             }
-            return .listen(id: id)
+            return .listen(id: id, filter: filter)
         default:
             return .reply(JSONRPC.error(id: id, code: JSONRPCErrorCode.methodNotFound, message: "Method not found: \(method)"))
         }
@@ -333,16 +349,28 @@ struct MCPProtocolHandler: Sendable {
         JSONRPC.result(id: id, [:])
     }
 
-    /// Modern: the first message on a `subscriptions/listen` stream.
-    func listenAcknowledgment(id: JSONValue) -> JSONValue {
-        [
+    /// Modern: the first message on a `subscriptions/listen` stream, with the part of the filter
+    /// the stream will carry.
+    func listenAcknowledgment(id: JSONValue, filter: MCPListenFilter) -> JSONValue {
+        var accepted: [String: JSONValue] = [:]
+        if filter.changes { accepted["resourceSubscriptions"] = [.string(MCPChangeResource.uri)] }
+        if filter.toolsListChanged { accepted["toolsListChanged"] = true }
+        return [
             "jsonrpc": "2.0",
             "method": "notifications/subscriptions/acknowledged",
             "params": [
                 "_meta": .object([Self.subscriptionIDKey: id]),
-                "notifications": ["resourceSubscriptions": [.string(MCPChangeResource.uri)]],
+                "notifications": .object(accepted),
             ],
         ]
+    }
+
+    /// The mail tools came or went. `subscriptionID`: the `subscriptions/listen` request id
+    /// (modern); `nil` on a legacy session.
+    func toolsListChanged(subscriptionID: JSONValue?) -> JSONValue {
+        var message: [String: JSONValue] = ["jsonrpc": "2.0", "method": "notifications/tools/list_changed"]
+        if let subscriptionID { message["params"] = ["_meta": .object([Self.subscriptionIDKey: subscriptionID])] }
+        return .object(message)
     }
 
     /// `subscriptionID`: the `subscriptions/listen` request id (modern); `nil` for a legacy

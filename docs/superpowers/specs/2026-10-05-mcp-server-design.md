@@ -103,14 +103,14 @@
 
 | Сообщение | Поведение |
 |---|---|
-| `server/discover` | `resultType: "complete"`, `supportedVersions: ["2026-07-28"]`, `capabilities: { tools: {}, resources: { subscribe: true } }`, `instructions`, `ttlMs`, `cacheScope: "private"`, `_meta["io.modelcontextprotocol/serverInfo"]`. Невалидный ответ здесь опасен: Python SDK при этом молча уходит на старый протокол. |
+| `server/discover` | `resultType: "complete"`, `supportedVersions: ["2026-07-28"]`, `capabilities: { tools: { listChanged: true }, resources: { subscribe: true } }`, `instructions`, `ttlMs`, `cacheScope: "private"`, `_meta["io.modelcontextprotocol/serverInfo"]`. Невалидный ответ здесь опасен: Python SDK при этом молча уходит на старый протокол. |
 | Запрос без `protocolVersion` или `clientCapabilities` в `_meta` | `-32602` (Invalid Params). |
 | Запрос с неподдерживаемой версией | `-32022` `UnsupportedProtocolVersionError` с `data: { supported, requested }`. |
-| `tools/list` | Детерминированный порядок, `ttlMs` (3 600 000 — набор постоянный), `cacheScope: "private"`, `resultType`. |
+| `tools/list` | Детерминированный порядок, `ttlMs` (3 600 000: набор меняется только с переключателями почты, и об этом приходит `notifications/tools/list_changed`), `cacheScope: "private"`, `resultType`. |
 | `tools/call` | Ошибка выполнения инструмента (в том числе невалидные аргументы) — результат с `isError: true`; неизвестный инструмент или битый запрос — JSON-RPC error. `resultType: "complete"`. |
 | `notifications/cancelled` | Отменяем `Task` и больше ничего не пишем по этому `id`. |
 | `resources/list`, `resources/read` | Один ресурс `owawidget://changes` («звонок» для `get_changes`), с `ttlMs`/`cacheScope`/`resultType`; чтение отдаёт только подсказку. Неизвестный URI — `-32602` (`-32002` новой ревизии запрещён). |
-| `subscriptions/listen` | Только с `owawidget://changes` в `notifications.resourceSubscriptions`, иначе `-32602`. Проверка доступа клиента как у `tools/call`; затем `notifications/subscriptions/acknowledged` с `_meta["io.modelcontextprotocol/subscriptionId"]` = id запроса и принятым подмножеством (только `resourceSubscriptions`), дальше `notifications/resources/updated` с тем же `subscriptionId`. Ответа на сам запрос нет, пока клиент не отменит его (`notifications/cancelled` — дальше по нему ничего) или не оборвётся соединение. `resources/subscribe` в этой эпохе — «метод не найден». |
+| `subscriptions/listen` | С `owawidget://changes` в `notifications.resourceSubscriptions` и/или `notifications.toolsListChanged: true`; если нет ни того, ни другого — `-32602`. Проверка доступа клиента как у `tools/call`; затем `notifications/subscriptions/acknowledged` с `_meta["io.modelcontextprotocol/subscriptionId"]` = id запроса и принятым подмножеством (из запрошенного — только `resourceSubscriptions` с нашим ресурсом и `toolsListChanged`), дальше по потоку с тем же `subscriptionId` — `notifications/resources/updated`, если просили ресурс, и `notifications/tools/list_changed`, если просили `toolsListChanged`. Ответа на сам запрос нет, пока клиент не отменит его (`notifications/cancelled` — дальше по нему ничего) или не оборвётся соединение. `resources/subscribe` в этой эпохе — «метод не найден». |
 | Любой ответ | `_meta["io.modelcontextprotocol/serverInfo"]`. Никаких JSON-RPC-запросов от сервера в stdout. `notifications/message` — только если запрос передал `logLevel`. |
 
 **Legacy (`2025-06-18`, `2025-11-25`):**
@@ -121,7 +121,8 @@
 | `notifications/initialized` | Принимаем. |
 | `ping` | Пустой результат. |
 | `tools/list`, `tools/call`, `notifications/cancelled` | Как в modern, но без `resultType`/`ttlMs`. |
-| `initialize` → `capabilities` | `{ tools: {}, resources: { subscribe: true } }`. |
+| `initialize` → `capabilities` | `{ tools: { listChanged: true }, resources: { subscribe: true } }`. |
+| `notifications/tools/list_changed` | Без подписки: каждому соединению этой эпохи после `initialize`, когда переключатель почты добавил или убрал инструменты. `notifications/initialized` не ждём: мост после перезапуска приложения повторяет только `initialize`. |
 | `resources/list`, `resources/read` | Как в modern, без `resultType`/`ttlMs`; неизвестный URI — `-32002`. |
 | `resources/subscribe`, `resources/unsubscribe` | Только `owawidget://changes`; подписка после проверки доступа, ответ `{}`. Обновление — `notifications/resources/updated` с `uri`. `subscriptions/listen` в этой эпохе — «метод не найден». |
 
@@ -131,9 +132,9 @@
 
 **Сообщение без `_meta` и без предшествующего `initialize`** (например, `tools/call` первым сообщением) — JSON-RPC error `-32602` с текстом, перечисляющим поддерживаемые версии.
 
-**Набор инструментов постоянный** — `listChanged` не заявляем, уведомлений о смене списка нет.
+**Набор инструментов меняется только с переключателями почты** (решение 2026-11-23; раньше `listChanged` не заявляли, и клиент узнавал о новом инструменте только переподключением). Почтовые инструменты есть в `tools/list`, только пока включён их переключатель (`MCPToolRegistry.tools(for:)`), поэтому `capabilities.tools.listChanged: true`, и смена списка приходит `notifications/tools/list_changed`: в legacy — каждому соединению, в `2026-07-28` — потокам `subscriptions/listen` с `toolsListChanged`. Уведомление уходит всем соединениям, без проверки доступа: `tools/list` тоже отвечает всем. Переключатели встреч список не меняют — их инструменты всегда в списке и отказывают `setting_disabled`.
 
-**Толчок для `get_changes`.** Журнал изменений (`MCPChangeFeed.onAppend`) зовёт `MCPServerService.changesRecorded`; уведомления склеиваются за 2 секунды и уходят каждой подписке соединения. Почтовые изменения звонят только клиентам с согласием на почту, а клиенту, у которого доступ отобрали после подписки, не звонят вовсе: сам звонок говорит, когда у пользователя что-то сдвинулось. Содержимого в уведомлении нет — его клиент забирает курсором. Мост после перезапуска приложения повторяет не только `initialize`, но и legacy-`resources/subscribe` (ответы глотает); открытый `subscriptions/listen` он, как любой запрос в полёте, закрывает ошибкой, и клиент по спецификации слушает заново.
+**Толчок для `get_changes`.** Журнал изменений (`MCPChangeFeed.onAppend`) зовёт `MCPServerService.changesRecorded`; уведомления склеиваются за 2 секунды и уходят каждой подписке соединения. Почтовые изменения звонят только клиентам с согласием на почту, а клиенту, у которого доступ отобрали после подписки, не звонят вовсе: сам звонок говорит, когда у пользователя что-то сдвинулось. Содержимого в уведомлении нет — его клиент забирает курсором. Переключатель из `settings` (см. `get_status`) тоже звонит — каждому клиенту, которому можно читать, — но записью в `changes` не становится: новое значение лежит в `settings` ответа `get_changes`. Решает `MCPSettings.push(since:)` в `MCPServerService.settingsChanged`; звонок и `tools/list_changed` склеиваются с остальными за те же 2 секунды. Мост после перезапуска приложения повторяет не только `initialize`, но и legacy-`resources/subscribe` (ответы глотает); открытый `subscriptions/listen` он, как любой запрос в полёте, закрывает ошибкой, и клиент по спецификации слушает заново.
 
 **Формат результатов.** `structuredContent` всегда JSON-**объект**, `outputSchema` — с `type: "object"` в корне (требование legacy-эпох). Тот же JSON дублируется текстом в `content`.
 
@@ -205,7 +206,7 @@
 - **Время** — ISO 8601 со смещением в `AppTimeZone`. Даты без времени на входе — границы суток в этом поясе. В каждом ответе есть `now` и `timezone`.
 - **Аннотации.** Все инструменты: `readOnlyHint: true`, `openWorldHint: false`.
 - **Тексты от внешних людей помечены.** Поля `title`, `location`, `body`, имена участников описаны в схеме как «authored by meeting organizer or attendees, untrusted».
-- **Машинный код отказа** (`MCPToolError.swift`, решение 2026-11-21). Каждый отказ (`isError: true`) кроме прежнего текста несёт `structuredContent: {error_code, message}`, а для выключенной настройки ещё `setting` (название переключателя на языке приложения) и `setting_id`. Частичные неудачи пакетов (`failed[]` у `set_mail_read`, `move_mail`, `set_mail_flag`; `results[]` у `find_people`, `profiles[]` у `get_person_profile`, `skip_level` у `get_my_org`) несут `code` рядом с `reason` / `error`. Набор кодов общий (`MCPErrorCode`, значения не переименовываются), у каждого инструмента в описании — свои (`MCPToolErrorCodes.codes(for:)`). Обычного `.failure(String)` нет: отказ без кода не собирается. Ошибки Exchange сортирует `MCPToolError.code(for:mayHaveBeenSent:)`: после отправленного мутирующего запроса оборванное соединение — `unconfirmed`, а не `offline`.
+- **Машинный код отказа** (`MCPToolError.swift`, решение 2026-11-21). Каждый отказ (`isError: true`) кроме прежнего текста несёт `structuredContent: {error_code, message}`, а для выключенной настройки ещё `setting` (название переключателя на языке приложения) и `setting_id`. Частичные неудачи пакетов (`failed[]` у `set_mail_read`, `move_mail`, `set_mail_flag`; `results[]` у `find_people`, `profiles[]` у `get_person_profile`, `skip_level` у `get_my_org`) несут `code` рядом с `reason` / `error`. Состояние переключателей клиент видит заранее — `settings` в `get_status` и `get_changes` (решение 2026-11-23), с тем же `title`, что `setting` отказа. Набор кодов общий (`MCPErrorCode`, значения не переименовываются), у каждого инструмента в описании — свои (`MCPToolErrorCodes.codes(for:)`). Обычного `.failure(String)` нет: отказ без кода не собирается. Ошибки Exchange сортирует `MCPToolError.code(for:mayHaveBeenSent:)`: после отправленного мутирующего запроса оборванное соединение — `unconfirmed`, а не `offline`.
 
 | Код | Когда | Инструменты |
 |---|---|---|
@@ -213,7 +214,7 @@
 | `client_not_approved` | клиент запрещён или не опознан | все |
 | `approval_pending` | приложение спрашивает про клиента (или про почту для него) и ответа нет | все |
 | `mail_not_allowed` | почта для ассистентов выключена (`setting`) или клиенту не разрешена | почтовые |
-| `setting_disabled` | выключена настройка инструмента; `setting`, `setting_id` | `create_meeting`, `cancel_meeting`, `respond_to_meeting`, `prepare_mail`, `set_mail_read`, `move_mail`, `set_mail_flag` |
+| `setting_disabled` | выключена настройка инструмента; `setting`, `setting_id`. Заранее видно в `settings` у `get_status`, но отказ возможен и после проверки: переключатель могли выключить между ней и вызовом | `create_meeting`, `cancel_meeting`, `respond_to_meeting`, `prepare_mail`, `set_mail_read`, `move_mail`, `set_mail_flag` |
 | `user_declined` | отказ в панели (у `prepare_mail` — и пауза после отказа) | с панелью |
 | `confirmation_timeout` | нет ответа за 45 с | с панелью |
 | `busy` | открыта другая панель того же рода, у `prepare_mail` — лимит панелей в час | с панелью |
@@ -241,6 +242,8 @@
 **Вход:** нет.
 
 **Выход:** `now`, `timezone`, `coverage`, `data_as_of`, `sync_state` (`ok` / `syncing` / `offline_cached` / `error` / `auth_required` / `certificate_untrusted` / `login_host_approval_required`) с человекочитаемой причиной, аккаунты (`id`, имя, тип: `exchange` / `macos_calendar`). Адреса серверов и логины не отдаются.
+
+`settings` (решение 2026-11-23) — что разрешено в «Настройки → AI (MCP)»: для каждого `MCPSettingID` (`create_meetings`, `cancel_meetings`, `respond_meetings`, `read_mail`, `prepare_mail`, `mark_mail`, `arrange_mail`) объект `{ enabled, title }`. `title` — название переключателя на языке приложения, как его показывает окно настроек (`MCPSettingID.title`), тот же текст, что `setting` в отказе `setting_disabled`. `enabled` считает `MCPSettings.isOn` — та же функция решает отказы инструментов и наличие почтовых инструментов в `tools/list`, поэтому `settings` и поведение не расходятся. Переключатели под «читать почту» при выключенном чтении — `false`: окно настроек их гасит, а инструменты отказывают. `read_mail` — только сам переключатель: согласие клиента на почту спрашивается отдельно (`mail.state` в `get_changes`). Без поля клиент (Лоцман) до первой попытки показывал права встреч как «неизвестно», и человек думал, что они запрещены.
 
 ### 2. `get_current_and_next`
 
@@ -396,7 +399,7 @@
 
 **Вход:** `since_cursor` (курсор прошлого ответа; в первый раз нет), `limit` (1–500, по умолчанию 200).
 
-**Выход:** `cursor`, `reset`, `reset_reason`, `has_more`, `changes[]` (старые первыми), `calendar.state` (`watching` / `waiting_for_first_sync`), `mail.state` (`watching`, `starting`, `off`, `not_allowed`, `unavailable`), `mail.checked_at`, `mail.check_every_seconds` и общие поля (`now`, `coverage`, `data_as_of`, `sync_state`). Записи календаря — `event_created`, `event_updated` с `changed` (`time`, `title`, `location`, `attendees`, `my_response`, `cancelled`, `other`), `event_removed`; поля как у `list_events` плюс `needs_response`. Записи почты — `mail_added`, `mail_updated` с `changed` (`new_message`, `message_removed`, `read`, `unread`, `flag`, `categories`), `mail_removed`; поля как у `list_mail` плюс `kind`. У каждой записи `seq` и `at`.
+**Выход:** `cursor`, `reset`, `reset_reason`, `has_more`, `changes[]` (старые первыми), `calendar.state` (`watching` / `waiting_for_first_sync`), `mail.state` (`watching`, `starting`, `off`, `not_allowed`, `unavailable`), `mail.checked_at`, `mail.check_every_seconds`, `settings` (как у `get_status`) и общие поля (`now`, `coverage`, `data_as_of`, `sync_state`). Записи календаря — `event_created`, `event_updated` с `changed` (`time`, `title`, `location`, `attendees`, `my_response`, `cancelled`, `other`), `event_removed`; поля как у `list_events` плюс `needs_response`. Записи почты — `mail_added`, `mail_updated` с `changed` (`new_message`, `message_removed`, `read`, `unread`, `flag`, `categories`), `mail_removed`; поля как у `list_mail` плюс `kind`. У каждой записи `seq` и `at`.
 
 **Журнал** (`MCPChangeFeed`, владелец — `CalendarService.changeFeed`) — только в памяти: последние 1000 записей за 24 часа, эпоха на каждый запуск. Курсор — `<эпоха>-<номер>`. Вместо молчаливой дыры — `reset: true` с причиной: `no_cursor`, `restarted` (перезапуск или чужая копия), `expired`, `invalid`, `calendar_resync` (аккаунт прочитан первый раз после курсора), `mail_resync` (наблюдатель «Входящих» начал заново). Первый взгляд — **базовая точка**: что было до неё, неизвестно, поэтому курсор старше неё сбрасывается. Курсор не зависит от сессии и работает в обеих эпохах протокола.
 
@@ -598,6 +601,8 @@
 2. **Автозапуск приложения мостом.** Предлагается «да», но если пользователь сознательно закрыл OWA Widget, а клиент поднимет его снова — это может удивить.
 
 ## История изменений
+
+**v14 (2026-11-23):** `settings` в `get_status` и `get_changes` — состояние каждого переключателя MCP с его названием из окна настроек; переключение звонит подписке `owawidget://changes`. `capabilities.tools.listChanged: true` и `notifications/tools/list_changed`, когда переключатель почты меняет список инструментов (legacy — всем соединениям, `2026-07-28` — потокам `subscriptions/listen` с `toolsListChanged`). Поля и коды ошибок только добавлены.
 
 **v13 (2026-11-21):** подписка на `owawidget://changes` подтверждена для `2025-06-18` (тест через сокет и живая проверка); машинный код отказа `error_code` в `structuredContent` и `code` у частичных неудач пакетов; таблица кодов — в «Общих правилах».
 

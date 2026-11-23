@@ -147,6 +147,9 @@ final class MCPProtocolHandlerTests: XCTestCase {
         var modern = MCPSessionState()
         let discover = reply(handler.handle(request(1, "server/discover", ["_meta": modernMeta]), session: &modern))
         XCTAssertEqual(discover["result"]?["capabilities"]?["resources"]?["subscribe"], true)
+        // The mail tools come and go with their switches, and both eras are told when.
+        XCTAssertEqual(initialize["result"]?["capabilities"]?["tools"]?["listChanged"], true)
+        XCTAssertEqual(discover["result"]?["capabilities"]?["tools"]?["listChanged"], true)
     }
 
     func testEveryLegacyVersionSubscribes() {
@@ -193,8 +196,12 @@ final class MCPProtocolHandlerTests: XCTestCase {
 
         var modern = MCPSessionState()
         let listen = request(10, "subscriptions/listen", ["_meta": modernMeta, "notifications": ["resourceSubscriptions": [.string(MCPChangeResource.uri)], "toolsListChanged": true]])
-        XCTAssertEqual(handler.handle(listen, session: &modern), .listen(id: 10))
-        let nothingOurs = request(11, "subscriptions/listen", ["_meta": modernMeta, "notifications": ["toolsListChanged": true]])
+        XCTAssertEqual(handler.handle(listen, session: &modern), .listen(id: 10, filter: MCPListenFilter(changes: true, toolsListChanged: true)))
+        let changesOnly = request(13, "subscriptions/listen", ["_meta": modernMeta, "notifications": ["resourceSubscriptions": [.string(MCPChangeResource.uri)]]])
+        XCTAssertEqual(handler.handle(changesOnly, session: &modern), .listen(id: 13, filter: MCPListenFilter(changes: true, toolsListChanged: false)))
+        let toolsOnly = request(11, "subscriptions/listen", ["_meta": modernMeta, "notifications": ["toolsListChanged": true]])
+        XCTAssertEqual(handler.handle(toolsOnly, session: &modern), .listen(id: 11, filter: MCPListenFilter(changes: false, toolsListChanged: true)))
+        let nothingOurs = request(14, "subscriptions/listen", ["_meta": modernMeta, "notifications": ["resourceSubscriptions": ["x://y"], "promptsListChanged": true]])
         XCTAssertEqual(reply(handler.handle(nothingOurs, session: &modern))["error"]?["code"], .int(Int64(JSONRPCErrorCode.invalidParams)))
         let removed = request(12, "resources/subscribe", ["_meta": modernMeta, "uri": .string(MCPChangeResource.uri)])
         XCTAssertEqual(reply(handler.handle(removed, session: &modern))["error"]?["code"], .int(Int64(JSONRPCErrorCode.methodNotFound)),
@@ -202,12 +209,22 @@ final class MCPProtocolHandlerTests: XCTestCase {
     }
 
     func testListenAcknowledgmentAndUpdatesCarryTheSubscriptionID() {
-        let ack = handler.listenAcknowledgment(id: 10)
+        let ack = handler.listenAcknowledgment(id: 10, filter: MCPListenFilter(changes: true, toolsListChanged: false))
         XCTAssertEqual(ack["method"], "notifications/subscriptions/acknowledged")
         XCTAssertNil(ack["id"], "a notification, not the answer")
         XCTAssertEqual(ack["params"]?["_meta"]?[MCPProtocolHandler.subscriptionIDKey], 10)
-        XCTAssertEqual(ack["params"]?["notifications"]?["resourceSubscriptions"], [.string(MCPChangeResource.uri)],
-                       "only what this server honours: no toolsListChanged")
+        XCTAssertEqual(ack["params"]?["notifications"], ["resourceSubscriptions": [.string(MCPChangeResource.uri)]],
+                       "only what was asked for and this server honours")
+        let both = handler.listenAcknowledgment(id: 11, filter: MCPListenFilter(changes: true, toolsListChanged: true))
+        XCTAssertEqual(both["params"]?["notifications"], ["resourceSubscriptions": [.string(MCPChangeResource.uri)], "toolsListChanged": true])
+        let toolsOnly = handler.listenAcknowledgment(id: 12, filter: MCPListenFilter(changes: false, toolsListChanged: true))
+        XCTAssertEqual(toolsOnly["params"]?["notifications"], ["toolsListChanged": true])
+
+        let listChanged = handler.toolsListChanged(subscriptionID: 11)
+        XCTAssertEqual(listChanged["method"], "notifications/tools/list_changed")
+        XCTAssertNil(listChanged["id"])
+        XCTAssertEqual(listChanged["params"]?["_meta"]?[MCPProtocolHandler.subscriptionIDKey], 11)
+        XCTAssertNil(handler.toolsListChanged(subscriptionID: nil)["params"], "legacy: no params at all")
 
         let modern = handler.resourceUpdated(subscriptionID: 10)
         XCTAssertEqual(modern["method"], "notifications/resources/updated")

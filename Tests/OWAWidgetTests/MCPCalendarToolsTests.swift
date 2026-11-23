@@ -249,6 +249,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         canCreateMeetings: Bool = true,
         canRemoveMeetings: Bool = true,
         canRespondMeetings: Bool = true,
+        settings: MCPSettings? = nil,
         onDemandDeadline: TimeInterval = MCPCalendarTools.onDemandDeadline,
         handOff: @escaping (MeetingDraftSeed) -> Void = { _ in },
         uptime: @escaping () -> TimeInterval = { 0 }
@@ -281,9 +282,12 @@ final class MCPCalendarToolsTests: XCTestCase {
             timeZone: { [zone] in zone },
             uptime: uptime,
             isEnabled: { enabled },
-            canCreateMeetings: { canCreateMeetings },
-            canRemoveMeetings: { canRemoveMeetings },
-            canRespondMeetings: { canRespondMeetings }
+            settings: {
+                settings ?? MCPSettings(
+                    serverEnabled: true, createMeetings: canCreateMeetings,
+                    cancelMeetings: canRemoveMeetings, respondMeetings: canRespondMeetings
+                )
+            }
         )
         return (tools, service)
     }
@@ -1844,6 +1848,88 @@ final class MCPCalendarToolsTests: XCTestCase {
             let result = await tools.call(name: "find_people", arguments: arguments)
             XCTAssertRefusal(result, .invalidArgument, "\(arguments)")
         }
+    }
+
+    // MARK: - settings in get_status
+
+    private func switches(_ tools: MCPCalendarTools) async -> [String: JSONValue] {
+        await tools.call(name: "get_status", arguments: [:]).structured?["settings"]?.objectValue ?? [:]
+    }
+
+    func testStatusReportsEverySwitchWhenAllAreOn() async {
+        let all = MCPSettings(serverEnabled: true, createMeetings: true, mailRead: true, mailSend: true, mailOrganize: true,
+                              mailArrange: true, cancelMeetings: true, respondMeetings: true)
+        let (tools, _) = makeTools(events: [], settings: all)
+
+        let settings = await switches(tools)
+
+        XCTAssertEqual(Set(settings.keys), ["create_meetings", "cancel_meetings", "respond_meetings", "read_mail", "prepare_mail", "mark_mail", "arrange_mail"])
+        for id in MCPSettingID.allCases {
+            XCTAssertEqual(settings[id.rawValue]?["enabled"], true, id.rawValue)
+            XCTAssertEqual(settings[id.rawValue]?["title"]?.stringValue, id.title, "the title the settings window shows")
+            XCTAssertFalse(id.title.isEmpty, id.rawValue)
+        }
+    }
+
+    func testStatusReportsSwitchesAsTheToolsSeeThem() async {
+        // Mail reading off: the switches under it are greyed out and their tools refuse, whatever
+        // they were left at.
+        let some = MCPSettings(serverEnabled: true, createMeetings: true, mailRead: false, mailSend: true, mailOrganize: true,
+                               mailArrange: true, cancelMeetings: false, respondMeetings: true)
+        let (tools, _) = makeTools(events: [], settings: some)
+
+        let settings = await switches(tools)
+
+        XCTAssertEqual(settings["create_meetings"]?["enabled"], true)
+        XCTAssertEqual(settings["cancel_meetings"]?["enabled"], false)
+        XCTAssertEqual(settings["respond_meetings"]?["enabled"], true)
+        XCTAssertEqual(settings["read_mail"]?["enabled"], false)
+        XCTAssertEqual(settings["prepare_mail"]?["enabled"], false)
+        XCTAssertEqual(settings["mark_mail"]?["enabled"], false)
+        XCTAssertEqual(settings["arrange_mail"]?["enabled"], false)
+        XCTAssertEqual(MCPToolRegistry.tools(for: some).map(\.name), MCPToolRegistry.tools.map(\.name), "and no mail tools are listed")
+    }
+
+    func testSwitchTitleInStatusIsTheOneTheRefusalNames() async throws {
+        let (tools, _) = makeTools(events: [], canCreateMeetings: false, canRemoveMeetings: false, canRespondMeetings: false)
+        let settings = await switches(tools)
+        let calls: [(tool: String, setting: MCPSettingID, arguments: [String: JSONValue])] = [
+            ("create_meeting", .createMeetings, meetingArguments),
+            ("cancel_meeting", .cancelMeetings, ["event_id": "abc"]),
+            ("respond_to_meeting", .respondMeetings, ["event_id": "abc", "response": "accept"]),
+        ]
+        for call in calls {
+            let result = await tools.call(name: call.tool, arguments: call.arguments)
+            XCTAssertRefusal(result, .settingDisabled, call.tool)
+            let refusal = try XCTUnwrap(result.json["structuredContent"])
+            XCTAssertEqual(refusal["setting_id"]?.stringValue, call.setting.rawValue, call.tool)
+            XCTAssertEqual(settings[call.setting.rawValue]?["enabled"], false, call.tool)
+            XCTAssertEqual(refusal["setting"], settings[call.setting.rawValue]?["title"], call.tool)
+        }
+        // The mail switches' refusals are made the same way.
+        for id in MCPSettingID.allCases {
+            XCTAssertEqual(MCPToolError.settingOff(id, "off").settingTitle, settings[id.rawValue]?["title"]?.stringValue, id.rawValue)
+        }
+    }
+
+    func testStatusFollowsASwitchTurnedOnWhileConnected() async {
+        let snapshot = MCPSettingsSnapshot(MCPSettings(serverEnabled: true))
+        let service = CalendarService(
+            providers: [DetailsProvider(account: exchange)],
+            notificationService: SilentNotificationService(),
+            customMeetingReminders: SilentMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false,
+            clock: { [now] in now }
+        )
+        let tools = MCPCalendarTools(calendarService: service, clock: { [now] in now }, settings: { snapshot.current })
+        var settings = await switches(tools)
+        XCTAssertEqual(settings["create_meetings"]?["enabled"], false)
+
+        snapshot.update(MCPSettings(serverEnabled: true, createMeetings: true))
+
+        settings = await switches(tools)
+        XCTAssertEqual(settings["create_meetings"]?["enabled"], true, "read on every call, not at connection time")
     }
 
     func testCreateMeetingIsOffUntilTheUserAllowsIt() async {

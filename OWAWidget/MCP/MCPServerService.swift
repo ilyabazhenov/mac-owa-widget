@@ -47,7 +47,15 @@ final class MCPServerService: ObservableObject {
     @Published private(set) var clients: [Client] = []
     /// Live connections, for change notifications.
     private var connections: [UUID: MCPConnection] = [:]
-    private var pendingPush: (calendar: Bool, mail: Bool) = (false, false)
+    private var pendingPush = PendingPush()
+
+    /// What one connection hears of a push. `mayRead`: the client may read now, as for any tool
+    /// call; `mailAllowed`: it may also read mail. `nil`: nothing.
+    nonisolated static func delivery(_ pending: PendingPush, mayRead: Bool, mailAllowed: Bool) -> (resources: Bool, toolList: Bool)? {
+        let ring = mayRead && (pending.calendar || pending.settings || (pending.mail && mailAllowed))
+        guard ring || pending.tools else { return nil }
+        return (ring, pending.tools)
+    }
     private var pushTask: Task<Void, Never>?
     /// Changes arrive in bursts (a sync, an inbox page): one notification per burst.
     static let pushDelay: Duration = .seconds(2)
@@ -184,8 +192,15 @@ final class MCPServerService: ObservableObject {
             cancelMeetings: canCancelMeetings,
             respondMeetings: canRespondMeetings
         )
+        let old = settingsSnapshot.current
         settingsSnapshot.update(settings)
         _ = MCPSettingsStore.shared.save(settings)
+        // A client learns of the change without reconnecting: the change resource rings for a
+        // switch in `settings`, `tools/list_changed` for a mail tool that came or went.
+        let push = settings.push(since: old)
+        if !push.isEmpty {
+            schedulePush(PendingPush(settings: push.switches, tools: push.toolList))
+        }
     }
 
     /// Starts listening. Called from the menu-bar label's `onAppear`, which runs at launch;
@@ -200,19 +215,17 @@ final class MCPServerService: ObservableObject {
             calendarService: calendarService,
             accessGuard: accessGuard,
             isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled },
-            canCreateMeetings: { [settingsSnapshot] in settingsSnapshot.current.createMeetings },
-            canRemoveMeetings: { [settingsSnapshot] in settingsSnapshot.current.cancelMeetings },
-            canRespondMeetings: { [settingsSnapshot] in settingsSnapshot.current.respondMeetings }
+            settings: { [settingsSnapshot] in settingsSnapshot.current }
         )
         let mailTools = MCPMailTools(
             calendarService: calendarService,
             accessGuard: accessGuard,
             handOff: { [weak mailService] request in mailService?.compose(request) },
             canHandOff: { [weak mailService] in mailService?.settings.enabled ?? false },
-            isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled && settingsSnapshot.current.mailRead },
-            canSend: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailSend },
-            canOrganize: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailOrganize },
-            canArrange: { [settingsSnapshot] in settingsSnapshot.current.mailRead && settingsSnapshot.current.mailArrange },
+            isEnabled: { [settingsSnapshot] in settingsSnapshot.current.serverEnabled && settingsSnapshot.current.isOn(.readMail) },
+            canSend: { [settingsSnapshot] in settingsSnapshot.current.isOn(.prepareMail) },
+            canOrganize: { [settingsSnapshot] in settingsSnapshot.current.isOn(.markMail) },
+            canArrange: { [settingsSnapshot] in settingsSnapshot.current.isOn(.arrangeMail) },
             readMarker: mailService,
             arrangeObserver: mailService
         )
@@ -389,9 +402,27 @@ final class MCPServerService: ObservableObject {
 
     // MARK: - Change notifications
 
+    /// What the next push carries: changes in the feed, switches, the tool list.
+    struct PendingPush: Equatable, Sendable {
+        var calendar = false
+        var mail = false
+        var settings = false
+        var tools = false
+
+        mutating func merge(_ other: PendingPush) {
+            calendar = calendar || other.calendar
+            mail = mail || other.mail
+            settings = settings || other.settings
+            tools = tools || other.tools
+        }
+    }
+
     private func changesRecorded(calendar: Bool, mail: Bool) {
-        pendingPush.calendar = pendingPush.calendar || calendar
-        pendingPush.mail = pendingPush.mail || mail
+        schedulePush(PendingPush(calendar: calendar, mail: mail))
+    }
+
+    private func schedulePush(_ push: PendingPush) {
+        pendingPush.merge(push)
         guard pushTask == nil else { return }
         pushTask = Task { @MainActor in
             try? await Task.sleep(for: Self.pushDelay)
@@ -400,17 +431,22 @@ final class MCPServerService: ObservableObject {
     }
 
     /// Mail changes ring only for clients allowed to read mail: for the rest there is nothing new
-    /// in `get_changes`, and the ring alone would say when mail arrived.
+    /// in `get_changes`, and the ring alone would say when mail arrived. A switch rings for every
+    /// client that may read: `settings` is in its `get_status` as well.
+    ///
+    /// `tools/list_changed` goes to every connection, like `tools/list` itself answers anyone.
     private func pushChanges() {
         let pending = pendingPush
-        pendingPush = (false, false)
+        pendingPush = PendingPush()
         pushTask = nil
-        guard isEnabled else { return }
         for (clientID, connection) in connections {
             // Access taken away after subscribing: the subscription stays, the ringing stops.
-            guard mayReadQuietly(clientID) else { continue }
-            guard pending.calendar || (pending.mail && changesMailAccess(clientID) == .allowed) else { continue }
-            Task { await connection.notifyChanged() }
+            guard let delivery = Self.delivery(
+                pending,
+                mayRead: mayReadQuietly(clientID),
+                mailAllowed: changesMailAccess(clientID) == .allowed
+            ) else { continue }
+            Task { await connection.notify(resources: delivery.resources, toolList: delivery.toolList) }
         }
     }
 

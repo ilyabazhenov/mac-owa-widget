@@ -58,8 +58,9 @@ enum MCPErrorCode: String, CaseIterable, Sendable {
     case unconfirmed
 }
 
-/// A tool setting a `setting_disabled` refusal points at.
-enum MCPSettingID: String, Sendable {
+/// A tool setting a `setting_disabled` refusal points at. `get_status` and `get_changes` report
+/// every case in `settings`, in this order.
+enum MCPSettingID: String, Sendable, CaseIterable {
     case createMeetings = "create_meetings"
     case cancelMeetings = "cancel_meetings"
     case respondMeetings = "respond_meetings"

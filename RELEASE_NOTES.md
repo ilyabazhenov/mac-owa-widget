@@ -2,10 +2,12 @@
 
 ### RU
 
+- **MCP: клиент заранее знает, что разрешено.** `get_status` и `get_changes` отдают `settings`: для каждого переключателя «Настройки → AI (MCP)» — включён ли он и как называется в окне настроек (то же название, что в отказе `setting_disabled`). Раньше права на встречи клиент узнавал только по отказу и до первой попытки показывал их как «неизвестно». Переключение тумблера доходит до подключённого клиента без переподключения: подписка `owawidget://changes` звонит, а смена набора почтовых инструментов приходит `notifications/tools/list_changed`.
 - **MCP: вёрстка письма по просьбе клиента.** У `get_mail_thread` и `get_mail_message` новый аргумент `include_html`: рядом с `text` приходит очищенная HTML-вёрстка письма (таблицы с пустыми ячейками, жирный, курсив, цвета, внешние картинки, ссылки; без скриптов, форм, стилей и скрытого текста). Нужен клиентам, которые сами рисуют письмо; без аргумента ответ прежний.
 
 ### EN
 
+- **MCP: clients know up front what is allowed.** `get_status` and `get_changes` return `settings`: for every switch in Settings → AI (MCP), whether it is on and its name in the settings window (the same name a `setting_disabled` refusal gives). Before, a client learned about the meeting switches only from a refusal and showed them as "unknown" until the first try. Flipping a switch reaches a connected client without reconnecting: the `owawidget://changes` subscription rings, and a change in the mail tools comes as `notifications/tools/list_changed`.
 - **MCP: message markup on request.** `get_mail_thread` and `get_mail_message` take a new `include_html` argument: next to `text` comes the message's cleaned HTML (tables with their empty cells, bold, italics, colours, web images, links; no scripts, forms, style sheets or hidden text). For clients that draw the message themselves; without it the answer is unchanged.
 
 ## v1.0.62 - 2026-11-19
