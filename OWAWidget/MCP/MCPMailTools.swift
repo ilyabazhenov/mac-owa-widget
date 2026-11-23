@@ -103,6 +103,8 @@ final class MCPMailTools {
     private let canArrange: () -> Bool
     private weak var readMarker: MCPMailReadMarking?
     private weak var arrangeObserver: MCPMailArrangeObserving?
+    /// The calendar behind meeting messages: `event_id`, `my_response`, `conflicts`.
+    private weak var meetingCalendar: MCPMeetingCalendar?
     private let clock: () -> Date
     private let timeZoneProvider: () -> TimeZone
     private let confirmationTimeout: TimeInterval
@@ -136,6 +138,7 @@ final class MCPMailTools {
         canArrange: @escaping () -> Bool = { false },
         readMarker: MCPMailReadMarking? = nil,
         arrangeObserver: MCPMailArrangeObserving? = nil,
+        meetingCalendar: MCPMeetingCalendar? = nil,
         confirmationTimeout: TimeInterval = MCPCalendarTools.confirmationTimeout,
         clock: @escaping () -> Date = { Date() },
         timeZone: @escaping () -> TimeZone = { AppTimeZone.zone },
@@ -153,6 +156,7 @@ final class MCPMailTools {
         self.canArrange = canArrange
         self.readMarker = readMarker
         self.arrangeObserver = arrangeObserver
+        self.meetingCalendar = meetingCalendar
         self.confirmationTimeout = confirmationTimeout
         self.clock = clock
         self.timeZoneProvider = timeZone
@@ -467,6 +471,12 @@ final class MCPMailTools {
             fields["external_sender"] = true
         }
         if conversation.userHasReplied { fields["you_replied"] = true }
+        if let kind = MCPMailMeetings.uniformMeetingKind(conversation) { fields["kind"] = .string(Self.kindName(kind)) }
+        // The list row of an invitation says nothing about its time: the calendar's, as the mail
+        // window's list shows it.
+        if conversation.isMeetingRequest, let interval = calendarService.mailMeetingInterval(topic: conversation.topic) {
+            fields["meeting"] = ["start": .string(coder.string(interval.start)), "end": .string(coder.string(interval.end))]
+        }
         if let folder = conversation.parentFolderID {
             fields["folder"] = .optional(folders.names[folder])
             if !folders.isInbox(folder) { fields["folder_id"] = .string(handle(folder)) }
@@ -478,6 +488,45 @@ final class MCPMailTools {
         var fields: [String: JSONValue] = ["name": .string(address.displayName), "email": .optional(address.email)]
         if let external = Self.isExternal(address.email, ownDomain: ownDomain), external { fields["external"] = true }
         return .object(fields)
+    }
+
+    /// The meeting messages of one answer: their account, and the meetings whose `conflicts` it
+    /// already lists.
+    struct MeetingContext {
+        let accountID: UUID
+        var shown: Set<String> = []
+    }
+
+    /// A meeting message's `meeting`: its own time and place, and from the calendar the meeting it
+    /// is about (`event_id`), the user's answer, whether it repeats or was cancelled, and — for an
+    /// invitation, once per meeting in an answer (the newest invitation) — the user's other
+    /// meetings at that time, as the mail window shows them.
+    private func meetingJSON(_ meeting: MailMeetingInfo, of message: MailMessage, _ coder: MCPDateCoder, _ context: inout MeetingContext) -> JSONValue {
+        var info: [String: JSONValue] = [
+            "start": .optional(meeting.start.map(coder.string)),
+            "end": .optional(meeting.end.map(coder.string)),
+            "location": .optional(meeting.location),
+        ]
+        if let response = meeting.response { info["response"] = .string(MCPCalendarTools.responseName(response)) }
+        let known = meetingCalendar?.knownMeetings ?? []
+        let event = MCPMailMeetings.event(for: meeting, subject: message.subject, accountID: context.accountID, in: known)
+        if let event {
+            info["event_id"] = .string(MCPEventID.short(event.id))
+            info["my_response"] = .string(MCPCalendarTools.responseName(event.responseType))
+            if event.isRecurring { info["is_recurring"] = true }
+        }
+        if message.kind == .meetingCancellation || event?.isEffectivelyCancelled == true { info["cancelled"] = true }
+        guard message.kind == .meetingRequest, let calendar = meetingCalendar else { return .object(info) }
+        let start = event?.startDate ?? meeting.start
+        let end = event?.endDate ?? meeting.end
+        let key = event.map { "event:" + $0.id } ?? "message:" + message.ref.id
+        // Only where the calendar knows every meeting at that time: elsewhere none would be a guess.
+        if let start, let end, end > start, let coverage = calendar.knownCoverage,
+           coverage.start <= start, end <= coverage.end, context.shown.insert(key).inserted {
+            let others = MCPMailMeetings.conflicts(with: DateInterval(start: start, end: end), excluding: event, in: known)
+            info["conflicts"] = .array(others.map { .object(calendar.meetingSummary($0, coder: coder)) })
+        }
+        return .object(info)
     }
 
     private static func kindName(_ kind: MailItemKind) -> String {
@@ -512,7 +561,7 @@ final class MCPMailTools {
     /// With `includeHTML`, also `html`: the same part of the body as `text`, cleaned markup for a
     /// client that draws the message itself. Markup is never cut (it would break): a message whose
     /// markup does not fit into `htmlBudget` gets none, with `html_omitted`.
-    private func messageJSON(_ message: MailMessage, _ coder: MCPDateCoder, ownDomain: String?, characterLimit: Int, includeHTML: Bool, compact: CompactMessage? = nil, budget: inout Int, htmlBudget: inout Int) -> JSONValue {
+    private func messageJSON(_ message: MailMessage, _ coder: MCPDateCoder, ownDomain: String?, characterLimit: Int, includeHTML: Bool, compact: CompactMessage? = nil, meetings: inout MeetingContext, budget: inout Int, htmlBudget: inout Int) -> JSONValue {
         var fields: [String: JSONValue] = [
             "message_id": .string(handle(message.ref.id)),
             "from": message.from.map { addressJSON($0, ownDomain: ownDomain) } ?? .null,
@@ -557,13 +606,7 @@ final class MCPMailTools {
             })
         }
         if let meeting = message.meeting {
-            var info: [String: JSONValue] = [
-                "start": .optional(meeting.start.map(coder.string)),
-                "end": .optional(meeting.end.map(coder.string)),
-                "location": .optional(meeting.location),
-            ]
-            if let response = meeting.response { info["response"] = .string(response.rawValue) }
-            fields["meeting"] = .object(info)
+            fields["meeting"] = meetingJSON(meeting, of: message, coder, &meetings)
         }
         switch message.kind {
         case .protected:
@@ -951,11 +994,12 @@ final class MCPMailTools {
         result["subject"] = .string(thread.topic)
         result["total_messages"] = .int(Int64(thread.totalMessageCount))
         let shown = Array(thread.messages.prefix(maxMessages))
+        var meetings = MeetingContext(accountID: account.id)
         result["messages"] = .array(shown.enumerated().map { index, message in
             let newer = index == 0 ? nil : shown[index - 1]
             let newerPeople = newer.flatMap { $0.hiddenRecipientCount == 0 ? Self.people(of: $0) : nil }
             let view = compact ? CompactMessage(topic: thread.topic, newerPeople: newerPeople) : nil
-            return messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, includeHTML: includeHTML, compact: view, budget: &budget, htmlBudget: &htmlBudget)
+            return messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, includeHTML: includeHTML, compact: view, meetings: &meetings, budget: &budget, htmlBudget: &htmlBudget)
         })
         if thread.messages.count > maxMessages || thread.totalMessageCount > thread.messages.count {
             result["note"] = "Newest messages first; older ones are not included. Each message's `text` is only what it added, without the quoted history: get_mail_message returns the full text."
@@ -975,8 +1019,9 @@ final class MCPMailTools {
         var budget = Self.maxFullMessageCharacters
         // One message: its markup whole, however long.
         var htmlBudget = Int.max
+        var meetings = MeetingContext(accountID: account.id)
         var result = commonFields(coder, account)
-        result["message"] = messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxFullMessageCharacters, includeHTML: includeHTML, budget: &budget, htmlBudget: &htmlBudget)
+        result["message"] = messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxFullMessageCharacters, includeHTML: includeHTML, meetings: &meetings, budget: &budget, htmlBudget: &htmlBudget)
         result["open_url"] = openURL(.message(id: message.ref.id, accountID: linkAccountID(account)))
         if let conversation = message.conversationID { result["thread_id"] = .string(handle(conversation)) }
         return .success(result)
@@ -1735,5 +1780,25 @@ final class MCPMailTools {
         arrangeObserver?.mailFlaggedByAssistant(conversationIDs: doneConversations, messageIDs: doneMessages, flagged: flagged, accountID: account.id)
         MCPDebugLog.log("set_mail_flag flagged=\(flagged) asked=\(raw.count) updated=\(done.count) unchanged=\(unchanged.count) failed=\(failed.count)")
         return .success(["updated": .int(Int64(done.count)), "unchanged": .array(unchanged), "failed": .array(failed)])
+    }
+}
+
+extension MCPMailTools: MCPMeetingMail {
+    func meetingMessage(_ handle: String, accountID: String?) async throws -> (message: MailMessage, accountID: UUID) {
+        guard isEnabled() else { throw MCPToolError.settingOff(.readMail, Self.disabledMessage, code: .mailNotAllowed) }
+        var arguments: [String: JSONValue] = ["message_id": .string(handle)]
+        if let accountID { arguments["account_id"] = .string(accountID) }
+        let account = try mailAccount(arguments)
+        let id = try requiredID(arguments, "message_id", from: "get_mail_thread")
+        do {
+            let message = try await request(account, context: "mcp.mail.message") { try await $0.mailMessage(MailItemRef(id: id, changeKey: nil)) }
+            return (message, account.id)
+        } catch let error as MCPToolError {
+            throw error
+        } catch MailError.notFound {
+            throw MCPToolError(.notFound, "Message \(handle) not found. It may have been moved or deleted (moving changes its id): call get_mail_thread again.")
+        } catch {
+            throw MCPToolError(MCPToolError.code(for: error), error.localizedDescription)
+        }
     }
 }

@@ -227,8 +227,10 @@ final class MCPServerService: ObservableObject {
             canOrganize: { [settingsSnapshot] in settingsSnapshot.current.isOn(.markMail) },
             canArrange: { [settingsSnapshot] in settingsSnapshot.current.isOn(.arrangeMail) },
             readMarker: mailService,
-            arrangeObserver: mailService
+            arrangeObserver: mailService,
+            meetingCalendar: calendarTools
         )
+        calendarTools.meetingMail = mailTools
         let pollInterval: () -> TimeInterval = { [weak mailService] in
             TimeInterval((mailService?.settings.pollMinutes ?? 2) * 60)
         }
@@ -714,7 +716,9 @@ struct MCPGatedToolbox: MCPToolProviding {
             await base.recordCall(name, client, true)
             return .failure(refusal)
         }
-        if MCPMailTools.toolNames.contains(name), let refusal = await MCPServerService.shared.authorizeMail(clientID, tool: name) {
+        // An invitation answered by its `message_id` is read from the mailbox: mail's own consent.
+        let readsMail = MCPMailTools.toolNames.contains(name) || (name == "respond_to_meeting" && arguments["message_id"].map({ $0 != .null }) == true)
+        if readsMail, let refusal = await MCPServerService.shared.authorizeMail(clientID, tool: name) {
             await base.recordCall(name, client, true)
             return .failure(refusal)
         }

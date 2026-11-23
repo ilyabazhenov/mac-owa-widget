@@ -226,6 +226,8 @@ final class MCPMailToolsTests: XCTestCase {
     private var handedOff: [MailComposeRequest] = []
     /// `MCPMailTools` holds its marker weakly: the test keeps it alive.
     private var mailService: MailService?
+    /// The calendar behind meeting messages (`withCalendar`), held weakly by the tools.
+    private var calendarTools: MCPCalendarTools?
 
     override func setUp() async throws {
         provider = MailboxProvider(account: account)
@@ -282,6 +284,7 @@ final class MCPMailToolsTests: XCTestCase {
             canArrange: { arrange },
             readMarker: marker ?? mailService,
             arrangeObserver: mailService,
+            meetingCalendar: calendarTools,
             // A fixed "now" a day after the fixture's message: windows such as `awaiting_days`
             // count back from the clock, and real time would age the fixture out of them.
             clock: { Self.fixtureNow },
@@ -1633,5 +1636,207 @@ final class MCPMailToolsTests: XCTestCase {
         let messages = try XCTUnwrap(read["messages"]?.arrayValue)
         XCTAssertEqual(messages.map { $0["html"]?.stringValue }, ["<p>Second <i>part</i></p>", "<p>First <b>part</b></p>"])
         XCTAssertEqual(messages.map { $0["text"]?.stringValue }, ["Second part", "First part"])
+    }
+
+    // MARK: - Meeting messages
+
+    private let moscow = TimeZone(identifier: "Europe/Moscow")!
+
+    /// 2026-10-16 (two days after the fixture's message) at `hour:minute` Moscow.
+    private func at(_ hour: Int, _ minute: Int = 0, day: Int = 16) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = moscow
+        return calendar.date(from: DateComponents(year: 2026, month: 10, day: day, hour: hour, minute: minute))!
+    }
+
+    private func calendarEvent(
+        _ id: String, _ title: String, _ start: Date, minutes: Int, response: MeetingResponseType = .accepted,
+        cancelled: Bool = false, allDay: Bool = false, isOrganizer: Bool = false, series: String? = nil, organizer: String = "Grace Miller"
+    ) -> CalendarEvent {
+        CalendarEvent(
+            id: id, title: title, startDate: start, endDate: start.addingTimeInterval(TimeInterval(minutes * 60)),
+            location: nil, bodyPreview: nil, joinURL: nil, platform: .generic, isAllDay: allDay, organizer: organizer,
+            accountID: account.id, isCancelled: cancelled, isOrganizer: isOrganizer, responseType: response,
+            changeKey: "ck-\(id)", icalUID: series, seriesID: series
+        )
+    }
+
+    /// The synced calendar the mail tools look meetings up in: the real sync window around the
+    /// fixture's "now".
+    private func withCalendar(_ events: [CalendarEvent]) {
+        service.replaceEventsForTests(events)
+        service.setEventCoverageForTests(EventCoverage(
+            start: Self.fixtureNow.addingTimeInterval(-7 * 86_400), end: Self.fixtureNow.addingTimeInterval(30 * 86_400), refreshedAt: Self.fixtureNow
+        ))
+        calendarTools = MCPCalendarTools(calendarService: service, clock: { Self.fixtureNow }, timeZone: { [moscow] in moscow })
+    }
+
+    private func meetingMessage(
+        _ id: String, _ kind: MailItemKind, subject: String, start: Date?, end: Date?, calendarItemID: String?,
+        response: MeetingResponseType? = nil, received: Date = Date(timeIntervalSince1970: 1_792_000_000)
+    ) -> MailMessage {
+        MailMessage(
+            ref: MailItemRef(id: id, changeKey: "CK-\(id)"), conversationID: "CONV-MEET-FULL-ID-000000000", parentFolderID: "F-INBOX-FULL-ID-0000000000",
+            kind: kind, subject: subject, from: MailAddress(name: "Grace Miller", email: "g.miller@example.com"),
+            to: [MailAddress(name: "Alex Morgan", email: "a.morgan@example.com")], cc: [], bcc: [], hiddenRecipientCount: 0,
+            received: received, sent: nil, isRead: true, isDraft: false, importance: .normal, bodyHTML: "<div>Join link</div>",
+            preview: "Join link", attachments: [], categories: [], isFlagged: false, actions: [],
+            meeting: MailMeetingInfo(start: start, end: end, location: "Room 4", associatedCalendarItemID: calendarItemID, response: response),
+            internetMessageID: nil
+        )
+    }
+
+    /// One conversation of meeting messages, newest first, alone in the inbox.
+    private func setMeetingThread(_ messages: [MailMessage], itemClasses: [String]) async {
+        let conversation = MailConversationSummary(
+            id: "CONV-MEET-FULL-ID-000000000", topic: messages[0].subject, senders: ["Grace Miller"], recipients: [],
+            lastDelivery: messages[0].received, messageCount: messages.count, unreadCount: 0, hasAttachments: false,
+            importance: .normal, preview: "Join link", itemRefs: messages.map(\.ref), categories: [], isFlagged: false,
+            isProtected: false, instanceKey: "KEY-MEET", parentFolderID: "F-INBOX-FULL-ID-0000000000", itemClasses: itemClasses
+        )
+        await provider.set(conversations: [conversation], threads: [MailThread(id: conversation.id, messages: messages, totalMessageCount: messages.count)])
+    }
+
+    private func titles(_ value: JSONValue?) -> [String] {
+        value?.arrayValue?.compactMap { $0["title"]?.stringValue } ?? []
+    }
+
+    /// An invitation shows the meeting as the mail window does: its calendar id, the user's
+    /// answer and the meetings it clashes with; an older invitation to the same (moved) meeting
+    /// does not list them again. The list row gets `kind` and the calendar's time.
+    func testInvitationCarriesItsCalendarMeetingAndConflicts() async throws {
+        withCalendar([
+            calendarEvent("CAL-APO", "Ситуация с АПО и ИЗТ", at(16, 15), minutes: 15, response: .notResponded),
+            calendarEvent("CAL-TECH", "Tech solution", at(16), minutes: 30),
+            calendarEvent("CAL-LEADS", "Back leads", at(15, 30), minutes: 60, response: .organizer, isOrganizer: true, organizer: "Alex Morgan"),
+            calendarEvent("CAL-NEXT", "Right after", at(16, 30), minutes: 30),
+            calendarEvent("CAL-BEFORE", "Right before", at(15, 45), minutes: 30, response: .tentative),
+            calendarEvent("CAL-DECLINED", "Declined one", at(16), minutes: 60, response: .declined),
+            calendarEvent("CAL-CANCELLED", "Cancelled one", at(16), minutes: 60, cancelled: true),
+            calendarEvent("CAL-ALLDAY", "Holiday", at(0), minutes: 24 * 60, allDay: true),
+        ])
+        await setMeetingThread([
+            meetingMessage("MSG-INV-2", .meetingRequest, subject: "Ситуация с АПО и ИЗТ", start: at(16, 15), end: at(16, 30), calendarItemID: "CAL-APO"),
+            meetingMessage("MSG-INV-1", .meetingRequest, subject: "Ситуация с АПО и ИЗТ", start: at(16), end: at(16, 30), calendarItemID: "CAL-APO",
+                           received: Date(timeIntervalSince1970: 1_791_900_000)),
+        ], itemClasses: ["IPM.Schedule.Meeting.Request", "IPM.Schedule.Meeting.Request"])
+        let tools = makeTools()
+
+        let list = try object(await tools.call(name: "list_mail", arguments: [:], client: nil))
+        let row = try XCTUnwrap(list["threads"]?.arrayValue?.first)
+        XCTAssertEqual(row["kind"], "meeting_request")
+        XCTAssertEqual(row["meeting"]?["start"], "2026-10-16T16:15:00+03:00")
+        XCTAssertEqual(row["meeting"]?["end"], "2026-10-16T16:30:00+03:00")
+
+        let thread = try object(await tools.call(name: "get_mail_thread", arguments: ["thread_id": .string(try XCTUnwrap(row["thread_id"]?.stringValue))], client: nil))
+        let messages = try XCTUnwrap(thread["messages"]?.arrayValue)
+        let newest = try XCTUnwrap(messages.first?["meeting"])
+        XCTAssertEqual(newest["event_id"]?.stringValue, MCPEventID.short("CAL-APO"))
+        XCTAssertEqual(newest["my_response"], "not_responded")
+        XCTAssertEqual(newest["location"], "Room 4")
+        XCTAssertNil(newest["is_recurring"])
+        XCTAssertNil(newest["cancelled"])
+        XCTAssertNil(newest["response"])
+        XCTAssertEqual(titles(newest["conflicts"]), ["Back leads", "Tech solution"], "half-open: the meetings ending at 16:15 and starting at 16:30 do not clash")
+        let leads = try XCTUnwrap(newest["conflicts"]?.arrayValue?.first)
+        XCTAssertEqual(leads["event_id"]?.stringValue, MCPEventID.short("CAL-LEADS"))
+        XCTAssertEqual(leads["my_response"], "organizer")
+        XCTAssertEqual(leads["start"], "2026-10-16T15:30:00+03:00")
+        XCTAssertEqual(leads["organizer"], "Alex Morgan")
+
+        let older = try XCTUnwrap(messages.last?["meeting"])
+        XCTAssertEqual(older["event_id"]?.stringValue, MCPEventID.short("CAL-APO"), "the moved meeting is still the same calendar item")
+        XCTAssertEqual(older["start"], "2026-10-16T16:00:00+03:00", "the message keeps its own time")
+        XCTAssertNil(older["conflicts"], "listed once per meeting, on the newest invitation")
+
+        // get_mail_message: the one message, with its conflicts.
+        let one = try object(await tools.call(name: "get_mail_message", arguments: ["message_id": .string(try XCTUnwrap(messages.last?["message_id"]?.stringValue))], client: nil))
+        XCTAssertEqual(titles(one["message"]?["meeting"]?["conflicts"]), ["Back leads", "Tech solution"])
+    }
+
+    /// A cancellation and an attendee's answer: `cancelled`, the answer in snake_case, the
+    /// meeting's calendar id, and no conflicts (only invitations list them).
+    func testCancellationAndAttendeeAnswer() async throws {
+        withCalendar([
+            calendarEvent("CAL-OFF", "Planning", at(11), minutes: 60, response: .notResponded, cancelled: true),
+            calendarEvent("CAL-MINE", "Review", at(12), minutes: 60, response: .organizer, isOrganizer: true),
+            calendarEvent("CAL-CLASH", "Clash", at(11), minutes: 60),
+        ])
+        await setMeetingThread([
+            meetingMessage("MSG-CANCEL", .meetingCancellation, subject: "Canceled: Planning", start: at(11), end: at(12), calendarItemID: "CAL-OFF"),
+        ], itemClasses: ["IPM.Schedule.Meeting.Canceled"])
+        let tools = makeTools()
+        let list = try object(await tools.call(name: "list_mail", arguments: [:], client: nil))
+        let row = try XCTUnwrap(list["threads"]?.arrayValue?.first)
+        XCTAssertEqual(row["kind"], "meeting_cancellation")
+        XCTAssertNil(row["meeting"], "only an invitation's row carries the time")
+        let thread = try object(await tools.call(name: "get_mail_thread", arguments: ["thread_id": .string(try XCTUnwrap(row["thread_id"]?.stringValue))], client: nil))
+        let cancelled = try XCTUnwrap(thread["messages"]?.arrayValue?.first?["meeting"])
+        XCTAssertEqual(cancelled["cancelled"], true)
+        XCTAssertEqual(cancelled["event_id"]?.stringValue, MCPEventID.short("CAL-OFF"))
+        XCTAssertNil(cancelled["conflicts"])
+
+        await setMeetingThread([
+            meetingMessage("MSG-ANSWER", .meetingResponse, subject: "Tentative: Review", start: at(12), end: at(13), calendarItemID: "CAL-MINE", response: .tentative),
+        ], itemClasses: ["IPM.Schedule.Meeting.Resp.Tent"])
+        let answers = try object(await tools.call(name: "list_mail", arguments: [:], client: nil))
+        let answerRow = try XCTUnwrap(answers["threads"]?.arrayValue?.first)
+        XCTAssertEqual(answerRow["kind"], "meeting_response")
+        let answerThread = try object(await tools.call(name: "get_mail_thread", arguments: ["thread_id": .string(try XCTUnwrap(answerRow["thread_id"]?.stringValue))], client: nil))
+        let answer = try XCTUnwrap(answerThread["messages"]?.arrayValue?.first?["meeting"])
+        XCTAssertEqual(answer["response"], "tentative")
+        XCTAssertEqual(answer["my_response"], "organizer")
+        XCTAssertNil(answer["cancelled"])
+        XCTAssertNil(answer["conflicts"])
+    }
+
+    /// An invitation to a series points at the series, which the calendar view never lists: the
+    /// occurrence with the message's time and title stands for it.
+    func testSeriesInvitationIsMatchedByTimeAndTitle() async throws {
+        withCalendar([
+            calendarEvent("CAL-OCC-1", "Weekly sync", at(10), minutes: 30, response: .notResponded, series: "uid-weekly"),
+            calendarEvent("CAL-OTHER", "Weekly sync", at(10, day: 17), minutes: 30, response: .notResponded),
+            calendarEvent("CAL-SHORT", "Sync", at(10), minutes: 30),
+        ])
+        await setMeetingThread([
+            meetingMessage("MSG-SERIES", .meetingRequest, subject: "Weekly sync", start: at(10), end: at(10, 30), calendarItemID: "CAL-MASTER"),
+        ], itemClasses: ["IPM.Schedule.Meeting.Request"])
+        let tools = makeTools()
+        let list = try object(await tools.call(name: "list_mail", arguments: [:], client: nil))
+        let threadID = try XCTUnwrap(list["threads"]?.arrayValue?.first?["thread_id"]?.stringValue)
+        let thread = try object(await tools.call(name: "get_mail_thread", arguments: ["thread_id": .string(threadID)], client: nil))
+        let meeting = try XCTUnwrap(thread["messages"]?.arrayValue?.first?["meeting"])
+        XCTAssertEqual(meeting["event_id"]?.stringValue, MCPEventID.short("CAL-OCC-1"))
+        XCTAssertEqual(meeting["is_recurring"], true)
+        XCTAssertEqual(meeting["my_response"], "not_responded")
+        XCTAssertEqual(titles(meeting["conflicts"]), ["Sync"], "a title that only ends the subject is another meeting")
+
+        // Without the occurrence, the shorter title at the same time is not taken for it.
+        service.replaceEventsForTests([calendarEvent("CAL-SHORT", "Sync", at(10), minutes: 30)])
+        let alone = try object(await tools.call(name: "get_mail_thread", arguments: ["thread_id": .string(threadID)], client: nil))
+        XCTAssertNil(alone["messages"]?.arrayValue?.first?["meeting"]?["event_id"])
+    }
+
+    /// A meeting the calendar does not have (beyond the sync window): only what the message says;
+    /// no answer, no conflicts (that would be a guess), no time in the list.
+    func testInvitationOutsideTheCalendarHasOnlyItsOwnFields() async throws {
+        withCalendar([calendarEvent("CAL-TODAY", "Something else", at(10), minutes: 60)])
+        let far = Self.fixtureNow.addingTimeInterval(90 * 86_400)
+        await setMeetingThread([
+            meetingMessage("MSG-FAR", .meetingRequest, subject: "Annual review", start: far, end: far.addingTimeInterval(3_600), calendarItemID: "CAL-FAR"),
+            meetingMessage("MSG-FAR-ANSWER", .meetingResponse, subject: "Accepted: Annual review", start: far, end: far.addingTimeInterval(3_600), calendarItemID: "CAL-FAR", response: .accepted),
+        ], itemClasses: ["IPM.Schedule.Meeting.Request", "IPM.Schedule.Meeting.Resp.Pos"])
+        let tools = makeTools()
+        let list = try object(await tools.call(name: "list_mail", arguments: [:], client: nil))
+        let row = try XCTUnwrap(list["threads"]?.arrayValue?.first)
+        XCTAssertNil(row["kind"], "an invitation and an answer are not one kind")
+        XCTAssertNil(row["meeting"], "the synced calendar has no meeting with that title")
+        let thread = try object(await tools.call(name: "get_mail_thread", arguments: ["thread_id": .string(try XCTUnwrap(row["thread_id"]?.stringValue))], client: nil))
+        let meeting = try XCTUnwrap(thread["messages"]?.arrayValue?.first?["meeting"])
+        XCTAssertNotNil(meeting["start"])
+        XCTAssertNil(meeting["event_id"])
+        XCTAssertNil(meeting["my_response"])
+        XCTAssertNil(meeting["conflicts"])
+        XCTAssertEqual(thread["messages"]?.arrayValue?.last?["meeting"]?["response"], "accepted")
     }
 }

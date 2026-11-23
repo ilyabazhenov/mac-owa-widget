@@ -81,6 +81,8 @@ final class MCPCalendarTools {
     private var isCreatingMeeting = false
     private var isRemovingMeeting = false
     private var isRespondingToMeeting = false
+    /// The mailbox, for `respond_to_meeting` with a `message_id`; nil without mail tools.
+    weak var meetingMail: MCPMeetingMail?
 
     init(
         calendarService: CalendarService,
@@ -1163,8 +1165,15 @@ final class MCPCalendarTools {
                 "Answering invitations is turned off in OWA Widget (Settings → MCP → \"Allow answering invitations\"). Nothing was sent. Ask the user to turn it on."
             ))
         }
-        guard let handle = arguments["event_id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !handle.isEmpty else {
-            throw ArgumentError("`event_id` is required (take it from list_events)")
+        let eventHandle = Self.nonEmpty(arguments["event_id"])
+        let messageHandle = Self.nonEmpty(arguments["message_id"])
+        guard (eventHandle == nil) != (messageHandle == nil) else {
+            throw ArgumentError(eventHandle == nil
+                ? "`event_id` or `message_id` is required (event_id from list_events, message_id of an invitation from get_mail_thread)"
+                : "Pass either `event_id` or `message_id`, not both")
+        }
+        if arguments["account_id"].map({ $0 != .null }) == true, messageHandle == nil {
+            throw ArgumentError("`account_id` goes only with `message_id`: an event_id already names its account")
         }
         guard let actionName = arguments["response"]?.stringValue, let action = MeetingResponseAction(name: actionName) else {
             throw ArgumentError("`response` is required: accept, tentative or decline")
@@ -1198,15 +1207,25 @@ final class MCPCalendarTools {
         // either id must still find the first answer.
         let answerKey = [scopeName, action.name, sendResponse ? "send" : "quiet", MCPShortHash.hex(comment, bytes: 6)].joined(separator: "|")
         recentResponses = recentResponses.filter { context.now.timeIntervalSince($0.value.date) < Self.duplicateWindow }
-        if let earlier = recentResponses[handle.lowercased() + "|" + answerKey] ?? recentResponses[MCPEventID.short(handle) + "|" + answerKey] {
+        // A message's answer is also kept under the message: a declined meeting leaves the
+        // calendar, and a retry would not find it from the invitation any more.
+        let messageKey = messageHandle.map { "message:" + ($0.count > 20 ? MCPShortHash.hex($0, bytes: 6) : $0.lowercased()) }
+        let earlierKeys = eventHandle.map { [$0.lowercased(), MCPEventID.short($0)] } ?? messageKey.map { [$0] } ?? []
+        if let earlier = earlierKeys.lazy.compactMap({ self.recentResponses[$0 + "|" + answerKey] }).first {
             var result = earlier.result
             result["duplicate"] = true
             result["note"] = "The same answer was given a few minutes ago; nothing new was sent."
             return .success(result)
         }
-        guard let event = MCPEventID.resolve(handle, in: calendarService.events)
-            ?? MCPEventID.resolve(handle, in: archive.allEvents) else {
-            return .failure(.notFound, "Event \(handle) not found. It may have been removed, or the calendar was refreshed — call list_events again.")
+        let event: CalendarEvent
+        if let handle = eventHandle {
+            guard let found = MCPEventID.resolve(handle, in: calendarService.events)
+                ?? MCPEventID.resolve(handle, in: archive.allEvents) else {
+                return .failure(.notFound, "Event \(handle) not found. It may have been removed, or the calendar was refreshed — call list_events again.")
+            }
+            event = found
+        } else {
+            event = try await invitationEvent(messageHandle ?? "", accountID: arguments["account_id"]?.stringValue, context)
         }
         guard calendarService.accountType(for: event.accountID) == .owa, event.changeKey != nil,
               let account = calendarService.accounts.first(where: { $0.id == event.accountID }) else {
@@ -1327,7 +1346,53 @@ final class MCPCalendarTools {
         if action == .decline { note += " Exchange removes a declined meeting from the user's calendar." }
         result["note"] = .string(note)
         recentResponses[MCPEventID.short(event.id) + "|" + answerKey] = (context.now, result)
+        if let messageKey { recentResponses[messageKey + "|" + answerKey] = (context.now, result) }
         return .success(result)
+    }
+
+    private static func nonEmpty(_ value: JSONValue?) -> String? {
+        guard let text = value?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        return text
+    }
+
+    /// The calendar meeting an invitation in mail is about: from the synced calendar, the
+    /// meetings already loaded beyond it, or — for a meeting outside the sync window — its period
+    /// loaded from the calendar, as list_events would. Refuses a message that is no invitation.
+    private func invitationEvent(_ handle: String, accountID: String?, _ context: CallContext) async throws -> CalendarEvent {
+        guard let meetingMail else {
+            throw ArgumentError(.notSupported, "Mail is not available in this copy of OWA Widget: pass `event_id` from list_events.")
+        }
+        let (message, account) = try await meetingMail.meetingMessage(handle, accountID: accountID)
+        switch message.kind {
+        case .meetingRequest:
+            break
+        case .meetingCancellation:
+            throw ArgumentError(.notInvitation, "This message cancels a meeting: there is nothing to answer. Nothing was sent; cancel_meeting can remove it from the calendar.")
+        case .meetingResponse:
+            throw ArgumentError(.notInvitation, "This message is someone's answer to a meeting, not an invitation to the user. Nothing was sent.")
+        default:
+            throw ArgumentError(.notInvitation, "This message is not a meeting invitation. Nothing was sent.")
+        }
+        let notInCalendar = ArgumentError(.notFound, "The meeting of this invitation is not in the user's calendar: it may have been cancelled, moved or already declined. Nothing was sent; look for it with list_events.")
+        guard let info = message.meeting else { throw notInCalendar }
+        if let event = MCPMailMeetings.event(for: info, subject: message.subject, accountID: account, in: knownMeetings) {
+            return event
+        }
+        guard let start = info.start, let coverage = calendarService.eventCoverage?.interval,
+              !(start < coverage.end && max(info.end ?? start, start) > coverage.start) else {
+            throw notInCalendar
+        }
+        // Beyond the sync window: load the meeting's own period (a block of the archive).
+        let end = max(info.end ?? start, start.addingTimeInterval(60))
+        let resolved = try clip(DateInterval(start: start, end: end), onDemand: true, context)
+        let lookup = try await calendarEvents(for: resolved, accountID: account, context)
+        if let event = MCPMailMeetings.event(for: info, subject: message.subject, accountID: account, in: lookup.events) {
+            return event
+        }
+        if let failure = lookup.unavailable.first(where: { $0.accountID == account }) {
+            throw ArgumentError(.exchangeError, "Could not load the calendar around this meeting: \(failure.reason) Nothing was sent.")
+        }
+        throw notInCalendar
     }
 
     // MARK: - cancel_meeting
@@ -2390,5 +2455,19 @@ final class MCPCalendarTools {
 
     private static func hhmm(_ minute: Int) -> String {
         String(format: "%02d:%02d", minute / 60, minute % 60)
+    }
+}
+
+extension MCPCalendarTools: MCPMeetingCalendar {
+    var knownMeetings: [CalendarEvent] {
+        let synced = calendarService.events
+        var seen = Set(synced.map(\.id))
+        return synced + archive.allEvents.filter { seen.insert($0.id).inserted }
+    }
+
+    var knownCoverage: DateInterval? { calendarService.eventCoverage?.interval }
+
+    func meetingSummary(_ event: CalendarEvent, coder: MCPDateCoder) -> [String: JSONValue] {
+        eventFields(event, CallContext(now: clock(), coder: coder))
     }
 }
