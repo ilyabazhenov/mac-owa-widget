@@ -87,6 +87,22 @@ final class CalendarService: ObservableObject {
     private var activeSyncIDs = Set<Int>()
     private var syncRequestGate = SyncRequestGate()
 
+    /// An answer the app gave that no sync speaks for yet. A sync already on its way when the
+    /// answer was sent — or started before Exchange confirmed it — can bring the meeting back as
+    /// it was, and writing that over `events` would show the old answer until the next sync.
+    private struct UnsettledAnswer {
+        let token: Int
+        let accountID: UUID
+        let type: MeetingResponseType
+        /// `nextSyncID` when Exchange confirmed the answer: a sync with a higher ID started after
+        /// that and has the final word. `nil` while the request is on its way.
+        var confirmedAtSyncID: Int?
+    }
+
+    /// Keyed by event ID.
+    private var unsettledAnswers: [String: UnsettledAnswer] = [:]
+    private var nextAnswerToken = 0
+
     // MARK: - Auth circuit breaker
 
     /// Number of consecutive sync cycles that failed with an auth error (401/440).
@@ -1015,11 +1031,13 @@ final class CalendarService: ObservableObject {
         }
 
         applyResponseType(optimisticType, to: event.id)
+        let answer = beginAnswer(optimisticType, eventIDs: [event.id], accountID: event.accountID)
         do {
             // RSVP runs here without a parallel TaskGroup timeout: URLSession already applies
             // `timeoutIntervalForRequest` on the EWS request, and an extra in-process race can
             // cancel the in-flight task and surface URLError.networkConnectionLost (-1005).
             try await provider.respondToMeeting(event, action: action)
+            confirmAnswer(answer, eventIDs: [event.id])
             log.info("respondToMeeting succeeded eventID=\(event.id, privacy: .public)")
             #if DEBUG
             DiagnosticLog.event("respondToMeeting succeeded")
@@ -1028,6 +1046,7 @@ final class CalendarService: ObservableObject {
             #if DEBUG
             DiagnosticLog.event("respondToMeeting failed error=\((error as NSError).domain)#\((error as NSError).code)")
             #endif
+            dropAnswer(answer, eventIDs: [event.id])
             applyResponseType(event.responseType, to: event.id)
             applyBlockingError(error, context: "respondToMeeting")
             log.error("respondToMeeting failed eventID=\(event.id, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
@@ -1055,13 +1074,17 @@ final class CalendarService: ObservableObject {
             : events.filter { $0.id == event.id }
         let previous = affected.map { ($0.id, $0.responseType) }
         for item in affected { applyResponseType(type, to: item.id) }
+        let affectedIDs = affected.map(\.id)
+        let answer = beginAnswer(type, eventIDs: affectedIDs, accountID: event.accountID)
         do {
             try await provider.respondToCalendarEvent(event, action: action, series: series, notes: notes, sendResponse: sendResponse)
+            confirmAnswer(answer, eventIDs: affectedIDs)
             log.info("respondToCalendarEvent succeeded eventID=\(event.id, privacy: .public) series=\(series, privacy: .public) send=\(sendResponse, privacy: .public)")
             // Exchange leaves occurrences answered one by one with their own answer, which the
             // optimistic update above overwrote: a sync shows what the series really holds.
             if series { syncNow() }
         } catch {
+            dropAnswer(answer, eventIDs: affectedIDs)
             for (id, old) in previous { applyResponseType(old, to: id) }
             log.error("respondToCalendarEvent failed eventID=\(event.id, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
             throw error
@@ -1146,6 +1169,58 @@ final class CalendarService: ObservableObject {
             events[idx] = events[idx].withDetails(details)
         }
         return details
+    }
+
+    /// Records an answer on its way to Exchange; returns the token that confirms or drops it.
+    private func beginAnswer(_ type: MeetingResponseType, eventIDs: [String], accountID: UUID) -> Int {
+        nextAnswerToken += 1
+        for id in eventIDs {
+            unsettledAnswers[id] = UnsettledAnswer(token: nextAnswerToken, accountID: accountID, type: type, confirmedAtSyncID: nil)
+        }
+        return nextAnswerToken
+    }
+
+    /// Exchange took the answer: the syncs started from now on see it.
+    private func confirmAnswer(_ token: Int, eventIDs: [String]) {
+        for id in eventIDs where unsettledAnswers[id]?.token == token {
+            unsettledAnswers[id]?.confirmedAtSyncID = nextSyncID
+        }
+    }
+
+    /// Exchange refused the answer: no sync may bring it back. A later answer to the same
+    /// meeting has its own token and stays.
+    private func dropAnswer(_ token: Int, eventIDs: [String]) {
+        for id in eventIDs where unsettledAnswers[id]?.token == token {
+            unsettledAnswers[id] = nil
+        }
+    }
+
+    /// The meeting as sync `syncID` fetched it, with the user's answer when that sync may have
+    /// been too early to see it: the answer is still on its way, or Exchange confirmed it after
+    /// the sync started.
+    private func keepingUnsettledAnswer(_ event: CalendarEvent, syncID: Int) -> CalendarEvent {
+        guard let answer = unsettledAnswers[event.id], answer.accountID == event.accountID,
+              answer.confirmedAtSyncID.map({ $0 >= syncID }) ?? true,
+              event.responseType != answer.type
+        else { return event }
+        return event.withResponseType(answer.type)
+    }
+
+    /// Forgets the answers sync `syncID` speaks for: confirmed before it started, on an account
+    /// it fetched. From here on Exchange has the final word, so an answer changed elsewhere
+    /// (Outlook, the phone) shows as it is. Answers of a removed account go too.
+    ///
+    /// Syncs can overlap (the scheduler and a provider rebuild do not wait for a running one),
+    /// and a newer one may end first: an answer stays while an older sync, which may not have
+    /// seen it, is still running, or that sync would write the old answer once it ends.
+    private func settleAnswers(refreshedAccountIDs: Set<UUID>, knownAccountIDs: Set<UUID>, syncID: Int) {
+        let olderRunning = activeSyncIDs.filter { $0 != syncID }.min()
+        unsettledAnswers = unsettledAnswers.filter { _, answer in
+            guard knownAccountIDs.contains(answer.accountID) else { return false }
+            guard refreshedAccountIDs.contains(answer.accountID), let confirmed = answer.confirmedAtSyncID else { return true }
+            if let olderRunning, olderRunning <= confirmed { return true }
+            return confirmed >= syncID
+        }
     }
 
     private func applyResponseType(_ type: MeetingResponseType, to eventID: String) {
@@ -1546,9 +1621,14 @@ final class CalendarService: ObservableObject {
                     knownAccountIDs.contains($0.accountID) && !refreshedAccountIDs.contains($0.accountID)
                 }
 
+                // An answer this sync may have missed keeps the answer the user just gave;
+                // `fetchedByAccount` itself stays as Exchange sent it, for `recordChanges`.
+                let fetched = fetchedByAccount.values.flatMap { $0 }.map { keepingUnsettledAnswer($0, syncID: syncID) }
+                settleAnswers(refreshedAccountIDs: refreshedAccountIDs, knownAccountIDs: knownAccountIDs, syncID: syncID)
+
                 // Deduplicate by ID, then sort by start time
                 var seen = Set<String>()
-                events = (fetchedByAccount.values.flatMap { $0 } + retained)
+                events = (fetched + retained)
                     .filter { seen.insert($0.id).inserted }
                     .sorted { $0.startDate < $1.startDate }
 
