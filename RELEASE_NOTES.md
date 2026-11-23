@@ -1,4 +1,4 @@
-## Unreleased
+## v1.0.63 - 2026-11-23
 
 ### RU
 
@@ -35,6 +35,12 @@
 - **`find_people` отдаёт должность и офис.** Раньше на месте должности мог оказаться отдел или компания.
 - **`open_url`** в `get_mail_thread` и `get_mail_message` — ссылка, которая открывает письмо в OWA Widget.
 
+#### Установка
+
+1. Скачайте `.zip`, распакуйте и перенесите `OWAWidget.app` в `/Applications`.
+2. Запустите приложение — дополнительных шагов не нужно.
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
 ### EN
 
 #### In the app
@@ -69,6 +75,12 @@ Every tool that changes something has its own switch in Settings → AI (MCP), a
 - **`list_events` matches words in any form:** "телефония" finds "…по исходящей телефонии".
 - **`find_people` returns title and office.** Before, a department or company could show up as the title.
 - **`open_url`** in `get_mail_thread` and `get_mail_message` is a link that opens the message in OWA Widget.
+
+#### Installation
+
+1. Download the `.zip`, unzip it and move `OWAWidget.app` to `/Applications`.
+2. Launch the app — no extra steps needed.
+3. All subsequent updates install automatically via the "Install" button inside the app.
 
 ## v1.0.62 - 2026-11-19
 
