@@ -740,6 +740,13 @@ final class CalendarService: ObservableObject {
 
     private struct FindPeopleTimeoutError: Error {}
 
+    /// The account has no provider yet: nothing could be asked, so nothing is known.
+    struct AddressBookUnavailableError: LocalizedError {
+        var errorDescription: String? {
+            "This account's address book is not available right now (no password saved, or OWA Widget is still starting)."
+        }
+    }
+
     func findPeople(query: String, accountID: UUID) async throws -> [ResolvedAttendee] {
         guard let provider = providers.first(where: { $0.account.id == accountID }) else { return [] }
         return try await withThrowingTaskGroup(of: [ResolvedAttendee].self) { group in
@@ -766,12 +773,16 @@ final class CalendarService: ObservableObject {
         try await addressBookLookup(accountID: accountID) { try await $0.personProfile(email: email) }
     }
 
-    /// One address book request with the same 40-second limit as a people search.
+    /// One address book request with the same 40-second limit as a people search. Without a
+    /// provider (still starting, no saved password) it throws rather than answering `nil`: that
+    /// would read as "not in the address book", and the MCP tools remember it for a day.
     private func addressBookLookup<Value: Sendable>(
         accountID: UUID,
         _ request: @escaping @Sendable (any CalendarProvider) async throws -> Value?
     ) async throws -> Value? {
-        guard let provider = providers.first(where: { $0.account.id == accountID }) else { return nil }
+        guard let provider = providers.first(where: { $0.account.id == accountID }) else {
+            throw AddressBookUnavailableError()
+        }
         return try await withThrowingTaskGroup(of: Value?.self) { group in
             group.addTask { try await request(provider) }
             group.addTask {

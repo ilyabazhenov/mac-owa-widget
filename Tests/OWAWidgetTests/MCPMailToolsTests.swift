@@ -1413,6 +1413,31 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertEqual(jira["moved"]?.arrayValue?.count, 1)
     }
 
+    /// The full tree from sessiondata hangs Archive, Sent and the user's folders under the root
+    /// ("Top of Information Store"): the folder list drops the root, so it refuses nothing as a
+    /// parent and cannot be picked as a destination.
+    func testMoveMailAcceptsFoldersUnderTheMailboxRoot() async throws {
+        let root = MailFolder(id: "F-ROOT", distinguishedID: "msgfolderroot", displayName: "Top of Information Store", parentID: nil, unreadCount: 0, totalCount: 0, childFolderCount: 3)
+        let archive = MailFolder(id: "F-ARCHIVE-FULL-ID-0000000", distinguishedID: "archive", displayName: "Archive", parentID: "F-ROOT", unreadCount: 0, totalCount: 0, childFolderCount: 0)
+        let projects = MailFolder(id: "F-PROJECTS", distinguishedID: nil, displayName: "Projects", parentID: "F-ROOT", unreadCount: 0, totalCount: 0, childFolderCount: 0)
+        let sent = MailFolder(id: "F-SENT", distinguishedID: "sentitems", displayName: "Sent Items", parentID: "F-ROOT", unreadCount: 0, totalCount: 0, childFolderCount: 0)
+        await provider.setExtraFolders([root, archive, projects, sent])
+        let tools = makeTools()
+
+        let toArchive = try object(await tools.call(name: "move_mail", arguments: ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "folder": "archive"], client: nil))
+        XCTAssertEqual(toArchive["moved"]?.arrayValue?.count, 1)
+        let undoID = try XCTUnwrap(toArchive["undo_id"]?.stringValue)
+        _ = try object(await tools.call(name: "move_mail", arguments: ["undo_id": .string(undoID)], client: nil))
+
+        let toProjects = try object(await tools.call(name: "move_mail", arguments: ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "folder": "Projects"], client: nil))
+        XCTAssertEqual(toProjects["moved"]?.arrayValue?.count, 1)
+
+        let toSent = await tools.call(name: "move_mail", arguments: ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "folder": "sent"], client: nil)
+        XCTAssertRefusal(toSent, .forbiddenFolder)
+        let toRoot = await tools.call(name: "move_mail", arguments: ["thread_ids": ["CONV-1-FULL-ID-0000000000000"], "folder": "Top of Information Store"], client: nil)
+        XCTAssertRefusal(toRoot, .notFound)
+    }
+
     func testMoveMailReportsAFailedMessageAndKeepsTheRest() async throws {
         await provider.setExtraFolders([Self.archiveFolder])
         await addBudgetThread()

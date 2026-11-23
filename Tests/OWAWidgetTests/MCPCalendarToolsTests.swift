@@ -1150,6 +1150,35 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertEqual(calls, ["a@corp.ru", "b@corp.ru"])
     }
 
+    func testAddressBookWithoutAProviderIsNotReadyAndNotRemembered() async throws {
+        // The Exchange account is known but has no provider yet (no password, still starting).
+        let service = CalendarService(
+            providers: [DetailsProvider(account: local)],
+            notificationService: SilentNotificationService(),
+            customMeetingReminders: SilentMeetingReminderController(),
+            loadPersistedAccounts: false,
+            startBackgroundTasks: false,
+            clock: { [now] in now }
+        )
+        service.replaceAccountsForTests([exchange, local])
+        let tools = MCPCalendarTools(
+            calendarService: service,
+            clock: { [now] in now },
+            timeZone: { [zone] in zone },
+            settings: { MCPSettings(serverEnabled: true) }
+        )
+
+        for _ in 0..<2 {
+            let call = await tools.call(name: "get_person_profile", arguments: ["emails": ["a@corp.ru"]]).structured
+            let profiles = try XCTUnwrap(call?["profiles"]?.arrayValue)
+            XCTAssertEqual(profiles[0]["code"], "not_ready")
+            XCTAssertNil(profiles[0]["in_directory"])
+
+            let org = await tools.call(name: "get_my_org", arguments: [:])
+            XCTAssertRefusal(org, .notReady)
+        }
+    }
+
     func testPersonProfileNeedsAddresses() async {
         let (tools, _) = makeTools(events: [])
         let missing = await tools.call(name: "get_person_profile", arguments: [:])

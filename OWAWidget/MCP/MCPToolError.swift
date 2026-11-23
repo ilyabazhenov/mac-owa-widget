@@ -128,6 +128,7 @@ struct MCPToolError: Error, Equatable, Sendable {
     static func code(for error: any Error, mayHaveBeenSent: Bool = false) -> MCPErrorCode {
         if let error = error as? MCPToolError { return error.code }
         if error is CancellationError { return .cancelled }
+        if error is CalendarService.AddressBookUnavailableError { return .notReady }
         if let owa = error as? OWAError {
             switch owa {
             case .authenticationFailed, .notAuthenticated: return .authFailed
@@ -194,7 +195,8 @@ enum MCPToolErrorCodes {
         case "list_events", "get_schedule_stats", "find_events_with_person": codes = calendarRead
         case "get_event_details": codes = calendarRead + [.notFound]
         case "match_event": codes = calendarRead + [.exchangeError]
-        case "find_people", "get_person_profile", "find_free_slots": codes = directory
+        case "find_people", "find_free_slots": codes = directory
+        case "get_person_profile": codes = directory + [.notReady]
         case "get_my_org": codes = directory + [.notReady]
         case "create_meeting":
             codes = gate + [.settingDisabled, .invalidArgument, .notFound, .notSupported] + panel
