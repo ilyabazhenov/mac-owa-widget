@@ -51,6 +51,55 @@ extension MCPSettings {
     }
 }
 
+extension MCPSettings {
+    /// Whether the switch behind `id` lets its tools work. The refusals (`setting_disabled`), the
+    /// mail tools in `tools/list` and `settings` in `get_status` / `get_changes` all read this, so
+    /// a client is never told a switch is on while the tool refuses. The mail switches below
+    /// "read mail" count only while it is on: the settings window greys them out then.
+    func isOn(_ id: MCPSettingID) -> Bool {
+        switch id {
+        case .createMeetings: createMeetings
+        case .cancelMeetings: cancelMeetings
+        case .respondMeetings: respondMeetings
+        case .readMail: mailRead
+        case .prepareMail: mailRead && mailSend
+        case .markMail: mailRead && mailOrganize
+        case .arrangeMail: mailRead && mailArrange
+        }
+    }
+
+    /// `settings` of `get_status` and `get_changes`: every switch with its state and its title as
+    /// the settings window shows it (the same text `setting` carries in a `setting_disabled`
+    /// refusal).
+    @MainActor
+    var statusJSON: JSONValue {
+        var fields: [String: JSONValue] = [:]
+        for id in MCPSettingID.allCases {
+            fields[id.rawValue] = ["enabled": .bool(isOn(id)), "title": .string(id.title)]
+        }
+        return .object(fields)
+    }
+
+    /// What connected clients must hear after the switches went from `old` to these.
+    func push(since old: MCPSettings) -> MCPSettingsPush {
+        MCPSettingsPush(
+            switches: MCPSettingID.allCases.contains { isOn($0) != old.isOn($0) },
+            toolList: MCPToolRegistry.tools(for: self).map(\.name) != MCPToolRegistry.tools(for: old).map(\.name)
+        )
+    }
+}
+
+/// The notifications a change of the switches calls for.
+struct MCPSettingsPush: Equatable, Sendable {
+    /// A switch in `settings` changed: `notifications/resources/updated` for `owawidget://changes`,
+    /// so a subscribed client re-reads `settings` with `get_changes`.
+    var switches: Bool
+    /// The mail tools in `tools/list` changed: `notifications/tools/list_changed`.
+    var toolList: Bool
+
+    var isEmpty: Bool { !switches && !toolList }
+}
+
 enum MCPSettingsStore {
     typealias Store = SecureCodableStore<MCPSettings>
 

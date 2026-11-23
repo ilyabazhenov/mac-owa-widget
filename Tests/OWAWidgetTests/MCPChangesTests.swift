@@ -340,4 +340,56 @@ final class MCPChangesTests: XCTestCase {
         let off = MCPChangeTools(calendarService: service, calendarTools: calendarTools, mailTools: mailTools, watcher: watcher, isEnabled: { false })
         XCTAssertRefusal(off.call(arguments: [:], mail: .allowed), .serverDisabled)
     }
+
+    // MARK: - Switches
+
+    func testAnswerCarriesTheSwitchesAndFollowsAToggle() async throws {
+        let service = makeService(InboxProvider(account: account))
+        let snapshot = MCPSettingsSnapshot(MCPSettings(serverEnabled: true, createMeetings: true, respondMeetings: false))
+        let calendarTools = MCPCalendarTools(calendarService: service, settings: { snapshot.current })
+        let tools = MCPChangeTools(calendarService: service, calendarTools: calendarTools, mailTools: nil, watcher: nil, isEnabled: { true })
+        service.changeFeed.markCalendarBaseline()
+
+        let first = try XCTUnwrap(tools.call(arguments: [:], mail: .off).structured)
+        XCTAssertEqual(first["settings"]?["create_meetings"]?["enabled"], true)
+        XCTAssertEqual(first["settings"]?["respond_meetings"]?["enabled"], false)
+        XCTAssertEqual(first["settings"]?["respond_meetings"]?["title"]?.stringValue, MCPSettingID.respondMeetings.title)
+        let status = await calendarTools.call(name: "get_status", arguments: [:]).structured
+        XCTAssertEqual(first["settings"], status?["settings"], "the same block as get_status")
+        let cursor = try XCTUnwrap(first["cursor"]?.stringValue)
+
+        var toggled = snapshot.current
+        toggled.respondMeetings = true
+        let push = toggled.push(since: snapshot.current)
+        snapshot.update(toggled)
+
+        XCTAssertEqual(push, MCPSettingsPush(switches: true, toolList: false), "the change resource rings")
+        let second = try XCTUnwrap(tools.call(arguments: ["since_cursor": .string(cursor)], mail: .off).structured)
+        XCTAssertEqual(second["settings"]?["respond_meetings"]?["enabled"], true)
+        XCTAssertEqual(second["reset"], false, "a switch is not a reset")
+        XCTAssertEqual(second["changes"]?.arrayValue?.count, 0, "nor an entry: the new value is in `settings`")
+    }
+
+    func testWhichTogglesRingAndWhichChangeTheToolList() {
+        let base = MCPSettings(serverEnabled: true)
+        func push(_ change: (inout MCPSettings) -> Void, from old: MCPSettings = base) -> MCPSettingsPush {
+            var new = old
+            change(&new)
+            return new.push(since: old)
+        }
+
+        XCTAssertEqual(push { $0.createMeetings = true }, MCPSettingsPush(switches: true, toolList: false))
+        XCTAssertEqual(push { $0.cancelMeetings = true }, MCPSettingsPush(switches: true, toolList: false))
+        XCTAssertEqual(push { $0.respondMeetings = true }, MCPSettingsPush(switches: true, toolList: false))
+        XCTAssertEqual(push { $0.mailRead = true }, MCPSettingsPush(switches: true, toolList: true), "the mail tools appear")
+        let reading = MCPSettings(serverEnabled: true, mailRead: true)
+        XCTAssertEqual(push({ $0.mailSend = true }, from: reading), MCPSettingsPush(switches: true, toolList: true))
+        XCTAssertEqual(push({ $0.mailOrganize = true }, from: reading), MCPSettingsPush(switches: true, toolList: true))
+        XCTAssertEqual(push({ $0.mailArrange = true }, from: reading), MCPSettingsPush(switches: true, toolList: true))
+        // Under a mail switch that is off nothing changes for a client.
+        XCTAssertTrue(push { $0.mailSend = true }.isEmpty)
+        // Not in `settings`: the question about new clients and the server switch itself.
+        XCTAssertTrue(push { $0.askNewClients = false }.isEmpty)
+        XCTAssertTrue(push { $0.serverEnabled = false }.isEmpty)
+    }
 }

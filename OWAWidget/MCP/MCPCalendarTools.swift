@@ -53,9 +53,9 @@ final class MCPCalendarTools {
     private let onDemandDeadline: TimeInterval
     private let clock: () -> Date
     private let isEnabled: () -> Bool
-    private let canCreateMeetings: () -> Bool
-    private let canRemoveMeetings: () -> Bool
-    private let canRespondMeetings: () -> Bool
+    /// The switches, read on every call: the meeting tools' refusals and `settings` in
+    /// get_status and get_changes come from the same value.
+    private let settings: () -> MCPSettings
     private let responseConfirmer: MCPMeetingResponseConfirming
     private let confirmer: MCPMeetingConfirming
     private let removalConfirmer: MCPMeetingRemovalConfirming
@@ -97,9 +97,7 @@ final class MCPCalendarTools {
         timeZone: @escaping () -> TimeZone = { AppTimeZone.zone },
         uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         isEnabled: @escaping () -> Bool = { true },
-        canCreateMeetings: @escaping () -> Bool = { false },
-        canRemoveMeetings: @escaping () -> Bool = { false },
-        canRespondMeetings: @escaping () -> Bool = { false }
+        settings: @escaping () -> MCPSettings = { MCPSettings() }
     ) {
         self.calendarService = calendarService
         self.accessGuard = accessGuard ?? MCPAccessGuard(calendarService: calendarService, clock: clock)
@@ -115,9 +113,7 @@ final class MCPCalendarTools {
         self.timeZoneProvider = timeZone
         self.uptime = uptime
         self.isEnabled = isEnabled
-        self.canCreateMeetings = canCreateMeetings
-        self.canRemoveMeetings = canRemoveMeetings
-        self.canRespondMeetings = canRespondMeetings
+        self.settings = settings
     }
 
     func call(name: String, arguments: [String: JSONValue], client: String? = nil) async -> MCPToolResult {
@@ -181,7 +177,13 @@ final class MCPCalendarTools {
             accounts.append(.object(fields))
         }
         result["accounts"] = .array(accounts)
+        result["settings"] = settingsJSON()
         return .success(result)
+    }
+
+    /// `settings` of get_status and get_changes: what each switch in Settings → AI (MCP) allows.
+    func settingsJSON() -> JSONValue {
+        settings().statusJSON
     }
 
     /// The user's own name as other people see it: the organizer of the meetings the user
@@ -1001,7 +1003,7 @@ final class MCPCalendarTools {
     // MARK: - create_meeting
 
     private func createMeeting(_ arguments: [String: JSONValue], _ context: CallContext, client: String?) async throws -> MCPToolResult {
-        guard canCreateMeetings() else {
+        guard settings().isOn(.createMeetings) else {
             return .failure(.settingOff(
                 .createMeetings,
                 "Creating meetings is turned off in OWA Widget (Settings → MCP → \"Allow creating meetings\"). Nothing was created. Ask the user to turn it on."
@@ -1155,7 +1157,7 @@ final class MCPCalendarTools {
     /// and a repeat of the same call within ten minutes is answered from the first one: neither
     /// sends a second email.
     private func respondToMeeting(_ arguments: [String: JSONValue], _ context: CallContext, client: String?) async throws -> MCPToolResult {
-        guard canRespondMeetings() else {
+        guard settings().isOn(.respondMeetings) else {
             return .failure(.settingOff(
                 .respondMeetings,
                 "Answering invitations is turned off in OWA Widget (Settings → MCP → \"Allow answering invitations\"). Nothing was sent. Ask the user to turn it on."
@@ -1335,7 +1337,7 @@ final class MCPCalendarTools {
     /// (or deleted without a word with `notify_organizer: false`), a meeting the organizer has
     /// already cancelled is deleted. Only an occurrence's own id is touched, never the series.
     private func cancelMeeting(_ arguments: [String: JSONValue], _ context: CallContext, client: String?) async throws -> MCPToolResult {
-        guard canRemoveMeetings() else {
+        guard settings().isOn(.cancelMeetings) else {
             return .failure(.settingOff(
                 .cancelMeetings,
                 "Cancelling meetings is turned off in OWA Widget (Settings → MCP → \"Allow cancelling meetings\"). Nothing was changed. Ask the user to turn it on."
