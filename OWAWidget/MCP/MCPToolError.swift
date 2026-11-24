@@ -56,6 +56,8 @@ enum MCPErrorCode: String, CaseIterable, Sendable {
     /// The request went out but Exchange did not confirm it: it may have taken effect. Check
     /// before retrying.
     case unconfirmed
+    /// `get_mail_attachment`: the file is larger than OWA Widget downloads (25 MB).
+    case tooLarge = "too_large"
 }
 
 /// A tool setting a `setting_disabled` refusal points at. `get_status` and `get_changes` report
@@ -210,6 +212,7 @@ enum MCPToolErrorCodes {
         case "prepare_mail": codes = mailRead + [.settingDisabled] + panel + [.unconfirmed]
         case "set_mail_read", "set_mail_flag": codes = mailRead + [.settingDisabled]
         case "move_mail": codes = mailRead + [.settingDisabled, .forbiddenFolder, .noArchiveFolder]
+        case "get_mail_attachment": codes = mailRead + [.tooLarge]
         default:
             codes = MCPMailTools.readToolNames.contains(tool) ? mailRead : gate
         }

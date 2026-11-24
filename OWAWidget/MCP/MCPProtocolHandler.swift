@@ -39,12 +39,21 @@ struct MCPToolDefinition: Sendable {
 struct MCPToolResult: Sendable, Equatable {
     let structured: [String: JSONValue]?
     let error: MCPToolError?
+    /// Content blocks after the text repeat of `structured`: the bytes of an attachment
+    /// (`get_mail_attachment`), as an `image` or an embedded `resource`. Empty for every other
+    /// tool, whose `content` stays the one text block.
+    var binaryContent: [JSONValue] = []
 
     var errorMessage: String? { error?.message }
     var errorCode: MCPErrorCode? { error?.code }
 
     static func success(_ structured: [String: JSONValue]) -> MCPToolResult {
         MCPToolResult(structured: structured, error: nil)
+    }
+
+    /// `structured` carries only what describes the bytes: they travel once, in `binary`.
+    static func success(_ structured: [String: JSONValue], binary: [JSONValue]) -> MCPToolResult {
+        MCPToolResult(structured: structured, error: nil, binaryContent: binary)
     }
 
     static func failure(_ error: MCPToolError) -> MCPToolResult {
@@ -76,8 +85,9 @@ struct MCPToolResult: Sendable, Equatable {
         let object = JSONValue.object(structured ?? [:])
         // The spec asks tools that return structured content to repeat it as text, for clients
         // that only read `content`. `structuredContent` stays an object for the legacy schemas.
+        let text: JSONValue = ["type": "text", "text": .string(JSONLine.encodeString(object))]
         return [
-            "content": [["type": "text", "text": .string(JSONLine.encodeString(object))]],
+            "content": .array([text] + binaryContent),
             "structuredContent": object,
             "isError": false,
         ]

@@ -198,6 +198,50 @@ final class MailHTMLDocumentTests: XCTestCase {
         XCTAssertTrue(MailHTMLDocument.document(body: "<ul><li>x</li></ul>").contains("padding-inline-start: 1.6em !important"))
         XCTAssertTrue(MailHTMLDocument.document(body: "<li>x</li>").contains("#owaw-root > li, #owaw-root :not(ul):not(ol):not(menu) > li { margin-inline-start: 1.6em; }"))
     }
+
+    // MARK: - clientHTML images
+
+    /// An attached image stays as `cid:<content id>` (lowercased), whether OWA keeps the reference
+    /// in `src` or in `originalsrc` with its own address in `src`; its size stays.
+    func testClientHTMLKeepsCidImagesAsReferences() {
+        let html = """
+        <img src="cid:Image001.PNG@01DA" width="640" height="480">
+        <img originalsrc="cid:logo%40corp" src="https://owa.example.com/owa/service.svc/s/GetFileAttachment?id=AAA&amp;X-OWA-CANARY=secret" style="width:120px;height:40px" alt="Logo">
+        """
+        let client = MailHTMLDocument.clientHTML(html)
+        XCTAssertTrue(client.contains("<img width=\"640\" height=\"480\" src=\"cid:image001.png@01da\">"), client)
+        XCTAssertTrue(client.contains("src=\"cid:logo@corp\""), client)
+        XCTAssertTrue(client.contains("style=\"width:120px;height:40px\""), client)
+        XCTAssertTrue(client.contains("alt=\"Logo\""), client)
+        let lowered = client.lowercased()
+        for banned in ["originalsrc", "getfileattachment", "canary", "owa.example.com"] {
+            XCTAssertFalse(lowered.contains(banned), "\(banned): \(client)")
+        }
+        XCTAssertEqual(MailHTMLDocument.inlineImageReferences(in: client), ["image001.png@01da", "logo@corp"])
+    }
+
+    /// Images of the mailbox without a `cid:` (OWA's own addresses) are dropped; web images stay.
+    func testClientHTMLDropsMailboxAddressesAndKeepsWebImages() {
+        let html = """
+        <img src="service.svc/s/GetFileAttachment?id=AAA">
+        <img src="https://owa.example.com/owa/service.svc/s/GetFileAttachment?id=BBB">
+        <img src="https://cdn.example.com/chart.png" width="120">
+        <img src="data:image/png;base64,iVBORw0KGgo=">
+        <img src="data:image/svg+xml;base64,PHN2Zz4=">
+        """
+        let client = MailHTMLDocument.clientHTML(html)
+        XCTAssertEqual(client.components(separatedBy: "<img").count - 1, 2, client)
+        XCTAssertTrue(client.contains("<img width=\"120\" src=\"https://cdn.example.com/chart.png\">"), client)
+        XCTAssertTrue(client.contains("src=\"data:image/png;base64,iVBORw0KGgo=\""), client)
+        XCTAssertFalse(client.lowercased().contains("getfileattachment"), client)
+        XCTAssertFalse(client.contains("svg"), client)
+    }
+
+    /// A hidden attached image is not referenced by the client markup.
+    func testClientHTMLDropsHiddenCidImages() {
+        let client = MailHTMLDocument.clientHTML("<p>Hi</p><img src=\"cid:track@x\" style=\"display:none\">")
+        XCTAssertEqual(MailHTMLDocument.inlineImageReferences(in: client), [])
+    }
 }
 
 import WebKit
@@ -238,4 +282,5 @@ final class MailRemoteImageLoaderTests: XCTestCase {
         XCTAssertEqual(MailRemoteImageLoader.IPAddress("10.20.30.40")?.description, "10.20.30.40")
         XCTAssertEqual(MailRemoteImageLoader.IPAddress("fd00::5")?.description, "fd00:0:0:0:0:0:0:5")
     }
+
 }

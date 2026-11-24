@@ -44,7 +44,7 @@ extension MailService: MCPMailArrangeObserving {}
 /// switch is on.
 @MainActor
 final class MCPMailTools {
-    nonisolated static let readToolNames: Set<String> = ["get_mail_digest", "list_mail_folders", "list_mail", "search_mail", "get_mail_thread", "get_mail_message"]
+    nonisolated static let readToolNames: Set<String> = ["get_mail_digest", "list_mail_folders", "list_mail", "search_mail", "get_mail_thread", "get_mail_message", "get_mail_attachment"]
     nonisolated static let sendToolName = "prepare_mail"
     nonisolated static let organizeToolName = "set_mail_read"
     nonisolated static let arrangeToolNames: Set<String> = ["move_mail", "set_mail_flag"]
@@ -60,6 +60,9 @@ final class MCPMailTools {
     /// Search requests one search_mail call makes at most to fill its `limit`.
     static let maxSearchPages = 3
     static let maxFullMessageCharacters = 16_000
+    /// Bytes one get_mail_attachment answer carries at most (and by default): base64 makes a
+    /// third more of it, and the whole answer is one line of the stdio framing.
+    nonisolated static let attachmentChunkBytes = 4 * 1024 * 1024
     static let maxOutgoingBodyCharacters = 20_000
     static let maxRecipients = 50
     static let handleLimit = 2_000
@@ -125,6 +128,8 @@ final class MCPMailTools {
     private var isConfirming = false
     private var moveUndos: [String: MoveUndo] = [:]
     private var moveUndoOrder: [String] = []
+    /// What get_mail_attachment may download: the attachments answers have named.
+    let attachmentStore: MCPAttachmentStore
 
     init(
         calendarService: CalendarService,
@@ -160,6 +165,7 @@ final class MCPMailTools {
         self.confirmationTimeout = confirmationTimeout
         self.clock = clock
         self.timeZoneProvider = timeZone
+        self.attachmentStore = MCPAttachmentStore(clock: clock)
     }
 
     func call(name: String, arguments: [String: JSONValue], client: String?) async -> MCPToolResult {
@@ -173,6 +179,7 @@ final class MCPMailTools {
             case "search_mail": return try await searchMail(arguments, coder)
             case "get_mail_thread": return try await getThread(arguments, coder)
             case "get_mail_message": return try await getMessage(arguments, coder)
+            case "get_mail_attachment": return try await getAttachment(arguments)
             case "prepare_mail": return try await prepareMail(arguments, coder, client: client)
             case "set_mail_read": return try await setMailRead(arguments)
             case "move_mail": return try await moveMail(arguments)
@@ -295,10 +302,12 @@ final class MCPMailTools {
         guard let value = arguments[key]?.stringValue?.trimmingCharacters(in: .whitespaces), !value.isEmpty else {
             throw ToolError("`\(key)` is required (take it from \(from))")
         }
-        guard let id = resolve(value) else {
-            throw ToolError(.notFound, "Unknown `\(key)` \(value). Ids are remembered only while OWA Widget runs: call \(from) again.")
-        }
+        guard let id = resolve(value) else { throw Self.unknownID(key, value, from: from) }
         return id
+    }
+
+    private static func unknownID(_ key: String, _ value: String, from: String) -> ToolError {
+        ToolError(.notFound, "Unknown `\(key)` \(value). Ids are remembered only while OWA Widget runs: call \(from) again.")
     }
 
     private func optionalBool(_ arguments: [String: JSONValue], _ key: String) throws -> Bool? {
@@ -561,7 +570,7 @@ final class MCPMailTools {
     /// With `includeHTML`, also `html`: the same part of the body as `text`, cleaned markup for a
     /// client that draws the message itself. Markup is never cut (it would break): a message whose
     /// markup does not fit into `htmlBudget` gets none, with `html_omitted`.
-    private func messageJSON(_ message: MailMessage, _ coder: MCPDateCoder, ownDomain: String?, characterLimit: Int, includeHTML: Bool, compact: CompactMessage? = nil, meetings: inout MeetingContext, budget: inout Int, htmlBudget: inout Int) -> JSONValue {
+    private func messageJSON(_ message: MailMessage, _ coder: MCPDateCoder, accountID: UUID, ownDomain: String?, characterLimit: Int, includeHTML: Bool, compact: CompactMessage? = nil, meetings: inout MeetingContext, budget: inout Int, htmlBudget: inout Int) -> JSONValue {
         var fields: [String: JSONValue] = [
             "message_id": .string(handle(message.ref.id)),
             "from": message.from.map { addressJSON($0, ownDomain: ownDomain) } ?? .null,
@@ -601,7 +610,13 @@ final class MCPMailTools {
                     "type": .string(attachment.contentType),
                     "size": .int(Int64(attachment.size)),
                 ]
-                if attachment.isItemAttachment { item["attached_message"] = true }
+                remember(attachment, accountID: accountID)
+                if attachment.isItemAttachment {
+                    // Not a file: it opens in OWA Widget, so it has nothing to download by.
+                    item["attached_message"] = true
+                } else {
+                    item["attachment_id"] = .string(handle(attachment.id))
+                }
                 return .object(item)
             })
         }
@@ -631,6 +646,8 @@ final class MCPMailTools {
                 if html.count <= htmlBudget {
                     fields["html"] = .string(html)
                     htmlBudget -= html.count
+                    let images = inlineImagesJSON(message, html: html, accountID: accountID)
+                    if !images.isEmpty { fields["inline_images"] = .array(images) }
                 } else {
                     fields["html"] = .null
                     fields["html_omitted"] = .string("The markup of this message did not fit into this answer (\(Self.maxThreadHTMLCharacters) characters of html at most): get_mail_message returns it.")
@@ -653,6 +670,36 @@ final class MCPMailTools {
             }
         }
         return .object(fields)
+    }
+
+    private func remember(_ attachment: MailAttachmentInfo, accountID: UUID) {
+        attachmentStore.remember(MCPAttachmentStore.Entry(
+            id: attachment.id, accountID: accountID, name: attachment.name, contentType: attachment.contentType,
+            size: attachment.size, isItemAttachment: attachment.isItemAttachment
+        ))
+    }
+
+    /// A picture a client can draw: any `image/*` but SVG, which can carry script and links.
+    nonisolated static func isDrawableImage(_ contentType: String) -> Bool {
+        let type = contentType.lowercased()
+        return type.hasPrefix("image/") && !type.hasPrefix("image/svg")
+    }
+
+    /// The attached images `html` refers to (`cid:`), one entry per image, in order: what a client
+    /// needs to fetch them with get_mail_attachment.
+    private func inlineImagesJSON(_ message: MailMessage, html: String, accountID: UUID) -> [JSONValue] {
+        MailHTMLDocument.inlineImageReferences(in: html).compactMap { contentID in
+            guard let attachment = message.attachments.first(where: {
+                !$0.isItemAttachment && $0.contentID?.lowercased() == contentID && Self.isDrawableImage($0.contentType)
+            }) else { return nil }
+            remember(attachment, accountID: accountID)
+            return [
+                "content_id": .string(contentID),
+                "attachment_id": .string(handle(attachment.id)),
+                "type": .string(attachment.contentType),
+                "size": .int(Int64(attachment.size)),
+            ]
+        }
     }
 
     // MARK: - Tools
@@ -1032,7 +1079,7 @@ final class MCPMailTools {
             let newer = index == 0 ? nil : shown[index - 1]
             let newerPeople = newer.flatMap { $0.hiddenRecipientCount == 0 ? Self.people(of: $0) : nil }
             let view = compact ? CompactMessage(topic: thread.topic, newerPeople: newerPeople) : nil
-            return messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, includeHTML: includeHTML, compact: view, meetings: &meetings, budget: &budget, htmlBudget: &htmlBudget)
+            return messageJSON(message, coder, accountID: account.id, ownDomain: ownDomain, characterLimit: Self.maxMessageCharacters, includeHTML: includeHTML, compact: view, meetings: &meetings, budget: &budget, htmlBudget: &htmlBudget)
         })
         if thread.messages.count > maxMessages || thread.totalMessageCount > thread.messages.count {
             result["note"] = "Newest messages first; older ones are not included. Each message's `text` is only what it added, without the quoted history: get_mail_message returns the full text."
@@ -1054,10 +1101,86 @@ final class MCPMailTools {
         var htmlBudget = Int.max
         var meetings = MeetingContext(accountID: account.id)
         var result = commonFields(coder, account)
-        result["message"] = messageJSON(message, coder, ownDomain: ownDomain, characterLimit: Self.maxFullMessageCharacters, includeHTML: includeHTML, meetings: &meetings, budget: &budget, htmlBudget: &htmlBudget)
+        result["message"] = messageJSON(message, coder, accountID: account.id, ownDomain: ownDomain, characterLimit: Self.maxFullMessageCharacters, includeHTML: includeHTML, meetings: &meetings, budget: &budget, htmlBudget: &htmlBudget)
         result["open_url"] = openURL(.message(id: message.ref.id, accountID: linkAccountID(account)))
         if let conversation = message.conversationID { result["thread_id"] = .string(handle(conversation)) }
         return .success(result)
+    }
+
+    // MARK: - get_mail_attachment
+
+    /// A piece of an attachment: `[offset, offset + max_bytes)` of the file. The file is
+    /// downloaded once and kept by `attachmentStore` for the next pieces.
+    private func getAttachment(_ arguments: [String: JSONValue]) async throws -> MCPToolResult {
+        let from = "get_mail_thread or get_mail_message"
+        let raw = arguments["attachment_id"]?.stringValue?.trimmingCharacters(in: .whitespaces) ?? ""
+        let id = try requiredID(arguments, "attachment_id", from: from)
+        // A full id is taken as is elsewhere; here it must be one an answer named, to know the file.
+        guard let entry = attachmentStore.entry(id) else { throw Self.unknownID("attachment_id", raw, from: from) }
+        guard !entry.isItemAttachment else {
+            throw ToolError(.notSupported, "This attachment is an attached message (`attached_message: true`), not a file: it cannot be downloaded. The user can open the email in OWA Widget (`open_url` of get_mail_message).")
+        }
+        guard entry.size <= OWAClient.mailAttachmentLimit else { throw Self.attachmentTooLarge(entry.size) }
+        let offset = try optionalInt(arguments, "offset", range: 0...OWAClient.mailAttachmentLimit) ?? 0
+        let maxBytes = try optionalInt(arguments, "max_bytes", range: 1...Self.attachmentChunkBytes) ?? Self.attachmentChunkBytes
+        let account: CalendarAccount
+        if arguments["account_id"].map({ $0 != .null }) == true {
+            account = try mailAccount(arguments)
+            guard account.id == entry.accountID else { throw Self.unknownID("attachment_id", raw, from: from) }
+        } else {
+            guard let owner = calendarService.mailAccounts.first(where: { $0.id == entry.accountID }) else {
+                throw Self.unknownID("attachment_id", raw, from: from)
+            }
+            account = owner
+        }
+
+        let data: Data
+        do {
+            data = try await attachmentStore.data(for: id) { [weak self] in
+                guard let self else { throw CancellationError() }
+                return try await self.request(account, context: "mcp.mail.attachment") {
+                    try await $0.mailAttachment(id: id, maxBytes: OWAClient.mailAttachmentLimit)
+                }
+            }
+        } catch MailError.tooLarge(let size) {
+            throw Self.attachmentTooLarge(size)
+        }
+        guard offset < data.count || (offset == 0 && data.isEmpty) else {
+            throw ToolError("`offset` \(offset) is past the end of the file (\(data.count) bytes)")
+        }
+        let end = min(data.count, offset + maxBytes)
+        let piece = data.subdata(in: offset..<end)
+        let whole = offset == 0 && end == data.count
+        let type = MailHTMLDocument.safeMediaType(entry.contentType)
+        let shortID = handle(id)
+
+        var result: [String: JSONValue] = [
+            "attachment_id": .string(shortID),
+            "name": .string(entry.name),
+            "type": .string(entry.contentType),
+            "size": .int(Int64(data.count)),
+            "offset": .int(Int64(offset)),
+            "length": .int(Int64(piece.count)),
+        ]
+        if end < data.count { result["next_offset"] = .int(Int64(end)) }
+        if calendarService.mailAccounts.count > 1 { result["account_id"] = .string(account.id.uuidString) }
+
+        let encoded = piece.base64EncodedString()
+        let block: JSONValue
+        if whole, Self.isDrawableImage(type) {
+            block = ["type": "image", "data": .string(encoded), "mimeType": .string(type)]
+        } else {
+            let name = entry.name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? ""
+            block = [
+                "type": "resource",
+                "resource": ["uri": .string("\(linkScheme)://attachment/\(shortID)/\(name)"), "mimeType": .string(type), "blob": .string(encoded)],
+            ]
+        }
+        return .success(result, binary: [block])
+    }
+
+    private static func attachmentTooLarge(_ size: Int) -> ToolError {
+        ToolError(.tooLarge, "The attachment is \(size) bytes; get_mail_attachment returns files up to \(OWAClient.mailAttachmentLimit / 1024 / 1024) MB. The user can open it in OWA Widget's mail window.")
     }
 
     // MARK: - prepare_mail

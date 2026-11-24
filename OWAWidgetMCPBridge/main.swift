@@ -156,10 +156,14 @@ final class Bridge: @unchecked Sendable {
         while true {
             let count = read(fd, &chunk, chunk.count)
             if count <= 0 { break }
+            // Only the new bytes can hold the next newline: an attachment answer is megabytes
+            // long, and rescanning the whole buffer after every read would be quadratic.
+            var searchFrom = buffer.count
             buffer.append(contentsOf: chunk[0..<count])
-            while let newline = buffer.firstIndex(of: 0x0A) {
+            while let newline = buffer[(buffer.startIndex + searchFrom)...].firstIndex(of: 0x0A) {
                 let line = buffer[buffer.startIndex..<newline]
-                buffer.removeSubrange(buffer.startIndex...newline)
+                buffer = Data(buffer[(newline + 1)...])
+                searchFrom = 0
                 guard !line.isEmpty else { continue }
                 forwardServerLine(Data(line))
             }

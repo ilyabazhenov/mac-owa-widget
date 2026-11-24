@@ -232,6 +232,7 @@
 | `offline` | нет сети или VPN, запрос не дошёл | ходящие в Exchange |
 | `exchange_error` | Exchange отказал по другой причине | ходящие в Exchange |
 | `unconfirmed` | запрос ушёл, но Exchange не подтвердил — проверить, прежде чем повторять | `create_meeting`, `cancel_meeting`, `respond_to_meeting`, `prepare_mail` |
+| `too_large` | вложение больше 25 МБ | `get_mail_attachment` |
 
 ## Инструменты
 

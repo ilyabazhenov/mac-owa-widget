@@ -109,7 +109,15 @@ final class MCPMailToolsTests: XCTestCase {
             guard let message = threads.values.flatMap(\.messages).first(where: { $0.ref.id == ref.id }) else { throw MailError.notFound }
             return message
         }
-        func mailAttachment(id: String, maxBytes: Int) async throws -> Data { Data() }
+        /// Attachment bytes by id, as `GetFileAttachment` sends them: the whole file.
+        private var attachmentBytes: [String: Data] = [:]
+        func setAttachment(_ id: String, _ data: Data) { attachmentBytes[id] = data }
+        func mailAttachment(id: String, maxBytes: Int) async throws -> Data {
+            calls.append("attachment:\(id)")
+            guard let data = attachmentBytes[id] else { return Data() }
+            guard data.count <= maxBytes else { throw MailError.tooLarge(data.count) }
+            return data
+        }
         /// Each `UpdateItem`: the item ids and the change.
         private(set) var updates: [(ids: [String], update: MailItemUpdate)] = []
         /// Items deleted after their thread was read: as on Exchange, the update fails for each
@@ -1196,13 +1204,14 @@ final class MCPMailToolsTests: XCTestCase {
 
     private func message(
         _ id: String, in conversation: String, folder: String = inboxID, from email: String = "g.miller@example.com",
-        isRead: Bool, received: TimeInterval, kind: MailItemKind = .note, body: String = "<div>Text</div>", flagged: Bool = false
+        isRead: Bool, received: TimeInterval, kind: MailItemKind = .note, body: String = "<div>Text</div>", flagged: Bool = false,
+        attachments: [MailAttachmentInfo] = []
     ) -> MailMessage {
         MailMessage(
             ref: MailItemRef(id: id, changeKey: "CK-\(id)"), conversationID: conversation, parentFolderID: folder, kind: kind,
             subject: "Budget", from: MailAddress(name: email, email: email), to: [], cc: [], bcc: [], hiddenRecipientCount: 0,
             received: Date(timeIntervalSince1970: received), sent: nil, isRead: isRead, isDraft: false, importance: .normal,
-            bodyHTML: body, preview: "Text", attachments: [], categories: [], isFlagged: flagged, actions: [],
+            bodyHTML: body, preview: "Text", attachments: attachments, categories: [], isFlagged: flagged, actions: [],
             meeting: nil, internetMessageID: nil
         )
     }
@@ -1678,7 +1687,7 @@ final class MCPMailToolsTests: XCTestCase {
         let lowered = html.lowercased()
         for banned in ["<script", "<style", "<iframe", "<form", "<input", "onerror", "onclick", "<!--",
                        "hidden-display", "hidden-mso", "hidden-size", "hidden-attribute", "ignore previous",
-                       "cid:", "getfileattachment", "originalsrc", "track.example", "evil.example"] {
+                       "getfileattachment", "originalsrc", "track.example", "evil.example"] {
             XCTAssertFalse(lowered.contains(banned), "html must not carry \(banned): \(html)")
         }
         for kept in ["<table", "<b>Done</b>", "<strong>Signed</strong>", "<i>Draft</i>", "<em>Review</em>",
@@ -1687,7 +1696,9 @@ final class MCPMailToolsTests: XCTestCase {
             XCTAssertTrue(html.contains(kept), "html must keep \(kept): \(html)")
         }
         XCTAssertEqual(html.components(separatedBy: "<td></td>").count - 1, 3, "empty cells stay, so columns do not shift")
-        XCTAssertEqual(lowered.components(separatedBy: "<img").count - 1, 1, "only the web image stays")
+        XCTAssertEqual(lowered.components(separatedBy: "<img").count - 1, 3, "the web image and the two attached ones stay")
+        XCTAssertTrue(html.contains("<img src=\"cid:image001.png@01da\">"), html)
+        XCTAssertTrue(html.contains("<img src=\"cid:image002.png@01da\">"), html)
         // `text` does not change with the argument.
         let plain = try object(await tools.call(name: "get_mail_message", arguments: ["message_id": "MSG-PLAN-FULL-ID-00000000000"], client: nil))
         XCTAssertEqual(message["text"], plain["message"]?["text"])
@@ -1934,5 +1945,191 @@ final class MCPMailToolsTests: XCTestCase {
         XCTAssertNil(meeting["my_response"])
         XCTAssertNil(meeting["conflicts"])
         XCTAssertEqual(thread["messages"]?.arrayValue?.last?["meeting"]?["response"], "accepted")
+    }
+
+    // MARK: - Attachments
+
+    private static let pdf = MailAttachmentInfo(id: "ATT-PDF-FULL-ID-000000000000", name: "Отчёт Q4.pdf", contentType: "application/pdf", size: 10_500_000, isInline: false, contentID: nil, isItemAttachment: false)
+    private static let shot = MailAttachmentInfo(id: "ATT-SHOT-FULL-ID-00000000000", name: "image001.png", contentType: "image/png", size: 2_000, isInline: true, contentID: "Image001.png@01DA", isItemAttachment: false)
+    private static let logo = MailAttachmentInfo(id: "ATT-LOGO-FULL-ID-00000000000", name: "logo.svg", contentType: "image/svg+xml", size: 900, isInline: true, contentID: "logo@01DA", isItemAttachment: false)
+    private static let unused = MailAttachmentInfo(id: "ATT-UNUSED-FULL-ID-000000000", name: "image009.png", contentType: "image/png", size: 500, isInline: true, contentID: "image009.png@01DA", isItemAttachment: false)
+    private static let forwarded = MailAttachmentInfo(id: "ATT-ITEM-FULL-ID-00000000000", name: "FW: Contract", contentType: "message/rfc822", size: 40_000, isInline: false, contentID: nil, isItemAttachment: true)
+    private static let huge = MailAttachmentInfo(id: "ATT-HUGE-FULL-ID-00000000000", name: "dump.zip", contentType: "application/zip", size: 30 * 1024 * 1024, isInline: false, contentID: nil, isItemAttachment: false)
+
+    private static let shotBody = """
+    <p>See the screenshot:</p><img originalsrc="cid:Image001.png@01DA" src="https://mail.example.com/owa/service.svc/s/GetFileAttachment?id=X" width="800" height="600">
+    <img src="cid:logo@01DA" width="80"><img src="cid:missing@01DA">
+    """
+
+    private func addAttachmentThread() async {
+        let mail = message(
+            "MSG-ATT-FULL-ID-000000000000", in: "CONV-ATT-FULL-ID-00000000000", isRead: true, received: 1_791_995_000,
+            body: Self.shotBody, attachments: [Self.pdf, Self.shot, Self.logo, Self.unused, Self.forwarded, Self.huge]
+        )
+        await provider.add(MailThread(id: "CONV-ATT-FULL-ID-00000000000", messages: [mail], totalMessageCount: 1))
+    }
+
+    /// Every file attachment has an `attachment_id`, with or without `include_html`; an attached
+    /// message has none. Without `include_html` there is no `inline_images`.
+    func testAttachmentsCarryShortIDs() async throws {
+        await addAttachmentThread()
+        let tools = makeTools()
+        for (name, key, id) in [("get_mail_thread", "thread_id", "CONV-ATT-FULL-ID-00000000000"), ("get_mail_message", "message_id", "MSG-ATT-FULL-ID-000000000000")] {
+            let read = try object(await tools.call(name: name, arguments: [key: .string(id)], client: nil))
+            let message = try XCTUnwrap(name == "get_mail_thread" ? read["messages"]?.arrayValue?.first : read["message"])
+            let attachments = try XCTUnwrap(message["attachments"]?.arrayValue, name)
+            XCTAssertEqual(attachments.map { $0["name"]?.stringValue }, ["Отчёт Q4.pdf", "FW: Contract", "dump.zip"], name)
+            XCTAssertEqual(attachments[0]["attachment_id"]?.stringValue, tools.handle(Self.pdf.id), name)
+            XCTAssertEqual(attachments[0]["attachment_id"]?.stringValue?.count, 12, name)
+            XCTAssertNil(attachments[1]["attachment_id"], "\(name): an attached message is not downloaded")
+            XCTAssertEqual(attachments[1]["attached_message"], true, name)
+            XCTAssertNotNil(attachments[2]["attachment_id"], name)
+            XCTAssertNil(message["inline_images"], "\(name): only with include_html")
+        }
+    }
+
+    /// With `include_html`: one `inline_images` entry per raster image the markup refers to.
+    func testInlineImagesListWhatTheHTMLRefersTo() async throws {
+        await addAttachmentThread()
+        let tools = makeTools()
+        for (name, key, id) in [("get_mail_thread", "thread_id", "CONV-ATT-FULL-ID-00000000000"), ("get_mail_message", "message_id", "MSG-ATT-FULL-ID-000000000000")] {
+            let read = try object(await tools.call(name: name, arguments: [key: .string(id), "include_html": true], client: nil))
+            let message = try XCTUnwrap(name == "get_mail_thread" ? read["messages"]?.arrayValue?.first : read["message"])
+            let html = try XCTUnwrap(message["html"]?.stringValue)
+            XCTAssertTrue(html.contains("<img width=\"800\" height=\"600\" src=\"cid:image001.png@01da\">"), html)
+            XCTAssertFalse(html.lowercased().contains("getfileattachment"), html)
+            XCTAssertEqual(message["inline_images"], [[
+                "content_id": "image001.png@01da",
+                "attachment_id": .string(tools.handle(Self.shot.id)),
+                "type": "image/png",
+                "size": 2_000,
+            ]], "\(name): no SVG, no image without an attachment, none the markup does not use")
+        }
+    }
+
+    private func attachmentID(_ tools: MCPMailTools, _ info: MailAttachmentInfo) async throws -> String {
+        _ = try object(await tools.call(name: "get_mail_message", arguments: ["message_id": "MSG-ATT-FULL-ID-000000000000", "include_html": true], client: nil))
+        return tools.handle(info.id)
+    }
+
+    /// A whole raster image comes as an `image` block; `structuredContent` has no bytes.
+    func testGetAttachmentReturnsAnImage() async throws {
+        await addAttachmentThread()
+        let png = Data((0..<2_000).map { UInt8($0 % 251) })
+        await provider.setAttachment(Self.shot.id, png)
+        let tools = makeTools()
+        let id = try await attachmentID(tools, Self.shot)
+        let result = await tools.call(name: "get_mail_attachment", arguments: ["attachment_id": .string(id)], client: nil)
+        let meta = try object(result)
+        XCTAssertEqual(meta, ["attachment_id": .string(id), "name": "image001.png", "type": "image/png", "size": 2_000, "offset": 0, "length": 2_000])
+        let content = try XCTUnwrap(result.json["content"]?.arrayValue)
+        XCTAssertEqual(content.count, 2)
+        XCTAssertEqual(content[0]["type"], "text")
+        XCTAssertFalse(content[0]["text"]?.stringValue?.contains(png.base64EncodedString()) == true, "the bytes go once")
+        XCTAssertEqual(content[1], ["type": "image", "data": .string(png.base64EncodedString()), "mimeType": "image/png"])
+        let calls = await provider.calls
+        XCTAssertFalse(calls.contains("update"), "reading marks nothing")
+    }
+
+    /// A file larger than a piece comes in several, downloaded once; `next_offset` leads on and
+    /// is missing on the last one.
+    func testGetAttachmentReadsAFileInPieces() async throws {
+        await addAttachmentThread()
+        // A block of a prime length: a piece cut at the wrong place would not line up.
+        let block = Data((0..<997).map { UInt8(truncatingIfNeeded: $0 &* 31) })
+        var file = Data()
+        while file.count < 10_000_000 { file.append(block) }
+        file = file.prefix(10_000_000)
+        await provider.setAttachment(Self.pdf.id, file)
+        let tools = makeTools()
+        let id = try await attachmentID(tools, Self.pdf)
+        var offset = 0
+        var assembled = Data()
+        var pieces = 0
+        while true {
+            let result = await tools.call(name: "get_mail_attachment", arguments: ["attachment_id": .string(id), "offset": .int(Int64(offset))], client: nil)
+            let meta = try object(result)
+            XCTAssertEqual(meta["size"], 10_000_000)
+            XCTAssertEqual(meta["offset"], .int(Int64(offset)))
+            let block = try XCTUnwrap(result.json["content"]?.arrayValue?.last)
+            XCTAssertEqual(block["type"], "resource")
+            XCTAssertEqual(block["resource"]?["mimeType"], "application/pdf")
+            XCTAssertEqual(block["resource"]?["uri"]?.stringValue?.hasPrefix("owawidget://attachment/\(id)/"), true)
+            let piece = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(block["resource"]?["blob"]?.stringValue)))
+            XCTAssertEqual(meta["length"], .int(Int64(piece.count)))
+            XCTAssertLessThanOrEqual(piece.count, MCPMailTools.attachmentChunkBytes)
+            assembled.append(piece)
+            pieces += 1
+            guard let next = meta["next_offset"]?.intValue else { break }
+            offset = Int(next)
+        }
+        XCTAssertEqual(pieces, 3)
+        XCTAssertEqual(assembled, file)
+        let downloads = await provider.calls.filter { $0.hasPrefix("attachment:") }
+        XCTAssertEqual(downloads, ["attachment:\(Self.pdf.id)"], "Exchange sends the file once")
+
+        let small = try object(await tools.call(name: "get_mail_attachment", arguments: ["attachment_id": .string(id), "offset": 9_999_990, "max_bytes": 100], client: nil))
+        XCTAssertEqual(small["length"], 10)
+        XCTAssertNil(small["next_offset"])
+        let past = await tools.call(name: "get_mail_attachment", arguments: ["attachment_id": .string(id), "offset": 10_000_000], client: nil)
+        XCTAssertRefusal(past, .invalidArgument)
+        let tooBig = await tools.call(name: "get_mail_attachment", arguments: ["attachment_id": .string(id), "max_bytes": .int(Int64(MCPMailTools.attachmentChunkBytes + 1))], client: nil)
+        XCTAssertRefusal(tooBig, .invalidArgument)
+    }
+
+    /// A piece of an image is not a picture: it comes as a resource.
+    func testPieceOfAnImageIsAResource() async throws {
+        await addAttachmentThread()
+        await provider.setAttachment(Self.shot.id, Data(repeating: 7, count: 2_000))
+        let tools = makeTools()
+        let id = try await attachmentID(tools, Self.shot)
+        let result = await tools.call(name: "get_mail_attachment", arguments: ["attachment_id": .string(id), "max_bytes": 1_000], client: nil)
+        XCTAssertEqual(try object(result)["next_offset"], 1_000)
+        XCTAssertEqual(result.json["content"]?.arrayValue?.last?["type"], "resource")
+    }
+
+    func testGetAttachmentRefusals() async throws {
+        await addAttachmentThread()
+        let tools = makeTools()
+        _ = try await attachmentID(tools, Self.pdf)
+
+        let huge = await tools.call(name: "get_mail_attachment", arguments: ["attachment_id": .string(tools.handle(Self.huge.id))], client: nil)
+        XCTAssertRefusal(huge, .tooLarge)
+        // The attached message has no attachment_id; its Exchange id is refused all the same.
+        let item = await tools.call(name: "get_mail_attachment", arguments: ["attachment_id": .string(Self.forwarded.id)], client: nil)
+        XCTAssertRefusal(item, .notSupported)
+        XCTAssertTrue(item.errorMessage?.contains("attached message") == true, item.errorMessage ?? "")
+
+        let unknown = await tools.call(name: "get_mail_attachment", arguments: ["attachment_id": "0123456789ab"], client: nil)
+        XCTAssertRefusal(unknown, .notFound)
+        XCTAssertEqual(unknown.errorMessage, "Unknown `attachment_id` 0123456789ab. Ids are remembered only while OWA Widget runs: call get_mail_thread or get_mail_message again.")
+        // A full id no answer named is unknown too: nothing says what file it is.
+        let stranger = await tools.call(name: "get_mail_attachment", arguments: ["attachment_id": "ATT-STRANGER-FULL-ID-0000000"], client: nil)
+        XCTAssertRefusal(stranger, .notFound)
+        XCTAssertRefusal(await tools.call(name: "get_mail_attachment", arguments: [:], client: nil), .invalidArgument)
+        let downloads = await provider.calls.filter { $0.hasPrefix("attachment:") }
+        XCTAssertEqual(downloads, [], "no refusal downloads anything")
+
+        // Mail reading off: refused like every mail tool.
+        XCTAssertRefusal(await makeTools(read: false).call(name: "get_mail_attachment", arguments: ["attachment_id": .string(tools.handle(Self.pdf.id))], client: nil), .mailNotAllowed)
+    }
+
+    /// A file Exchange sends larger than its listed size allows is refused as too large.
+    func testDownloadPastTheLimitIsTooLarge() async throws {
+        let sneaky = MailAttachmentInfo(id: "ATT-SNEAKY-FULL-ID-000000000", name: "a.bin", contentType: "application/octet-stream", size: 100, isInline: false, contentID: nil, isItemAttachment: false)
+        let mail = message("MSG-SNEAKY-FULL-ID-000000000", in: "CONV-SNEAKY-FULL-ID-00000000", isRead: true, received: 1_791_995_000, attachments: [sneaky])
+        await provider.add(MailThread(id: "CONV-SNEAKY-FULL-ID-00000000", messages: [mail], totalMessageCount: 1))
+        await provider.setAttachment(sneaky.id, Data(count: OWAClient.mailAttachmentLimit + 1))
+        let tools = makeTools()
+        _ = try object(await tools.call(name: "get_mail_message", arguments: ["message_id": "MSG-SNEAKY-FULL-ID-000000000"], client: nil))
+        XCTAssertRefusal(await tools.call(name: "get_mail_attachment", arguments: ["attachment_id": .string(tools.handle(sneaky.id))], client: nil), .tooLarge)
+    }
+
+    func testGetAttachmentIsAReadToolListedWithMail() {
+        XCTAssertTrue(MCPMailTools.readToolNames.contains("get_mail_attachment"))
+        let tool = MCPToolRegistry.tools(mailRead: true, mailSend: false).first { $0.name == "get_mail_attachment" }
+        XCTAssertEqual(tool?.isReadOnly, true)
+        XCTAssertFalse(MCPToolRegistry.tools(mailRead: false, mailSend: false).contains { $0.name == "get_mail_attachment" })
+        XCTAssertTrue(MCPToolErrorCodes.codes(for: "get_mail_attachment").contains(.tooLarge))
     }
 }

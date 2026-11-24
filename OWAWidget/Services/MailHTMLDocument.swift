@@ -167,8 +167,13 @@ enum MailHTMLDocument {
     }
 
     static func dataURI(_ data: Data, type: String) -> String {
-        let safeType = type.range(of: "^[a-zA-Z0-9.+/-]+$", options: .regularExpression) != nil ? type : "application/octet-stream"
-        return "data:\(safeType);base64,\(data.base64EncodedString())"
+        "data:\(safeMediaType(type));base64,\(data.base64EncodedString())"
+    }
+
+    /// A media type as it may go into a `data:` URI or an MCP `mimeType`; anything else
+    /// (parameters, stray characters) becomes `application/octet-stream`.
+    static func safeMediaType(_ type: String) -> String {
+        type.range(of: "^[a-zA-Z0-9.+/-]+$", options: .regularExpression) != nil ? type : "application/octet-stream"
     }
 
     /// Remote (`http(s)`) image sources in a body, in order, without duplicates.
@@ -219,14 +224,31 @@ enum MailHTMLDocument {
     /// Markup of a body for a client that draws the message itself (MCP `include_html`): the
     /// same cleaning as `plainText` — no scripts, frames, forms, hidden text — and nothing that
     /// loads but web pictures: no style sheets, media, styles that fetch, URL attributes but
-    /// `href` and an image's `src`. Images that need the mailbox (`cid:`, OWA's own addresses
-    /// behind them) are dropped: drawing them would take more requests to Exchange. Comments go
-    /// too. Formatting — tables, empty cells, bold, italics, colours, cell backgrounds — stays.
+    /// `href` and an image's `src`. An attached image stays as a reference, `src="cid:<content
+    /// id>"` (lowercased, as `inlineImageReferences` names it), with OWA's own addresses behind it
+    /// removed: the client fetches its bytes itself (MCP `get_mail_attachment`). Images from the
+    /// mailbox without a `cid:` (OWA's addresses alone) are dropped. Comments go too.
+    /// Formatting — tables, empty cells, bold, italics, colours, cell backgrounds, image sizes —
+    /// stays.
     static func clientHTML(_ html: String?) -> String {
         guard let html, !html.isEmpty else { return "" }
         return MailHTMLScanner.process(
-            html, sanitize: true, dropHidden: true, offline: true, dropComments: true, keepImage: isWebImage
+            html, sanitize: true, dropHidden: true, offline: true, dropComments: true, keepImage: clientImageSource
         ) { _ in nil }
+    }
+
+    /// The `src` an image keeps in `clientHTML`: a web picture as it is, an attached one as
+    /// `cid:<content id>`; `nil` drops the image.
+    static func clientImageSource(_ source: String) -> String? {
+        if let cid = contentID(fromSource: source) { return "cid:" + cid.lowercased() }
+        return isWebImage(source) && !isMailboxAddress(source) ? source : nil
+    }
+
+    /// OWA's own address of an attachment (it may carry the session's CANARY): drawing it needs
+    /// the user's session, and it is not the sender's picture to show.
+    private static func isMailboxAddress(_ source: String) -> Bool {
+        let lowered = source.lowercased()
+        return lowered.contains("getfileattachment") || lowered.contains("/owa/service.svc")
     }
 
     /// A picture a browser can draw on its own: `http(s)` or a raster `data:` image.
@@ -301,12 +323,12 @@ enum MailHTMLScanner {
     /// - Parameter rewriteStyleSheet: new text for what a `<style>` element holds.
     /// - Parameter dropComments: drop comments (Outlook's conditional markup included); what
     ///   sits between them stays. Text in a comment is never shown, so it is hidden text.
-    /// - Parameter keepImage: with `offline`, an `<img>` whose source (`originalsrc` first, as
-    ///   OWA keeps it, else `src`) passes stays, with that source as its only `src`; the others
-    ///   are dropped as without it.
+    /// - Parameter keepImage: with `offline`, the `src` an `<img>` keeps, given its source
+    ///   (`originalsrc` first, as OWA keeps it, else `src`); it is then the image's only source
+    ///   attribute. `nil` drops the image, as without `keepImage`.
     static func process(
         _ html: String, sanitize: Bool, dropHidden: Bool = false, offline: Bool = false,
-        dropComments: Bool = false, keepImage: ((String) -> Bool)? = nil,
+        dropComments: Bool = false, keepImage: ((String) -> String?)? = nil,
         imageSource: (String) -> String?, zoomLink: ((String) -> String?)? = nil,
         rewriteAttribute: ((_ element: String, _ name: String, _ value: String) -> String?)? = nil,
         rewriteStyleSheet: ((String) -> String)? = nil
@@ -395,7 +417,7 @@ enum MailHTMLScanner {
             if sanitize, offline, name == "img", !closing, let keepImage {
                 let source = parsed.list.first(where: { $0.name == "originalsrc" })?.value
                     ?? parsed.list.first(where: { $0.name == "src" })?.value
-                keptImageSource = source.map { unescaped(String(String.UnicodeScalarView(s[$0]))) }.flatMap { keepImage($0) ? $0 : nil }
+                keptImageSource = source.map { unescaped(String(String.UnicodeScalarView(s[$0]))) }.flatMap(keepImage)
             }
             if sanitize, droppedTags.contains(name) || (offline && offlineTags.contains(name) && keptImageSource == nil) {
                 i = tagEnd
