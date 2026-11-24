@@ -112,7 +112,10 @@ struct MCPClientApprovalView: View {
 
     private var scopeText: String {
         let text = localization.tr(scopeKey)
-        guard !request.forMail, request.canRespondMeetings else { return text }
+        if request.forMail {
+            return request.canDownloadAttachments ? text + " " + localization.tr("mcp.approve.mail.scopeAttachmentsSuffix") : text
+        }
+        guard request.canRespondMeetings else { return text }
         return text + " " + localization.tr("mcp.approve.scopeRespondSuffix")
     }
 

@@ -1998,12 +1998,12 @@ final class MCPCalendarToolsTests: XCTestCase {
 
     func testStatusReportsEverySwitchWhenAllAreOn() async {
         let all = MCPSettings(serverEnabled: true, createMeetings: true, mailRead: true, mailSend: true, mailOrganize: true,
-                              mailArrange: true, cancelMeetings: true, respondMeetings: true)
+                              mailArrange: true, mailAttachments: true, cancelMeetings: true, respondMeetings: true)
         let (tools, _) = makeTools(events: [], settings: all)
 
         let settings = await switches(tools)
 
-        XCTAssertEqual(Set(settings.keys), ["create_meetings", "cancel_meetings", "respond_meetings", "read_mail", "prepare_mail", "mark_mail", "arrange_mail"])
+        XCTAssertEqual(Set(settings.keys), ["create_meetings", "cancel_meetings", "respond_meetings", "read_mail", "prepare_mail", "mark_mail", "arrange_mail", "download_attachments"])
         for id in MCPSettingID.allCases {
             XCTAssertEqual(settings[id.rawValue]?["enabled"], true, id.rawValue)
             XCTAssertEqual(settings[id.rawValue]?["title"]?.stringValue, id.title, "the title the settings window shows")
@@ -2015,7 +2015,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         // Mail reading off: the switches under it are greyed out and their tools refuse, whatever
         // they were left at.
         let some = MCPSettings(serverEnabled: true, createMeetings: true, mailRead: false, mailSend: true, mailOrganize: true,
-                               mailArrange: true, cancelMeetings: false, respondMeetings: true)
+                               mailArrange: true, mailAttachments: true, cancelMeetings: false, respondMeetings: true)
         let (tools, _) = makeTools(events: [], settings: some)
 
         let settings = await switches(tools)
@@ -2027,6 +2027,7 @@ final class MCPCalendarToolsTests: XCTestCase {
         XCTAssertEqual(settings["prepare_mail"]?["enabled"], false)
         XCTAssertEqual(settings["mark_mail"]?["enabled"], false)
         XCTAssertEqual(settings["arrange_mail"]?["enabled"], false)
+        XCTAssertEqual(settings["download_attachments"]?["enabled"], false)
         XCTAssertEqual(MCPToolRegistry.tools(for: some).map(\.name), MCPToolRegistry.tools.map(\.name), "and no mail tools are listed")
     }
 

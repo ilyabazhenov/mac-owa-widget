@@ -25,6 +25,10 @@ struct MCPSettings: Codable, Equatable, Sendable {
     /// Off by default: moving conversations between folders and flagging them (`move_mail`,
     /// `set_mail_flag`). Undoable and sends nothing, so no panel asks; it still needs `mailRead`.
     var mailArrange = false
+    /// Off by default: attachment files and pictures pasted into emails (`get_mail_attachment`,
+    /// `attachment_id`, `inline_images`, `cid:` images in `html`). More data and another way in
+    /// for text written by strangers than the messages themselves; it still needs `mailRead`.
+    var mailAttachments = false
     /// Off by default and separate from `createMeetings`: cancelling tells every attendee.
     var cancelMeetings = false
     /// Off by default: answering invitations (`respond_to_meeting`), each answer confirmed in a panel.
@@ -33,7 +37,7 @@ struct MCPSettings: Codable, Equatable, Sendable {
 
 extension MCPSettings {
     private enum CodingKeys: String, CodingKey {
-        case serverEnabled, createMeetings, askNewClients, mailRead, mailSend, mailOrganize, mailArrange, cancelMeetings, respondMeetings
+        case serverEnabled, createMeetings, askNewClients, mailRead, mailSend, mailOrganize, mailArrange, mailAttachments, cancelMeetings, respondMeetings
     }
 
     /// Settings saved before a switch existed lack its key: it takes its default (off).
@@ -46,6 +50,7 @@ extension MCPSettings {
         mailSend = try container.decodeIfPresent(Bool.self, forKey: .mailSend) ?? false
         mailOrganize = try container.decodeIfPresent(Bool.self, forKey: .mailOrganize) ?? false
         mailArrange = try container.decodeIfPresent(Bool.self, forKey: .mailArrange) ?? false
+        mailAttachments = try container.decodeIfPresent(Bool.self, forKey: .mailAttachments) ?? false
         cancelMeetings = try container.decodeIfPresent(Bool.self, forKey: .cancelMeetings) ?? false
         respondMeetings = try container.decodeIfPresent(Bool.self, forKey: .respondMeetings) ?? false
     }
@@ -65,6 +70,7 @@ extension MCPSettings {
         case .prepareMail: mailRead && mailSend
         case .markMail: mailRead && mailOrganize
         case .arrangeMail: mailRead && mailArrange
+        case .downloadAttachments: mailRead && mailAttachments
         }
     }
 

@@ -24,6 +24,8 @@ struct MCPClientApprovalRequest: Equatable, Sendable {
     var canOrganizeMail = false
     /// With `forMail`: the client may also move and flag conversations (`move_mail`, `set_mail_flag`).
     var canArrangeMail = false
+    /// With `forMail`: the client may also download attachments (`get_mail_attachment`).
+    var canDownloadAttachments = false
 }
 
 enum MCPClientApprovalOutcome: Equatable, Sendable {

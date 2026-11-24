@@ -114,6 +114,7 @@ final class MCPServerService: ObservableObject {
                 canSendMail = false
                 canOrganizeMail = false
                 canArrangeMail = false
+                canDownloadAttachments = false
             }
             settingsChanged()
             MCPDebugLog.log("mailRead=\(canReadMail)")
@@ -140,6 +141,14 @@ final class MCPServerService: ObservableObject {
             guard canArrangeMail != oldValue else { return }
             settingsChanged()
             MCPDebugLog.log("mailArrange=\(canArrangeMail)")
+        }
+    }
+    /// Attachment files and pasted pictures (`get_mail_attachment`); needs `canReadMail`.
+    @Published var canDownloadAttachments: Bool {
+        didSet {
+            guard canDownloadAttachments != oldValue else { return }
+            settingsChanged()
+            MCPDebugLog.log("mailAttachments=\(canDownloadAttachments)")
         }
     }
     /// What the tool calls read. The gate (`authorize`) and the tools must see the same switches:
@@ -177,6 +186,7 @@ final class MCPServerService: ObservableObject {
         canSendMail = settings.mailRead && settings.mailSend
         canOrganizeMail = settings.mailRead && settings.mailOrganize
         canArrangeMail = settings.mailRead && settings.mailArrange
+        canDownloadAttachments = settings.mailRead && settings.mailAttachments
         settingsSnapshot = MCPSettingsSnapshot(settings)
     }
 
@@ -189,6 +199,7 @@ final class MCPServerService: ObservableObject {
             mailSend: canReadMail && canSendMail,
             mailOrganize: canReadMail && canOrganizeMail,
             mailArrange: canReadMail && canArrangeMail,
+            mailAttachments: canReadMail && canDownloadAttachments,
             cancelMeetings: canCancelMeetings,
             respondMeetings: canRespondMeetings
         )
@@ -226,6 +237,7 @@ final class MCPServerService: ObservableObject {
             canSend: { [settingsSnapshot] in settingsSnapshot.current.isOn(.prepareMail) },
             canOrganize: { [settingsSnapshot] in settingsSnapshot.current.isOn(.markMail) },
             canArrange: { [settingsSnapshot] in settingsSnapshot.current.isOn(.arrangeMail) },
+            canDownloadAttachments: { [settingsSnapshot] in settingsSnapshot.current.isOn(.downloadAttachments) },
             readMarker: mailService,
             arrangeObserver: mailService,
             meetingCalendar: calendarTools
@@ -568,6 +580,7 @@ final class MCPServerService: ObservableObject {
             request.canSendMail = canSendMail
             request.canOrganizeMail = canOrganizeMail
             request.canArrangeMail = canArrangeMail
+            request.canDownloadAttachments = canDownloadAttachments
             updateKnownClients(MCPKnownClientList.setMailAccess(.pending, forKey: identity.key, in: knownClients))
             switch await mailApproval.decision(for: request) {
             case .allowed: return nil

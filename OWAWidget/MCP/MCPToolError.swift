@@ -70,6 +70,7 @@ enum MCPSettingID: String, Sendable, CaseIterable {
     case prepareMail = "prepare_mail"
     case markMail = "mark_mail"
     case arrangeMail = "arrange_mail"
+    case downloadAttachments = "download_attachments"
 
     var localizationKey: String {
         switch self {
@@ -80,6 +81,7 @@ enum MCPSettingID: String, Sendable, CaseIterable {
         case .prepareMail: "mcp.mail.send"
         case .markMail: "mcp.mail.organize"
         case .arrangeMail: "mcp.mail.arrange"
+        case .downloadAttachments: "mcp.mail.attachments"
         }
     }
 
@@ -212,7 +214,7 @@ enum MCPToolErrorCodes {
         case "prepare_mail": codes = mailRead + [.settingDisabled] + panel + [.unconfirmed]
         case "set_mail_read", "set_mail_flag": codes = mailRead + [.settingDisabled]
         case "move_mail": codes = mailRead + [.settingDisabled, .forbiddenFolder, .noArchiveFolder]
-        case "get_mail_attachment": codes = mailRead + [.tooLarge]
+        case "get_mail_attachment": codes = mailRead + [.settingDisabled, .tooLarge]
         default:
             codes = MCPMailTools.readToolNames.contains(tool) ? mailRead : gate
         }

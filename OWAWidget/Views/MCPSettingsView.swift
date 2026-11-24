@@ -87,6 +87,13 @@ struct MCPSettingsView: View {
                     isEnabled: !(!server.isEnabled || !server.canReadMail)
                 )
                 .padding(.leading, 16)
+                SettingsToggle(
+                    title: localization.tr("mcp.mail.attachments"),
+                    info: localization.tr("mcp.mail.attachments.description"),
+                    isOn: $server.canDownloadAttachments,
+                    isEnabled: !(!server.isEnabled || !server.canReadMail)
+                )
+                .padding(.leading, 16)
                 if server.canReadMail {
                     Label {
                         Text(localization.tr("mcp.mail.warning")).font(.app(.footnote))

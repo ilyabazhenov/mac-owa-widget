@@ -87,6 +87,7 @@ final class MCPMailTools {
     static let moveRounds = 4
     /// Folders nothing is moved into: deleting is not a move, and the rest are Exchange's own.
     static let forbiddenDestinations: Set<MailDistinguishedFolder> = [.deleteditems, .drafts, .outbox, .junkemail, .sentitems, .msgfolderroot]
+    static let attachmentsDisabledMessage = "Downloading attachments is turned off: ask the user to turn on “Let assistants download attachments” in OWA Widget settings → AI (MCP) → Mail."
     static let arrangeDisabledMessage = "Moving and flagging mail is turned off: ask the user to turn on “Let assistants move and flag mail” in OWA Widget settings → AI (MCP) → Mail. Nothing was changed."
     static let disabledMessage = "Mail access for AI assistants is turned off in OWA Widget (Settings → AI (MCP) → Mail). Ask the user to turn it on."
     static let sendDisabledMessage = "Preparing emails is turned off in OWA Widget (Settings → AI (MCP) → Mail). Nothing was sent. Ask the user to turn it on."
@@ -104,6 +105,8 @@ final class MCPMailTools {
     private let canSend: () -> Bool
     private let canOrganize: () -> Bool
     private let canArrange: () -> Bool
+    /// `attachment_id`, `inline_images`, `cid:` images in `html` and get_mail_attachment.
+    private let canDownloadAttachments: () -> Bool
     private weak var readMarker: MCPMailReadMarking?
     private weak var arrangeObserver: MCPMailArrangeObserving?
     /// The calendar behind meeting messages: `event_id`, `my_response`, `conflicts`.
@@ -141,6 +144,7 @@ final class MCPMailTools {
         canSend: @escaping () -> Bool = { false },
         canOrganize: @escaping () -> Bool = { false },
         canArrange: @escaping () -> Bool = { false },
+        canDownloadAttachments: @escaping () -> Bool = { false },
         readMarker: MCPMailReadMarking? = nil,
         arrangeObserver: MCPMailArrangeObserving? = nil,
         meetingCalendar: MCPMeetingCalendar? = nil,
@@ -159,6 +163,7 @@ final class MCPMailTools {
         self.canSend = canSend
         self.canOrganize = canOrganize
         self.canArrange = canArrange
+        self.canDownloadAttachments = canDownloadAttachments
         self.readMarker = readMarker
         self.arrangeObserver = arrangeObserver
         self.meetingCalendar = meetingCalendar
@@ -603,6 +608,7 @@ final class MCPMailTools {
         if message.isFlagged { fields["flagged"] = true }
         if !message.categories.isEmpty { fields["categories"] = .array(message.categories.map(JSONValue.string)) }
         let attachments = message.visibleAttachments
+        let downloads = canDownloadAttachments()
         if !attachments.isEmpty {
             fields["attachments"] = .array(attachments.map { attachment in
                 var item: [String: JSONValue] = [
@@ -610,11 +616,13 @@ final class MCPMailTools {
                     "type": .string(attachment.contentType),
                     "size": .int(Int64(attachment.size)),
                 ]
-                remember(attachment, accountID: accountID)
+                // An attached message is remembered too: asked for by its Exchange id, it gets
+                // a refusal that says what it is.
+                if downloads { remember(attachment, accountID: accountID) }
                 if attachment.isItemAttachment {
                     // Not a file: it opens in OWA Widget, so it has nothing to download by.
                     item["attached_message"] = true
-                } else {
+                } else if downloads {
                     item["attachment_id"] = .string(handle(attachment.id))
                 }
                 return .object(item)
@@ -642,11 +650,12 @@ final class MCPMailTools {
             }
         default:
             if includeHTML {
-                let html = MailHTMLDocument.clientHTML(message.bodyHTML)
+                // Attached pictures stay as `cid:` only for a client that can fetch them.
+                let html = MailHTMLDocument.clientHTML(message.bodyHTML, keepAttachedImages: downloads)
                 if html.count <= htmlBudget {
                     fields["html"] = .string(html)
                     htmlBudget -= html.count
-                    let images = inlineImagesJSON(message, html: html, accountID: accountID)
+                    let images = downloads ? inlineImagesJSON(message, html: html, accountID: accountID) : []
                     if !images.isEmpty { fields["inline_images"] = .array(images) }
                 } else {
                     fields["html"] = .null
@@ -1112,6 +1121,7 @@ final class MCPMailTools {
     /// A piece of an attachment: `[offset, offset + max_bytes)` of the file. The file is
     /// downloaded once and kept by `attachmentStore` for the next pieces.
     private func getAttachment(_ arguments: [String: JSONValue]) async throws -> MCPToolResult {
+        guard canDownloadAttachments() else { return .failure(.settingOff(.downloadAttachments, Self.attachmentsDisabledMessage)) }
         let from = "get_mail_thread or get_mail_message"
         let raw = arguments["attachment_id"]?.stringValue?.trimmingCharacters(in: .whitespaces) ?? ""
         let id = try requiredID(arguments, "attachment_id", from: from)

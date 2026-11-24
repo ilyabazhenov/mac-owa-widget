@@ -287,7 +287,7 @@ final class MCPMailToolsTests: XCTestCase {
     private static let fixtureNow = Date(timeIntervalSince1970: 1_792_000_000 + 86_400)
 
     private func makeTools(
-        read: Bool = true, send: Bool = true, organize: Bool = true, arrange: Bool = true, marker: MCPMailReadMarking? = nil, draftWindow: Bool = true,
+        read: Bool = true, send: Bool = true, organize: Bool = true, arrange: Bool = true, attachments: Bool = true, marker: MCPMailReadMarking? = nil, draftWindow: Bool = true,
         accessGuard: MCPAccessGuard? = nil
     ) -> MCPMailTools {
         if marker == nil, mailService == nil {
@@ -303,6 +303,7 @@ final class MCPMailToolsTests: XCTestCase {
             canSend: { send },
             canOrganize: { organize },
             canArrange: { arrange },
+            canDownloadAttachments: { attachments },
             readMarker: marker ?? mailService,
             arrangeObserver: mailService,
             meetingCalendar: calendarTools,
@@ -1182,7 +1183,7 @@ final class MCPMailToolsTests: XCTestCase {
     func testToolListFollowsSwitches() {
         let names = { (read: Bool, send: Bool) in Set(MCPToolRegistry.tools(mailRead: read, mailSend: send).map(\.name)) }
         XCTAssertTrue(names(false, true).isDisjoint(with: MCPMailTools.toolNames))
-        XCTAssertTrue(names(true, false).isSuperset(of: MCPMailTools.readToolNames))
+        XCTAssertTrue(names(true, false).isSuperset(of: MCPMailTools.readToolNames.subtracting(["get_mail_attachment"])), "get_mail_attachment has a switch of its own")
         XCTAssertFalse(names(true, false).contains("prepare_mail"))
         XCTAssertTrue(names(true, true).contains("prepare_mail"))
         XCTAssertFalse(MCPToolRegistry.prepareMailTool.isReadOnly)
@@ -2127,9 +2128,43 @@ final class MCPMailToolsTests: XCTestCase {
 
     func testGetAttachmentIsAReadToolListedWithMail() {
         XCTAssertTrue(MCPMailTools.readToolNames.contains("get_mail_attachment"))
-        let tool = MCPToolRegistry.tools(mailRead: true, mailSend: false).first { $0.name == "get_mail_attachment" }
+        let tool = MCPToolRegistry.tools(mailRead: true, mailSend: false, mailAttachments: true).first { $0.name == "get_mail_attachment" }
         XCTAssertEqual(tool?.isReadOnly, true)
-        XCTAssertFalse(MCPToolRegistry.tools(mailRead: false, mailSend: false).contains { $0.name == "get_mail_attachment" })
+        XCTAssertFalse(MCPToolRegistry.tools(mailRead: true, mailSend: false).contains { $0.name == "get_mail_attachment" }, "only with its switch")
+        XCTAssertFalse(MCPToolRegistry.tools(mailRead: false, mailSend: false, mailAttachments: true).contains { $0.name == "get_mail_attachment" }, "needs mail reading on")
         XCTAssertTrue(MCPToolErrorCodes.codes(for: "get_mail_attachment").contains(.tooLarge))
+        XCTAssertTrue(MCPToolErrorCodes.codes(for: "get_mail_attachment").contains(.settingDisabled))
+    }
+
+    /// The switch is off by default, and off the answers are what they were before attachments:
+    /// no `attachment_id`, no `inline_images`, attached pictures left out of `html`, and
+    /// get_mail_attachment refuses without downloading anything.
+    func testAttachmentsSwitchOffKeepsTheOldAnswers() async throws {
+        XCTAssertFalse(MCPSettings().mailAttachments)
+        let decoded = try JSONDecoder().decode(MCPSettings.self, from: Data(#"{"serverEnabled":true,"mailRead":true}"#.utf8))
+        XCTAssertFalse(decoded.mailAttachments, "off for settings saved before the switch")
+        XCTAssertFalse(MCPSettings(serverEnabled: true, mailRead: false, mailAttachments: true).isOn(.downloadAttachments), "needs mail reading on")
+
+        await addAttachmentThread()
+        await provider.setAttachment(Self.pdf.id, Data(repeating: 1, count: 100))
+        let on = makeTools()
+        _ = try await attachmentID(on, Self.pdf)
+        let tools = makeTools(attachments: false)
+        for (name, key, id) in [("get_mail_thread", "thread_id", "CONV-ATT-FULL-ID-00000000000"), ("get_mail_message", "message_id", "MSG-ATT-FULL-ID-000000000000")] {
+            let read = try object(await tools.call(name: name, arguments: [key: .string(id), "include_html": true], client: nil))
+            let message = try XCTUnwrap(name == "get_mail_thread" ? read["messages"]?.arrayValue?.first : read["message"])
+            let attachments = try XCTUnwrap(message["attachments"]?.arrayValue)
+            XCTAssertTrue(attachments.allSatisfy { $0["attachment_id"] == nil }, name)
+            XCTAssertEqual(attachments.map { $0["name"]?.stringValue }, ["Отчёт Q4.pdf", "FW: Contract", "dump.zip"], "\(name): still listed")
+            XCTAssertNil(message["inline_images"], name)
+            let html = try XCTUnwrap(message["html"]?.stringValue)
+            XCTAssertFalse(html.contains("<img"), "\(name): \(html)")
+            XCTAssertFalse(html.contains("cid:"), "\(name): \(html)")
+        }
+        let refused = await tools.call(name: "get_mail_attachment", arguments: ["attachment_id": .string(on.handle(Self.pdf.id))], client: nil)
+        XCTAssertRefusal(refused, .settingDisabled)
+        XCTAssertEqual(refused.error?.setting, .downloadAttachments)
+        let downloads = await provider.calls.filter { $0.hasPrefix("attachment:") }
+        XCTAssertEqual(downloads, [])
     }
 }

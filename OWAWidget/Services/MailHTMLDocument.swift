@@ -230,17 +230,20 @@ enum MailHTMLDocument {
     /// mailbox without a `cid:` (OWA's addresses alone) are dropped. Comments go too.
     /// Formatting — tables, empty cells, bold, italics, colours, cell backgrounds, image sizes —
     /// stays.
-    static func clientHTML(_ html: String?) -> String {
+    /// `keepAttachedImages: false` drops the attached images too, for a client that may not
+    /// download them.
+    static func clientHTML(_ html: String?, keepAttachedImages: Bool = true) -> String {
         guard let html, !html.isEmpty else { return "" }
         return MailHTMLScanner.process(
-            html, sanitize: true, dropHidden: true, offline: true, dropComments: true, keepImage: clientImageSource
+            html, sanitize: true, dropHidden: true, offline: true, dropComments: true,
+            keepImage: { clientImageSource($0, keepAttachedImages: keepAttachedImages) }
         ) { _ in nil }
     }
 
     /// The `src` an image keeps in `clientHTML`: a web picture as it is, an attached one as
     /// `cid:<content id>`; `nil` drops the image.
-    static func clientImageSource(_ source: String) -> String? {
-        if let cid = contentID(fromSource: source) { return "cid:" + cid.lowercased() }
+    static func clientImageSource(_ source: String, keepAttachedImages: Bool = true) -> String? {
+        if let cid = contentID(fromSource: source) { return keepAttachedImages ? "cid:" + cid.lowercased() : nil }
         return isWebImage(source) && !isMailboxAddress(source) ? source : nil
     }
 

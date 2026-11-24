@@ -237,6 +237,13 @@ final class MailHTMLDocumentTests: XCTestCase {
         XCTAssertFalse(client.contains("svg"), client)
     }
 
+    /// Without the attachments switch the attached pictures go, as before; web images stay.
+    func testClientHTMLWithoutAttachedImages() {
+        let html = #"<img src="cid:a@b"><img originalsrc="cid:c@d" src="x"><img src="https://cdn.example.com/x.png">"#
+        let client = MailHTMLDocument.clientHTML(html, keepAttachedImages: false)
+        XCTAssertEqual(client, #"<img src="https://cdn.example.com/x.png">"#)
+    }
+
     /// A hidden attached image is not referenced by the client markup.
     func testClientHTMLDropsHiddenCidImages() {
         let client = MailHTMLDocument.clientHTML("<p>Hi</p><img src=\"cid:track@x\" style=\"display:none\">")

@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class MCPErrorCodeTests: XCTestCase {
     private var allTools: [MCPToolDefinition] {
-        MCPToolRegistry.tools(mailRead: true, mailSend: true, mailOrganize: true, mailArrange: true)
+        MCPToolRegistry.tools(mailRead: true, mailSend: true, mailOrganize: true, mailArrange: true, mailAttachments: true)
     }
 
     func testCodesAreStableSnakeCase() {

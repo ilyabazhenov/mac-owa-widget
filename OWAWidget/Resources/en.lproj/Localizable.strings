@@ -463,6 +463,7 @@
 "mcp.cancelMeetings.description" = "The AI assistant can cancel a meeting you organize (attendees get a cancellation), decline an invitation or delete a meeting from your calendar. You confirm each one in an OWA Widget window, and the window says who will be notified. Meetings go to Deleted Items; only one occurrence of a series is affected.";
 "mcp.respondMeetings" = "Allow answering invitations";
 "mcp.respondMeetings.description" = "The AI assistant can accept, tentatively accept or decline an invitation — one occurrence or the whole series, with a note or without telling the organizer. You confirm each answer in an OWA Widget window.";
+"mcp.approve.mail.scopeAttachmentsSuffix" = "It will also be able to download email attachments.";
 "mcp.approve.scopeRespondSuffix" = "It will also be able to answer invitations, each answer confirmed by you separately.";
 "mcp.respond.title" = "%@ wants to answer an invitation";
 "mcp.respond.titleUnknownClient" = "An AI assistant wants to answer an invitation";
@@ -688,6 +689,8 @@
 "mcp.mail.organize.description" = "Assistants can mark conversations read or unread, without asking each time: the mark can be undone and nothing is sent.";
 "mcp.mail.arrange" = "Let assistants move and flag mail";
 "mcp.mail.arrange.description" = "Assistants can move conversations to Archive and your other folders and set or clear flags, without asking each time. A move can be undone; nothing goes to Deleted Items, Drafts, Outbox or Junk, nothing is deleted or sent.";
+"mcp.mail.attachments" = "Let assistants download attachments";
+"mcp.mail.attachments.description" = "Files attached to emails and pictures pasted into them (screenshots, logos in signatures), for clients that show the email themselves or save attachments. Up to 25 MB per file. Attachments are written by other people: more data, and another way for a stranger's text to reach the assistant.";
 "mcp.mail.warning" = "Message text goes to the AI assistant you connected. Make sure your organization allows it.";
 "mcp.clients.mail.allowed" = "mail";
 "mcp.clients.mail.denied" = "no mail";
@@ -872,7 +875,7 @@
 "settings.search.keywords.invitations" = "invitations notifications rescheduled cancelled panel rsvp counter badge envelope organizer comment series notify";
 "settings.search.keywords.mail" = "mail email inbox notifications counter badge unread newsletters conversations swipe read check";
 "settings.search.keywords.colleagues" = "colleagues availability free busy room cache rows";
-"settings.search.keywords.mcp" = "ai mcp claude cursor codex vs code assistant clients journal requests connect";
+"settings.search.keywords.mcp" = "ai mcp claude cursor codex vs code assistant clients journal requests connect attachments files pictures";
 "settings.search.keywords.about" = "version build author github diagnostics log support";
 "preferences.shortcuts.openMail" = "Open Mail";
 "preferences.shortcuts.always.hint" = "New Meeting and Open Mail are always on.";

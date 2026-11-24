@@ -405,6 +405,7 @@ final class MCPChangesTests: XCTestCase {
         XCTAssertEqual(push({ $0.mailSend = true }, from: reading), MCPSettingsPush(switches: true, toolList: true))
         XCTAssertEqual(push({ $0.mailOrganize = true }, from: reading), MCPSettingsPush(switches: true, toolList: true))
         XCTAssertEqual(push({ $0.mailArrange = true }, from: reading), MCPSettingsPush(switches: true, toolList: true))
+        XCTAssertEqual(push({ $0.mailAttachments = true }, from: reading), MCPSettingsPush(switches: true, toolList: true), "get_mail_attachment appears")
         // Under a mail switch that is off nothing changes for a client.
         XCTAssertTrue(push { $0.mailSend = true }.isEmpty)
         // Not in `settings`: the question about new clients and the server switch itself.

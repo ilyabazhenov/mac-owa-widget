@@ -16,7 +16,7 @@ OWAWidget — macOS menu bar приложение на Swift 6 и SwiftUI для
 - `OWAWidget/Services/` — сервисы состояния, синхронизации, уведомлений и keychain.
 - `OWAWidget/Providers/` — календарные провайдеры (OWA и будущие интеграции).
 - `OWAWidget/Views/` — SwiftUI интерфейс popover и настроек; `Views/Mail/` — окно почты и окно ответа; `Views/RichText/` — редактор с форматированием (письмо и повестка встречи).
-- `OWAWidget/MCP/`, `OWAWidgetMCPBridge/`, `OWAWidgetMCPShared/` — MCP-сервер для AI-ассистентов и stdio-мост к нему. Мутирующие инструменты, каждый за своей настройкой (по умолчанию выключены): `create_meeting`, `cancel_meeting`, `respond_to_meeting` и `prepare_mail` подтверждаются в окне приложения; `set_mail_read`, `move_mail` и `set_mail_flag` ничего не отправляют, обратимы и окна не показывают. Остальное только читает календарь, адресную книгу и почту (включая вложения: `get_mail_attachment`).
+- `OWAWidget/MCP/`, `OWAWidgetMCPBridge/`, `OWAWidgetMCPShared/` — MCP-сервер для AI-ассистентов и stdio-мост к нему. Мутирующие инструменты, каждый за своей настройкой (по умолчанию выключены): `create_meeting`, `cancel_meeting`, `respond_to_meeting` и `prepare_mail` подтверждаются в окне приложения; `set_mail_read`, `move_mail` и `set_mail_flag` ничего не отправляют, обратимы и окна не показывают. Остальное только читает календарь, адресную книгу и почту (вложения — `get_mail_attachment`, за своей настройкой, по умолчанию выключенной).
 
 ## Базовые команды
 
