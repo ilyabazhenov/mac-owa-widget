@@ -1,16 +1,38 @@
-## Unreleased
+## v1.0.64 - 2026-11-24
 
 ### RU
 
+#### В приложении
+
+- **Ответ на приглашение не откатывается синком.** Если синхронизация уже шла, когда вы ответили на встречу (например, сразу после ответа на серию в панели приглашений), она могла вернуть встречу без ответа, и до следующей синхронизации (до 5 минут) поповер и MCP показывали старый ответ. Теперь такой синк сохраняет ваш ответ, а следующий снова берёт ответ из Exchange.
+
+#### MCP: что изменилось
+
 - **MCP: только письма систем.** У `list_mail` и `search_mail` новый `only: "systems"` — обратный `only: "people"`: только CI, трекеры, no-reply и другая автоматическая почта (`from_system`). `search_mail` пишет в `skipped_from_people`, сколько писем людей пропущено.
 - **MCP: `list_mail` с фильтром не теряет продолжение.** Если на двух прочитанных страницах папки не нашлось ни одной подходящей под `only` цепочки, ответ был пустым и без `next_cursor`, и ассистент считал, что писем больше нет. Теперь курсор идёт после последней просмотренной цепочки, а `note` объясняет, что читать дальше. Полный `limit` вместе с `since` тоже больше не теряет курсор из-за более старого письма ниже на странице.
-- **Ответ на приглашение не откатывается синком.** Если синхронизация уже шла, когда вы ответили на встречу (например, сразу после ответа на серию в панели приглашений), она могла вернуть встречу без ответа, и до следующей синхронизации (до 5 минут) поповер и MCP показывали старый ответ. Теперь такой синк сохраняет ваш ответ, а следующий снова берёт ответ из Exchange.
+
+#### Установка
+
+1. Скачайте `.zip`, распакуйте и перенесите `OWAWidget.app` в `/Applications`.
+2. Запустите приложение — дополнительных шагов не нужно.
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
 
 ### EN
 
+#### In the app
+
+- **An answer to an invitation is no longer undone by a sync.** A sync already on its way when you answered a meeting (say, right after answering a series in the invitation panel) could bring the meeting back unanswered, and until the next sync (up to 5 minutes) the popover and MCP showed the old answer. Such a sync now keeps your answer, and the next one takes it from Exchange again.
+
+#### MCP: what changed
+
 - **MCP: system mail only.** `list_mail` and `search_mail` take a new `only: "systems"`, the reverse of `only: "people"`: just CI, trackers, no-reply and other automated mail (`from_system`). `search_mail` says in `skipped_from_people` how many people's conversations it left out.
 - **MCP: a filtered `list_mail` keeps its place.** When the two folder pages it read held no conversation matching `only`, the answer came back empty and without `next_cursor`, and the assistant took the folder as done. The cursor now goes on after the last conversation looked at, and a `note` says to read on. A full `limit` with `since` no longer loses the cursor because of an older message further down the page.
-- **An answer to an invitation is no longer undone by a sync.** A sync already on its way when you answered a meeting (say, right after answering a series in the invitation panel) could bring the meeting back unanswered, and until the next sync (up to 5 minutes) the popover and MCP showed the old answer. Such a sync now keeps your answer, and the next one takes it from Exchange again.
+
+#### Installation
+
+1. Download the `.zip`, unzip it and move `OWAWidget.app` to `/Applications`.
+2. Launch the app — no extra steps needed.
+3. All subsequent updates install automatically via the "Install" button inside the app.
 
 ## v1.0.63 - 2026-11-23
 
