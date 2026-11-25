@@ -39,6 +39,7 @@ enum CalendarChangeDetector {
         if Set(old.attendees) != Set(new.attendees) { fields.append("attendees") }
         if old.responseType != new.responseType { fields.append("my_response") }
         if old.isEffectivelyCancelled != new.isEffectivelyCancelled { fields.append("cancelled") }
+        if old.categories != new.categories { fields.append("categories") }
         if fields.isEmpty, let key = new.changeKey, old.changeKey != key { fields.append("other") }
         return fields
     }

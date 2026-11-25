@@ -2055,7 +2055,21 @@ final class MCPCalendarTools {
         if event.isRecurring {
             fields["is_recurring"] = true
         }
+        if !event.categories.isEmpty {
+            fields["categories"] = Self.categoriesJSON(event)
+        }
         return fields
+    }
+
+    /// `[{name, color}]` in the meeting's order; `color` (`presetN`) only for a category that has one.
+    nonisolated static func categoriesJSON(_ event: CalendarEvent) -> JSONValue {
+        .array(event.categories.map { name in
+            var category: [String: JSONValue] = ["name": .string(name)]
+            if let preset = event.colorPreset(ofCategory: name) {
+                category["color"] = .string(OutlookCategoryColor.presetName(preset))
+            }
+            return .object(category)
+        })
     }
 
     private func rangeJSON(_ resolved: ResolvedRange, _ context: CallContext) -> JSONValue {

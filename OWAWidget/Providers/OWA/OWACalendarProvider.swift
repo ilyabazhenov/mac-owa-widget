@@ -6,6 +6,10 @@ actor OWACalendarProvider: CalendarProvider {
     private let client: OWAClient
     private let urlDetector = MeetingURLDetector()
     private let log = Logger(subsystem: "com.owawidget", category: "OWACalendarProvider")
+    /// The user's category list (lowercased name → colour preset) and when it was last asked for.
+    /// `colors` stays `nil` while the list is unknown; a failed refresh keeps the previous one.
+    private var categoryList: (colors: [String: Int]?, askedAt: Date)?
+    private let categoryListRefreshInterval: TimeInterval = 15 * 60
 
     init(account: CalendarAccount, password: String) throws {
         self.account = account
@@ -30,7 +34,44 @@ actor OWACalendarProvider: CalendarProvider {
         log.info(
             "OWA provider fetch complete sync=\(syncID, privacy: .public) account=\(accountID, privacy: .public) rawItems=\(items.count, privacy: .public)"
         )
-        return items.compactMap { mapItem($0) }
+        // Asked for after the calendar answered, on the session it has just used, so a stale
+        // session is renewed by one request only.
+        let categoryColors = await refreshedCategoryColors()
+        return items.compactMap { mapItem($0, categoryColors: categoryColors) }
+    }
+
+    /// The category list, asked for again once `categoryListRefreshInterval` has passed. Its
+    /// failure only leaves colours to be guessed: it never fails the sync.
+    private func refreshedCategoryColors() async -> [String: Int]? {
+        if let categoryList, Date().timeIntervalSince(categoryList.askedAt) < categoryListRefreshInterval {
+            return categoryList.colors
+        }
+        let previous = categoryList?.colors
+        do {
+            let colors = try await client.categoryColors()
+            categoryList = (colors, Date())
+            let colored = colors?.values.filter(OutlookCategoryColor.presets.contains).count ?? 0
+            log.info("Category list loaded categories=\(colors?.count ?? -1, privacy: .public) colored=\(colored, privacy: .public)")
+            DiagnosticLog.event("Calendar CategoryList categories=\(colors.map { String($0.count) } ?? "none") colored=\(colored)")
+            return colors
+        } catch {
+            categoryList = (previous, Date())
+            log.error("Category list failed: \(error.localizedDescription, privacy: .public)")
+            DiagnosticLog.event("Calendar CategoryList failed: \(error.localizedDescription)")
+            return previous
+        }
+    }
+
+    /// The colours of the meeting's own categories, by their names on the meeting.
+    static func categoryColors(of categories: [String], in list: [String: Int]?) -> [String: Int]? {
+        guard let list else { return nil }
+        var colors: [String: Int] = [:]
+        for name in categories {
+            if let preset = list[name.lowercased()], OutlookCategoryColor.presets.contains(preset) {
+                colors[name] = preset
+            }
+        }
+        return colors
     }
 
     func validateCredentials() async throws {
@@ -111,7 +152,7 @@ actor OWACalendarProvider: CalendarProvider {
 
     // MARK: - Mapping
 
-    private func mapItem(_ item: OWACalendarItem) -> CalendarEvent? {
+    private func mapItem(_ item: OWACalendarItem, categoryColors list: [String: Int]?) -> CalendarEvent? {
         guard
             let subject = item.Subject,
             let startStr = item.Start,
@@ -140,6 +181,7 @@ actor OWACalendarProvider: CalendarProvider {
         let requiredNames = item.RequiredAttendees?.attendees.compactMap { $0.Mailbox?.Name } ?? []
         let optionalNames = item.OptionalAttendees?.attendees.compactMap { $0.Mailbox?.Name } ?? []
         let attendees = (requiredNames + optionalNames).filter { !$0.isEmpty }
+        let categories = Self.normalizedCategories(from: item)
 
         return CalendarEvent(
             id: id,
@@ -156,7 +198,8 @@ actor OWACalendarProvider: CalendarProvider {
             accountID: account.id,
             isCancelled: item.IsCancelled ?? false,
             isOrganizer: item.IsOrganizer ?? false,
-            categories: Self.normalizedCategories(from: item),
+            categories: categories,
+            categoryColors: Self.categoryColors(of: categories, in: list),
             responseType: Self.mapResponseType(item.ResponseType, isOrganizer: item.IsOrganizer ?? false),
             changeKey: item.ItemId?.ChangeKey,
             instanceKey: item.InstanceKey,

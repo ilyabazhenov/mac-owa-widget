@@ -56,6 +56,11 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
     let isCancelled: Bool
     let isOrganizer: Bool
     let categories: [String]
+    /// Colours of `categories` from the user's category list, as Outlook presets (see
+    /// `OutlookCategoryColor`), by the category's name here. A category missing from the map has
+    /// no colour. `nil` when the list is unknown (not loaded, or a calendar without one): colours
+    /// are then guessed from the names.
+    let categoryColors: [String: Int]?
     let responseType: MeetingResponseType
     let changeKey: String?
     let instanceKey: String?
@@ -91,6 +96,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         isCancelled: Bool = false,
         isOrganizer: Bool = false,
         categories: [String] = [],
+        categoryColors: [String: Int]? = nil,
         responseType: MeetingResponseType = .notResponded,
         changeKey: String? = nil,
         instanceKey: String? = nil,
@@ -116,6 +122,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         self.isCancelled = isCancelled
         self.isOrganizer = isOrganizer
         self.categories = categories
+        self.categoryColors = categoryColors
         self.responseType = responseType
         self.changeKey = changeKey
         self.instanceKey = instanceKey
@@ -144,6 +151,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         isCancelled = try c.decodeIfPresent(Bool.self, forKey: .isCancelled) ?? false
         isOrganizer = try c.decodeIfPresent(Bool.self, forKey: .isOrganizer) ?? false
         categories = try c.decodeIfPresent([String].self, forKey: .categories) ?? []
+        categoryColors = try c.decodeIfPresent([String: Int].self, forKey: .categoryColors)
         responseType = try c.decodeIfPresent(MeetingResponseType.self, forKey: .responseType) ?? .notResponded
         changeKey = try c.decodeIfPresent(String.self, forKey: .changeKey)
         instanceKey = try c.decodeIfPresent(String.self, forKey: .instanceKey)
@@ -172,6 +180,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         try c.encode(isCancelled, forKey: .isCancelled)
         try c.encode(isOrganizer, forKey: .isOrganizer)
         try c.encode(categories, forKey: .categories)
+        try c.encodeIfPresent(categoryColors, forKey: .categoryColors)
         try c.encode(responseType, forKey: .responseType)
         try c.encodeIfPresent(changeKey, forKey: .changeKey)
         try c.encodeIfPresent(instanceKey, forKey: .instanceKey)
@@ -185,7 +194,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, title, startDate, endDate, location, bodyPreview, joinURL, platform
         case isAllDay, organizer, attendees, accountID
-        case isCancelled, isOrganizer, categories, responseType, changeKey, instanceKey
+        case isCancelled, isOrganizer, categories, categoryColors, responseType, changeKey, instanceKey
         case icalUID, seriesID, isRecurring
         case detailedAttendees, fullBody
     }
@@ -197,7 +206,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
             platform: platform, isAllDay: isAllDay, organizer: organizer,
             attendees: attendees, accountID: accountID,
             isCancelled: isCancelled, isOrganizer: isOrganizer,
-            categories: categories, responseType: type, changeKey: changeKey,
+            categories: categories, categoryColors: categoryColors, responseType: type, changeKey: changeKey,
             instanceKey: instanceKey, icalUID: icalUID, seriesID: seriesID, isRecurring: isRecurring,
             detailedAttendees: detailedAttendees,
             fullBody: fullBody, fullBodyHTML: fullBodyHTML
@@ -213,7 +222,7 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
             platform: platform, isAllDay: isAllDay, organizer: organizer,
             attendees: attendees, accountID: accountID,
             isCancelled: isCancelled, isOrganizer: isOrganizer,
-            categories: categories, responseType: responseType, changeKey: changeKey,
+            categories: categories, categoryColors: categoryColors, responseType: responseType, changeKey: changeKey,
             instanceKey: instanceKey, icalUID: details.icalUID ?? icalUID, seriesID: seriesID,
             isRecurring: isRecurring, detailedAttendees: details.attendees,
             fullBody: details.body ?? fullBody,
