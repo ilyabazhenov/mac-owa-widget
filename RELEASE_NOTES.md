@@ -1,3 +1,47 @@
+## v1.0.65 - 2026-11-25
+
+### RU
+
+#### В приложении
+
+- **Цвет встречи — как в Outlook.** Раньше цвет угадывался по названию категории, поэтому «Желтая категория» была жёлтой, а своя категория вроде «Английский» оставалась без цвета. Теперь приложение берёт цвета из вашего списка категорий Exchange: встреча окрашивается в цвет своей первой цветной категории, а поддерживаются все 25 цветов Outlook. Список обновляется раз в 15 минут. Если его не удалось получить (или календарь не из Exchange), цвет, как и раньше, угадывается по названию.
+
+#### MCP: новый инструмент
+
+- **`get_mail_attachment`** — скачать вложение письма или вставленную в него картинку (скриншот, логотип в подписи), кусками до 4 МБ, файл до 25 МБ. Картинка приходит блоком `image`, остальные файлы — `resource`. Вложенные письма не отдаются. Включается отдельным переключателем «Давать скачивать вложения» в «Настройки → AI (MCP) → Почта», по умолчанию выключен. Пока он выключен, ответы о почте такие же, как раньше.
+
+#### MCP: что изменилось
+
+- **Картинки в вёрстке письма.** Если вложения включены, `include_html` у `get_mail_thread` и `get_mail_message` больше не выбрасывает вставленные картинки: они остаются ссылками `cid:<content id>`, а рядом `inline_images` с `attachment_id` каждой. У файлов в `attachments` появился `attachment_id` для `get_mail_attachment`. В `settings` у `get_status` и `get_changes` есть `download_attachments`.
+- **Категории встреч.** У встречи с категориями в `list_events` (и в `get_changes`) есть `categories`: `[{name, color}]`, где `color` — цвет категории в Outlook (`preset0`…`preset24`). `get_changes` сообщает изменение категорий встречи как `changed: categories`, а не `other`.
+
+#### Установка
+
+1. Скачайте `.zip`, распакуйте и перенесите `OWAWidget.app` в `/Applications`.
+2. Запустите приложение — дополнительных шагов не нужно.
+3. Все последующие обновления устанавливаются автоматически через кнопку «Установить» внутри приложения.
+
+### EN
+
+#### In the app
+
+- **Meetings take their colour from Outlook.** The colour used to be guessed from the category's name, so "Yellow category" came out yellow and a category of your own, like "English", got none. The app now reads the colours from your Exchange category list: a meeting shows in the colour of its first coloured category, and all 25 Outlook colours are supported. The list is refreshed every 15 minutes. When it can't be read (or the calendar is not Exchange), the colour is guessed from the name as before.
+
+#### MCP: new tool
+
+- **`get_mail_attachment`** downloads an email's attachment or a picture pasted into it (a screenshot, a logo in a signature), in chunks of up to 4 MB, files up to 25 MB. A picture comes as an `image` block, other files as a `resource`. Attached emails are not given out. It has its own switch, "Let assistants download attachments", in Settings → AI (MCP) → Mail, off by default. While it is off, mail answers are the same as before.
+
+#### MCP: what changed
+
+- **Pictures in an email's layout.** With attachments on, `include_html` in `get_mail_thread` and `get_mail_message` no longer drops pasted pictures: they stay as `cid:<content id>` links, with `inline_images` giving each one's `attachment_id`. Files in `attachments` now carry an `attachment_id` for `get_mail_attachment`. `settings` in `get_status` and `get_changes` has `download_attachments`.
+- **Meeting categories.** A meeting with categories has `categories` in `list_events` (and in `get_changes`): `[{name, color}]`, `color` being the category's Outlook colour (`preset0`…`preset24`). `get_changes` reports a change of a meeting's categories as `changed: categories` rather than `other`.
+
+#### Installation
+
+1. Download the `.zip`, unzip it and move `OWAWidget.app` to `/Applications`.
+2. Launch the app — no extra steps needed.
+3. All subsequent updates install automatically via the "Install" button inside the app.
+
 ## v1.0.64 - 2026-11-24
 
 ### RU
