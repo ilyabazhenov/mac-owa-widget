@@ -59,8 +59,9 @@ struct MailDigest: Equatable {
         let known = (peopleUnread + conversations).filter { seen.insert($0.id).inserted }
 
         let answerable = events.filter {
-            !$0.isOrganizer && $0.responseType == .notResponded && $0.changeKey != nil
-                && !$0.isEffectivelyCancelled && !$0.isAllDay && $0.endDate > now
+            // As in `MeetingInvitationPolicy.isAwaitingResponse`: the card's rule, and no subject-only cancellations.
+            $0.acceptsResponse && !$0.isEffectivelyCancelled && $0.responseType == .notResponded
+                && !$0.isAllDay && $0.endDate > now
         }
         var invitations: [Invitation] = []
         for conversation in known where conversation.isMeetingRequest {

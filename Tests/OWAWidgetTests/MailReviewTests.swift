@@ -239,6 +239,25 @@ final class MailReviewTests: XCTestCase {
         XCTAssertFalse(outside, "a meeting outside the synced calendar is left to OWA")
     }
 
+    /// An invitation whose meeting was cancelled since: the reading pane drops its answer buttons.
+    func testMeetingRequestKnowsItsMeetingWasCancelled() {
+        backend.cancelledMeetings = ["CAL-GONE"]
+        let service = makeService()
+        func message(_ calendarID: String?) -> MailMessage {
+            let base = MailFixtures.message("M", conversation: "C", kind: .meetingRequest)
+            return MailMessage(
+                ref: base.ref, conversationID: "C", parentFolderID: nil, kind: .meetingRequest, subject: "Sync", from: base.from,
+                to: [], cc: [], bcc: [], hiddenRecipientCount: 0, received: nil, sent: nil, isRead: true, isDraft: false,
+                importance: .normal, bodyHTML: nil, preview: "", attachments: [], categories: [], isFlagged: false,
+                actions: [.acceptMeeting], meeting: calendarID.map { MailMeetingInfo(start: nil, end: nil, location: nil, associatedCalendarItemID: $0) },
+                internetMessageID: nil
+            )
+        }
+        XCTAssertTrue(service.isMeetingCancelled(for: message("CAL-GONE")))
+        XCTAssertFalse(service.isMeetingCancelled(for: message("CAL-1")))
+        XCTAssertFalse(service.isMeetingCancelled(for: message(nil)))
+    }
+
     func testRelatedSearchQuery() {
         XCTAssertEqual(MailRelatedSearch.subjectQuery("RE: FW: Релиз 1.3 — финальный чек-лист"), "Релиз финальный чек лист")
         XCTAssertEqual(MailRelatedSearch.subjectQuery("1:1"), "")

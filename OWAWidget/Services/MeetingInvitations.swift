@@ -154,9 +154,11 @@ enum MeetingInvitationPolicy {
     }
 
     static func isAwaitingResponse(_ event: CalendarEvent, now: Date) -> Bool {
-        isTracked(event)
-            && event.responseType == .notResponded
+        // The answer rule is the card's; the subject guess on top only keeps a list from nagging
+        // about meetings older servers mark cancelled in the subject alone.
+        event.acceptsResponse
             && !event.isEffectivelyCancelled
+            && event.responseType == .notResponded
             && event.endDate > now
     }
 

@@ -22,6 +22,8 @@ protocol MailBackend: AnyObject {
     func respondToMailMeeting(calendarItemID: String, action: MeetingResponseAction) async throws -> Bool
     /// The response already given to that meeting, when the calendar knows it.
     func mailMeetingResponse(calendarItemID: String) -> MeetingResponseType?
+    /// The organizer has since cancelled that meeting: its invitation can no longer be answered.
+    func mailMeetingIsCancelled(calendarItemID: String) -> Bool
     /// Lowercased names of the people the user deals with now: today's meeting participants and
     /// watched colleagues. Mail from them counts as important.
     var mailVIPNames: Set<String> { get }
@@ -32,6 +34,7 @@ protocol MailBackend: AnyObject {
 
 extension MailBackend {
     func mailMeetingInterval(topic: String) -> DateInterval? { nil }
+    func mailMeetingIsCancelled(calendarItemID: String) -> Bool { false }
 }
 
 extension CalendarService: MailBackend {
@@ -59,6 +62,10 @@ extension CalendarService: MailBackend {
 
     func mailMeetingResponse(calendarItemID: String) -> MeetingResponseType? {
         events.first { $0.id == calendarItemID }?.responseType
+    }
+
+    func mailMeetingIsCancelled(calendarItemID: String) -> Bool {
+        events.first { $0.id == calendarItemID }?.isCancelled ?? false
     }
 
     var mailVIPNames: Set<String> {
@@ -369,6 +376,16 @@ final class MailService: ObservableObject {
             .dropFirst()
             .sink { [weak self] _ in
                 Task { @MainActor in self?.providersChanged() }
+            }
+            .store(in: &cancellables)
+        // An invitation open in the reader drops its answer buttons once the calendar learns the
+        // meeting was cancelled. Published only when that set changes, not on every sync.
+        calendarService.$events
+            .map { Set($0.lazy.filter(\.isCancelled).map(\.id)) }
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.changeGeneration += 1 }
             }
             .store(in: &cancellables)
         isOffline = calendarService.lastSyncFailedOnConnection
@@ -1377,6 +1394,13 @@ final class MailService: ObservableObject {
 
     func meetingResponse(for message: MailMessage) -> MeetingResponseType? {
         message.meeting?.associatedCalendarItemID.flatMap { backend?.mailMeetingResponse(calendarItemID: $0) }
+    }
+
+    /// A meeting request whose meeting the calendar already shows as cancelled: answering it
+    /// would only get `ErrorCalendarIsCancelledForAccept` back from Exchange.
+    func isMeetingCancelled(for message: MailMessage) -> Bool {
+        guard let id = message.meeting?.associatedCalendarItemID else { return false }
+        return backend?.mailMeetingIsCancelled(calendarItemID: id) ?? false
     }
 
     /// Mail about a meeting: conversations with its subject, and mail from its people. Two

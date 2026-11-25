@@ -557,7 +557,7 @@ private struct MeetingDetailActionsView: View {
                 }
             }
 
-            if !event.isOrganizer && event.responseType != .organizer && event.changeKey != nil {
+            if event.acceptsResponse {
                 RSVPActionsView(event: event)
             }
         }
@@ -829,6 +829,10 @@ private struct RSVPActionsView: View {
     private func rsvpFailureMessage(for error: Error) -> String {
         if let calendarError = error as? CalendarProviderError, case .notSupported = calendarError {
             return localization.tr("meeting.rsvp.error.provider.not.supported")
+        }
+        // Not a failed send: there is nothing left to answer, so no "Failed to send" headline.
+        if let calendarError = error as? CalendarProviderError, case .meetingCancelled = calendarError {
+            return localization.tr("meeting.rsvp.error.cancelled")
         }
         let headline = localization.tr("meeting.rsvp.error.send.failed")
         guard let detail = rsvpFailureDetailLine(for: error), !detail.isEmpty else {

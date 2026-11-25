@@ -227,6 +227,8 @@ final class FakeMailBackend: MailBackend {
         return true
     }
     func mailMeetingResponse(calendarItemID: String) -> MeetingResponseType? { nil }
+    var cancelledMeetings: Set<String> = []
+    func mailMeetingIsCancelled(calendarItemID: String) -> Bool { cancelledMeetings.contains(calendarItemID) }
     var mailVIPNames: Set<String> { vipNames }
 }
 

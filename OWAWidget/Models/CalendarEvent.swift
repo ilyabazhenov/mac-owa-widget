@@ -263,6 +263,18 @@ struct CalendarEvent: Identifiable, Sendable, Hashable, Codable {
         return normalized.hasPrefix("отменено:") || normalized.hasPrefix("cancelled:") || normalized.hasPrefix("canceled:")
     }
 
+    /// Accept / Tentative / Decline apply: an invitation the user received (not one they organise)
+    /// from a calendar that takes answers (`changeKey`), and not cancelled — Exchange refuses any
+    /// answer to a cancelled meeting with `ErrorCalendarIsCancelledForAccept`.
+    ///
+    /// Only Exchange's flag counts here, not the "Cancelled:" subject `isEffectivelyCancelled` also
+    /// reads: that guess is fine for striking a title through, but a live meeting named "Cancelled:
+    /// order review" would never be answerable. A flag that has not synced yet is caught by
+    /// Exchange's own refusal (`CalendarProviderError.meetingCancelled`).
+    var acceptsResponse: Bool {
+        !isOrganizer && responseType != .organizer && changeKey != nil && !isCancelled
+    }
+
     /// URL used for Join/Copy actions; cancelled meetings hide actions even if a URL remains cached.
     var joinURLForActions: URL? {
         guard !isEffectivelyCancelled else { return nil }

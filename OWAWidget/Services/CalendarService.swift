@@ -1012,7 +1012,14 @@ final class CalendarService: ObservableObject {
 
     // MARK: - Meeting response
 
-    func respondToMeeting(_ event: CalendarEvent, action: MeetingResponseAction) async throws {
+    func respondToMeeting(_ passedEvent: CalendarEvent, action: MeetingResponseAction) async throws {
+        // The caller's copy may predate the last sync (a card left open, an invitation row): the
+        // calendar's own is the one that knows about a cancellation.
+        let event = events.first { $0.id == passedEvent.id } ?? passedEvent
+        // Exchange refuses it anyway (ErrorCalendarIsCancelledForAccept). Stopping here keeps the
+        // optimistic answer off the timeline and tells the user why, whichever path asked: the
+        // meeting card, an old invitation email, the invitation panel or "Overview".
+        guard !event.isCancelled else { throw CalendarProviderError.meetingCancelled }
         guard let provider = providers.first(where: { $0.account.id == event.accountID }) else {
             #if DEBUG
             DiagnosticLog.event("respondToMeeting: no provider for account, providers=\(providers.count)")
@@ -1048,6 +1055,11 @@ final class CalendarService: ObservableObject {
             #endif
             dropAnswer(answer, eventIDs: [event.id])
             applyResponseType(event.responseType, to: event.id)
+            if case CalendarProviderError.meetingCancelled = error {
+                // Cancelled since the last sync: fetch the cancellation, so the card and the lists
+                // stop offering an answer.
+                syncNow()
+            }
             applyBlockingError(error, context: "respondToMeeting")
             log.error("respondToMeeting failed eventID=\(event.id, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
             throw error
